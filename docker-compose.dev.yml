@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aite-postgres
+    environment:
+      POSTGRES_USER: aite
+      POSTGRES_PASSWORD: aite
+      POSTGRES_DB: aite
+    ports:
+      - "5432:5432"
+    volumes:
+      - aite_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aite"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: aite-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - aite_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  aite_pgdata:
+  aite_redis:

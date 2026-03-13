@@ -1,0 +1,1323 @@
+{
+  "id": "checkpoint_1773320979361",
+  "name": "pre-compact-1773320979360",
+  "created_at": "2026-03-12T13:09:39.361Z",
+  "observations": [
+    {
+      "id": "obs_1773240311351_s2j3ts146",
+      "timestamp": "2026-03-11T14:45:11.351Z",
+      "type": "connection_pattern",
+      "data": {
+        "framework": "core-sdk",
+        "active_workflows": [],
+        "critical_patterns": {
+          "hasDataFlowModels": false,
+          "hasNexusApp": false,
+          "hasKaizenAgent": false,
+          "hasCyclicWorkflow": false,
+          "hasAsyncRuntime": false
+        },
+        "recently_modified_count": 1
+      },
+      "context": {
+        "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "type": "session_start",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+      "timestamp": "2026-03-11T14:47:03.290Z",
+      "envExists": true,
+      "framework": "core-sdk",
+      "models": {},
+      "keyCount": 0,
+      "validationFailures": []
+    },
+    {
+      "id": "obs_1773252690755_enqn8johm",
+      "timestamp": "2026-03-11T18:11:30.755Z",
+      "type": "connection_pattern",
+      "data": {
+        "framework": "core-sdk",
+        "active_workflows": [],
+        "critical_patterns": {
+          "hasDataFlowModels": false,
+          "hasNexusApp": false,
+          "hasKaizenAgent": false,
+          "hasCyclicWorkflow": false,
+          "hasAsyncRuntime": false
+        },
+        "recently_modified_count": 0
+      },
+      "context": {
+        "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "type": "session_start",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+      "timestamp": "2026-03-11T18:13:06.709Z",
+      "envExists": true,
+      "framework": "core-sdk",
+      "models": {},
+      "keyCount": 0,
+      "validationFailures": []
+    },
+    {
+      "id": "obs_1773288999924_lbhfwgy5e",
+      "timestamp": "2026-03-12T04:16:39.924Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289003662_y9vsypbcr",
+      "timestamp": "2026-03-12T04:16:43.662Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289014816_xpxb2qwyz",
+      "timestamp": "2026-03-12T04:16:54.816Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "timestamp": "2026-03-12T04:17:26.361Z",
+      "type": "stop",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "reason": "signal",
+      "success": true
+    },
+    {
+      "id": "obs_1773289047463_26acdz9dp",
+      "timestamp": "2026-03-12T04:17:27.463Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289052844_wrf03cmm4",
+      "timestamp": "2026-03-12T04:17:32.844Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289053274_j9srew9j2",
+      "timestamp": "2026-03-12T04:17:33.274Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289053827_j04gdg443",
+      "timestamp": "2026-03-12T04:17:33.827Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289058893_bf5sp2pgz",
+      "timestamp": "2026-03-12T04:17:38.893Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289121177_irxmq09yt",
+      "timestamp": "2026-03-12T04:18:41.177Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289129724_g3pvgo3zy",
+      "timestamp": "2026-03-12T04:18:49.724Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289132379_2z8tlb6m2",
+      "timestamp": "2026-03-12T04:18:52.379Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289135035_w1d59dw73",
+      "timestamp": "2026-03-12T04:18:55.035Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289138166_vaxyd8zpv",
+      "timestamp": "2026-03-12T04:18:58.166Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289142921_z3v8y7vlb",
+      "timestamp": "2026-03-12T04:19:02.921Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289156339_ntpcztpmv",
+      "timestamp": "2026-03-12T04:19:16.339Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289159434_fk6srsajo",
+      "timestamp": "2026-03-12T04:19:19.434Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289162555_yont68o4v",
+      "timestamp": "2026-03-12T04:19:22.555Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289165692_x3z3xcu1e",
+      "timestamp": "2026-03-12T04:19:25.692Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289168413_9kthxiyr2",
+      "timestamp": "2026-03-12T04:19:28.413Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289174983_v3jw42rbu",
+      "timestamp": "2026-03-12T04:19:34.983Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289179872_kk1zat6dp",
+      "timestamp": "2026-03-12T04:19:39.872Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289182941_l7g26c881",
+      "timestamp": "2026-03-12T04:19:42.941Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289185191_21aq3uqp1",
+      "timestamp": "2026-03-12T04:19:45.191Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289191328_8cze5jk14",
+      "timestamp": "2026-03-12T04:19:51.328Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289191398_h32ioex9i",
+      "timestamp": "2026-03-12T04:19:51.398Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289194206_bhkcf7osa",
+      "timestamp": "2026-03-12T04:19:54.206Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289196213_qlvnu4huk",
+      "timestamp": "2026-03-12T04:19:56.213Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289204498_5sk353jqh",
+      "timestamp": "2026-03-12T04:20:04.498Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289210003_piztp4awz",
+      "timestamp": "2026-03-12T04:20:10.003Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289212706_axx56gza1",
+      "timestamp": "2026-03-12T04:20:12.706Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289212721_231n72boq",
+      "timestamp": "2026-03-12T04:20:12.721Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289214889_839c0yo31",
+      "timestamp": "2026-03-12T04:20:14.889Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289218031_dcw7dcqhj",
+      "timestamp": "2026-03-12T04:20:18.031Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289220338_2slzwlofd",
+      "timestamp": "2026-03-12T04:20:20.338Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289246447_96pw2fttm",
+      "timestamp": "2026-03-12T04:20:46.447Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289257242_rj6mw18yl",
+      "timestamp": "2026-03-12T04:20:57.242Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289258886_j0vk715fh",
+      "timestamp": "2026-03-12T04:20:58.886Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289261433_mckwnfc4f",
+      "timestamp": "2026-03-12T04:21:01.433Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289274801_z98vh1d1d",
+      "timestamp": "2026-03-12T04:21:14.801Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289277378_3pgmhcgbv",
+      "timestamp": "2026-03-12T04:21:17.378Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289280034_fom74s9sh",
+      "timestamp": "2026-03-12T04:21:20.034Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289282106_mxetvr7o5",
+      "timestamp": "2026-03-12T04:21:22.106Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289285009_tv2qct1ki",
+      "timestamp": "2026-03-12T04:21:25.009Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289292589_bxmg6mjc0",
+      "timestamp": "2026-03-12T04:21:32.589Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289320343_tok9wh69n",
+      "timestamp": "2026-03-12T04:22:00.343Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "pytest",
+        "test_path": "tests/unit/test_error_correction.py"
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289326156_745l7ey9g",
+      "timestamp": "2026-03-12T04:22:06.156Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "pytest",
+        "test_path": "tests/unit/test_auth_router.py"
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289337572_s8bap6arh",
+      "timestamp": "2026-03-12T04:22:17.572Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773289341945_ddbdmyiiz",
+      "timestamp": "2026-03-12T04:22:21.945Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "pytest",
+        "test_path": "tests/integration/test_auth.py"
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773305486316_gv2wj9xb1",
+      "timestamp": "2026-03-12T08:51:26.316Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773305587807_yf9elr543",
+      "timestamp": "2026-03-12T08:53:07.807Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773305743567_9yl5h44qr",
+      "timestamp": "2026-03-12T08:55:43.567Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773306409590_g63okq0ws",
+      "timestamp": "2026-03-12T09:06:49.590Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773306411039_2s3e8ctyv",
+      "timestamp": "2026-03-12T09:06:51.039Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773306422783_1aortdsm7",
+      "timestamp": "2026-03-12T09:07:02.783Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773306428032_p12n4f3jv",
+      "timestamp": "2026-03-12T09:07:08.032Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773306434022_udcsjnz2j",
+      "timestamp": "2026-03-12T09:07:14.022Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773306442370_3edg5qrcz",
+      "timestamp": "2026-03-12T09:07:22.370Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773307002674_0z42j61x6",
+      "timestamp": "2026-03-12T09:16:42.674Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773307007282_vse33hycv",
+      "timestamp": "2026-03-12T09:16:47.282Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773307013291_qxwl514mn",
+      "timestamp": "2026-03-12T09:16:53.291Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773307018370_6aknbo796",
+      "timestamp": "2026-03-12T09:16:58.370Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773307023452_02a8kmecf",
+      "timestamp": "2026-03-12T09:17:03.452Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773307029503_6dtnmq0fy",
+      "timestamp": "2026-03-12T09:17:09.503Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "timestamp": "2026-03-12T09:45:01.148Z",
+      "type": "stop",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "reason": "signal",
+      "success": true
+    },
+    {
+      "id": "obs_1773308738002_m269xu7kc",
+      "timestamp": "2026-03-12T09:45:38.002Z",
+      "type": "connection_pattern",
+      "data": {
+        "framework": "core-sdk",
+        "active_workflows": [],
+        "critical_patterns": {
+          "hasDataFlowModels": false,
+          "hasNexusApp": false,
+          "hasKaizenAgent": false,
+          "hasCyclicWorkflow": false,
+          "hasAsyncRuntime": false
+        },
+        "recently_modified_count": 0
+      },
+      "context": {
+        "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "type": "session_start",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+      "timestamp": "2026-03-12T09:47:39.853Z",
+      "envExists": true,
+      "framework": "core-sdk",
+      "models": {},
+      "keyCount": 0,
+      "validationFailures": []
+    },
+    {
+      "id": "obs_1773308937943_1q85mu1kw",
+      "timestamp": "2026-03-12T09:48:57.943Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773309094977_p3jwh9dvy",
+      "timestamp": "2026-03-12T09:51:34.977Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "timestamp": "2026-03-12T09:54:20.441Z",
+      "type": "stop",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "reason": "signal",
+      "success": true
+    },
+    {
+      "timestamp": "2026-03-12T09:54:28.697Z",
+      "type": "stop",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "reason": "signal",
+      "success": true
+    },
+    {
+      "timestamp": "2026-03-12T10:54:58.409Z",
+      "type": "stop",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "reason": "signal",
+      "success": true
+    },
+    {
+      "timestamp": "2026-03-12T11:28:34.787Z",
+      "type": "stop",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "reason": "signal",
+      "success": true
+    },
+    {
+      "timestamp": "2026-03-12T11:32:18.649Z",
+      "type": "stop",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "reason": "signal",
+      "success": true
+    },
+    {
+      "id": "obs_1773316104319_aiycyyjam",
+      "timestamp": "2026-03-12T11:48:24.319Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773316294694_1i0st02hx",
+      "timestamp": "2026-03-12T11:51:34.694Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773316302487_mb79nrrxk",
+      "timestamp": "2026-03-12T11:51:42.487Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773316310276_2wcxz4g8e",
+      "timestamp": "2026-03-12T11:51:50.276Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773316361470_fn2zel4wz",
+      "timestamp": "2026-03-12T11:52:41.470Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773316709721_72c1dtu0l",
+      "timestamp": "2026-03-12T11:58:29.721Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773316835488_50lwe5zdz",
+      "timestamp": "2026-03-12T12:00:35.488Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773316885809_tbvl5o8k8",
+      "timestamp": "2026-03-12T12:01:25.809Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773316909027_ykqe2ocsm",
+      "timestamp": "2026-03-12T12:01:49.027Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773316919578_y9e4384bh",
+      "timestamp": "2026-03-12T12:01:59.578Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773316929968_1xw6mtozc",
+      "timestamp": "2026-03-12T12:02:09.968Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "timestamp": "2026-03-12T12:04:27.601Z",
+      "type": "stop",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "reason": "signal",
+      "success": true
+    },
+    {
+      "id": "obs_1773320765462_0l5yth3iy",
+      "timestamp": "2026-03-12T13:06:05.462Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773320818305_2yq5ofo0d",
+      "timestamp": "2026-03-12T13:06:58.305Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773320836796_cec0tp67a",
+      "timestamp": "2026-03-12T13:07:16.796Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773320843589_0r78ggrjl",
+      "timestamp": "2026-03-12T13:07:23.589Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773320979360_7hp2ipth5",
+      "timestamp": "2026-03-12T13:09:39.360Z",
+      "type": "connection_pattern",
+      "data": {
+        "framework": "core-sdk",
+        "active_workflows": [],
+        "critical_patterns": {
+          "hasDataFlowModels": false,
+          "hasNexusApp": false,
+          "hasKaizenAgent": false,
+          "hasCyclicWorkflow": false,
+          "hasAsyncRuntime": false
+        },
+        "recently_modified_count": 0
+      },
+      "context": {
+        "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    }
+  ],
+  "instincts": {},
+  "identity": {
+    "system": "kailash-coc-claude-py",
+    "version": "2.0.0",
+    "created_at": "2026-03-11T14:45:11.349Z",
+    "learning_enabled": true,
+    "per_project": true,
+    "focus_areas": [
+      "workflow-patterns",
+      "error-fixes",
+      "dataflow-patterns",
+      "testing-patterns",
+      "framework-selection"
+    ]
+  },
+  "stats": {
+    "observation_count": 95,
+    "instinct_categories": 0
+  }
+}

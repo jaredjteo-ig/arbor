@@ -1,0 +1,309 @@
+"""Admin and operations API router.
+
+Covers regulatory update management (T040), admin dashboard data (T041),
+and operational monitoring. All endpoints require owner or hr_manager role.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from hr_advisory.api.middleware.auth_middleware import require_role
+from hr_advisory.workflows.regulatory_updates import (
+    AffectedProvision,
+    RegulatoryUpdate,
+    UpdateStatus,
+    UpdateUrgency,
+    approve_update,
+    create_update,
+    get_stale_provisions,
+    get_staleness_summary,
+    get_update,
+    list_updates,
+    publish_update,
+    record_review,
+    reject_update,
+    submit_for_review,
+)
+
+_admin_dep = Depends(require_role("owner", "hr_manager"))
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+# ── Request/Response models ──────────────────────────────────
+
+
+class AffectedProvisionRequest(BaseModel):
+    provision_id: str
+    current_text: str
+    new_text: str
+    change_type: str
+
+
+class CreateUpdateRequest(BaseModel):
+    id: str
+    title: str
+    description: str
+    source: str
+    source_url: str = ""
+    urgency: str
+    affected_provisions: list[AffectedProvisionRequest]
+    effective_date: str  # ISO date
+    domains_affected: list[str] = []
+    alert_message: str = ""
+    impact_summary: str = ""
+
+
+class ReviewRequest(BaseModel):
+    reviewer: str
+    notes: str = ""
+
+
+class RecordReviewRequest(BaseModel):
+    provision_id: str
+    reviewer: str
+    next_review_date: str  # ISO date
+
+
+class UpdateResponse(BaseModel):
+    id: str
+    title: str
+    description: str
+    source: str
+    urgency: str
+    status: str
+    effective_date: str
+    created_at: str
+    reviewed_by: str | None = None
+    published_at: str | None = None
+    domains_affected: list[str] = []
+    alert_message: str = ""
+    impact_summary: str = ""
+    affected_provisions_count: int = 0
+
+
+def _to_response(update: RegulatoryUpdate) -> UpdateResponse:
+    return UpdateResponse(
+        id=update.id,
+        title=update.title,
+        description=update.description,
+        source=update.source,
+        urgency=update.urgency.value,
+        status=update.status.value,
+        effective_date=update.effective_date.isoformat(),
+        created_at=update.created_at.isoformat(),
+        reviewed_by=update.reviewed_by,
+        published_at=update.published_at.isoformat() if update.published_at else None,
+        domains_affected=update.domains_affected,
+        alert_message=update.alert_message,
+        impact_summary=update.impact_summary,
+        affected_provisions_count=len(update.affected_provisions),
+    )
+
+
+# ── Regulatory Update CRUD ───────────────────────────────────
+
+
+@router.post("/updates", response_model=UpdateResponse, dependencies=[_admin_dep])
+async def create_regulatory_update(req: CreateUpdateRequest) -> UpdateResponse:
+    """Create a new regulatory update in draft status."""
+    provisions = [
+        AffectedProvision(
+            provision_id=p.provision_id,
+            current_text=p.current_text,
+            new_text=p.new_text,
+            change_type=p.change_type,
+        )
+        for p in req.affected_provisions
+    ]
+    update = create_update(
+        RegulatoryUpdate(
+            id=req.id,
+            title=req.title,
+            description=req.description,
+            source=req.source,
+            source_url=req.source_url,
+            urgency=UpdateUrgency(req.urgency),
+            status=UpdateStatus.DRAFT,
+            affected_provisions=provisions,
+            effective_date=date.fromisoformat(req.effective_date),
+            created_at=datetime.now(),
+            created_by="admin",
+            domains_affected=req.domains_affected,
+            alert_message=req.alert_message,
+            impact_summary=req.impact_summary,
+        )
+    )
+    return _to_response(update)
+
+
+@router.get("/updates", response_model=list[UpdateResponse], dependencies=[_admin_dep])
+async def list_regulatory_updates(status: str | None = None) -> list[UpdateResponse]:
+    """List regulatory updates, optionally filtered by status."""
+    filter_status = UpdateStatus(status) if status else None
+    updates = list_updates(filter_status)
+    return [_to_response(u) for u in updates]
+
+
+@router.get("/updates/{update_id}", response_model=UpdateResponse, dependencies=[_admin_dep])
+async def get_regulatory_update(update_id: str) -> UpdateResponse:
+    """Get a specific regulatory update."""
+    update = get_update(update_id)
+    if update is None:
+        raise HTTPException(status_code=404, detail="Update not found")
+    return _to_response(update)
+
+
+@router.post(
+    "/updates/{update_id}/submit", response_model=UpdateResponse, dependencies=[_admin_dep]
+)
+async def submit_update_for_review(update_id: str) -> UpdateResponse:
+    """Submit a draft update for review."""
+    try:
+        update = submit_for_review(update_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _to_response(update)
+
+
+@router.post(
+    "/updates/{update_id}/approve", response_model=UpdateResponse, dependencies=[_admin_dep]
+)
+async def approve_regulatory_update(
+    update_id: str,
+    req: ReviewRequest,
+) -> UpdateResponse:
+    """Approve a reviewed update (human-in-the-loop gate)."""
+    try:
+        update = approve_update(update_id, req.reviewer, req.notes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _to_response(update)
+
+
+@router.post(
+    "/updates/{update_id}/reject", response_model=UpdateResponse, dependencies=[_admin_dep]
+)
+async def reject_regulatory_update(
+    update_id: str,
+    req: ReviewRequest,
+) -> UpdateResponse:
+    """Reject a reviewed update."""
+    try:
+        update = reject_update(update_id, req.reviewer, req.notes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _to_response(update)
+
+
+@router.post(
+    "/updates/{update_id}/publish", response_model=UpdateResponse, dependencies=[_admin_dep]
+)
+async def publish_regulatory_update(update_id: str) -> UpdateResponse:
+    """Publish an approved update — updates KB and generates alerts."""
+    try:
+        update = publish_update(update_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _to_response(update)
+
+
+# ── Staleness tracking ───────────────────────────────────────
+
+
+@router.get("/staleness/summary", dependencies=[_admin_dep])
+async def staleness_summary() -> dict[str, int]:
+    """Get a summary of provision staleness status."""
+    return get_staleness_summary()
+
+
+@router.get("/staleness/stale", dependencies=[_admin_dep])
+async def stale_provisions() -> list[dict]:
+    """Get provisions past their review date."""
+    records = get_stale_provisions()
+    return [
+        {
+            "provision_id": r.provision_id,
+            "last_reviewed": r.last_reviewed.isoformat(),
+            "next_review_date": r.next_review_date.isoformat(),
+            "reviewer": r.reviewer,
+        }
+        for r in records
+    ]
+
+
+@router.post("/staleness/review", dependencies=[_admin_dep])
+async def record_provision_review(req: RecordReviewRequest) -> dict:
+    """Record that a provision has been reviewed."""
+    record = record_review(
+        provision_id=req.provision_id,
+        reviewer=req.reviewer,
+        next_review_date=date.fromisoformat(req.next_review_date),
+    )
+    return {
+        "provision_id": record.provision_id,
+        "last_reviewed": record.last_reviewed.isoformat(),
+        "next_review_date": record.next_review_date.isoformat(),
+        "reviewer": record.reviewer,
+    }
+
+
+# ── Platform metrics (T041) ──────────────────────────────────
+
+
+@router.get("/metrics", dependencies=[_admin_dep])
+async def platform_metrics() -> dict:
+    """Platform metrics for the admin dashboard.
+
+    Pulls live data from the knowledge base, regulatory update store,
+    and learning pipeline.
+    """
+    from hr_advisory.kb.admin import get_kb_stats
+    from hr_advisory.trust.learning_pipeline import (
+        _feedback_records,
+        _query_patterns,
+        _recommendations,
+        get_kb_gaps,
+    )
+
+    # KB statistics (live from DataFlow)
+    try:
+        kb_stats = get_kb_stats()
+    except Exception:
+        kb_stats = {}
+
+    # Learning pipeline statistics
+    total_queries = sum(p.frequency for p in _query_patterns.values())
+    patterns_with_confidence = [p for p in _query_patterns.values() if p.avg_confidence > 0]
+    avg_confidence = (
+        sum(p.avg_confidence for p in patterns_with_confidence) / len(patterns_with_confidence)
+        if patterns_with_confidence
+        else 0.0
+    )
+
+    # Risk distribution from query patterns
+    risk_counts = {"green": 0, "amber": 0, "red": 0}
+    for pattern in _query_patterns.values():
+        tier = pattern.pattern_id.split(":")[-1] if ":" in pattern.pattern_id else "green"
+        if tier in risk_counts:
+            risk_counts[tier] += pattern.frequency
+
+    return {
+        "queries_tracked": total_queries,
+        "avg_confidence": round(avg_confidence, 3),
+        "risk_distribution": risk_counts,
+        "kb_provisions": kb_stats.get("provisions", 0),
+        "kb_acts": kb_stats.get("acts", 0),
+        "kb_domains": kb_stats.get("domains", 0),
+        "kb_gaps": len(get_kb_gaps()),
+        "feedback_count": len(_feedback_records),
+        "pending_recommendations": len(
+            [r for r in _recommendations.values() if r.status.value == "proposed"]
+        ),
+        "pending_updates": len(list_updates(UpdateStatus.IN_REVIEW)),
+        "published_updates": len(list_updates(UpdateStatus.PUBLISHED)),
+    }

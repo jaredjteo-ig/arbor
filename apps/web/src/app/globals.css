@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+/* ── AITE Design System Tokens ────────────────────────────── */
+
+:root {
+  /* Primary */
+  --color-primary: #1E3A5F;
+  --color-primary-light: #2A4F7F;
+  --color-primary-dark: #152B47;
+
+  /* Secondary */
+  --color-secondary: #0D6E4F;
+  --color-secondary-light: #11946A;
+  --color-secondary-dark: #0A5A40;
+
+  /* Neutrals */
+  --color-gray-50: #F8FAFC;
+  --color-gray-100: #F1F5F9;
+  --color-gray-200: #E2E8F0;
+  --color-gray-300: #CBD5E1;
+  --color-gray-400: #94A3B8;
+  --color-gray-500: #64748B;
+  --color-gray-600: #475569;
+  --color-gray-700: #334155;
+  --color-gray-800: #1E293B;
+  --color-gray-900: #0F172A;
+
+  /* Risk tiers */
+  --color-risk-green: #16A34A;
+  --color-risk-green-bg: #F0FDF4;
+  --color-risk-green-border: #BBF7D0;
+  --color-risk-amber: #D97706;
+  --color-risk-amber-bg: #FFFBEB;
+  --color-risk-amber-border: #FDE68A;
+  --color-risk-red: #DC2626;
+  --color-risk-red-bg: #FEF2F2;
+  --color-risk-red-border: #FECACA;
+
+  /* Authority badges */
+  --color-authority-statutory: #2563EB;
+  --color-authority-statutory-bg: #EFF6FF;
+  --color-authority-guideline: #D97706;
+  --color-authority-guideline-bg: #FFFBEB;
+  --color-authority-best-practice: #16A34A;
+  --color-authority-best-practice-bg: #F0FDF4;
+
+  /* Semantic */
+  --color-info: #2563EB;
+  --color-info-bg: #EFF6FF;
+  --color-success: #16A34A;
+  --color-success-bg: #F0FDF4;
+  --color-warning: #D97706;
+  --color-warning-bg: #FFFBEB;
+  --color-error: #DC2626;
+  --color-error-bg: #FEF2F2;
+
+  /* Surfaces */
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --color-surface-card: #FFFFFF;
+  --color-surface-sidebar: #1E3A5F;
+  --color-surface-sidebar-hover: #2A4F7F;
+  --color-surface-input: #FFFFFF;
+  --color-surface-input-border: #CBD5E1;
+  --color-surface-input-focus: #1E3A5F;
+
+  /* Typography */
+  --font-family: 'Source Sans 3', 'Source Sans Pro', system-ui, -apple-system, sans-serif;
+
+  /* Text size multiplier (updated by JS for accessibility) */
+  --text-size-multiplier: 1;
+
+  /* Shadows */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-raised: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 20px 25px rgba(0, 0, 0, 0.1), 0 8px 10px rgba(0, 0, 0, 0.04);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-family);
+
+  /* Expose design tokens to Tailwind */
+  --color-primary: var(--color-primary);
+  --color-primary-light: var(--color-primary-light);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-secondary: var(--color-secondary);
+  --color-secondary-light: var(--color-secondary-light);
+
+  --color-risk-green: var(--color-risk-green);
+  --color-risk-amber: var(--color-risk-amber);
+  --color-risk-red: var(--color-risk-red);
+}
+
+/* ── Base styles ──────────────────────────────────────────── */
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-family);
+  font-size: calc(16px * var(--text-size-multiplier));
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Text size accessibility ──────────────────────────────── */
+
+[data-text-size="normal"] {
+  --text-size-multiplier: 1;
+}
+
+[data-text-size="large"] {
+  --text-size-multiplier: 1.15;
+}
+
+[data-text-size="extra-large"] {
+  --text-size-multiplier: 1.3;
+}
+
+/* ── Focus indicators (WCAG AAA) ──────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

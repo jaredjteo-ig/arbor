@@ -66,3 +66,32 @@ secrets/
 **/scripts/data/
 **/scripts/outputs/
 **/scripts/*.log
+
+# ── React (apps/web/) ────────────────────────────────────────
+apps/web/node_modules/
+apps/web/.next/
+apps/web/out/
+apps/web/.env.local
+
+# ── Flutter (apps/mobile/) ───────────────────────────────────
+apps/mobile/.dart_tool/
+apps/mobile/.packages
+apps/mobile/build/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+apps/mobile/ios/Pods/
+apps/mobile/ios/.symlinks/
+apps/mobile/pubspec.lock
+
+# ── Test artifacts ─────────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+
+# ── Playwright MCP ─────────────────────────────────────────────
+.playwright-mcp/
+
+# ── Red team screenshots ───────────────────────────────────────
+redteam-*.png

@@ -35,7 +35,7 @@ tests_failed = 0
 tests_skipped = 0
 
 
-def test(name):
+def sdk_test(name):
     """Test decorator"""
 
     def decorator(fn):
@@ -66,7 +66,7 @@ def test_core_sdk_patterns():
     """Test Core SDK patterns documented in 01-core-sdk skill."""
     print("\nCore SDK Pattern Tests:")
 
-    @test("Import WorkflowBuilder")
+    @sdk_test("Import WorkflowBuilder")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
 
@@ -74,7 +74,7 @@ def test_core_sdk_patterns():
 
     _()
 
-    @test("Import LocalRuntime")
+    @sdk_test("Import LocalRuntime")
     def _():
         from kailash.runtime import LocalRuntime
 
@@ -82,7 +82,7 @@ def test_core_sdk_patterns():
 
     _()
 
-    @test("Import AsyncLocalRuntime")
+    @sdk_test("Import AsyncLocalRuntime")
     def _():
         from kailash.runtime import AsyncLocalRuntime
 
@@ -90,7 +90,7 @@ def test_core_sdk_patterns():
 
     _()
 
-    @test("Import get_runtime")
+    @sdk_test("Import get_runtime")
     def _():
         from kailash.runtime import get_runtime
 
@@ -98,7 +98,7 @@ def test_core_sdk_patterns():
 
     _()
 
-    @test("Create workflow with 3-param add_node")
+    @sdk_test("Create workflow with 3-param add_node")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
 
@@ -109,7 +109,7 @@ def test_core_sdk_patterns():
 
     _()
 
-    @test("Create connection with 4-param add_connection")
+    @sdk_test("Create connection with 4-param add_connection")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
 
@@ -122,7 +122,7 @@ def test_core_sdk_patterns():
 
     _()
 
-    @test("Execute workflow with LocalRuntime")
+    @sdk_test("Execute workflow with LocalRuntime")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
         from kailash.runtime import LocalRuntime
@@ -138,7 +138,7 @@ def test_core_sdk_patterns():
 
     _()
 
-    @test("LocalRuntime returns (results, run_id) tuple")
+    @sdk_test("LocalRuntime returns (results, run_id) tuple")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
         from kailash.runtime import LocalRuntime
@@ -167,7 +167,7 @@ def test_runtime_configuration():
     """Test runtime configuration options documented in CLAUDE.md."""
     print("\nRuntime Configuration Tests:")
 
-    @test("LocalRuntime with debug=True")
+    @sdk_test("LocalRuntime with debug=True")
     def _():
         from kailash.runtime import LocalRuntime
 
@@ -176,7 +176,7 @@ def test_runtime_configuration():
 
     _()
 
-    @test("LocalRuntime with enable_cycles=True")
+    @sdk_test("LocalRuntime with enable_cycles=True")
     def _():
         from kailash.runtime import LocalRuntime
 
@@ -185,7 +185,7 @@ def test_runtime_configuration():
 
     _()
 
-    @test("LocalRuntime with connection_validation='strict'")
+    @sdk_test("LocalRuntime with connection_validation='strict'")
     def _():
         from kailash.runtime import LocalRuntime
 
@@ -194,7 +194,7 @@ def test_runtime_configuration():
 
     _()
 
-    @test("LocalRuntime with conditional_execution='skip_branches'")
+    @sdk_test("LocalRuntime with conditional_execution='skip_branches'")
     def _():
         from kailash.runtime import LocalRuntime
 
@@ -203,7 +203,7 @@ def test_runtime_configuration():
 
     _()
 
-    @test("LocalRuntime has validate_workflow method")
+    @sdk_test("LocalRuntime has validate_workflow method")
     def _():
         from kailash.runtime import LocalRuntime
 
@@ -212,7 +212,7 @@ def test_runtime_configuration():
 
     _()
 
-    @test("LocalRuntime has get_validation_metrics method")
+    @sdk_test("LocalRuntime has get_validation_metrics method")
     def _():
         from kailash.runtime import LocalRuntime
 
@@ -231,7 +231,7 @@ def test_node_patterns():
     """Test node patterns documented in 08-nodes-reference skill."""
     print("\nNode Pattern Tests:")
 
-    @test("PythonCodeNode exists")
+    @sdk_test("PythonCodeNode exists")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
 
@@ -244,7 +244,7 @@ def test_node_patterns():
 
     _()
 
-    @test("SwitchNode exists")
+    @sdk_test("SwitchNode exists")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
 
@@ -258,7 +258,7 @@ def test_node_patterns():
 
     _()
 
-    @test("HTTPRequestNode exists")
+    @sdk_test("HTTPRequestNode exists")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
 
@@ -272,7 +272,7 @@ def test_node_patterns():
 
     _()
 
-    @test("PythonCodeNode can execute")
+    @sdk_test("PythonCodeNode can execute")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
         from kailash.runtime import LocalRuntime
@@ -295,7 +295,7 @@ def test_async_patterns():
     """Test async runtime patterns documented in CLAUDE.md."""
     print("\nAsync Runtime Tests:")
 
-    @test("AsyncLocalRuntime can be instantiated")
+    @sdk_test("AsyncLocalRuntime can be instantiated")
     def _():
         from kailash.runtime import AsyncLocalRuntime
 
@@ -304,7 +304,7 @@ def test_async_patterns():
 
     _()
 
-    @test("AsyncLocalRuntime has execute_workflow_async method")
+    @sdk_test("AsyncLocalRuntime has execute_workflow_async method")
     def _():
         from kailash.runtime import AsyncLocalRuntime
 
@@ -313,7 +313,7 @@ def test_async_patterns():
 
     _()
 
-    @test("AsyncLocalRuntime with max_concurrent_nodes")
+    @sdk_test("AsyncLocalRuntime with max_concurrent_nodes")
     def _():
         from kailash.runtime import AsyncLocalRuntime
 
@@ -332,7 +332,7 @@ def test_workflow_builder_features():
     """Test WorkflowBuilder features."""
     print("\nWorkflowBuilder Feature Tests:")
 
-    @test("WorkflowBuilder.build() returns workflow object")
+    @sdk_test("WorkflowBuilder.build() returns workflow object")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
 
@@ -346,7 +346,7 @@ def test_workflow_builder_features():
 
     _()
 
-    @test("Workflow has nodes attribute")
+    @sdk_test("Workflow has nodes attribute")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
 
@@ -358,7 +358,7 @@ def test_workflow_builder_features():
 
     _()
 
-    @test("Multiple nodes can be added")
+    @sdk_test("Multiple nodes can be added")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
 
@@ -372,7 +372,7 @@ def test_workflow_builder_features():
 
     _()
 
-    @test("Connections create data flow")
+    @sdk_test("Connections create data flow")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
         from kailash.runtime import LocalRuntime
@@ -400,7 +400,7 @@ def test_mcp_patterns():
     """Test MCP patterns documented in 05-kailash-mcp skill."""
     print("\nMCP Integration Tests:")
 
-    @test("MCP server module exists")
+    @sdk_test("MCP server module exists")
     def _():
         from kailash.mcp_server import MCPServer
 
@@ -408,7 +408,7 @@ def test_mcp_patterns():
 
     _()
 
-    @test("MCP server has required methods")
+    @sdk_test("MCP server has required methods")
     def _():
         from kailash.mcp_server import MCPServer
 
@@ -429,7 +429,7 @@ def test_context_patterns():
     """Test context manager patterns."""
     print("\nContext Manager Pattern Tests:")
 
-    @test("Runtime can be used as context manager")
+    @sdk_test("Runtime can be used as context manager")
     def _():
         from kailash.workflow.builder import WorkflowBuilder
         from kailash.runtime import LocalRuntime

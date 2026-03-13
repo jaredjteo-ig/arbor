@@ -1,0 +1,81 @@
+{
+  "id": "checkpoint_1773252690755",
+  "name": "pre-compact-1773252690755",
+  "created_at": "2026-03-11T18:11:30.755Z",
+  "observations": [
+    {
+      "id": "obs_1773240311351_s2j3ts146",
+      "timestamp": "2026-03-11T14:45:11.351Z",
+      "type": "connection_pattern",
+      "data": {
+        "framework": "core-sdk",
+        "active_workflows": [],
+        "critical_patterns": {
+          "hasDataFlowModels": false,
+          "hasNexusApp": false,
+          "hasKaizenAgent": false,
+          "hasCyclicWorkflow": false,
+          "hasAsyncRuntime": false
+        },
+        "recently_modified_count": 1
+      },
+      "context": {
+        "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    },
+    {
+      "type": "session_start",
+      "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+      "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+      "timestamp": "2026-03-11T14:47:03.290Z",
+      "envExists": true,
+      "framework": "core-sdk",
+      "models": {},
+      "keyCount": 0,
+      "validationFailures": []
+    },
+    {
+      "id": "obs_1773252690755_enqn8johm",
+      "timestamp": "2026-03-11T18:11:30.755Z",
+      "type": "connection_pattern",
+      "data": {
+        "framework": "core-sdk",
+        "active_workflows": [],
+        "critical_patterns": {
+          "hasDataFlowModels": false,
+          "hasNexusApp": false,
+          "hasKaizenAgent": false,
+          "hasCyclicWorkflow": false,
+          "hasAsyncRuntime": false
+        },
+        "recently_modified_count": 0
+      },
+      "context": {
+        "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+        "cwd": "/Users/esperie/repos/asme/aite/apps/web",
+        "framework": "unknown"
+      }
+    }
+  ],
+  "instincts": {},
+  "identity": {
+    "system": "kailash-coc-claude-py",
+    "version": "2.0.0",
+    "created_at": "2026-03-11T14:45:11.349Z",
+    "learning_enabled": true,
+    "per_project": true,
+    "focus_areas": [
+      "workflow-patterns",
+      "error-fixes",
+      "dataflow-patterns",
+      "testing-patterns",
+      "framework-selection"
+    ]
+  },
+  "stats": {
+    "observation_count": 3,
+    "instinct_categories": 0
+  }
+}

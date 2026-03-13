@@ -1,0 +1,261 @@
+"""Client management endpoints for the consultant view.
+
+Wraps the company profile DataFlow operations to provide a
+multi-tenant client list. Consultants can manage multiple client
+companies through these endpoints.
+"""
+
+import logging
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.tenant_isolation import validate_company_access
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+def _execute_node(node_type: str, node_id: str, params: dict) -> dict:
+    """Run a single DataFlow workflow node and return the result."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401 -- ensure models are registered
+
+    wf = WorkflowBuilder()
+    wf.add_node(node_type, node_id, params)
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results[node_id]
+
+
+def _extract_records(result) -> list[dict]:
+    """Extract the record list from a DataFlow ListNode result."""
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict) and "records" in result:
+        return result["records"]
+    return []
+
+
+def _company_to_client(company: dict) -> dict:
+    """Convert a DataFlow company record to the client API response format."""
+    total = (
+        company.get("headcount_local", 0)
+        + company.get("headcount_pr", 0)
+        + company.get("headcount_ep", 0)
+        + company.get("headcount_sp", 0)
+        + company.get("headcount_wp", 0)
+    )
+    return {
+        "id": company["id"],
+        "name": company.get("name", ""),
+        "uen": company.get("uen") or "",
+        "sector": company.get("sector") or "",
+        "employee_count": total,
+        "compliance_score": company.get("compliance_score"),
+        "risk_tier": company.get("risk_tier"),
+        "last_activity": company.get("last_activity"),
+        "created_at": company.get("created_at", ""),
+    }
+
+
+@router.get("/")
+async def list_clients(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """List all client companies visible to the current user.
+
+    Platform admins and consultants see all active companies.
+    Regular users see only their own company.
+    """
+    role = current_user.get("role", "")
+    user_company_id = current_user.get("company_id")
+
+    try:
+        if role in ("platform_admin", "consultant"):
+            result = _execute_node(
+                "CompanyListNode",
+                "list_clients",
+                {"filter": {"is_active": True}, "limit": 200},
+            )
+        elif user_company_id:
+            result = _execute_node(
+                "CompanyListNode",
+                "list_clients",
+                {"filter": {"id": user_company_id, "is_active": True}, "limit": 10},
+            )
+        else:
+            return {"clients": [], "total": 0}
+    except Exception as exc:
+        logger.error("Failed to list clients: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve client list. Please try again later.",
+        ) from exc
+
+    records = _extract_records(result)
+    clients = [_company_to_client(r) for r in records]
+
+    return {"clients": clients, "total": len(clients)}
+
+
+@router.post("/")
+async def create_client(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Create a new client company."""
+    body = await request.json()
+
+    # Accept both "name" and "company_name" for compatibility
+    name = body.get("name", "") or body.get("company_name", "")
+    if not name or not name.strip():
+        raise HTTPException(
+            status_code=400, detail="Company name is required (use 'name' or 'company_name' field)"
+        )
+
+    uen = body.get("uen", "")
+    if not uen or not uen.strip():
+        raise HTTPException(status_code=400, detail="UEN is required")
+
+    employee_count = body.get("employee_count", 0)
+    sector = body.get("sector", "")
+
+    create_params = {
+        "name": name.strip(),
+        "uen": uen.strip(),
+        "sector": sector,
+        "headcount_local": employee_count,
+        "headcount_pr": 0,
+        "headcount_ep": 0,
+        "headcount_sp": 0,
+        "headcount_wp": 0,
+        "is_active": True,
+        "profile_completeness_score": 0.0,
+    }
+
+    try:
+        result = _execute_node("CompanyCreateNode", "create_client", create_params)
+    except Exception as exc:
+        logger.error("Failed to create client: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create client company. Please try again later.",
+        ) from exc
+
+    # Attempt to retrieve the ID of the created record
+    company_id = result.get("id")
+    if company_id is None:
+        try:
+            lookup = _execute_node(
+                "CompanyListNode",
+                "find_created_client",
+                {"filter": {"uen": uen.strip()}, "limit": 1, "enable_cache": False},
+            )
+            records = _extract_records(lookup)
+            if records:
+                company_id = records[-1].get("id")
+        except Exception:
+            company_id = None
+
+    return {
+        "id": company_id,
+        "name": name.strip(),
+        "uen": uen.strip(),
+        "sector": sector,
+        "employee_count": employee_count,
+        "compliance_score": None,
+        "risk_tier": None,
+        "last_activity": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/{client_id}")
+async def get_client(
+    client_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get a specific client company by ID."""
+    validate_company_access(current_user, requested_company_id=client_id)
+
+    try:
+        result = _execute_node("CompanyReadNode", "read_client", {"id": client_id})
+    except Exception as exc:
+        logger.error("Failed to read client id=%s: %s", client_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve client. Please try again later.",
+        ) from exc
+
+    if not result or result.get("error") or result.get("failed"):
+        raise HTTPException(status_code=404, detail=f"Client with id={client_id} not found")
+
+    return _company_to_client(result)
+
+
+@router.put("/{client_id}")
+async def update_client(
+    client_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Update an existing client company."""
+    validate_company_access(current_user, requested_company_id=client_id)
+    body = await request.json()
+
+    if not body:
+        raise HTTPException(status_code=400, detail="No fields provided for update")
+
+    # Verify client exists
+    try:
+        existing = _execute_node("CompanyReadNode", "read_client_check", {"id": client_id})
+    except Exception as exc:
+        logger.error("Failed to read client id=%s for update: %s", client_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to verify client. Please try again later.",
+        ) from exc
+
+    if not existing or existing.get("error") or existing.get("failed"):
+        raise HTTPException(status_code=404, detail=f"Client with id={client_id} not found")
+
+    # Map frontend fields to DataFlow fields
+    allowed_fields = {"name", "uen", "sector", "employee_count", "is_active"}
+    updates: dict = {}
+    for key, value in body.items():
+        if key in allowed_fields:
+            if key == "employee_count":
+                updates["headcount_local"] = value
+            else:
+                updates[key] = value
+
+    if not updates:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No valid fields to update. Allowed: {sorted(allowed_fields)}",
+        )
+
+    try:
+        _execute_node(
+            "CompanyUpdateNode",
+            "update_client",
+            {"filter": {"id": client_id}, "fields": updates},
+        )
+    except Exception as exc:
+        logger.error("Failed to update client id=%s: %s", client_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update client. Please try again later.",
+        ) from exc
+
+    return {
+        "id": client_id,
+        "updated_fields": list(updates.keys()),
+        "updated": True,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
