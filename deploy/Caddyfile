@@ -1,0 +1,35 @@
+aite.kailash.ai {
+	# API backend — proxy /api/* to FastAPI
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy backend:8000
+	}
+
+	# Health check passthrough
+	handle /health* {
+		reverse_proxy backend:8000
+	}
+
+	# SSE streaming — needs extended timeouts
+	handle /advisory/stream* {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+			transport http {
+				read_timeout 300s
+			}
+		}
+	}
+
+	# Everything else → Next.js frontend
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	# Security headers
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}
