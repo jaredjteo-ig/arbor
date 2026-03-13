@@ -30,6 +30,7 @@ services:
       - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL:-gpt-4o}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - APP_ENV=production
+      - DEBUG=false
       - CORS_ORIGINS=https://aite.kailash.ai
       - KAILASH_RUNTIME=async
     depends_on:
