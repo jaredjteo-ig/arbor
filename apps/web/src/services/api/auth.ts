@@ -121,6 +121,38 @@ export const authApi = {
     }).then((res) => handleResponse<{ message: string }>(res));
   },
 
+  /** Navigate to Google's OAuth consent screen.
+   *  Built client-side to bypass Nexus gateway response wrapping. */
+  googleLogin(): void {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      console.error("NEXT_PUBLIC_GOOGLE_CLIENT_ID not set");
+      return;
+    }
+    const redirectUri = `${window.location.origin}/auth/callback`;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      access_type: "offline",
+      prompt: "consent",
+    });
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+  },
+
+  /** Exchange a Google OAuth authorization code for AITE tokens. */
+  async googleExchange(
+    code: string,
+    redirectUri: string,
+  ): Promise<AuthResponse> {
+    return fetch(`${API_BASE}/auth/google/exchange`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, redirect_uri: redirectUri }),
+    }).then((res) => handleResponse<AuthResponse>(res));
+  },
+
   async logout(): Promise<void> {
     if (typeof window !== "undefined") {
       const accessToken = localStorage.getItem("access_token");

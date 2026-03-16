@@ -96,9 +96,29 @@ Every advisory query passes through these steps in order. If any step blocks, th
 - Record in learning pipeline for feedback loop
 - File: `src/hr_advisory/trust/eatp_lineage.py`
 
+## Conversation Management
+
+Tenant-isolated conversation endpoints in `advisory.py`:
+
+- `GET /advisory/conversations` — List user's conversations (ownership-filtered)
+- `GET /advisory/conversations/{id}/history` — View history (ownership verified)
+- `DELETE /advisory/conversations/{id}` — Delete conversation (ownership verified, cleans up `_conversation_owners`)
+- `PATCH /advisory/conversations/{id}` — Rename conversation (ownership verified)
+
+Ownership tracked via `_conversation_owners: dict[str, str]` (conv_id → user_id). Non-owned conversations return 404 to prevent enumeration.
+
+## Emergency Escalation
+
+`POST /advisory/escalate` in `emergency.py`:
+
+- Creates escalation ticket with thread-safe ID via `itertools.count(1)` (not global int)
+- Captures: query context, risk tier, specialist type, user contact
+- Returns escalation ID (format: `ESC-0001`)
+
 ## Key Files
 
-- `src/hr_advisory/api/routers/advisory.py` — Main advisory endpoints (query + stream)
+- `src/hr_advisory/api/routers/advisory.py` — Main advisory endpoints (query + stream + conversations)
+- `src/hr_advisory/api/routers/emergency.py` — Emergency escalation (thread-safe counters)
 - `src/hr_advisory/workflows/guardrails.py` — Screening, rate limiting, escalation patterns
 - `src/hr_advisory/trust/` — EATP lineage, citation validation, anti-amnesia, disclaimers
 - `src/hr_advisory/security/validation.py` — Input sanitisation
@@ -116,6 +136,8 @@ Every advisory query passes through these steps in order. If any step blocks, th
 4. Reviewing response generation logic for correctness
 5. Validating citation validation or trust chain recording
 6. Advising on new advisory endpoints or streaming behavior
+7. Working on conversation management or tenant isolation
+8. Modifying emergency escalation flow
 
 ## Safety
 

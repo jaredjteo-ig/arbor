@@ -1,8 +1,14 @@
 "use client";
 
-import { useState, useRef, type KeyboardEvent } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  type KeyboardEvent,
+} from "react";
 import clsx from "clsx";
-import { Mic, Send } from "lucide-react";
+import { Mic, Send, Square } from "lucide-react";
 
 export interface ChatInputProps {
   /** Called when the user submits a message */
@@ -11,6 +17,10 @@ export interface ChatInputProps {
   onVoice?: () => void;
   /** Whether the microphone is actively listening */
   isListening?: boolean;
+  /** Whether the assistant is currently streaming a response */
+  isStreaming?: boolean;
+  /** Called when the user clicks the stop button during streaming */
+  onStop?: () => void;
   /** Suggested prompts displayed as chips below the input */
   suggestions?: string[];
   /** Called when a suggestion chip is clicked */
@@ -26,6 +36,8 @@ export function ChatInput({
   onSend,
   onVoice,
   isListening = false,
+  isStreaming = false,
+  onStop,
   suggestions,
   onSuggestionClick,
   placeholder = "Type your question...",
@@ -33,22 +45,49 @@ export function ChatInput({
   className,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const trimmed = value.trim();
+
+  /** Single-line height (px) */
+  const MIN_HEIGHT = 40;
+  /** Maximum height before internal scroll (~5 lines) */
+  const MAX_HEIGHT = 120;
+
+  const resizeTextarea = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    // Reset to auto so scrollHeight recalculates from content
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, MAX_HEIGHT)}px`;
+  }, []);
+
+  // Re-measure whenever the value changes
+  useEffect(() => {
+    resizeTextarea();
+  }, [value, resizeTextarea]);
 
   function handleSend() {
     if (!trimmed || disabled) return;
     onSend(trimmed);
     setValue("");
-    inputRef.current?.focus();
+    // Reset height after clearing
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.style.height = `${MIN_HEIGHT}px`;
+      }
+    });
+    textareaRef.current?.focus();
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
+      // Plain Enter or Cmd/Ctrl+Enter => send
       e.preventDefault();
       handleSend();
     }
+    // Shift+Enter falls through to default (inserts newline)
   }
 
   function handleSuggestion(s: string) {
@@ -64,27 +103,28 @@ export function ChatInput({
       {/* Input row */}
       <div
         className={clsx(
-          "flex items-center gap-2 rounded-[12px] border px-3 py-2",
+          "flex items-end gap-2 rounded-[12px] border px-3 py-2",
           "bg-[var(--color-surface-input)] border-[var(--color-surface-input-border)]",
           "focus-within:border-[var(--color-surface-input-focus)]",
           "transition-colors",
         )}
       >
-        <input
-          ref={inputRef}
-          type="text"
+        <textarea
+          ref={textareaRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
           autoComplete="off"
+          rows={1}
           className={clsx(
             "flex-1 bg-transparent text-base text-[var(--foreground)]",
             "placeholder:text-[var(--color-gray-400)]",
-            "outline-none min-h-[40px]",
+            "outline-none resize-none leading-normal",
             "disabled:opacity-50 disabled:cursor-not-allowed",
           )}
+          style={{ minHeight: `${MIN_HEIGHT}px`, maxHeight: `${MAX_HEIGHT}px` }}
         />
 
         {/* Voice button */}
@@ -108,24 +148,40 @@ export function ChatInput({
           </button>
         )}
 
-        {/* Send button */}
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={disabled || !trimmed}
-          aria-label="Send message"
-          className={clsx(
-            "flex items-center justify-center rounded-full p-2 min-w-[44px] min-h-[44px]",
-            "transition-colors",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
-            "disabled:opacity-50 disabled:cursor-not-allowed",
-            trimmed
-              ? "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-light)]"
-              : "bg-[var(--color-gray-200)] text-[var(--color-gray-400)]",
-          )}
-        >
-          <Send className="h-5 w-5" />
-        </button>
+        {/* Stop button (during streaming) or Send button */}
+        {isStreaming && onStop ? (
+          <button
+            type="button"
+            onClick={onStop}
+            aria-label="Stop generation"
+            className={clsx(
+              "flex items-center justify-center rounded-full p-2 min-w-[44px] min-h-[44px]",
+              "transition-colors",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-error)]",
+              "bg-[var(--color-error)] text-white hover:opacity-90",
+            )}
+          >
+            <Square className="h-4 w-4 fill-current" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={disabled || !trimmed}
+            aria-label="Send message"
+            className={clsx(
+              "flex items-center justify-center rounded-full p-2 min-w-[44px] min-h-[44px]",
+              "transition-colors",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+              trimmed
+                ? "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-light)]"
+                : "bg-[var(--color-gray-200)] text-[var(--color-gray-400)]",
+            )}
+          >
+            <Send className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       {/* Suggestion chips */}

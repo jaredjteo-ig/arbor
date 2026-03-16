@@ -101,6 +101,28 @@ def advisory_query_handler(query: str, company_id: int = None):
     ...
 ```
 
+## Frontend API Layer
+
+The web frontend (`apps/web/`) uses two client patterns:
+
+| Client | File | Pattern | Auth |
+|--------|------|---------|------|
+| `apiClient` | `services/api/client.ts` | REST (GET/POST/PUT/DELETE) | Auto 401/403 retry with token refresh |
+| `createSSEStream` | `services/api/sse.ts` | SSE streaming (POST) | Auto 401 retry with token refresh |
+
+JWT tokens stored in `localStorage` (`access_token`, `refresh_token`). Singleton refresh promise prevents concurrent refresh requests.
+
+## Conversation Management Endpoints
+
+| Method | Path | Purpose | Tenant Isolation |
+|--------|------|---------|------------------|
+| GET | `/advisory/conversations` | List user's conversations | Filtered by ownership |
+| GET | `/advisory/conversations/{id}/history` | Conversation history | Ownership verified |
+| DELETE | `/advisory/conversations/{id}` | Delete conversation | Ownership verified |
+| PATCH | `/advisory/conversations/{id}` | Rename conversation | Ownership verified |
+
+Non-owned conversations return 404 (prevents enumeration).
+
 ## Critical Rules
 
 - ALWAYS use `runtime.execute(workflow.build())` — never the reverse

@@ -6,6 +6,7 @@ Data is sourced from the emergency_responses workflow module.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -73,9 +74,29 @@ class EscalationResponse(BaseModel):
     message: str
 
 
+class AdvisoryEscalationRequest(BaseModel):
+    """Escalation request originating from the advisory chat flow.
+
+    Unlike EscalationRequest (which ties to a known emergency scenario),
+    this captures free-form situations described in the chat context.
+    """
+
+    situation: str
+    urgency: str = "urgent"  # "urgent" | "within-24h" | "general-enquiry"
+    contact_method: str = "email"  # "email" | "phone"
+    contact_value: str = ""
+
+
+class AdvisoryEscalationResponse(BaseModel):
+    escalation_id: str
+    status: str
+    message: str
+    expected_response_time: str
+
+
 # ── Helpers ──────────────────────────────────────────────────
 
-_escalation_counter = 0
+_escalation_counter = itertools.count(1)
 
 
 def _to_scenario_response(er: EmergencyResponse) -> EmergencyScenarioResponse:
@@ -228,9 +249,7 @@ async def escalate_emergency(
             detail=f"Unknown emergency topic: '{req.topic_id}'",
         )
 
-    global _escalation_counter
-    _escalation_counter += 1
-    escalation_id = f"ESC-{_escalation_counter:04d}"
+    escalation_id = f"ESC-{next(_escalation_counter):04d}"
 
     return EscalationResponse(
         escalation_id=escalation_id,
@@ -241,4 +260,66 @@ async def escalate_emergency(
             "An employment law specialist will contact you within 2 business hours. "
             "In the meantime, follow the immediate obligations listed in the emergency guide."
         ),
+    )
+
+
+# ── Urgency → expected-response-time mapping ────────────────
+
+_URGENCY_RESPONSE_TIMES: dict[str, str] = {
+    "urgent": "2 business hours",
+    "within-24h": "24 hours",
+    "general-enquiry": "3 business days",
+}
+
+
+@router.post("/escalation", response_model=AdvisoryEscalationResponse)
+async def submit_advisory_escalation(
+    req: AdvisoryEscalationRequest,
+    current_user: dict = Depends(get_current_user),
+) -> AdvisoryEscalationResponse:
+    """Submit an escalation request originating from the advisory chat.
+
+    This endpoint is used when the AI flags a high-risk or medium-risk
+    situation and the user wants to connect with a specialist.  Unlike
+    ``/escalate``, it does not require a predefined emergency topic —
+    the situation is described in free text from the chat context.
+    """
+    # Validate inputs
+    situation = req.situation.strip()
+    if len(situation) < 20:
+        raise HTTPException(
+            status_code=422,
+            detail="Please describe your situation in at least 20 characters.",
+        )
+
+    if req.urgency not in _URGENCY_RESPONSE_TIMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid urgency level: '{req.urgency}'. Must be one of: urgent, within-24h, general-enquiry.",
+        )
+
+    if req.contact_method not in ("email", "phone"):
+        raise HTTPException(
+            status_code=422,
+            detail="Contact method must be 'email' or 'phone'.",
+        )
+
+    if not req.contact_value.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="A contact email or phone number is required.",
+        )
+
+    escalation_id = f"ESC-{next(_escalation_counter):04d}"
+
+    expected_time = _URGENCY_RESPONSE_TIMES[req.urgency]
+
+    return AdvisoryEscalationResponse(
+        escalation_id=escalation_id,
+        status="submitted",
+        message=(
+            f"Your escalation request has been received (reference: {escalation_id}). "
+            f"A specialist will contact you within {expected_time}."
+        ),
+        expected_response_time=expected_time,
     )

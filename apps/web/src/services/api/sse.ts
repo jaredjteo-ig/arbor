@@ -3,14 +3,13 @@
 /* over POST requests with auth headers (EventSource only     */
 /* supports GET without custom headers).                      */
 
+import { refreshAccessToken } from "./client";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /* ── Types ───────────────────────────────────────────────── */
 
-export interface SSECallbacks<
-  TStart = unknown,
-  TComplete = unknown,
-> {
+export interface SSECallbacks<TStart = unknown, TComplete = unknown> {
   onStart?: (data: TStart) => void;
   onToken?: (token: string, index: number) => void;
   onComplete?: (data: TComplete) => void;
@@ -70,10 +69,7 @@ function parseSSEChunk(text: string): SSEEvent[] {
  * Returns an AbortController that the caller can use to cancel
  * the stream at any time (e.g., when the user navigates away).
  */
-export function createSSEStream<
-  TStart = unknown,
-  TComplete = unknown,
->(
+export function createSSEStream<TStart = unknown, TComplete = unknown>(
   path: string,
   body: unknown,
   callbacks: SSECallbacks<TStart, TComplete>,
@@ -81,9 +77,7 @@ export function createSSEStream<
   const controller = new AbortController();
 
   const accessToken =
-    typeof window !== "undefined"
-      ? localStorage.getItem("access_token")
-      : null;
+    typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -95,7 +89,7 @@ export function createSSEStream<
 
   (async () => {
     try {
-      const response = await fetch(`${API_BASE}${path}`, {
+      let response = await fetch(`${API_BASE}${path}`, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
@@ -103,20 +97,52 @@ export function createSSEStream<
       });
 
       if (!response.ok) {
-        let detail = "Streaming request failed";
-        try {
-          const errorBody = (await response.json()) as { detail?: string };
-          if (errorBody.detail) detail = errorBody.detail;
-        } catch {
-          /* body may not be JSON */
+        /* Handle 401: attempt token refresh and retry once */
+        if (response.status === 401) {
+          try {
+            const newToken = await refreshAccessToken();
+            const retryHeaders = {
+              ...headers,
+              Authorization: `Bearer ${newToken}`,
+            };
+            const retryResponse = await fetch(`${API_BASE}${path}`, {
+              method: "POST",
+              headers: retryHeaders,
+              body: JSON.stringify(body),
+              signal: controller.signal,
+            });
+            if (retryResponse.ok) {
+              response = retryResponse;
+            } else {
+              callbacks.onError?.(
+                new Error("Your session has expired. Please log in again."),
+              );
+              return;
+            }
+          } catch {
+            callbacks.onError?.(
+              new Error("Your session has expired. Please log in again."),
+            );
+            return;
+          }
+        } else {
+          let detail = "Streaming request failed";
+          try {
+            const errorBody = (await response.json()) as { detail?: string };
+            if (errorBody.detail) detail = errorBody.detail;
+          } catch {
+            /* body may not be JSON */
+          }
+          callbacks.onError?.(new Error(detail));
+          return;
         }
-        callbacks.onError?.(new Error(detail));
-        return;
       }
 
       const reader = response.body?.getReader();
       if (!reader) {
-        callbacks.onError?.(new Error("No response body available for streaming"));
+        callbacks.onError?.(
+          new Error("No response body available for streaming"),
+        );
         return;
       }
 

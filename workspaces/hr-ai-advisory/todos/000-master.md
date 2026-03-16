@@ -1,17 +1,18 @@
 # HR AI Advisory — Master Todo Index
 
 **Project**: HR AI Advisory Platform (Singapore SME HR compliance)
-**Last Updated**: 2026-03-13
-**Total Tasks**: 88 across 9 milestones
-**Status**: All 88 tasks complete across 9 milestones.
+**Last Updated**: 2026-03-14
+**Total Tasks**: 108 across 12 milestones
+**Status**: T001-T088 complete. T089-T108 active (UX audit findings — Milestones 10-12).
 
 ---
 
 ## How to Read This Index
 
 - T001-T062 are **done** — completion records are in `completed/`
-- T063-T088 are **active** — detailed files are in `active/`
-- Implement Milestone 6 first (pipeline fixes) — all other milestones depend on it
+- T063-T088 are **done** — completion records are in `completed/`
+- T089-T108 are **active** — detailed files are in `active/`
+- Implement M10 first (first impressions) — M11 and M12 can proceed in parallel after M10
 
 ---
 
@@ -142,14 +143,14 @@
 
 | Task ID | Task Name                                                        | Status | Dependencies     |
 | ------- | ---------------------------------------------------------------- | ------ | ---------------- |
-| T063    | Replace OrchestratorAgent with deterministic DispatchRouter      | done | —                |
-| T064    | Wire KB retrieval into specialist dispatch path (CRITICAL)       | done | T063             |
-| T065    | Wire conversation history through full pipeline                  | done | T063, T064       |
-| T066    | Wire company context enrichment through full pipeline            | done | T063, T064       |
-| T067    | Wire ComplianceAgent as mandatory post-specialist quality gate   | done | T063, T064       |
-| T068    | Create PDPAAgent specialist                                      | done | T063, T064       |
-| T069    | Wire anti-amnesia injection and EATP trust lineage into pipeline | done | T063, T064, T065 |
-| T070    | Fix error handling to escalate uncertainty instead of suppress   | done | T063             |
+| T063    | Replace OrchestratorAgent with deterministic DispatchRouter      | done   | —                |
+| T064    | Wire KB retrieval into specialist dispatch path (CRITICAL)       | done   | T063             |
+| T065    | Wire conversation history through full pipeline                  | done   | T063, T064       |
+| T066    | Wire company context enrichment through full pipeline            | done   | T063, T064       |
+| T067    | Wire ComplianceAgent as mandatory post-specialist quality gate   | done   | T063, T064       |
+| T068    | Create PDPAAgent specialist                                      | done   | T063, T064       |
+| T069    | Wire anti-amnesia injection and EATP trust lineage into pipeline | done   | T063, T064, T065 |
+| T070    | Fix error handling to escalate uncertainty instead of suppress   | done   | T063             |
 
 ---
 
@@ -159,13 +160,13 @@
 
 | Task ID | Task Name                                                                  | Status | Dependencies |
 | ------- | -------------------------------------------------------------------------- | ------ | ------------ |
-| T071    | Enhance QueryAnalyzer with intent detection and few-shot examples          | done | T063         |
-| T072    | Add reasoning scaffolding to EmploymentActAgent                            | done | T064         |
-| T073    | Add reasoning scaffolding to CPFAgent                                      | done | T064         |
-| T074    | Add reasoning scaffolding to ForeignManpowerAgent                          | done | T064         |
-| T075    | Add reasoning scaffolding to FairEmployment, Tax, and WSH agents           | done | T064         |
-| T076    | Enhance ResponseSynthesizer with structured output and conflict resolution | done | T067, T070   |
-| T077    | Add QueryClarifier pre-classification stage                                | done | T071         |
+| T071    | Enhance QueryAnalyzer with intent detection and few-shot examples          | done   | T063         |
+| T072    | Add reasoning scaffolding to EmploymentActAgent                            | done   | T064         |
+| T073    | Add reasoning scaffolding to CPFAgent                                      | done   | T064         |
+| T074    | Add reasoning scaffolding to ForeignManpowerAgent                          | done   | T064         |
+| T075    | Add reasoning scaffolding to FairEmployment, Tax, and WSH agents           | done   | T064         |
+| T076    | Enhance ResponseSynthesizer with structured output and conflict resolution | done   | T067, T070   |
+| T077    | Add QueryClarifier pre-classification stage                                | done   | T071         |
 
 ---
 
@@ -175,11 +176,11 @@
 
 | Task ID | Task Name                                                 | Status | Dependencies          |
 | ------- | --------------------------------------------------------- | ------ | --------------------- |
-| T078    | Implement automated quality rubric scoring system         | done | T076                  |
-| T079    | Expand adversarial test suite to 64+ scenarios            | done | T078                  |
-| T080    | Run adversarial scenarios and iterate prompt improvements | done | T072-T076, T078, T079 |
-| T081    | Wire citation validator to DB-backed provision registry   | done | T064                  |
-| T082    | Add missing KB content for adversarial scenario gaps      | done | T064, T079            |
+| T078    | Implement automated quality rubric scoring system         | done   | T076                  |
+| T079    | Expand adversarial test suite to 64+ scenarios            | done   | T078                  |
+| T080    | Run adversarial scenarios and iterate prompt improvements | done   | T072-T076, T078, T079 |
+| T081    | Wire citation validator to DB-backed provision registry   | done   | T064                  |
+| T082    | Add missing KB content for adversarial scenario gaps      | done   | T064, T079            |
 
 ---
 
@@ -189,12 +190,59 @@
 
 | Task ID | Task Name                                                     | Status | Dependencies           |
 | ------- | ------------------------------------------------------------- | ------ | ---------------------- |
-| T083    | QA data models and API endpoints                              | done | T078                   |
-| T084    | QA Sessions tab in Admin page (frontend)                      | done | T083                   |
-| T085    | Conversation browser and evaluation form (frontend)           | done | T083, T084             |
-| T086    | Feedback-to-improvement pipeline (backend)                    | done | T083, T078             |
-| T087    | Automated test and rollback for instruction patches (backend) | done | T083, T078, T079, T086 |
-| T088    | QA metrics dashboard (frontend)                               | done | T083, T084, T085, T087 |
+| T083    | QA data models and API endpoints                              | done   | T078                   |
+| T084    | QA Sessions tab in Admin page (frontend)                      | done   | T083                   |
+| T085    | Conversation browser and evaluation form (frontend)           | done   | T083, T084             |
+| T086    | Feedback-to-improvement pipeline (backend)                    | done   | T083, T078             |
+| T087    | Automated test and rollback for instruction patches (backend) | done   | T083, T078, T079, T086 |
+| T088    | QA metrics dashboard (frontend)                               | done   | T083, T084, T085, T087 |
+
+---
+
+## Milestone 10: Demo-Ready First Impressions (ACTIVE)
+
+**Goal**: A new user lands on AITE and immediately sees value — not emptiness. Fix the greeting, redesign the empty dashboard state, wire the post-signup onboarding flow, add value proposition to auth pages, remove hardcoded data, and restructure navigation.
+
+| Task ID | Task Name                                      | Status | Priority | Dependencies     |
+| ------- | ---------------------------------------------- | ------ | -------- | ---------------- |
+| T089    | Fix broken greeting and dashboard empty state  | active | HIGH     | T029             |
+| T090    | Wire onboarding flow to post-signup            | active | HIGH     | T024, T089       |
+| T091    | Split-screen auth pages with value proposition | active | HIGH     | T012             |
+| T092    | Remove hardcoded data and seed demo state      | active | HIGH     | T029, T038, T089 |
+| T093    | Reduce and group sidebar navigation            | active | MEDIUM   | T005, T039       |
+
+---
+
+## Milestone 11: AI Trust and Safety (ACTIVE)
+
+**Goal**: The AI advisory interface earns user trust through transparency, verifiability, and proper safety patterns. Citations are clickable, authority is accurate, confidence is meaningful, and escalation actually works.
+
+| Task ID | Task Name                                      | Status | Priority | Dependencies     |
+| ------- | ---------------------------------------------- | ------ | -------- | ---------------- |
+| T094    | Add legal disclaimer to advisory page          | active | HIGH     | T026, T046       |
+| T095    | Make citations clickable with provision viewer | active | HIGH     | T045, T064, T081 |
+| T096    | Fix authority level mapping                    | active | HIGH     | T045, T064, T081 |
+| T097    | Add markdown rendering for AI responses        | active | HIGH     | T026, T076       |
+| T098    | Add stop-generation button and reasoning trace | active | MEDIUM   | T026, T065       |
+| T099    | Implement escalation flow                      | active | HIGH     | T036, T046, T070 |
+| T100    | Fix confidence display and add caveats         | active | HIGH     | T046, T076, T096 |
+| T101    | Wire conversation history loading              | active | HIGH     | T026, T065       |
+
+---
+
+## Milestone 12: Enterprise Polish (ACTIVE)
+
+**Goal**: Professional-grade quality that an HR Director would present to their C-suite. Typography consistency, accessibility compliance, expandable chat input, search, audit trail, contextual AI entry points, and resilient error handling.
+
+| Task ID | Task Name                                   | Status | Priority | Dependencies           |
+| ------- | ------------------------------------------- | ------ | -------- | ---------------------- |
+| T102    | Enforce typography scale from design tokens | active | MEDIUM   | T002, T003             |
+| T103    | Fix accessibility issues                    | active | HIGH     | T003, T036             |
+| T104    | Upgrade chat input to expandable textarea   | active | MEDIUM   | T026, T093             |
+| T105    | Add page transitions and search results     | active | LOW      | T005, T093             |
+| T106    | Add user query audit trail                  | active | MEDIUM   | T026, T065, T044       |
+| T107    | Contextual AI entry points                  | active | MEDIUM   | T035, T031, T036, T026 |
+| T108    | Error handling and resilience               | active | HIGH     | T026, T098             |
 
 ---
 
@@ -220,7 +268,7 @@ All 14 red team findings have been addressed:
 
 ## Summary
 
-### All Tasks Complete (T001-T088)
+### Completed (T001-T088)
 
 - **88/88 tasks complete** across 9 milestones
 - Full-stack implementation: Python backend + React web + Flutter mobile
@@ -233,3 +281,11 @@ All 14 red team findings have been addressed:
 - Advisory pipeline: 14-step safety chain with SSE streaming, deterministic routing, KB retrieval
 - Quality system: 64-scenario adversarial suite, automated rubric, human QA workflow
 - Persistent AI advisory panel: site-wide side panel accessible from every dashboard page
+
+### Active (T089-T108) — UX Audit Findings
+
+- **20 tasks active** across 3 new milestones (M10-M12)
+- M10 (5 tasks): First impressions — greeting, empty state, onboarding routing, auth pages, nav restructure
+- M11 (8 tasks): AI trust — disclaimers, clickable citations, authority fix, markdown, stop button, escalation, confidence, history
+- M12 (7 tasks): Enterprise polish — typography, accessibility, textarea, search, audit trail, contextual AI, error handling
+- Recommended implementation order: M10 in full first, then M11 and M12 in parallel

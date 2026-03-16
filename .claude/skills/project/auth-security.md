@@ -38,6 +38,8 @@ File: `src/hr_advisory/api/middleware/token_blocklist.py`
 
 ## Tenant Isolation
 
+### Company-Level Isolation
+
 ```python
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
 
@@ -53,6 +55,31 @@ Rules:
 - Document download validates `company_id` against document ownership
 - Document history auto-scopes to user's company (non-admin)
 
+### Conversation-Level Isolation
+
+```python
+# Module-level ownership tracking (in-memory, MVP)
+_conversation_owners: dict[str, str] = {}  # conv_id -> user_id
+
+# Record ownership on creation (in advisory_query / advisory_stream)
+_conversation_owners[str(conversation_id)] = str(user_id)
+
+# Verify on access (list, history, delete, rename)
+owner = _conversation_owners.get(conv_key, "")
+if owner and owner != user_id:
+    raise HTTPException(status_code=404, detail="Conversation not found.")
+```
+
+Rules:
+
+- Ownership recorded when conversation is first created (query or stream)
+- All access endpoints (list, history, delete, rename) verify ownership
+- Non-owned conversations return 404 (not 403, to prevent enumeration)
+- Delete also cleans up `_conversation_owners` mapping
+- In-memory storage — conversations lost on restart (database persistence planned)
+
+File: `src/hr_advisory/api/routers/advisory.py`
+
 ## Rate Limiting
 
 Per-category, per-IP/user throttling:
@@ -62,6 +89,8 @@ Per-category, per-IP/user throttling:
 | Advisory   | 10   | 100   | 3     |
 | Auth       | 5    | 20    | 2     |
 | Calculator | 30   | 500   | 10    |
+| Admin      | 20   | 200   | 5     |
+| Document   | 10   | 100   | 3     |
 
 File: `src/hr_advisory/workflows/guardrails.py`
 
@@ -92,7 +121,7 @@ Every response includes: X-Content-Type-Options, X-Frame-Options, HSTS, CSP, Ref
 - `src/hr_advisory/api/middleware/auth_middleware.py` — JWT validation
 - `src/hr_advisory/api/middleware/token_blocklist.py` — JTI blocklist
 - `src/hr_advisory/api/middleware/tenant_isolation.py` — Company access
-- `src/hr_advisory/security/input_validator.py` — Input sanitisation
+- `src/hr_advisory/security/validation.py` — Input sanitisation
 - `src/hr_advisory/security/pdpa.py` — PDPA compliance
 - `docs/03-security.md` — Full security documentation
 

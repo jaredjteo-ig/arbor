@@ -19,6 +19,7 @@ import {
   SourceCitation,
 } from "@/components/design-system";
 import type { RiskTierLevel } from "@/components/design-system";
+import { AskAITEButton } from "@/components/shared/AskAITEButton";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useComplianceStatus,
@@ -615,26 +616,36 @@ function BackendStatusOverview({
 
         {/* Per-domain status */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {domainEntries.map(([domain, domainStatus]) => (
-            <div
-              key={domain}
-              className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-[var(--color-surface-card)] border border-[var(--color-gray-200)]"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-[var(--color-gray-900)] truncate">
-                  {DOMAIN_LABELS[domain] ?? domain}
-                </p>
-                <p className="text-xs text-[var(--color-gray-400)]">
-                  {domainStatus.provisions_count} provision
-                  {domainStatus.provisions_count !== 1 ? "s" : ""}
-                </p>
+          {domainEntries.map(([domain, domainStatus]) => {
+            const tier = domainStatusToTier(domainStatus.status);
+            const domainLabel = DOMAIN_LABELS[domain] ?? domain;
+            return (
+              <div
+                key={domain}
+                className="flex flex-col gap-2 p-2.5 rounded-lg bg-[var(--color-surface-card)] border border-[var(--color-gray-200)]"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-[var(--color-gray-900)] truncate">
+                      {domainLabel}
+                    </p>
+                    <p className="text-xs text-[var(--color-gray-400)]">
+                      {domainStatus.provisions_count} provision
+                      {domainStatus.provisions_count !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  <RiskTierBadge tier={tier} className="text-xs shrink-0" />
+                </div>
+                {(tier === "amber" || tier === "red") && (
+                  <AskAITEButton
+                    question={`My ${domainLabel} compliance is ${tier === "amber" ? "medium risk" : "high risk"}. What do I need to fix?`}
+                    variant="subtle"
+                    className="text-xs"
+                  />
+                )}
               </div>
-              <RiskTierBadge
-                tier={domainStatusToTier(domainStatus.status)}
-                className="text-xs shrink-0"
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </AppCard>
@@ -1013,6 +1024,13 @@ function ResultsView({
             );
           })}
         </div>
+      )}
+
+      {/* Ask AITE about compliance results */}
+      {(result.risk_tier === "amber" || result.risk_tier === "red") && (
+        <AskAITEButton
+          question={`My compliance score is ${result.score}/100 (${result.risk_tier === "amber" ? "medium" : "high"} risk) with ${result.findings.length} findings. What should I prioritise fixing?`}
+        />
       )}
 
       {/* Reset */}

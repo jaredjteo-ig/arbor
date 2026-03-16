@@ -26,6 +26,13 @@ import {
   Scan,
   ArrowRight,
   AlertCircle,
+  CheckCircle2,
+  Circle,
+  Building2,
+  Compass,
+  Sparkles,
+  BookOpen,
+  Scale,
 } from "lucide-react";
 
 /* ── Types ──────────────────────────────────────────────────── */
@@ -148,12 +155,174 @@ function QuickActions() {
   );
 }
 
+/* ── Getting Started Step Card ─────────────────────────────── */
+
+function GettingStartedStep({
+  step,
+  title,
+  description,
+  href,
+  icon: Icon,
+  completed,
+}: {
+  step: number;
+  title: string;
+  description: string;
+  href: string;
+  icon: typeof Building2;
+  completed: boolean;
+}) {
+  const router = useRouter();
+
+  return (
+    <button
+      type="button"
+      onClick={() => router.push(href)}
+      className="text-left rounded-xl border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] p-4 transition-colors hover:border-[var(--color-primary)] group"
+    >
+      <div className="flex items-start gap-3">
+        <div className="shrink-0 mt-0.5">
+          {completed ? (
+            <CheckCircle2 className="h-5 w-5 text-[var(--color-success)]" />
+          ) : (
+            <Circle className="h-5 w-5 text-[var(--color-gray-300)]" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+              Step {step}
+            </span>
+          </div>
+          <p className="text-sm font-medium text-[var(--color-gray-900)] group-hover:text-[var(--color-primary)] transition-colors">
+            {title}
+          </p>
+          <p className="text-xs text-[var(--color-gray-500)] mt-1">
+            {description}
+          </p>
+        </div>
+        <Icon className="h-4 w-4 text-[var(--color-gray-400)] shrink-0 mt-1" />
+      </div>
+    </button>
+  );
+}
+
+/* ── Compliance Preview Card ──────────────────────────────── */
+
+const SAMPLE_DOMAINS: {
+  name: string;
+  tier: RiskTierLevel;
+}[] = [
+  { name: "Employment Act", tier: "green" },
+  { name: "Central Provident Fund (CPF)", tier: "green" },
+  { name: "Foreign Manpower (EFMA)", tier: "amber" },
+  { name: "Workplace Safety & Health (WSH)", tier: "red" },
+  { name: "Tax / IRAS", tier: "amber" },
+];
+
+function CompliancePreviewCard() {
+  return (
+    <AppCard variant="flat" className="relative overflow-hidden">
+      {/* Example badge */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-1.5">
+          <ShieldCheck className="h-4 w-4 text-[var(--color-primary)]" />
+          <span className="text-sm font-semibold text-[var(--color-gray-900)]">
+            Compliance at a Glance
+          </span>
+        </div>
+        <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-gray-500)] bg-[var(--color-gray-100)] rounded-full px-2 py-0.5">
+          Example
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        {SAMPLE_DOMAINS.map((domain) => (
+          <div
+            key={domain.name}
+            className="flex items-center justify-between gap-2 py-1.5"
+          >
+            <span className="text-sm text-[var(--color-gray-700)]">
+              {domain.name}
+            </span>
+            <RiskTierBadge tier={domain.tier} className="text-xs" />
+          </div>
+        ))}
+      </div>
+
+      <p className="text-xs text-[var(--color-gray-500)] mt-4 italic">
+        Set up your profile for your actual compliance score
+      </p>
+    </AppCard>
+  );
+}
+
+/* ── Advisory Preview Card ────────────────────────────────── */
+
+function AdvisoryPreviewCard() {
+  return (
+    <AppCard variant="flat" className="relative overflow-hidden">
+      {/* Example badge */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-1.5">
+          <Sparkles className="h-4 w-4 text-[var(--color-primary)]" />
+          <span className="text-sm font-semibold text-[var(--color-gray-900)]">
+            AI-Powered Advisory
+          </span>
+        </div>
+        <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-gray-500)] bg-[var(--color-gray-100)] rounded-full px-2 py-0.5">
+          Example
+        </span>
+      </div>
+
+      {/* Sample question */}
+      <div className="rounded-lg bg-[var(--color-gray-100)] p-3 mb-3">
+        <p className="text-xs font-medium text-[var(--color-gray-500)] mb-1">
+          Question
+        </p>
+        <p className="text-sm text-[var(--color-gray-800)]">
+          What are the notice period requirements for employees under the
+          Employment Act?
+        </p>
+      </div>
+
+      {/* Sample answer */}
+      <div className="rounded-lg border border-[var(--color-gray-200)] p-3">
+        <p className="text-xs font-medium text-[var(--color-gray-500)] mb-1">
+          Answer
+        </p>
+        <p className="text-sm text-[var(--color-gray-700)] leading-relaxed">
+          Under Part II of the Employment Act, notice periods depend on the
+          length of service. For employees with less than 26 weeks, the notice
+          period is 1 day...
+        </p>
+
+        {/* Source citations */}
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--color-primary)] bg-[var(--color-primary-bg)] rounded-full px-2.5 py-0.5">
+            <BookOpen className="h-3 w-3" />
+            EA Part II
+          </span>
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--color-primary)] bg-[var(--color-primary-bg)] rounded-full px-2.5 py-0.5">
+            <Scale className="h-3 w-3" />
+            Section 10
+          </span>
+        </div>
+      </div>
+
+      <p className="text-xs text-[var(--color-gray-500)] mt-4 italic">
+        Try asking your own question in the Advisory section
+      </p>
+    </AppCard>
+  );
+}
+
 /* ── Dashboard Page ────────────────────────────────────────── */
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const firstName = user?.name?.split(" ")[0] ?? "there";
+  const firstName = user?.name?.split(" ")[0] ?? null;
 
   /* ── State ───────────────────────────────────────────────── */
   const [complianceData, setComplianceData] =
@@ -264,30 +433,74 @@ export default function DashboardPage() {
   if (!user?.company_id) {
     return (
       <div className="max-w-4xl mx-auto space-y-6 pb-8">
+        {/* Greeting */}
         <div>
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            Welcome, {firstName}
+          <h1 className="text-heading text-[var(--color-gray-900)]">
+            {firstName ? `Welcome, ${firstName}` : "Welcome to AITE"}
           </h1>
-          <p className="text-sm text-[var(--color-gray-500)] mt-1">
-            Set up your company profile to get started
+          <p className="text-body text-[var(--color-gray-500)] mt-1">
+            Here&apos;s what AITE can do for you
           </p>
         </div>
 
+        {/* Getting Started progress tracker */}
+        <div>
+          <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
+            Getting Started
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <GettingStartedStep
+              step={1}
+              title="Create your company profile"
+              description="Tell us about your business so we can tailor compliance checks"
+              href="/onboarding"
+              icon={Building2}
+              completed={false}
+            />
+            <GettingStartedStep
+              step={2}
+              title="Explore compliance requirements"
+              description="See which Singapore regulations apply to your company"
+              href="/compliance"
+              icon={Compass}
+              completed={false}
+            />
+            <GettingStartedStep
+              step={3}
+              title="Ask your first question"
+              description="Get instant answers on employment law, CPF, levies, and more"
+              href="/advisory"
+              icon={MessageSquare}
+              completed={false}
+            />
+          </div>
+        </div>
+
+        {/* Value Preview */}
+        <div>
+          <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
+            What You Get with AITE
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <CompliancePreviewCard />
+            <AdvisoryPreviewCard />
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div>
+          <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
+            Quick Actions
+          </h2>
+          <QuickActions />
+        </div>
+
+        {/* Deterministic callout */}
         <AlertBanner
           variant="info"
-          title="Company Profile Required"
-          description="Create your company profile to access compliance checks, workforce analytics, and the full advisory experience."
+          title="No AI, just the law"
+          description="Our calculators use deterministic calculations based on current Singapore regulations. All calculations are auditable — no AI involved."
         />
-
-        <QuickActions />
-
-        <AppButton
-          variant="primary"
-          onClick={() => router.push("/profile")}
-          className="w-full sm:w-auto"
-        >
-          Set Up Company Profile
-        </AppButton>
       </div>
     );
   }
@@ -296,10 +509,10 @@ export default function DashboardPage() {
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
       {/* Greeting */}
       <div>
-        <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-          Welcome back, {firstName}
+        <h1 className="text-heading text-[var(--color-gray-900)]">
+          {firstName ? `Welcome back, ${firstName}` : "Welcome to AITE"}
         </h1>
-        <p className="text-sm text-[var(--color-gray-500)] mt-1">
+        <p className="text-body text-[var(--color-gray-500)] mt-1">
           Here&apos;s your HR compliance overview
         </p>
       </div>
@@ -324,7 +537,7 @@ export default function DashboardPage() {
                       {metric.value}
                     </p>
                     {metric.subtext && (
-                      <p className="text-xs text-[var(--color-gray-400)] mt-0.5">
+                      <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
                         {metric.subtext}
                       </p>
                     )}
@@ -341,7 +554,7 @@ export default function DashboardPage() {
 
       {/* Quick actions */}
       <div>
-        <h2 className="text-sm font-semibold text-[var(--color-gray-900)] mb-3">
+        <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
           Quick Actions
         </h2>
         <QuickActions />
@@ -352,7 +565,7 @@ export default function DashboardPage() {
         {/* Compliance domain status */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-[var(--color-gray-900)]">
+            <h2 className="text-subtitle text-[var(--color-gray-900)]">
               Compliance by Domain
             </h2>
             <button
@@ -379,7 +592,7 @@ export default function DashboardPage() {
                       <p className="text-sm text-[var(--color-gray-900)]">
                         {DOMAIN_LABELS[domain] ?? domain}
                       </p>
-                      <p className="text-xs text-[var(--color-gray-400)] mt-0.5">
+                      <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
                         {domainStatus.provisions_count} provision
                         {domainStatus.provisions_count !== 1 ? "s" : ""} found
                       </p>
@@ -393,7 +606,7 @@ export default function DashboardPage() {
               )}
             </div>
           ) : (
-            <p className="text-sm text-[var(--color-gray-400)]">
+            <p className="text-sm text-[var(--color-gray-500)]">
               No compliance data available.
             </p>
           )}
@@ -402,7 +615,7 @@ export default function DashboardPage() {
         {/* Pending action items */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-[var(--color-gray-900)]">
+            <h2 className="text-subtitle text-[var(--color-gray-900)]">
               Pending Actions
             </h2>
             <button
@@ -433,7 +646,7 @@ export default function DashboardPage() {
                       {item.title}
                     </p>
                     {item.dueDate && (
-                      <p className="text-xs text-[var(--color-gray-400)] mt-0.5">
+                      <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
                         Due: {item.dueDate}
                       </p>
                     )}

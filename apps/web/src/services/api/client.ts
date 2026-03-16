@@ -50,7 +50,7 @@ function clearTokensAndRedirect(): void {
  */
 let refreshPromise: Promise<string> | null = null;
 
-async function refreshAccessToken(): Promise<string> {
+export async function refreshAccessToken(): Promise<string> {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
@@ -210,6 +210,10 @@ class ApiClient {
 
   async put<T>(path: string, body?: unknown): Promise<T> {
     return this.request<T>("PUT", path, { body });
+  }
+
+  async patch<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>("PATCH", path, { body });
   }
 
   async delete<T>(path: string): Promise<T> {

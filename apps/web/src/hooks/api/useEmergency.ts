@@ -8,6 +8,8 @@ import type {
   EmergencyScenarioListResponse,
   EscalationRequest,
   EscalationResponse,
+  AdvisoryEscalationRequest,
+  AdvisoryEscalationResponse,
 } from "@/types/api";
 
 /** Query keys for emergency domain. */
@@ -28,10 +30,23 @@ export function useEmergencyScenarios() {
 }
 
 /**
- * Submit an emergency escalation request.
+ * Submit an emergency escalation request (from emergency scenarios page).
  */
 export function useEmergencyEscalate() {
   return useMutation<EscalationResponse, Error, EscalationRequest>({
     mutationFn: (data) => emergencyApi.escalate(data),
+  });
+}
+
+/**
+ * Submit an advisory escalation request (from chat context).
+ */
+export function useAdvisoryEscalation() {
+  return useMutation<
+    AdvisoryEscalationResponse,
+    Error,
+    AdvisoryEscalationRequest
+  >({
+    mutationFn: (data) => emergencyApi.submitAdvisoryEscalation(data),
   });
 }

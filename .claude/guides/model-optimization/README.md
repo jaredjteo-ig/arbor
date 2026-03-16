@@ -6,12 +6,12 @@
 
 ## Repos Audited
 
-| #   | Repo                   | Path                                    | Type                    |
-| --- | ---------------------- | --------------------------------------- | ----------------------- |
-| 1   | Terrene Foundation     | `~/repos/terrene/terrene`               | Governance KB           |
-| 2   | Kailash Python SDK     | `~/repos/dev/kailash_python_sdk`        | BUILD (SDK development) |
-| 3   | Kailash Python USE     | `~/repos/kailash/kailash-coc-claude-py` | USE template (end-user) |
-| 4   | Kailash Rust BUILD/USE | `~/repos/kailash/kailash-coc-claude-rs` | BUILD + USE template    |
+| #   | Repo                   | Type                    |
+| --- | ---------------------- | ----------------------- |
+| 1   | Governance KB          | Governance KB           |
+| 2   | Kailash Python SDK     | BUILD (SDK development) |
+| 3   | Kailash Python USE     | USE template (end-user) |
+| 4   | Kailash Rust BUILD/USE | BUILD + USE template    |
 
 ## Documents
 

@@ -5,6 +5,7 @@ import type {
   ActListResponse,
   DomainListResponse,
   Provision,
+  ProvisionDetail,
   KbQueryRequest,
   KbQueryResponse,
 } from "@/types/api";
@@ -20,9 +21,16 @@ export const kbApi = {
     return apiClient.get<DomainListResponse>("/kb/domains");
   },
 
-  /** Get a specific provision by ID. */
+  /** Get a specific provision by numeric ID. */
   provision(provisionId: string): Promise<Provision> {
     return apiClient.get<Provision>(`/kb/provisions/${provisionId}`);
+  },
+
+  /** Look up a provision by its string reference (e.g. "EA-S10-notice"). */
+  provisionByRef(reference: string): Promise<ProvisionDetail> {
+    return apiClient.get<ProvisionDetail>(
+      `/kb/provisions/ref/${encodeURIComponent(reference)}`,
+    );
   },
 
   /** Query the knowledge base with natural language. */

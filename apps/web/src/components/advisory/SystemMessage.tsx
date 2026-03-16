@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   ChatBubble,
   SourceCitation,
@@ -10,7 +11,12 @@ import {
 import type { RiskTier } from "@/components/design-system";
 import type { AuthorityLevel } from "@/components/design-system/SourceCitation";
 import type { ProvisionCited } from "@/types/api";
-import { AlertOctagon, PhoneCall } from "lucide-react";
+import { AlertOctagon, PhoneCall, ArrowUpRight } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import { ProvisionViewer } from "./ProvisionViewer";
+import { EscalationDialog } from "./EscalationDialog";
+import type { EscalationUrgency } from "@/types/api";
 
 interface SystemMessageProps {
   content: string;
@@ -39,10 +45,81 @@ function riskTierLabel(tier: string): string {
   }
 }
 
-function mapAuthority(relevance: number): AuthorityLevel {
-  if (relevance >= 0.8) return "statutory";
-  if (relevance >= 0.5) return "guideline";
-  return "best-practice";
+/**
+ * Derive the authority level for a provision.
+ *
+ * Uses the backend-provided authority_level when available.
+ * Falls back to deriving from the provision ID prefix, which encodes
+ * the source act (e.g. "EA-" = Employment Act = statutory).
+ *
+ * This replaces the old relevance-score-based mapping which incorrectly
+ * treated relevance as authority -- a statute with low relevance was
+ * mislabelled as "best-practice".
+ */
+function resolveAuthority(provision: ProvisionCited): AuthorityLevel {
+  const raw = provision.authority_level;
+  if (raw === "statutory" || raw === "guideline" || raw === "best-practice") {
+    return raw;
+  }
+  return deriveAuthorityFromId(provision.provision_id);
+}
+
+/**
+ * Map provision ID prefix to its inherent authority level.
+ * Authority is a property of the source legislation, not a score.
+ */
+function deriveAuthorityFromId(provisionId: string): AuthorityLevel {
+  const id = provisionId.toUpperCase();
+  if (id.startsWith("EA-")) return "statutory";
+  if (id.startsWith("CPFA-") || id.startsWith("CPF-")) return "statutory";
+  if (id.startsWith("EFMA-")) return "statutory";
+  if (id.startsWith("WSH-") || id.startsWith("WSHA-")) return "statutory";
+  if (id.startsWith("WICA-")) return "statutory";
+  if (id.startsWith("IRAS-")) return "statutory";
+  if (id.startsWith("WFA-")) return "statutory";
+  if (id.startsWith("TGFEP-") || id.startsWith("TAFEP-")) return "guideline";
+  return "guideline";
+}
+
+/* ── Confidence Display Helpers ────────────────────────────── */
+
+interface ConfidenceLevel {
+  label: string;
+  colorClass: string;
+}
+
+function getConfidenceLevel(score: number): ConfidenceLevel {
+  const pct = Math.round(score * 100);
+  if (pct >= 80) {
+    return {
+      label: "High confidence",
+      colorClass: "text-[var(--color-risk-green)]",
+    };
+  }
+  if (pct >= 60) {
+    return {
+      label: "Moderate confidence",
+      colorClass: "text-[var(--color-risk-amber)]",
+    };
+  }
+  return {
+    label: "Low confidence \u2014 verify with specialist",
+    colorClass: "text-[var(--color-risk-red)]",
+  };
+}
+
+function ConfidenceBadge({ score }: { score: number }) {
+  const { label, colorClass } = getConfidenceLevel(score);
+  const pct = Math.round(score * 100);
+
+  return (
+    <span
+      className={`text-xs font-medium ${colorClass}`}
+      title={`Based on ${pct}% confidence score from knowledge base coverage`}
+    >
+      {label}
+    </span>
+  );
 }
 
 export function SystemMessage({
@@ -56,7 +133,14 @@ export function SystemMessage({
   streaming = false,
   messageId,
 }: SystemMessageProps) {
+  const [selectedProvision, setSelectedProvision] =
+    useState<ProvisionCited | null>(null);
+  const [escalationOpen, setEscalationOpen] = useState(false);
+  const [escalationUrgency, setEscalationUrgency] =
+    useState<EscalationUrgency>("urgent");
+
   const isRed = riskTier === "red";
+  const isAmber = riskTier === "amber";
   const validTier = (
     riskTier === "green" || riskTier === "amber" || riskTier === "red"
       ? riskTier
@@ -70,7 +154,8 @@ export function SystemMessage({
           <SourceCitation
             key={p.provision_id}
             label={p.title}
-            authority={mapAuthority(p.relevance)}
+            authority={resolveAuthority(p)}
+            onClick={() => setSelectedProvision(p)}
           />
         ))}
       </>
@@ -79,6 +164,13 @@ export function SystemMessage({
   return (
     <div className="space-y-2">
       <ChatBubble role="system" riskTier={validTier} sources={sources}>
+        {/* AI badge */}
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="text-[10px] font-medium bg-[var(--color-primary-bg)] text-[var(--color-primary)] px-1.5 py-0.5 rounded">
+            AI
+          </span>
+        </div>
+
         {/* Risk tier header for RED responses */}
         {isRed && (
           <div className="flex items-center gap-2 mb-3 pb-2 border-b border-[var(--color-risk-red)]/20">
@@ -89,25 +181,67 @@ export function SystemMessage({
           </div>
         )}
 
-        {/* Risk tier badge (non-red) */}
-        {validTier && !isRed && (
+        {/* Risk tier badge + confidence (all tiers including red) */}
+        {(validTier || confidenceScore !== undefined) && (
           <div className="flex items-center gap-2 mb-2">
-            <RiskTierBadge tier={validTier} />
+            {validTier && !isRed && <RiskTierBadge tier={validTier} />}
             {confidenceScore !== undefined && (
-              <span className="text-xs text-[var(--color-gray-400)]">
-                Confidence: {Math.round(confidenceScore * 100)}%
-              </span>
+              <ConfidenceBadge score={confidenceScore} />
             )}
           </div>
         )}
 
-        {/* Main content — rendered as HTML-safe prose */}
-        <div className="whitespace-pre-wrap">{content}</div>
+        {/* Main content — rendered as markdown prose */}
+        <div className="prose prose-sm max-w-none">
+          <ReactMarkdown
+            rehypePlugins={[rehypeSanitize]}
+            components={{
+              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+              ul: ({ children }) => (
+                <ul className="list-disc ml-4 mb-2">{children}</ul>
+              ),
+              ol: ({ children }) => (
+                <ol className="list-decimal ml-4 mb-2">{children}</ol>
+              ),
+              li: ({ children }) => <li className="mb-1">{children}</li>,
+              strong: ({ children }) => (
+                <strong className="font-semibold">{children}</strong>
+              ),
+              h3: ({ children }) => (
+                <h3 className="font-semibold text-sm mt-3 mb-1">{children}</h3>
+              ),
+              a: ({ href, children }) => (
+                <a
+                  href={href}
+                  className="text-[var(--color-primary)] underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {children}
+                </a>
+              ),
+            }}
+          >
+            {content}
+          </ReactMarkdown>
+          {/* Streaming cursor */}
+          {streaming && (
+            <span className="inline-block w-2 h-4 bg-[var(--color-primary)] animate-pulse rounded-sm ml-0.5 align-middle" />
+          )}
+        </div>
 
-        {/* Streaming indicator */}
-        {streaming && (
-          <span className="inline-block w-2 h-4 bg-[var(--color-primary)] animate-pulse rounded-sm ml-0.5" />
-        )}
+        {/* Low confidence caveat */}
+        {!streaming &&
+          confidenceScore !== undefined &&
+          Math.round(confidenceScore * 100) < 60 && (
+            <div className="mt-3 pl-3 border-l-2 border-[var(--color-risk-amber)]">
+              <p className="text-xs text-[var(--color-risk-amber)]">
+                This response has lower confidence. The situation may involve
+                nuances not fully covered in the current knowledge base.
+                Consider consulting a qualified practitioner.
+              </p>
+            </div>
+          )}
 
         {/* RED: Connect to specialist CTA */}
         {isRed && !streaming && (
@@ -116,12 +250,30 @@ export function SystemMessage({
               variant="danger"
               size="sm"
               onClick={() => {
-                /* Will connect to specialist flow */
+                setEscalationUrgency("urgent");
+                setEscalationOpen(true);
               }}
             >
               <PhoneCall className="h-4 w-4 mr-1.5" />
               Connect to Employment Law Specialist
             </AppButton>
+          </div>
+        )}
+
+        {/* AMBER: Get professional guidance link */}
+        {isAmber && !streaming && (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => {
+                setEscalationUrgency("within-24h");
+                setEscalationOpen(true);
+              }}
+              className="inline-flex items-center gap-1 text-sm text-[var(--color-risk-amber)] hover:text-[var(--color-risk-amber)]/80 underline underline-offset-2 transition-colors"
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" />
+              Get professional guidance
+            </button>
           </div>
         )}
       </ChatBubble>
@@ -149,6 +301,24 @@ export function SystemMessage({
           className="pl-0"
         />
       )}
+
+      {/* Provision detail modal */}
+      {selectedProvision && (
+        <ProvisionViewer
+          provisionId={selectedProvision.provision_id}
+          title={selectedProvision.title}
+          authorityLevel={selectedProvision.authority_level}
+          onClose={() => setSelectedProvision(null)}
+        />
+      )}
+
+      {/* Escalation dialog */}
+      <EscalationDialog
+        open={escalationOpen}
+        onClose={() => setEscalationOpen(false)}
+        defaultSituation={content}
+        defaultUrgency={escalationUrgency}
+      />
     </div>
   );
 }

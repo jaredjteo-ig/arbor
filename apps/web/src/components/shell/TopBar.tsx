@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Menu, Search, Bell, User, Settings, LogOut, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { SearchResults } from "./SearchResults";
 
 export interface TopBarProps {
   /** Callback to toggle the sidebar (mobile hamburger) */
@@ -17,9 +18,35 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  const showSearchResults = searchExpanded && searchQuery.trim().length >= 2;
+
+  /* Close search dropdown and clear query */
+  const closeSearch = useCallback(() => {
+    setSearchQuery("");
+    setSearchExpanded(false);
+  }, []);
+
+  /* Navigate to a search result */
+  const handleSearchSelect = useCallback(
+    (path: string) => {
+      setSearchQuery("");
+      setSearchExpanded(false);
+      router.push(path);
+    },
+    [router],
+  );
+
+  /* Close search results dropdown only (keep input open) */
+  const handleSearchResultsClose = useCallback(() => {
+    setSearchQuery("");
+  }, []);
 
   /* User initial for avatar */
   const userInitial =
@@ -40,6 +67,66 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  /* Focus first dropdown item when profile menu opens */
+  useEffect(() => {
+    if (profileOpen && dropdownRef.current) {
+      const firstItem =
+        dropdownRef.current.querySelector<HTMLButtonElement>(
+          '[role="menuitem"]',
+        );
+      firstItem?.focus();
+    }
+  }, [profileOpen]);
+
+  /* Keyboard navigation for profile dropdown */
+  const handleDropdownKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!dropdownRef.current) return;
+
+      const items = Array.from(
+        dropdownRef.current.querySelectorAll<HTMLButtonElement>(
+          '[role="menuitem"]',
+        ),
+      );
+      const currentIndex = items.indexOf(
+        document.activeElement as HTMLButtonElement,
+      );
+
+      switch (e.key) {
+        case "ArrowDown": {
+          e.preventDefault();
+          const nextIndex =
+            currentIndex < items.length - 1 ? currentIndex + 1 : 0;
+          items[nextIndex]?.focus();
+          break;
+        }
+        case "ArrowUp": {
+          e.preventDefault();
+          const prevIndex =
+            currentIndex > 0 ? currentIndex - 1 : items.length - 1;
+          items[prevIndex]?.focus();
+          break;
+        }
+        case "Escape": {
+          e.preventDefault();
+          setProfileOpen(false);
+          /* Return focus to the trigger button */
+          const trigger = profileRef.current?.querySelector<HTMLButtonElement>(
+            '[aria-haspopup="true"]',
+          );
+          trigger?.focus();
+          break;
+        }
+        case "Tab": {
+          /* Close dropdown when tabbing out */
+          setProfileOpen(false);
+          break;
+        }
+      }
+    },
+    [setProfileOpen],
+  );
 
   /* Focus search input when expanded */
   useEffect(() => {
@@ -100,7 +187,10 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
           )}
 
           {searchExpanded && (
-            <div className="flex items-center w-full gap-2">
+            <div
+              ref={searchContainerRef}
+              className="flex items-center w-full gap-2"
+            >
               <div className="relative flex-1">
                 <Search
                   className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-gray-400)]"
@@ -110,6 +200,8 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
                   ref={searchInputRef}
                   type="search"
                   placeholder="Search..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className={clsx(
                     "w-full rounded-lg border px-3 py-2 pl-9 text-sm",
                     "min-h-[40px]",
@@ -121,15 +213,34 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
                     "transition-colors duration-200",
                   )}
                   onBlur={(e) => {
-                    if (!e.currentTarget.value) {
+                    /* Only collapse if query is empty and focus leaves the search container */
+                    if (
+                      !e.currentTarget.value &&
+                      !searchContainerRef.current?.contains(
+                        e.relatedTarget as Node,
+                      )
+                    ) {
                       setSearchExpanded(false);
                     }
                   }}
+                  role="combobox"
+                  aria-expanded={showSearchResults}
+                  aria-haspopup="listbox"
+                  aria-autocomplete="list"
                 />
+
+                {/* Search results dropdown */}
+                {showSearchResults && (
+                  <SearchResults
+                    query={searchQuery}
+                    onClose={handleSearchResultsClose}
+                    onSelect={handleSearchSelect}
+                  />
+                )}
               </div>
               <button
                 type="button"
-                onClick={() => setSearchExpanded(false)}
+                onClick={closeSearch}
                 className={clsx(
                   "flex items-center justify-center rounded-lg",
                   "min-h-[44px] min-w-[44px]",
@@ -183,6 +294,12 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
           <button
             type="button"
             onClick={() => setProfileOpen((prev) => !prev)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && profileOpen) {
+                e.preventDefault();
+                setProfileOpen(false);
+              }
+            }}
             className={clsx(
               "flex items-center justify-center rounded-lg",
               "min-h-[44px] min-w-[44px]",
@@ -207,6 +324,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
           {/* Profile dropdown */}
           {profileOpen && (
             <div
+              ref={dropdownRef}
               className={clsx(
                 "absolute right-0 top-full mt-1 w-48",
                 "rounded-lg border border-[var(--color-gray-200)]",
@@ -215,6 +333,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
                 "py-1 z-50",
               )}
               role="menu"
+              onKeyDown={handleDropdownKeyDown}
             >
               <DropdownItem
                 icon={User}

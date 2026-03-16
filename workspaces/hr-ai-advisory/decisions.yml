@@ -1,0 +1,89 @@
+decisions:
+  # ── M10: Demo-Ready UX ──────────────────────────────────────
+  - decision: "JWT tokens stored in localStorage for web frontend"
+    rationale: "Standard SPA pattern. httpOnly cookies require backend proxy setup not viable for MVP. Server-side token blocklist (JTI) provides revocation capability."
+    alternatives_rejected: "httpOnly cookies (requires BFF pattern), in-memory only (lost on refresh)"
+    date: 2026-03-13
+    initiative: hr-ai-advisory
+    confidence: medium
+    note: "Future recommendation: move to httpOnly cookie-based auth for XSS resilience"
+
+  - decision: "SSE streaming via fetch+ReadableStream instead of EventSource"
+    rationale: "EventSource only supports GET without custom headers. Advisory queries need POST with JWT auth headers."
+    alternatives_rejected: "EventSource (no custom headers), WebSocket (overkill for unidirectional streaming)"
+    date: 2026-03-13
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Design tokens generated from tokens.json via Python script to CSS/TS/Dart"
+    rationale: "Single source of truth for cross-platform design consistency. Python generator produces CSS custom properties, TypeScript constants, and Dart theme data."
+    alternatives_rejected: "Manual token duplication, Style Dictionary (added complexity for 3-target output)"
+    date: 2026-03-13
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Typography scale uses CSS utility classes (.text-display through .text-micro) instead of Tailwind's built-in text sizes"
+    rationale: "Custom scale matches Singapore government-adjacent design language. Responds to --text-size-multiplier for accessibility text resizing."
+    alternatives_rejected: "Tailwind defaults (don't support multiplier-based accessibility), CSS-in-JS (poor DX with Tailwind)"
+    date: 2026-03-13
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Advisory chat uses real-time SSE streaming with risk-tier-aware UI"
+    rationale: "Enterprise users expect immediate feedback. Risk tier colors (green/amber/red) provide instant visual trust signal. Streaming tokens reduce perceived latency."
+    alternatives_rejected: "Polling (poor UX), full response wait (high perceived latency)"
+    date: 2026-03-13
+    initiative: hr-ai-advisory
+    confidence: high
+
+  # ── M11: AI Trust & Safety ──────────────────────────────────
+  - decision: "In-memory conversation storage with _conversation_owners dict for tenant isolation"
+    rationale: "MVP approach — fast to implement, no DB dependency. Tenant isolation added via ownership mapping since ShortTermMemory doesn't store user_id."
+    alternatives_rejected: "Database-backed conversations (deferred to post-MVP), session-scoped only (no history feature)"
+    date: 2026-03-14
+    initiative: hr-ai-advisory
+    confidence: medium
+    note: "Conversations lost on server restart. Database persistence planned."
+
+  - decision: "Thread-safe escalation counter using itertools.count(1)"
+    rationale: "Python's itertools.count is thread-safe via GIL for next() calls. Replaces non-atomic global += 1 pattern."
+    alternatives_rejected: "threading.Lock (heavier), uuid-based IDs (less human-readable for ESC- prefix)"
+    date: 2026-03-14
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "SSE stream 401 retry with automatic token refresh"
+    rationale: "SSE client bypassed the apiClient's built-in token refresh. Expired JWT during streaming produced opaque errors."
+    alternatives_rejected: "Pre-flight token check (race condition window), forcing re-login (poor UX)"
+    date: 2026-03-14
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "CSV injection prevention via single-quote prefix for dangerous cell characters"
+    rationale: "Conversation titles/messages could start with =, +, -, @ which spreadsheet apps interpret as formulas. Industry-standard mitigation."
+    alternatives_rejected: "Stripping characters (data loss), Excel-specific escaping (not portable)"
+    date: 2026-03-14
+    initiative: hr-ai-advisory
+    confidence: high
+
+  # ── M12: Enterprise Polish ──────────────────────────────────
+  - decision: "prefers-reduced-motion media query suppresses all animations"
+    rationale: "WCAG 2.1 Level AA requirement. Users with motion sensitivities or vestibular disorders need this."
+    alternatives_rejected: "Per-animation opt-out (incomplete coverage), user toggle only (doesn't respect OS setting)"
+    date: 2026-03-14
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Legal disclaimer text uses gray-500 instead of gray-400 for WCAG AA contrast"
+    rationale: "gray-400 (#94A3B8) on white background fails 4.5:1 contrast ratio. gray-500 (#64748B) passes."
+    alternatives_rejected: "Larger text (would change layout), background tint (inconsistent with card surfaces)"
+    date: 2026-03-14
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "SearchResults selectableItems wrapped in useMemo"
+    rationale: "Array was recreated every render causing unnecessary event listener teardown/setup in keyboard navigation."
+    alternatives_rejected: "useCallback (doesn't memoize data), external state (overkill for derived array)"
+    date: 2026-03-14
+    initiative: hr-ai-advisory
+    confidence: high

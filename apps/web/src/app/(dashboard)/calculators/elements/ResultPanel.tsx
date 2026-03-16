@@ -6,8 +6,7 @@
 
 import type { ReactNode } from "react";
 import { AppCard, SourceCitation } from "@/components/design-system";
-import { MessageSquare } from "lucide-react";
-import Link from "next/link";
+import { AskAITEButton } from "@/components/shared/AskAITEButton";
 
 interface Citation {
   label: string;
@@ -63,13 +62,7 @@ export function ResultPanel({
 
         {advisoryQuery && (
           <div className="pt-2 border-t border-[var(--color-gray-200)]">
-            <Link
-              href={`/advisory?query=${encodeURIComponent(advisoryQuery)}`}
-              className="inline-flex items-center gap-2 text-sm text-[var(--color-primary)] hover:underline"
-            >
-              <MessageSquare className="h-4 w-4" />
-              Ask a question about this
-            </Link>
+            <AskAITEButton question={advisoryQuery} variant="subtle" />
           </div>
         )}
       </div>

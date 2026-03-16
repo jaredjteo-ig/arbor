@@ -67,7 +67,7 @@ Validated by `validate_constraint_envelope()`. Violations recorded in trust chai
 4. Low confidence → recommend human specialist
 5. Authorized domain boundaries
 
-File: `src/hr_advisory/trust/anti_amnesia.py`
+File: `src/hr_advisory/trust/eatp_lineage.py`
 
 ## CARE Dual Plane
 
@@ -111,7 +111,7 @@ Workflow: `proposed` → `under_review` → `approved` → `implemented`
 
 - `src/hr_advisory/trust/eatp_lineage.py` — Trust chain implementation
 - `src/hr_advisory/trust/citation_validator.py` — Citation validation
-- `src/hr_advisory/trust/anti_amnesia.py` — Constraint injection
+- `src/hr_advisory/trust/eatp_lineage.py` — Also contains anti-amnesia constraint injection
 - `src/hr_advisory/trust/care_governance.py` — CARE framework
 - `src/hr_advisory/trust/disclaimers.py` — Disclaimer generation
 - `docs/04-trust-governance.md` — Full documentation

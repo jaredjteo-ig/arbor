@@ -1,0 +1,62 @@
+{
+  "id": "checkpoint_1773472011384",
+  "name": "pre-compact-1773472011384",
+  "created_at": "2026-03-14T07:06:51.385Z",
+  "observations": [
+    {
+      "id": "obs_1773333591864_ksxltahhj",
+      "timestamp": "2026-03-12T16:39:51.864Z",
+      "type": "test_pattern",
+      "data": {
+        "test_tier": "python",
+        "test_path": null
+      },
+      "context": {
+        "session_id": "unknown",
+        "cwd": "/Users/esperie/repos/asme/aite/workspaces/hr-ai-advisory/todos",
+        "framework": "unknown"
+      }
+    },
+    {
+      "id": "obs_1773472011381_bcna7o5s5",
+      "timestamp": "2026-03-14T07:06:51.381Z",
+      "type": "connection_pattern",
+      "data": {
+        "framework": "core-sdk",
+        "active_workflows": [],
+        "critical_patterns": {
+          "hasDataFlowModels": false,
+          "hasNexusApp": false,
+          "hasKaizenAgent": false,
+          "hasCyclicWorkflow": false,
+          "hasAsyncRuntime": false
+        },
+        "recently_modified_count": 1
+      },
+      "context": {
+        "session_id": "aa1c773d-aba4-44fe-a5ad-ea58f7ca7bfe",
+        "cwd": "/Users/esperie/repos/asme/aite/workspaces/hr-ai-advisory/todos",
+        "framework": "unknown"
+      }
+    }
+  ],
+  "instincts": {},
+  "identity": {
+    "system": "kailash-coc-claude-py",
+    "version": "2.0.0",
+    "created_at": "2026-03-12T16:39:51.863Z",
+    "learning_enabled": true,
+    "per_project": true,
+    "focus_areas": [
+      "workflow-patterns",
+      "error-fixes",
+      "dataflow-patterns",
+      "testing-patterns",
+      "framework-selection"
+    ]
+  },
+  "stats": {
+    "observation_count": 2,
+    "instinct_categories": 0
+  }
+}

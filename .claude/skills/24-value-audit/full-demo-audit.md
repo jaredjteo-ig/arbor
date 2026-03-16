@@ -20,7 +20,7 @@ Verify the product works. No point auditing the value story if pages crash.
 **Prompt template**:
 
 ```
-Run a technical QA sweep of the Agentic OS demo on [URL].
+Run a technical QA sweep of the application demo on [URL].
 
 Login: [email] / [password]
 
@@ -32,25 +32,12 @@ For each page in the demo flow, verify:
 5. No JavaScript errors in console
 
 Demo flow pages (in order):
-- /login → /agentic-os (home)
-- /organization-builder
-- /shadow-agents → click View Details on an agent
-- /trust → click "Establish Trust" → verify navigation → back → click "View Audit Trail" → verify navigation
-- /knowledge
-- /directives
-- /bridges
-- /users → click dropdown on a user → verify View Agent navigation
-- /dashboard
-- /govern/compliance
-- /govern/audit-trail
-- /metrics
+- /login → /dashboard (home)
 - /settings
-- /roles
-- /policies
-- /billing
-- /agentic/inbox
-- /agentic/sessions
-- /api-keys
+- /users → click View Details on a user
+- /analytics
+- /admin
+- /admin/audit-trail
 
 Output a pass/fail table:
 | Page | Loads | Console Errors | Links Work | Data Present |
@@ -87,7 +74,7 @@ Follow the 5-phase audit methodology:
 5. Verdict (executive summary + severity table)
 
 Output the full Value Audit Report to:
-workspaces/axis/04-storyboard-audit/[filename].md
+workspaces/<project>/04-storyboard-audit/[filename].md
 ```
 
 ### Phase 3: Combined Report
@@ -153,33 +140,33 @@ After both phases complete, synthesize into a single demo readiness verdict.
 ### Full audit (both phases):
 
 ```
-Run a full demo audit on aegis.kailash.ai.
-Phase 1: Technical sweep with e2e-runner (all 26 pages, console errors, navigation).
+Run a full demo audit on your-app.example.com.
+Phase 1: Technical sweep with e2e-runner (all pages, console errors, navigation).
 Phase 2: Value audit with value-auditor (Five Questions, value flows, narrative coherence).
-Login: ceo@tpc-test.com / [password]
-Output reports to workspaces/axis/04-storyboard-audit/
+Login: user@example.com / [password]
+Output reports to workspaces/<project>/04-storyboard-audit/
 ```
 
 ### Value-only audit (skip technical):
 
 ```
-Run a value audit on aegis.kailash.ai using the value-auditor methodology.
+Run a value audit on your-app.example.com using the value-auditor methodology.
 Assume technical QA already passed.
-Login: ceo@tpc-test.com / [password]
+Login: user@example.com / [password]
 ```
 
 ### Technical-only audit (skip value):
 
 ```
-Run a technical QA sweep of aegis.kailash.ai.
-Check all 26 pages for console errors, broken links, and data loading.
-Login: ceo@tpc-test.com / [password]
+Run a technical QA sweep of your-app.example.com.
+Check all pages for console errors, broken links, and data loading.
+Login: user@example.com / [password]
 ```
 
 ### Quick readiness check (checklist only):
 
 ```
 Run the demo readiness checklist from .claude/skills/24-value-audit/demo-readiness-checklist.md
-against aegis.kailash.ai. Pass/fail only, no detailed audit.
-Login: ceo@tpc-test.com / [password]
+against your-app.example.com. Pass/fail only, no detailed audit.
+Login: user@example.com / [password]
 ```

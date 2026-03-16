@@ -18,7 +18,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     <ProtectedRoute>
       <AppShell>
         <AdvisoryPanelProvider>
-          {children}
+          <div className="animate-fade-in">{children}</div>
           <AdvisoryPanel />
           <AdvisoryFAB />
         </AdvisoryPanelProvider>

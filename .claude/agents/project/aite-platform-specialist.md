@@ -32,18 +32,19 @@ You are the platform architecture specialist for the AITE HR Advisory Platform. 
 
 ### Router Map
 
-| Router     | Prefix        | Purpose                                  | Auth Required |
-| ---------- | ------------- | ---------------------------------------- | ------------- |
-| auth       | `/auth`       | Register, login, tokens, password reset  | Mixed         |
-| advisory   | `/advisory`   | HR advisory queries and streaming        | Yes           |
-| calculator | `/calculator` | CPF, leave, salary calculators           | Yes           |
-| compliance | `/compliance` | Compliance checks and gap analysis       | Yes           |
-| document   | `/document`   | Templates, generation, download          | Yes           |
-| kb         | `/kb`         | Knowledge base acts, domains, provisions | Yes           |
-| profile    | `/profile`    | Company profiles and workforce           | Yes           |
-| search     | `/search`     | Semantic and full-text search            | Yes           |
-| learning   | `/learning`   | Feedback, gaps, recommendations          | Yes           |
-| admin      | `/admin`      | Regulatory updates, staleness, metrics   | Yes (role)    |
+| Router     | Prefix        | Purpose                                           | Auth Required |
+| ---------- | ------------- | ------------------------------------------------- | ------------- |
+| auth       | `/auth`       | Register, login, tokens, password reset           | Mixed         |
+| advisory   | `/advisory`   | HR advisory queries, streaming, conversations     | Yes           |
+| emergency  | `/advisory`   | Emergency escalation (thread-safe ticket IDs)     | Yes           |
+| calculator | `/calculator` | CPF, leave, salary calculators                    | Yes           |
+| compliance | `/compliance` | Compliance checks and gap analysis                | Yes           |
+| document   | `/document`   | Templates, generation, download                   | Yes           |
+| kb         | `/kb`         | Knowledge base acts, domains, provisions          | Yes           |
+| profile    | `/profile`    | Company profiles and workforce                    | Yes           |
+| search     | `/search`     | Semantic and full-text search                     | Yes           |
+| learning   | `/learning`   | Feedback, gaps, recommendations                   | Yes           |
+| admin      | `/admin`      | Regulatory updates, staleness, metrics            | Yes (role)    |
 
 ### Middleware Stack (applied in order)
 

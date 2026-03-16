@@ -9,6 +9,9 @@ import type {
   AdvisoryStreamStartEvent,
   AdvisoryStreamCompleteEvent,
   AdvisoryHistoryResponse,
+  ConversationListResponse,
+  ConversationDeleteResponse,
+  ConversationRenameResponse,
 } from "@/types/api";
 
 export const advisoryApi = {
@@ -23,19 +26,46 @@ export const advisoryApi = {
    */
   stream(
     data: AdvisoryStreamRequest,
-    callbacks: SSECallbacks<AdvisoryStreamStartEvent, AdvisoryStreamCompleteEvent>,
+    callbacks: SSECallbacks<
+      AdvisoryStreamStartEvent,
+      AdvisoryStreamCompleteEvent
+    >,
   ): AbortController {
-    return createSSEStream<AdvisoryStreamStartEvent, AdvisoryStreamCompleteEvent>(
-      "/advisory/stream",
-      data,
-      callbacks,
-    );
+    return createSSEStream<
+      AdvisoryStreamStartEvent,
+      AdvisoryStreamCompleteEvent
+    >("/advisory/stream", data, callbacks);
   },
 
   /** Retrieve conversation history for a given conversation. */
   getHistory(conversationId: number): Promise<AdvisoryHistoryResponse> {
     return apiClient.get<AdvisoryHistoryResponse>(
       `/advisory/history/${conversationId}`,
+    );
+  },
+
+  /** List all conversations for the current user. */
+  listConversations(): Promise<ConversationListResponse> {
+    return apiClient.get<ConversationListResponse>("/advisory/conversations");
+  },
+
+  /** Delete a conversation by ID. */
+  deleteConversation(
+    conversationId: number,
+  ): Promise<ConversationDeleteResponse> {
+    return apiClient.delete<ConversationDeleteResponse>(
+      `/advisory/conversations/${conversationId}`,
+    );
+  },
+
+  /** Rename a conversation. */
+  renameConversation(
+    conversationId: number,
+    title: string,
+  ): Promise<ConversationRenameResponse> {
+    return apiClient.patch<ConversationRenameResponse>(
+      `/advisory/conversations/${conversationId}`,
+      { title },
     );
   },
 };

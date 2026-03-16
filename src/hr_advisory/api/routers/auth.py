@@ -1,7 +1,7 @@
 """Authentication endpoints.
 
 Handles user registration, login, token refresh, profile retrieval,
-logout, and password reset.
+logout, password reset, and Google OAuth SSO.
 
 All business logic is delegated to AuthService -- this module only
 handles HTTP concerns (request parsing, response formatting, status codes).
@@ -376,3 +376,109 @@ async def password_reset(
         raise HTTPException(status_code=400, detail=error_msg) from exc
 
     return result
+
+
+# --------------------------------------------------------------------------
+# Google OAuth SSO — code exchange endpoint
+# --------------------------------------------------------------------------
+# The frontend constructs the Google OAuth URL directly and handles the
+# callback. This endpoint receives the authorization code from the frontend
+# and exchanges it for AITE tokens. Since it returns JSON, the Nexus gateway
+# wrapping is harmless.
+
+
+@router.post("/google/exchange")
+async def google_exchange(request: Request):
+    """Exchange a Google OAuth authorization code for AITE tokens.
+
+    Called by the frontend callback page after Google redirects with a code.
+    Returns AITE JWT tokens and user info as JSON.
+    """
+    import urllib.parse
+
+    import requests as http_requests
+
+    body = await request.json()
+    code = body.get("code")
+    redirect_uri = body.get("redirect_uri")
+
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code")
+
+    settings = get_settings()
+    if not settings.google_oauth_client_id or not settings.google_oauth_client_secret:
+        raise HTTPException(status_code=501, detail="Google OAuth not configured.")
+
+    if not redirect_uri:
+        redirect_uri = settings.google_oauth_redirect_uri
+
+    # Exchange authorization code for Google tokens (server-to-server)
+    token_resp = http_requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": code,
+            "client_id": settings.google_oauth_client_id,
+            "client_secret": settings.google_oauth_client_secret,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        },
+        timeout=10,
+    )
+    if token_resp.status_code != 200:
+        logger.error("Google token exchange failed: %s", token_resp.text)
+        raise HTTPException(status_code=400, detail="Failed to exchange Google authorization code")
+
+    token_data = token_resp.json()
+
+    # Fetch user profile from Google
+    userinfo_resp = http_requests.get(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        headers={"Authorization": f"Bearer {token_data['access_token']}"},
+        timeout=10,
+    )
+    if userinfo_resp.status_code != 200:
+        logger.error("Google userinfo fetch failed: %s", userinfo_resp.text)
+        raise HTTPException(status_code=400, detail="Failed to fetch Google user info")
+
+    google_user = userinfo_resp.json()
+    email = google_user.get("email")
+    name = google_user.get("name") or email.split("@")[0]
+
+    if not email:
+        raise HTTPException(status_code=400, detail="Google account has no email")
+
+    # Find or create local user
+    auth_service = _get_auth_service()
+    user = auth_service._find_user_by_email(email)
+    if user is None:
+        user = auth_service._create_user(
+            email=email,
+            name=name,
+            password_hash="",
+            role="owner",
+        )
+        logger.info("Google SSO: created new user email=%s, id=%s", email, user.get("id"))
+    else:
+        logger.info("Google SSO: existing user email=%s, id=%s", email, user.get("id"))
+
+    # Generate AITE JWTs
+    access_token = auth_service.create_access_token(
+        user_id=user["id"],
+        email=user["email"],
+        role=user["role"],
+        company_id=user.get("company_id"),
+    )
+    refresh_token = auth_service.create_refresh_token(user_id=user["id"])
+
+    return {
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "name": user["name"],
+            "role": user["role"],
+            "company_id": user.get("company_id"),
+        },
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }

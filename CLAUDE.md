@@ -37,17 +37,17 @@ See `rules/no-stubs.md` for details.
 
 Phase commands replace the manual copy-paste workflow. Each loads the corresponding instruction template and checks workspace state.
 
-| Command      | Phase | Purpose                                            |
-| ------------ | ----- | -------------------------------------------------- |
-| `/start`     | —     | New user orientation; explains the workflow         |
-| `/analyze`   | 01    | Research and validate the project idea              |
-| `/todos`     | 02    | Create project roadmap; stops for your approval     |
-| `/implement` | 03    | Build the project one task at a time; repeat        |
-| `/redteam`   | 04    | Test everything from a real user's perspective      |
-| `/codify`    | 05    | Capture knowledge for future sessions              |
-| `/deploy`    | —     | Get the project live (standalone)                  |
-| `/ws`        | —     | Check project status anytime                       |
-| `/wrapup`    | —     | Save progress before ending a session              |
+| Command      | Phase | Purpose                                         |
+| ------------ | ----- | ----------------------------------------------- |
+| `/start`     | —     | New user orientation; explains the workflow     |
+| `/analyze`   | 01    | Research and validate the project idea          |
+| `/todos`     | 02    | Create project roadmap; stops for your approval |
+| `/implement` | 03    | Build the project one task at a time; repeat    |
+| `/redteam`   | 04    | Test everything from a real user's perspective  |
+| `/codify`    | 05    | Capture knowledge for future sessions           |
+| `/deploy`    | —     | Get the project live (standalone)               |
+| `/ws`        | —     | Check project status anytime                    |
+| `/wrapup`    | —     | Save progress before ending a session           |
 
 **Workspace detection**: Hooks automatically detect the active workspace and inject context. `session-start.js` shows workspace status on session start (human-facing). `user-prompt-rules-reminder.js` injects a 1-line `[WORKSPACE]` summary into Claude's context every turn (survives context compression).
 
@@ -65,6 +65,7 @@ Phase commands replace the manual copy-paste workflow. Each loads the correspond
 | Git commits, branches, PRs        | `rules/git.md`               | Global                                              |
 | No stubs or placeholders          | `rules/no-stubs.md`          | Global                                              |
 | Kailash SDK execution patterns    | `rules/patterns.md`          | `**/*.py`, `**/*.ts`, `**/*.js`                     |
+| README & Sphinx docs maintenance  | `rules/documentation.md`     | `README.md`, `docs/**`, `CHANGELOG.md`              |
 | Security (secrets, injection)     | `rules/security.md`          | Global                                              |
 | 3-tier testing strategy           | `rules/testing.md`           | `tests/**`, `**/*test*`, `**/*spec*`, `conftest.py` |
 | Auto-generated workflow instincts | `rules/learned-instincts.md` | Global                                              |

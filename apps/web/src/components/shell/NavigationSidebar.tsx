@@ -12,8 +12,6 @@ import {
   AlertTriangle,
   Users,
   BarChart3,
-  Bell,
-  Building2,
   Settings,
   HelpCircle,
   ChevronLeft,
@@ -25,9 +23,11 @@ interface NavItem {
   label: string;
   href: string;
   icon: typeof LayoutDashboard;
+  iconClassName?: string;
 }
 
-const primaryNavItems: NavItem[] = [
+/* ── Group 1: Core (no label) ─────────────────────────────── */
+const coreNavItems: NavItem[] = [
   {
     labelKey: "nav.dashboard",
     label: "Dashboard",
@@ -41,6 +41,16 @@ const primaryNavItems: NavItem[] = [
     icon: MessageSquare,
   },
   {
+    labelKey: "nav.compliance",
+    label: "Compliance",
+    href: "/compliance",
+    icon: Shield,
+  },
+];
+
+/* ── Group 2: Tools ───────────────────────────────────────── */
+const toolsNavItems: NavItem[] = [
+  {
     labelKey: "nav.calculators",
     label: "Calculators",
     href: "/calculators",
@@ -52,18 +62,10 @@ const primaryNavItems: NavItem[] = [
     href: "/documents",
     icon: FileText,
   },
-  {
-    labelKey: "nav.compliance",
-    label: "Compliance",
-    href: "/compliance",
-    icon: Shield,
-  },
-  {
-    labelKey: "nav.emergency",
-    label: "Emergency",
-    href: "/emergency",
-    icon: AlertTriangle,
-  },
+];
+
+/* ── Group 3: Management ──────────────────────────────────── */
+const managementNavItems: NavItem[] = [
   {
     labelKey: "nav.clients",
     label: "Clients",
@@ -78,13 +80,14 @@ const primaryNavItems: NavItem[] = [
   },
 ];
 
-const secondaryNavItems: NavItem[] = [
-  { labelKey: "nav.alerts", label: "Alerts", href: "/alerts", icon: Bell },
+/* ── Bottom section (after separator) ─────────────────────── */
+const bottomNavItems: NavItem[] = [
   {
-    labelKey: "nav.profile",
-    label: "Company Profile",
-    href: "/profile",
-    icon: Building2,
+    labelKey: "nav.emergency",
+    label: "Emergency",
+    href: "/emergency",
+    icon: AlertTriangle,
+    iconClassName: "text-[var(--color-risk-amber)]",
   },
   {
     labelKey: "nav.settings",
@@ -145,10 +148,37 @@ export function NavigationSidebar({
         </div>
       </div>
 
-      {/* Primary nav */}
+      {/* Grouped nav */}
       <div className="flex-1 overflow-y-auto py-2">
+        {/* Core group (no label) */}
         <ul className="flex flex-col gap-0.5 px-2" role="list">
-          {primaryNavItems.map((item) => (
+          {coreNavItems.map((item) => (
+            <NavLink
+              key={item.href}
+              item={item}
+              active={isRouteActive(pathname, item.href)}
+              collapsed={collapsed}
+            />
+          ))}
+        </ul>
+
+        {/* Tools group */}
+        <NavGroupLabel label="Tools" collapsed={collapsed} />
+        <ul className="flex flex-col gap-0.5 px-2" role="list">
+          {toolsNavItems.map((item) => (
+            <NavLink
+              key={item.href}
+              item={item}
+              active={isRouteActive(pathname, item.href)}
+              collapsed={collapsed}
+            />
+          ))}
+        </ul>
+
+        {/* Management group */}
+        <NavGroupLabel label="Management" collapsed={collapsed} />
+        <ul className="flex flex-col gap-0.5 px-2" role="list">
+          {managementNavItems.map((item) => (
             <NavLink
               key={item.href}
               item={item}
@@ -161,9 +191,9 @@ export function NavigationSidebar({
         {/* Divider */}
         <div className="my-3 mx-3 border-t border-white/15" role="separator" />
 
-        {/* Secondary nav */}
+        {/* Bottom nav */}
         <ul className="flex flex-col gap-0.5 px-2" role="list">
-          {secondaryNavItems.map((item) => (
+          {bottomNavItems.map((item) => (
             <NavLink
               key={item.href}
               item={item}
@@ -199,6 +229,23 @@ export function NavigationSidebar({
   );
 }
 
+/* ── NavGroupLabel ─────────────────────────────────────────── */
+
+interface NavGroupLabelProps {
+  label: string;
+  collapsed: boolean;
+}
+
+function NavGroupLabel({ label, collapsed }: NavGroupLabelProps) {
+  if (collapsed) return null;
+
+  return (
+    <p className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-gray-400)]">
+      {label}
+    </p>
+  );
+}
+
 /* ── NavLink item ──────────────────────────────────────────── */
 
 interface NavLinkProps {
@@ -227,7 +274,10 @@ function NavLink({ item, active, collapsed }: NavLinkProps) {
         )}
         aria-current={active ? "page" : undefined}
       >
-        <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+        <Icon
+          className={clsx("h-5 w-5 shrink-0", item.iconClassName)}
+          aria-hidden="true"
+        />
         {!collapsed && (
           <span className="text-sm font-medium truncate">{item.label}</span>
         )}

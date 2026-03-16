@@ -32,6 +32,9 @@ services:
       - APP_ENV=production
       - DEBUG=false
       - CORS_ORIGINS=https://aite.kailash.ai
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-https://aite.kailash.ai/api/auth/google/callback}
       - KAILASH_RUNTIME=async
     depends_on:
       postgres:
@@ -49,9 +52,13 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: https://aite.kailash.ai/api
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
     container_name: aite-frontend
     environment:
       - NEXT_PUBLIC_API_URL=https://aite.kailash.ai/api
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
     restart: unless-stopped
 
   postgres:

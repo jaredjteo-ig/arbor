@@ -56,6 +56,12 @@ router = APIRouter()
 # Session-scoped pipeline cache keyed by conversation_id
 _conversation_memory: dict[str, ShortTermMemory] = {}
 
+# Custom titles set via PATCH /conversations/{id} (overrides auto-generated titles)
+_conversation_titles: dict[str, str] = {}
+
+# Tenant isolation: maps conversation_id → user_id who created it
+_conversation_owners: dict[str, str] = {}
+
 
 _RISK_TIER_SEVERITY = {"green": 0, "amber": 1, "red": 2}
 
@@ -369,6 +375,11 @@ async def advisory_query(
     if conversation_id is None:
         conversation_id = uuid.uuid4().int % 2**31
     user_id = current_user.get("sub", "anonymous")
+
+    # Record conversation ownership for tenant isolation
+    _conv_key = str(conversation_id)
+    if _conv_key not in _conversation_owners:
+        _conversation_owners[_conv_key] = str(user_id)
 
     # ── Step 0: Tenant isolation ─────────────────────────────────
     validate_company_access(current_user, requested_company_id=company_id)
@@ -1439,6 +1450,11 @@ async def advisory_stream(
         conversation_id = uuid.uuid4().int % 2**31
     user_id = current_user.get("sub", "anonymous")
 
+    # Record conversation ownership for tenant isolation
+    _conv_key = str(conversation_id)
+    if _conv_key not in _conversation_owners:
+        _conversation_owners[_conv_key] = str(user_id)
+
     # ── Step 0: Tenant isolation ─────────────────────────────────
     validate_company_access(current_user, requested_company_id=company_id)
 
@@ -1647,6 +1663,76 @@ async def advisory_stream(
     )
 
 
+@router.get("/conversations")
+async def list_conversations(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """List all conversations for the current user.
+
+    Returns conversation summaries derived from the in-memory
+    conversation store. Each summary includes an auto-generated
+    title from the first user message.
+    """
+    user_id = str(current_user.get("sub", "anonymous"))
+
+    conversations = []
+    for conv_key, memory in _conversation_memory.items():
+        ctx = memory.load_context(conv_key)
+        turns = ctx.get("turns", [])
+        if not turns:
+            continue
+
+        # Tenant isolation: skip conversations that don't belong to this user
+        conv_owner = _conversation_owners.get(conv_key, "")
+        if conv_owner and conv_owner != user_id:
+            continue
+
+        # Auto-generate title from first user message (first 60 chars)
+        first_user_msg = turns[0].get("user", "New conversation")
+        title = _conversation_titles.get(conv_key, "")
+        if not title:
+            title = first_user_msg[:60].rstrip()
+            if len(first_user_msg) > 60:
+                title += "..."
+
+        # Last message for preview
+        last_turn = turns[-1]
+        last_message = last_turn.get("agent", last_turn.get("user", ""))
+
+        # Timestamp from last turn
+        timestamp = last_turn.get("timestamp", "")
+
+        # Highest risk tier across turns
+        risk_tiers = [t.get("risk_tier", "green") for t in turns]
+        worst_risk = "green"
+        for tier in risk_tiers:
+            worst_risk = _escalate_risk_tier(worst_risk, tier)
+
+        try:
+            conv_id = int(conv_key)
+        except (ValueError, TypeError):
+            continue
+
+        conversations.append(
+            {
+                "id": conv_id,
+                "title": title,
+                "last_message": last_message[:100] if last_message else "",
+                "timestamp": timestamp,
+                "risk_tier": worst_risk,
+                "message_count": len(turns),
+            }
+        )
+
+    # Sort by timestamp descending (newest first)
+    conversations.sort(key=lambda c: c["timestamp"], reverse=True)
+
+    return {
+        "conversations": conversations,
+        "total": len(conversations),
+    }
+
+
 @router.get("/history/{conversation_id}")
 async def advisory_history(
     conversation_id: int,
@@ -1654,30 +1740,117 @@ async def advisory_history(
 ) -> dict:
     """Retrieve conversation history for a given conversation.
 
-    Returns the messages from the in-memory conversation store.
-    Note: conversations are session-scoped and not persisted across restarts.
+    Returns the messages from the in-memory conversation store,
+    including both user and assistant messages in chronological order.
     """
-    from hr_advisory.agents import LongTermMemory
+    conv_key = str(conversation_id)
+    user_id = str(current_user.get("sub", "anonymous"))
 
-    company_id = current_user.get("company_id")
-    mem = LongTermMemory()
-    history = mem.get_advisory_history(str(company_id)) if company_id else []
+    # Tenant isolation: verify ownership
+    owner = _conversation_owners.get(conv_key, "")
+    if owner and owner != user_id:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
 
-    # Map to conversation-scoped view
+    memory = _conversation_memory.get(conv_key)
+
     messages = []
-    for entry in history:
-        messages.append(
-            {
-                "role": "user",
-                "content": entry.get("query_summary", ""),
-                "domains": entry.get("domains", []),
-                "risk_tier": entry.get("risk_tier", "amber"),
-                "timestamp": entry.get("timestamp", ""),
-            }
-        )
+    if memory is not None:
+        ctx = memory.load_context(conv_key)
+        turns = ctx.get("turns", [])
+        for turn in turns:
+            # User message
+            user_content = turn.get("user", "")
+            if user_content:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": user_content,
+                        "timestamp": turn.get("timestamp", ""),
+                    }
+                )
+            # Assistant message
+            agent_content = turn.get("agent", "")
+            if agent_content:
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": agent_content,
+                        "domains": turn.get("domains", []),
+                        "risk_tier": turn.get("risk_tier", "green"),
+                        "timestamp": turn.get("timestamp", ""),
+                    }
+                )
 
     return {
         "conversation_id": conversation_id,
         "messages": messages,
         "total": len(messages),
+    }
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Delete a conversation and its history.
+
+    Removes the conversation from the in-memory store.
+    """
+    conv_key = str(conversation_id)
+    user_id = str(current_user.get("sub", "anonymous"))
+
+    # Tenant isolation: verify ownership before deletion
+    owner = _conversation_owners.get(conv_key, "")
+    if owner and owner != user_id:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+
+    removed = conv_key in _conversation_memory
+    _conversation_memory.pop(conv_key, None)
+    _conversation_titles.pop(conv_key, None)
+    _conversation_owners.pop(conv_key, None)
+
+    if not removed:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+
+    return {
+        "conversation_id": conversation_id,
+        "deleted": True,
+    }
+
+
+@router.patch("/conversations/{conversation_id}")
+async def rename_conversation(
+    conversation_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Rename a conversation.
+
+    Accepts a JSON body with a ``title`` field.
+    """
+    conv_key = str(conversation_id)
+    user_id = str(current_user.get("sub", "anonymous"))
+
+    # Tenant isolation: verify ownership before renaming
+    owner = _conversation_owners.get(conv_key, "")
+    if owner and owner != user_id:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+
+    if conv_key not in _conversation_memory:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+
+    body = await request.json()
+    new_title = body.get("title", "").strip()
+    if not new_title:
+        raise HTTPException(status_code=400, detail="Title must not be empty.")
+    if len(new_title) > 200:
+        raise HTTPException(status_code=400, detail="Title must be 200 characters or less.")
+
+    _conversation_titles[conv_key] = new_title
+
+    return {
+        "conversation_id": conversation_id,
+        "title": new_title,
+        "updated": True,
     }

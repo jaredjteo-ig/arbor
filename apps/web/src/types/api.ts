@@ -20,6 +20,8 @@ export interface ProvisionCited {
   provision_id: string;
   title: string;
   relevance: number;
+  /** Authority level from the backend citation validator (statutory/guideline/best-practice). */
+  authority_level?: string;
 }
 
 export interface AdvisoryQueryResponse {
@@ -70,6 +72,31 @@ export interface AdvisoryHistoryResponse {
   conversation_id: number;
   messages: AdvisoryMessage[];
   total: number;
+}
+
+export interface ConversationListItem {
+  id: number;
+  title: string;
+  last_message: string;
+  timestamp: string;
+  risk_tier?: string;
+  message_count: number;
+}
+
+export interface ConversationListResponse {
+  conversations: ConversationListItem[];
+  total: number;
+}
+
+export interface ConversationDeleteResponse {
+  conversation_id: number;
+  deleted: boolean;
+}
+
+export interface ConversationRenameResponse {
+  conversation_id: number;
+  title: string;
+  updated: boolean;
 }
 
 /* ── Calculator ──────────────────────────────────────────────── */
@@ -540,6 +567,46 @@ export interface Provision {
   effective_date: string;
 }
 
+/** Extended provision returned by the /kb/provisions/ref/{reference} endpoint. */
+export interface ProvisionDetail {
+  id: number;
+  title: string;
+  section: string;
+  formal_text: string;
+  plain_summary: string;
+  source_act_id?: number;
+  domain_id?: number;
+  authority_level?: string;
+  source_url?: string;
+  cross_references: CrossReference[];
+  applicability_rules: ApplicabilityRule[];
+  practical_examples: PracticalExample[];
+}
+
+export interface CrossReference {
+  id: number;
+  source_provision_id: number;
+  target_provision_id: number;
+  relationship_type: string;
+  description: string;
+}
+
+export interface ApplicabilityRule {
+  id: number;
+  provision_id: number;
+  rule_type: string;
+  description: string;
+  conditions: string;
+}
+
+export interface PracticalExample {
+  id: number;
+  provision_id: number;
+  scenario: string;
+  outcome: string;
+  explanation: string;
+}
+
 export interface KbQueryRequest {
   query: string;
   domain_id?: string;
@@ -696,6 +763,25 @@ export interface EscalationResponse {
   topic_id: string;
   status: string;
   message: string;
+}
+
+/* ── Advisory Escalation (chat-originated) ──────────────────── */
+
+export type EscalationUrgency = "urgent" | "within-24h" | "general-enquiry";
+export type EscalationContactMethod = "email" | "phone";
+
+export interface AdvisoryEscalationRequest {
+  situation: string;
+  urgency: EscalationUrgency;
+  contact_method: EscalationContactMethod;
+  contact_value: string;
+}
+
+export interface AdvisoryEscalationResponse {
+  escalation_id: string;
+  status: string;
+  message: string;
+  expected_response_time: string;
 }
 
 /* ── QA Sessions ────────────────────────────────────────────── */

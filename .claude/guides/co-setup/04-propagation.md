@@ -96,6 +96,7 @@ Current repositories and their archetypes:
 | agentic-os            | `~/repos/dev/agentic-os`                | Coding                         |
 | aite                  | `~/repos/asme/aite`                     | Coding                         |
 | gba                   | `~/repos/projects/gba`                  | Coding                         |
+| hana                  | `~/repos/hmi/hana`                      | Coding                         |
 | care                  | `~/repos/terrene/care`                  | Platform (hybrid)              |
 | coursewright          | `~/repos/dev/coursewright`              | Education (non-coding)         |
 | terrene               | `~/repos/terrene/terrene`               | Governance (canonical source)  |

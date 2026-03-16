@@ -44,6 +44,7 @@ class Settings:
     jwt_expiry_minutes: int = 60
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
+    google_oauth_redirect_uri: str = ""
 
     # Email
     sendgrid_api_key: str = ""
@@ -114,6 +115,7 @@ def get_settings() -> Settings:
         jwt_expiry_minutes=int(os.environ.get("JWT_EXPIRY_MINUTES", "60")),
         google_oauth_client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID", ""),
         google_oauth_client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", ""),
+        google_oauth_redirect_uri=os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", ""),
         sendgrid_api_key=os.environ.get("SENDGRID_API_KEY", ""),
         from_email=os.environ.get("FROM_EMAIL", "noreply@aite.sg"),
     )

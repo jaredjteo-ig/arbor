@@ -62,7 +62,7 @@ Part IV employees get overtime at 1.5x hourly rate, capped at salary thresholds.
 ## Implementation Files
 
 - `src/hr_advisory/kb/` — Provision content and loaders
-- `src/hr_advisory/workflows/classification.py` — Domain detection
+- `src/hr_advisory/workflows/classification/` — Domain detection
 - `src/hr_advisory/workflows/guardrails.py` — Escalation patterns
 - `src/hr_advisory/models/` — Act, Domain, Provision, CrossReference models
 - `docs/01-architecture.md` — Full domain and KB documentation

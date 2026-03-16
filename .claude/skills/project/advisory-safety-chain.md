@@ -84,7 +84,28 @@ Queries requiring human specialist referral:
 - `event: token` — Individual word tokens
 - `event: complete` — Full response with trust chain
 
-Same safety chain as `/advisory/query`.
+Same safety chain as `/advisory/query`. Frontend SSE client (`sse.ts`) handles 401 with automatic token refresh and retry.
+
+## Emergency Escalation
+
+`POST /advisory/escalate` — Creates escalation ticket for human specialist referral.
+
+- Thread-safe ticket IDs via `itertools.count(1)` (not global += 1)
+- Escalation reasons: litigation, discrimination, criminal, complex multi-domain
+- Captures: query context, risk tier, specialist type, user contact info
+
+File: `src/hr_advisory/api/routers/emergency.py`
+
+## Conversation Management
+
+Tenant-isolated conversation endpoints:
+
+- `GET /advisory/conversations` — List user's conversations only
+- `GET /advisory/conversations/{id}/history` — View conversation history (ownership verified)
+- `DELETE /advisory/conversations/{id}` — Delete conversation (ownership verified)
+- `PATCH /advisory/conversations/{id}` — Rename conversation (ownership verified)
+
+Ownership tracked via `_conversation_owners` dict (in-memory MVP).
 
 ## Critical Rules
 
@@ -94,6 +115,8 @@ Same safety chain as `/advisory/query`.
 4. Anti-amnesia constraints injected on EVERY query
 5. Streaming applies the SAME chain as synchronous
 6. Circumvention blocks MUST explain WHY
+7. Conversation access MUST verify ownership (tenant isolation)
+8. Escalation counter MUST be thread-safe (itertools.count, not global int)
 
 ## Related Documentation
 

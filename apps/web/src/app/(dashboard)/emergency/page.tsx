@@ -569,20 +569,12 @@ export default function EmergencyPage() {
           const TopicIcon = ICON_MAP[topic.icon] ?? AlertTriangle;
 
           return (
-            <AppCard
+            <button
               key={topic.topic_id}
-              variant="standard"
-              className="border-l-4 cursor-pointer transition-shadow hover:shadow-lg"
-              style={{ borderLeftColor: "var(--color-risk-red)" }}
+              type="button"
               onClick={() => setSelectedTopic(topic.topic_id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e: React.KeyboardEvent) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setSelectedTopic(topic.topic_id);
-                }
-              }}
+              className="text-left rounded-[12px] bg-[var(--color-surface-card)] overflow-hidden shadow-[var(--shadow-card)] border border-[var(--color-gray-200)] border-l-4 cursor-pointer transition-shadow hover:shadow-lg px-5 py-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+              style={{ borderLeftColor: "var(--color-risk-red)" }}
             >
               <div className="flex items-start gap-3">
                 <div
@@ -610,7 +602,7 @@ export default function EmergencyPage() {
                   </span>
                 </div>
               </div>
-            </AppCard>
+            </button>
           );
         })}
       </div>

@@ -19,3 +19,4 @@ export { helpApi } from "./help";
 export { settingsApi } from "./settings";
 export { learningApi } from "./learning";
 export { qaApi } from "./qa";
+export { humanizeError } from "./errors";
