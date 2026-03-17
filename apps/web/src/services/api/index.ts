@@ -20,4 +20,7 @@ export { settingsApi } from "./settings";
 export { learningApi } from "./learning";
 export { qaApi } from "./qa";
 export { employeesApi } from "./employees";
+export { leaveApi } from "./leave";
+export { claimsApi } from "./claims";
+export { attendanceApi } from "./attendance";
 export { humanizeError } from "./errors";

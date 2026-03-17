@@ -32,6 +32,12 @@ Client (Web / CLI / MCP)
   Business Logic
   |- Advisory safety chain (13 steps)
   |- Calculators (CPF, leave, cost-to-company, quota/levy)
+  |- Payroll engine (gross-to-net, CPF, SDL, FWL, SHG)
+  |- Leave management (types, application, approval, calendar)
+  |- Claims & expenses (submission, approval, payroll integration)
+  |- Attendance (clock in/out, GPS, lateness, overtime)
+  |- Shift scheduling (templates, assignments, availability, hours)
+  |- Statutory file generation (CPF e-Submit, IR8A, IR21, bank GIRO, payslips)
   |- Compliance checker
   |- Document generator
   |- Learning pipeline

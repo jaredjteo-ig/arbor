@@ -414,3 +414,135 @@ All admin endpoints require `owner` or `hr_manager` role.
 ### Platform Metrics
 
 - `GET /admin/metrics` -- Dashboard data: queries tracked, avg confidence, risk distribution, KB stats, feedback count, pending recommendations, pending/published updates
+
+---
+
+## Payroll (`/payroll`)
+
+### POST /payroll/calculate
+Run payroll for all active employees. Creates PayrollRun in draft status with Payslips and PayslipItems. Integrates leave deductions, overtime from timesheets, and approved claims. Requires `owner` or `hr_manager`.
+
+**Body**: `{ "period_start": "2026-03-01", "period_end": "2026-03-31", "pay_date": "2026-03-28", "payroll_type": "monthly" }`
+
+### GET /payroll/runs
+List all payroll runs for the company. Requires `owner` or `hr_manager`.
+
+### GET /payroll/runs/{id}
+Get payroll run detail with all payslips. Requires `owner` or `hr_manager`.
+
+### POST /payroll/runs/{id}/approve
+Approve a draft payroll run. Requires `owner` only.
+
+### POST /payroll/runs/{id}/mark-paid
+Mark approved run as paid. Marks all claims as paid. Requires `owner` or `hr_manager`.
+
+### POST /payroll/runs/{id}/cancel
+Cancel a non-paid run. Approved runs require `owner` role.
+
+### GET /payroll/my-payslips
+Employee's own payslips (confirmed/paid only). Any authenticated user.
+
+### POST /payroll/runs/{id}/cpf-file
+Generate CPF e-Submit CSV file for download.
+
+### POST /payroll/runs/{id}/bank-file
+Generate bank GIRO file. `?format=generic|dbs|uob|ocbc`
+
+### POST /payroll/tax/generate-ir8a
+Generate IR8A data for all employees. `?year=2026`
+
+### POST /payroll/tax/generate-ir21/{employee_id}
+Generate IR21 for departing foreign employee.
+
+---
+
+## Leave (`/leave`)
+
+### GET /leave/types
+List leave types for company.
+
+### POST /leave/apply
+Submit leave application. Auto-validates balance and overlap. Any authenticated user.
+
+**Body**: `{ "leave_type_id": 1, "start_date": "2026-03-24", "end_date": "2026-03-26", "start_half": "full_day", "end_half": "full_day", "reason": "..." }`
+
+### GET /leave/applications
+List applications. Employee sees own; admin sees all. `?status=` filter.
+
+### PATCH /leave/applications/{id}/approve
+Approve leave. Deducts from balance. Requires manager/admin.
+
+### PATCH /leave/applications/{id}/reject
+Reject with required remarks.
+
+### GET /leave/balances/{employee_id}
+Leave balance by type for a year. `?year=2026`
+
+### GET /leave/calendar
+Team calendar data by month. `?month=3&year=2026`
+
+---
+
+## Claims (`/claims`)
+
+### POST /claims
+Create draft claim. Any authenticated user.
+
+### GET /claims
+List claims. Employee sees own; admin sees all. `?status=` filter.
+
+### PATCH /claims/{id}/submit
+Submit for approval.
+
+### PATCH /claims/{id}/approve
+Approve claim. Requires admin.
+
+### POST /claims/{id}/items
+Add item to draft claim. Validates category limits.
+
+### POST /claims/{id}/items/{item_id}/receipts
+Upload receipt (multipart form, max 10MB, PDF/JPG/PNG).
+
+---
+
+## Attendance (`/attendance`)
+
+### POST /attendance/clock-in
+Clock in with optional GPS location. Any authenticated user.
+
+### POST /attendance/clock-out
+Clock out. Auto-calculates work hours and overtime.
+
+### GET /attendance/today
+Current employee's today record.
+
+### GET /attendance/records
+List records. `?employee_id=&month=&year=` filters.
+
+### GET /attendance/summary
+Monthly summary: present/absent/late counts, total hours.
+
+### POST /attendance/timesheet/submit
+Submit monthly timesheet for approval.
+
+---
+
+## Shifts (`/shifts`)
+
+### GET /shifts/templates
+List shift templates. Requires admin.
+
+### GET /shifts/schedule
+Weekly schedule grid. `?week_start=2026-03-16&department=engineering`
+
+### POST /shifts/assignments
+Create shift assignment. Requires admin.
+
+### POST /shifts/publish
+Publish schedule for a week. Creates audit record.
+
+### GET /shifts/my-schedule
+Employee's own schedule. `?week_start=`
+
+### GET /shifts/hours
+Hours per employee per week. Warns if >44h (EA limit).

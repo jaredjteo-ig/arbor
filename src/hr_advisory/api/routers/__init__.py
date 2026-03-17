@@ -17,18 +17,25 @@ from hr_advisory.api.routers.emergency import router as emergency_router
 from hr_advisory.api.routers.help import router as help_router
 from hr_advisory.api.routers.kb import router as kb_router
 from hr_advisory.api.routers.learning import router as learning_router
+from hr_advisory.api.routers.leave import router as leave_router
+from hr_advisory.api.routers.payroll import router as payroll_router
 from hr_advisory.api.routers.profile import router as profile_router
 from hr_advisory.api.routers.qa import router as qa_router
 from hr_advisory.api.routers.search import router as search_router
 from hr_advisory.api.routers.settings import router as settings_router
 from hr_advisory.api.routers.shadow import router as shadow_router
+from hr_advisory.api.routers.shifts import router as shifts_router
+from hr_advisory.api.routers.claims import router as claims_router
+from hr_advisory.api.routers.attendance import router as attendance_router
 
 __all__ = [
     "admin_router",
     "advisory_router",
     "alerts_router",
+    "attendance_router",
     "auth_router",
     "calculator_router",
+    "claims_router",
     "clients_router",
     "compliance_router",
     "document_router",
@@ -37,9 +44,12 @@ __all__ = [
     "help_router",
     "kb_router",
     "learning_router",
+    "leave_router",
+    "payroll_router",
     "profile_router",
     "qa_router",
     "search_router",
     "settings_router",
     "shadow_router",
+    "shifts_router",
 ]

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   AppCard,
   AppButton,
@@ -8,7 +9,15 @@ import {
   EmptyState,
   toast,
 } from "@/components/design-system";
-import { Users, Plus, Search, X, UserPlus } from "lucide-react";
+import {
+  Users,
+  Plus,
+  Search,
+  X,
+  UserPlus,
+  Upload,
+  FileSpreadsheet,
+} from "lucide-react";
 import { employeesApi, type Employee } from "@/services/api/employees";
 
 /* -- Status badge -------------------------------------------------- */
@@ -30,6 +39,63 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/* -- Confirmation status badge ------------------------------------- */
+
+const CONFIRM_STYLES: Record<string, string> = {
+  confirmed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  on_probation: "bg-amber-50 text-amber-700 border-amber-200",
+  extended: "bg-orange-50 text-orange-700 border-orange-200",
+};
+
+function ConfirmBadge({ status }: { status: string | undefined }) {
+  if (!status) return null;
+  const label = status
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${CONFIRM_STYLES[status] || "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] border-[var(--color-gray-200)]"}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+/* -- Profile completeness ------------------------------------------ */
+
+const QUICK_FIELDS: (keyof Employee)[] = [
+  "name",
+  "email",
+  "department",
+  "designation",
+  "employment_type",
+  "start_date",
+];
+
+function ProfileBar({ employee }: { employee: Employee }) {
+  let filled = 0;
+  for (const key of QUICK_FIELDS) {
+    const val = employee[key];
+    if (val !== null && val !== undefined && val !== "") filled++;
+  }
+  const pct = Math.round((filled / QUICK_FIELDS.length) * 100);
+
+  return (
+    <div
+      className="flex items-center gap-1.5"
+      title={`${pct}% profile complete`}
+    >
+      <div className="w-14 h-1.5 bg-[var(--color-gray-100)] rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${pct === 100 ? "bg-emerald-500" : "bg-[var(--color-primary)]"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-xs text-[var(--color-gray-400)]">{pct}%</span>
+    </div>
+  );
+}
+
 /* -- Loading skeleton ---------------------------------------------- */
 
 function TableSkeleton() {
@@ -43,6 +109,8 @@ function TableSkeleton() {
           <div className="h-4 w-32 bg-[var(--color-gray-200)] rounded" />
           <div className="h-4 w-48 bg-[var(--color-gray-200)] rounded" />
           <div className="h-4 w-24 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-4 w-20 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-5 w-16 bg-[var(--color-gray-200)] rounded-full" />
           <div className="h-5 w-16 bg-[var(--color-gray-200)] rounded-full ml-auto" />
         </div>
       ))}
@@ -182,14 +250,244 @@ function InviteEmployeeModal({
   );
 }
 
+/* -- Import CSV Modal ---------------------------------------------- */
+
+function ImportCsvModal({
+  isOpen,
+  onClose,
+  onSuccess,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [step, setStep] = useState<"upload" | "preview" | "done">("upload");
+  const [previewRecords, setPreviewRecords] = useState<unknown[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  if (!isOpen) return null;
+
+  async function handleFile(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    if (!file.name.endsWith(".csv")) {
+      setError("Please select a CSV file.");
+      return;
+    }
+
+    setIsProcessing(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const data = await employeesApi.importPreview(formData);
+      setPreviewRecords(data.records ?? []);
+      setStep("preview");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to process CSV file";
+      setError(message);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  async function handleConfirm() {
+    setIsProcessing(true);
+    setError(null);
+    try {
+      await employeesApi.importConfirm(previewRecords);
+      toast.success("Employees imported successfully");
+      setStep("done");
+      onSuccess();
+      onClose();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to import employees";
+      setError(message);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave() {
+    setIsDragOver(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    handleFile(e.dataTransfer.files);
+  }
+
+  function handleClose() {
+    setStep("upload");
+    setPreviewRecords([]);
+    setError(null);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={handleClose}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-lg mx-4 rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] shadow-[var(--shadow-raised)] p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="h-5 w-5 text-[var(--color-primary)]" />
+            <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
+              Import Employees from CSV
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="p-1 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+          >
+            <X className="h-5 w-5 text-[var(--color-gray-500)]" />
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 rounded-[8px] bg-red-50 border border-red-200 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {step === "upload" && (
+          <div>
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-[12px] p-10 text-center transition-colors cursor-pointer ${
+                isDragOver
+                  ? "border-[var(--color-primary)] bg-[var(--color-primary-bg)]"
+                  : "border-[var(--color-gray-200)] hover:border-[var(--color-gray-300)]"
+              }`}
+            >
+              <Upload className="h-8 w-8 text-[var(--color-gray-400)] mx-auto mb-3" />
+              <p className="text-sm text-[var(--color-gray-600)]">
+                {isProcessing
+                  ? "Processing CSV..."
+                  : "Drop a CSV file here, or click to browse"}
+              </p>
+              <p className="text-xs text-[var(--color-gray-400)] mt-1">
+                Columns: name, email, department, designation, employment_type,
+                start_date
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={(e) => handleFile(e.target.files)}
+              />
+            </div>
+            <div className="flex justify-end mt-4">
+              <AppButton variant="outlined" size="sm" onClick={handleClose}>
+                Cancel
+              </AppButton>
+            </div>
+          </div>
+        )}
+
+        {step === "preview" && (
+          <div>
+            <p className="text-sm text-[var(--color-gray-600)] mb-3">
+              Found {previewRecords.length} record
+              {previewRecords.length !== 1 ? "s" : ""} to import. Please review
+              and confirm.
+            </p>
+            <div className="max-h-60 overflow-y-auto border border-[var(--color-gray-200)] rounded-[8px]">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--color-gray-200)] bg-[var(--color-gray-50)]">
+                    <th className="text-left py-2 px-3 font-medium text-[var(--color-gray-500)]">
+                      Name
+                    </th>
+                    <th className="text-left py-2 px-3 font-medium text-[var(--color-gray-500)]">
+                      Email
+                    </th>
+                    <th className="text-left py-2 px-3 font-medium text-[var(--color-gray-500)]">
+                      Department
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewRecords.map((rec, i) => {
+                    const r = rec as Record<string, string>;
+                    return (
+                      <tr
+                        key={i}
+                        className="border-b border-[var(--color-gray-100)] last:border-0"
+                      >
+                        <td className="py-2 px-3 text-[var(--color-gray-900)]">
+                          {r.name || "-"}
+                        </td>
+                        <td className="py-2 px-3 text-[var(--color-gray-600)]">
+                          {r.email || "-"}
+                        </td>
+                        <td className="py-2 px-3 text-[var(--color-gray-600)]">
+                          {r.department || "-"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex gap-3 justify-end mt-4">
+              <AppButton
+                variant="outlined"
+                size="sm"
+                onClick={() => {
+                  setStep("upload");
+                  setPreviewRecords([]);
+                }}
+              >
+                Back
+              </AppButton>
+              <AppButton
+                variant="primary"
+                size="sm"
+                onClick={handleConfirm}
+                loading={isProcessing}
+              >
+                Import {previewRecords.length} Employee
+                {previewRecords.length !== 1 ? "s" : ""}
+              </AppButton>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* -- Page ---------------------------------------------------------- */
 
 export default function EmployeesPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const fetchEmployees = useCallback(async () => {
     setIsLoading(true);
@@ -223,7 +521,7 @@ export default function EmployeesPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <Users
             className="h-7 w-7 text-[var(--color-primary)]"
@@ -238,14 +536,24 @@ export default function EmployeesPage() {
             </p>
           </div>
         </div>
-        <AppButton
-          variant="primary"
-          size="sm"
-          onClick={() => setShowInviteModal(true)}
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          Invite Employee
-        </AppButton>
+        <div className="flex items-center gap-2">
+          <AppButton
+            variant="outlined"
+            size="sm"
+            onClick={() => setShowImportModal(true)}
+          >
+            <Upload className="h-4 w-4 mr-1" />
+            Import CSV
+          </AppButton>
+          <AppButton
+            variant="primary"
+            size="sm"
+            onClick={() => setShowInviteModal(true)}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Invite Employee
+          </AppButton>
+        </div>
       </div>
 
       {/* Search */}
@@ -315,6 +623,15 @@ export default function EmployeesPage() {
                   <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
                     Department
                   </th>
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Designation
+                  </th>
+                  <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Confirmation
+                  </th>
+                  <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Profile
+                  </th>
                   <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
                     Status
                   </th>
@@ -324,7 +641,8 @@ export default function EmployeesPage() {
                 {filteredEmployees.map((emp) => (
                   <tr
                     key={emp.id}
-                    className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
+                    onClick={() => router.push(`/employees/${emp.id}`)}
+                    className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors cursor-pointer"
                   >
                     <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
                       {emp.name}
@@ -335,6 +653,15 @@ export default function EmployeesPage() {
                     <td className="py-3 px-3 text-[var(--color-gray-600)]">
                       {emp.department}
                     </td>
+                    <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                      {emp.designation || "-"}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <ConfirmBadge status={emp.confirmation_status} />
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <ProfileBar employee={emp} />
+                    </td>
                     <td className="py-3 px-5 text-center">
                       <StatusBadge status={emp.status} />
                     </td>
@@ -343,7 +670,7 @@ export default function EmployeesPage() {
                 {filteredEmployees.length === 0 && employees.length > 0 && (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={7}
                       className="py-8 text-center text-sm text-[var(--color-gray-500)]"
                     >
                       No employees found matching your search.
@@ -356,10 +683,15 @@ export default function EmployeesPage() {
         </AppCard>
       )}
 
-      {/* Invite modal */}
+      {/* Modals */}
       <InviteEmployeeModal
         isOpen={showInviteModal}
         onClose={() => setShowInviteModal(false)}
+        onSuccess={fetchEmployees}
+      />
+      <ImportCsvModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
         onSuccess={fetchEmployees}
       />
     </div>

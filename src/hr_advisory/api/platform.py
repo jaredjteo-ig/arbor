@@ -18,8 +18,10 @@ from hr_advisory.api.routers import (
     admin_router,
     advisory_router,
     alerts_router,
+    attendance_router,
     auth_router,
     calculator_router,
+    claims_router,
     clients_router,
     compliance_router,
     document_router,
@@ -28,11 +30,14 @@ from hr_advisory.api.routers import (
     help_router,
     kb_router,
     learning_router,
+    leave_router,
+    payroll_router,
     profile_router,
     qa_router,
     search_router,
     settings_router,
     shadow_router,
+    shifts_router,
 )
 from hr_advisory.api.session import create_session_store
 from hr_advisory.config.settings import Settings, get_settings
@@ -129,6 +134,8 @@ def _register_routers(app: Nexus) -> None:
     app.include_router(document_router, prefix="/document", tags=["Document"])
     app.include_router(employees_router, prefix="/employees", tags=["Employees"])
     app.include_router(emergency_router, prefix="/emergency", tags=["Emergency"])
+    app.include_router(leave_router, prefix="/leave", tags=["Leave"])
+    app.include_router(payroll_router, prefix="/payroll", tags=["Payroll"])
     app.include_router(help_router, prefix="/help", tags=["Help"])
     app.include_router(profile_router, prefix="/profile", tags=["Profile"])
     app.include_router(kb_router, prefix="/kb", tags=["Knowledge Base"])
@@ -137,6 +144,9 @@ def _register_routers(app: Nexus) -> None:
     app.include_router(learning_router, prefix="/learning", tags=["Learning Pipeline"])
     app.include_router(settings_router, prefix="/settings", tags=["Settings"])
     app.include_router(shadow_router, prefix="/shadow", tags=["Shadow Agent"])
+    app.include_router(shifts_router, prefix="/shifts", tags=["Shifts"])
+    app.include_router(claims_router, prefix="/claims", tags=["Claims"])
+    app.include_router(attendance_router, prefix="/attendance", tags=["Attendance"])
     app.include_router(admin_router)  # Admin router has its own /admin prefix
     app.include_router(qa_router)  # QA router has its own /admin/qa prefix
     logger.info("All API routers registered")

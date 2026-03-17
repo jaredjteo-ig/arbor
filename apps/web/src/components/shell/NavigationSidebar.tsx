@@ -18,6 +18,10 @@ import {
   ChevronRight,
   CalendarDays,
   BookOpen,
+  Wallet,
+  Receipt,
+  Clock,
+  CalendarClock,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -72,6 +76,36 @@ const adminToolsNavItems: NavItem[] = [
 /* Group 3: Management */
 const adminManagementNavItems: NavItem[] = [
   {
+    labelKey: "nav.payroll",
+    label: "Payroll",
+    href: "/payroll",
+    icon: Wallet,
+  },
+  {
+    labelKey: "nav.leave",
+    label: "Leave",
+    href: "/leave",
+    icon: CalendarDays,
+  },
+  {
+    labelKey: "nav.claims",
+    label: "Claims",
+    href: "/claims",
+    icon: Receipt,
+  },
+  {
+    labelKey: "nav.attendance",
+    label: "Attendance",
+    href: "/attendance",
+    icon: Clock,
+  },
+  {
+    labelKey: "nav.shifts",
+    label: "Shifts",
+    href: "/shifts",
+    icon: CalendarClock,
+  },
+  {
     labelKey: "nav.employees",
     label: "Employees",
     href: "/employees",
@@ -119,10 +153,28 @@ const employeeCoreNavItems: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
+    labelKey: "nav.my-payslips",
+    label: "My Payslips",
+    href: "/my-payslips",
+    icon: Receipt,
+  },
+  {
     labelKey: "nav.my-leave",
     label: "My Leave",
-    href: "/my-leave",
+    href: "/leave",
     icon: CalendarDays,
+  },
+  {
+    labelKey: "nav.my-claims",
+    label: "My Claims",
+    href: "/claims",
+    icon: Receipt,
+  },
+  {
+    labelKey: "nav.my-attendance",
+    label: "My Attendance",
+    href: "/attendance",
+    icon: Clock,
   },
   {
     labelKey: "nav.policies",

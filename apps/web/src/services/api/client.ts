@@ -252,6 +252,57 @@ class ApiClient {
   async delete<T>(path: string): Promise<T> {
     return this.request<T>("DELETE", path);
   }
+
+  /**
+   * POST with FormData (file uploads). Does NOT set Content-Type —
+   * the browser adds the correct multipart/form-data boundary automatically.
+   */
+  async postFormData<T>(path: string, formData: FormData): Promise<T> {
+    const accessToken = getAccessToken();
+    const url = this.buildUrl(path);
+
+    const headers: Record<string, string> = {};
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+    } catch {
+      throw new ApiRequestError(
+        "Unable to connect to the server. Please check your internet connection.",
+        0,
+      );
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      try {
+        const newAccessToken = await refreshAccessToken();
+        const retryResponse = await fetch(url, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${newAccessToken}` },
+          body: formData,
+        });
+        return handleResponse<T>(retryResponse);
+      } catch {
+        if (response.status === 401) {
+          clearTokensAndRedirect();
+          throw new ApiRequestError(
+            "Session expired. Please log in again.",
+            401,
+          );
+        }
+        return handleResponse<T>(response);
+      }
+    }
+
+    return handleResponse<T>(response);
+  }
 }
 
 export const apiClient = new ApiClient();
