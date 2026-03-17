@@ -112,12 +112,6 @@ const adminManagementNavItems: NavItem[] = [
     icon: Users,
   },
   {
-    labelKey: "nav.clients",
-    label: "Clients",
-    href: "/clients",
-    icon: Users,
-  },
-  {
     labelKey: "nav.analytics",
     label: "Analytics",
     href: "/analytics",
