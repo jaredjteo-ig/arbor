@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Building2, ArrowRight, Sparkles, CheckCircle2, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { clientsApi } from "@/services/api";
 
 const SECTORS = [
   { value: "technology", label: "Technology & IT" },
@@ -51,38 +52,26 @@ export function CompanySetupModal({
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem("access_token");
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || ""}/api/clients/company`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            name: form.name,
-            uen: form.uen || undefined,
-            sector: form.sector,
-            estimated_headcount: parseInt(form.headcount.split("-")[0]) || 5,
-          }),
-        },
-      );
+      await clientsApi.create({
+        name: form.name,
+        uen: form.uen || undefined,
+        sector: form.sector,
+        estimated_headcount: parseInt(form.headcount.split("-")[0]) || 5,
+      } as any);
 
-      if (res.ok) {
-        await refreshUser?.();
-        setStep(2); // success step
-        setTimeout(() => {
-          onComplete?.();
-          onClose();
-          window.location.reload();
-        }, 1500);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.detail || "Something went wrong. Please try again.");
-      }
-    } catch {
-      alert("Network error. Please check your connection.");
+      await refreshUser?.();
+      setStep(2);
+      setTimeout(() => {
+        onComplete?.();
+        onClose();
+        window.location.reload();
+      }, 1500);
+    } catch (err: any) {
+      const message =
+        err?.detail ||
+        err?.message ||
+        "Something went wrong. Please try again.";
+      alert(message);
     } finally {
       setIsSubmitting(false);
     }
