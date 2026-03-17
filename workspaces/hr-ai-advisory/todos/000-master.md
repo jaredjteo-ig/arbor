@@ -1,105 +1,152 @@
 # HR AI Advisory — Master Todo Index
 
-**Project**: HR AI Advisory Platform (Singapore SME HR compliance)
+**Project**: AITE — Free AI-Powered HR Platform for Singapore (backed by ASME)
 **Last Updated**: 2026-03-17
-**Total Tasks**: 140 across 15 milestones
-**Status**: T001-T108 complete. T109-T140 active (Shadow Agent Evolution — Milestones 13-15).
+**Total Tasks**: 192 across 21 milestones
+**Status**: T001-T140 complete. T141-T192 active (Full HRIS + Shadow Agent Enhancement).
 
 ---
 
 ## How to Read This Index
 
-- T001-T108 are **done** — completion records are in `completed/`
-- T109-T140 are **active** — detailed files are in `active/`
-- Implement M13 first (command surface) — M14 follows — M15 requires both
+- T001-T140 are **done** — completion records are in `completed/`
+- T141-T192 are **active** — detailed files are in `active/`
+- Core: Compliance + AI Shadow Agent
+- Extensions: HRIS features (payroll, leave, claims, attendance) built on the compliance core
 
 ---
 
-## Milestones 1-12: COMPLETE
+## Milestones 1-15: COMPLETE
 
-T001-T108 across 12 milestones. See `completed/` for details. Covers:
+T001-T140 across 15 milestones. Covers:
 
-- Full-stack platform (Python + React + Flutter)
-- 6 regulatory domains, 33+ provisions, 7 calculators
-- 14-step advisory safety chain with SSE streaming
-- EATP trust lineage, CARE governance, learning pipeline
+- Full advisory platform with 14-step safety chain, 6 regulatory domains, 7 calculators
+- Shadow agent (command surface, margin, inline annotations, observation layer)
+- Enterprise model (admin + employee roles, invitation system, tenant isolation)
 - Production deployment at aite.kailash.ai
-- 7 red team rounds, 1195+ tests
+- 8 red team rounds
 
 ---
 
-## Milestone 13: Shadow Agent Foundation (Sprint 1)
+## Milestone 16: Shadow Agent Enhancement (Sprint 1)
 
-**Goal**: Replace the floating chat drawer with a command palette and shadow widget. Users can ask questions, run calculations, and navigate the platform through natural language commands from any page.
+**Goal**: The shadow agent becomes truly intelligent — personalised suggestions from observation patterns, proactive attention triggers, and salary encryption at rest.
 
-| Task ID | Task Name                                                           | Dependencies     |
-| ------- | ------------------------------------------------------------------- | ---------------- |
-| T109    | Shadow agent design tokens and CSS extensions                       | —                |
-| T110    | Shadow Widget component (replaces AdvisoryFAB)                      | T109             |
-| T111    | Command Surface overlay component                                   | T109, T110       |
-| T112    | ShadowAgentContext provider (replaces AdvisoryPanelContext)         | T110, T111       |
-| T113    | Platform action registry — intent classification and routing        | T111             |
-| T114    | Advisory endpoint — command mode (short structured responses)       | T113             |
-| T115    | Action execution — calculator dispatch from command surface         | T113, T114       |
-| T116    | Action execution — navigation dispatch from command surface         | T113             |
-| T117    | AppShell integration — remove old panel, wire new shadow components | T110, T111, T112 |
-| T118    | Advisory deep workspace — preserve full chat page as research mode  | T117             |
+| Task ID | Task Name                                                                      | Dependencies |
+| ------- | ------------------------------------------------------------------------------ | ------------ |
+| T141    | Observation-to-suggestion personalisation — feed patterns into command surface | T138         |
+| T142    | Shadow widget attention state — trigger ripple on proactive insights           | T140, T141   |
+| T143    | Salary field encryption at rest — Fernet wrapper for Employee.salary_monthly   | T129         |
+| T144    | Shadow context uses actual company compliance data (not generic defaults)      | T121         |
+| T145    | Shadow agent validates payroll before submission (Kaizen agent)                | T143         |
 
 ---
 
-## Milestone 14: Contextual Intelligence (Sprint 2)
+## Milestone 17: Payroll Foundation (Sprint 2)
 
-**Goal**: AI-generated annotations appear on existing pages. A persistent margin strip shows compliance awareness and regulatory updates. The platform feels like it has ambient intelligence.
+**Goal**: Admins can run monthly payroll for all employees. The system calculates gross-to-net with CPF, SDL, and levies. Payslips are generated and downloadable.
 
-| Task ID | Task Name                                                                | Dependencies           |
-| ------- | ------------------------------------------------------------------------ | ---------------------- |
-| T119    | Shadow Margin component — collapsed strip (48px)                         | T109, T112             |
-| T120    | Shadow Margin component — expanded card stack (320px)                    | T119                   |
-| T121    | Shadow context API endpoint — compliance status, regulatory updates      | T119                   |
-| T122    | Inline annotations — compliance page risk labels with fine amounts       | T121                   |
-| T123    | Inline annotations — calculator result contextual notes                  | T121                   |
-| T124    | Inline annotations — dashboard living briefing card                      | T121                   |
-| T125    | Inline annotations — emergency page sector-specific notes                | T121                   |
-| T126    | Annotation overlay system — context provider and rendering               | T122, T123, T124, T125 |
-| T127    | Shadow Margin data sources — wire to compliance checker and admin alerts | T119, T121             |
-| T128    | Mobile adaptation — bottom sheet for margin, full-screen for command     | T111, T119             |
+| Task ID | Task Name                                                                           | Dependencies |
+| ------- | ----------------------------------------------------------------------------------- | ------------ |
+| T146    | Employee model extensions — DOB, NRIC, bank details, allowances, PR year            | T129         |
+| T147    | EmployeeBankDetails model with Fernet encryption                                    | T143, T146   |
+| T148    | PayrollRun, Payslip, PayslipItem, SalaryHistory data models                         | T146         |
+| T149    | PublicHoliday model — seed 2026-2027 Singapore gazetted holidays                    | —            |
+| T150    | Payroll calculation workflow — fetch employees, call calculators, generate payslips | T148, T020   |
+| T151    | YTD tracking across payroll runs — OW/AW ceiling accumulation                       | T150         |
+| T152    | Payslip PDF generation — EA s88A compliant itemisation                              | T150         |
+| T153    | Payroll API endpoints — create run, process, review, finalise                       | T150         |
+| T154    | Payroll dashboard page — run payroll, review, approve (React)                       | T153         |
+| T155    | Payslip view page — employee sees own payslips (React)                              | T152, T154   |
+| T156    | Payroll integration with shadow agent — "Run this month's payroll" command          | T153, T113   |
 
 ---
 
-## Milestone 15: Enterprise Model and Employee Interface (Sprint 3)
+## Milestone 18: Leave Management (Sprint 3)
 
-**Goal**: Multi-tenant platform with admin and employee roles. Admins invite employees. Employees see their own terms, leave balance, and company policies. Shadow agent adapts to each role. Observation layer begins learning user patterns.
+**Goal**: Employees apply for leave. Managers approve or reject. Balances update automatically. Leave calendar shows who's out.
 
-| Task ID | Task Name                                                                   | Dependencies |
-| ------- | --------------------------------------------------------------------------- | ------------ |
-| T129    | Employee data model — Employee, LeaveBalance, CompanyPolicy entities        | T008         |
-| T130    | Employee role — add EMPLOYEE to UserRole, extend tenant isolation           | T129         |
-| T131    | Invitation system — create, send, accept invitation flow                    | T130         |
-| T132    | Employee registration — invitation-based signup with role assignment        | T131         |
-| T133    | Employee dashboard — My Terms, My Leave, employment summary                 | T132         |
-| T134    | Employee leave view — balance display, entitlement breakdown                | T129, T133   |
-| T135    | Company policies page — admin uploads, employees view                       | T129, T133   |
-| T136    | Employee navigation — role-conditional sidebar (admin vs employee views)    | T130, T133   |
-| T137    | Shadow agent employee scope — context injection scoped to own data only     | T130, T136   |
-| T138    | Observation layer (Substrate) — session pattern extraction                  | T112, T137   |
-| T139    | AI Memory settings page — view, edit, delete learned preferences            | T138         |
-| T140    | Proactive insight surfacing — compliance gap age alerts, deadline reminders | T119, T138   |
+| Task ID | Task Name                                                                | Dependencies |
+| ------- | ------------------------------------------------------------------------ | ------------ |
+| T157    | LeaveApplication data model with approval state machine                  | T129         |
+| T158    | Leave application API endpoints — apply, approve, reject, cancel         | T157         |
+| T159    | Leave balance auto-deduction on approval                                 | T157, T134   |
+| T160    | Pro-rated leave for mid-year joiners — service year calculation          | T157         |
+| T161    | Leave calendar view — who's out this week/month (React)                  | T158         |
+| T162    | Leave application page — employee applies, manager queue (React)         | T158         |
+| T163    | Leave integration with payroll — no-pay leave deduction                  | T157, T150   |
+| T164    | Leave integration with shadow agent — "Apply for 3 days leave next week" | T158, T113   |
+
+---
+
+## Milestone 19: CPF & Tax File Generation (Sprint 4)
+
+**Goal**: Generate CPF Board submission files and IR8A tax data. Admins download and upload to CPF Board/IRAS portals.
+
+| Task ID | Task Name                                                                                            | Dependencies |
+| ------- | ---------------------------------------------------------------------------------------------------- | ------------ |
+| T165    | CPF submission file generator — CPF Board prescribed format                                          | T150, T146   |
+| T166    | CPF reconciliation report — monthly summary by employee                                              | T165         |
+| T167    | IR8A data aggregation — annual payslip items mapped to IRAS fields                                   | T150, T148   |
+| T168    | IR8A export — CSV format for AIS upload                                                              | T167         |
+| T169    | Appendix 8A (benefits in kind) basic support                                                         | T167         |
+| T170    | CPF/IR8A file generation page — download files (React)                                               | T165, T168   |
+| T171    | Shadow agent CPF validation — "Your total CPF this month is X — Y% higher than last month because Z" | T165, T145   |
+
+---
+
+## Milestone 20: Claims, Attendance & Employee Lifecycle (Sprint 5)
+
+**Goal**: Employees submit expense claims with receipts. Clock in/out for attendance. Full employee lifecycle from onboarding to exit.
+
+| Task ID | Task Name                                                                                 | Dependencies |
+| ------- | ----------------------------------------------------------------------------------------- | ------------ |
+| T172    | Claim and ClaimItem data models                                                           | T129         |
+| T173    | Claims API endpoints — submit, approve, reject, pay                                       | T172         |
+| T174    | Claims page — submit with receipt upload, manager approval queue (React)                  | T173         |
+| T175    | Claims integration with payroll — approved claims paid in next run                        | T173, T150   |
+| T176    | Attendance data model — clock in/out, overtime hours                                      | T129         |
+| T177    | Attendance API endpoints — clock in, clock out, timesheet                                 | T176         |
+| T178    | Attendance page — clock in/out, weekly timesheet view (React)                             | T177         |
+| T179    | Overtime auto-calculation from attendance — feed into payroll                             | T177, T150   |
+| T180    | Exit processing — final salary calculation using notice period + retrenchment calculators | T150         |
+| T181    | Probation tracking with auto-reminders                                                    | T129, T140   |
+| T182    | Employee lifecycle page — onboarding checklist, confirmation, exit (React)                | T180, T181   |
+
+---
+
+## Milestone 21: HRIS Hardening & Compliance (Sprint 6)
+
+**Goal**: Payroll accuracy verified against CPF Board rate tables. Security audited. PDPA compliance for salary and bank data. Red team validated.
+
+| Task ID | Task Name                                                                 | Dependencies |
+| ------- | ------------------------------------------------------------------------- | ------------ |
+| T183    | Payroll accuracy test suite — against CPF Board published rate examples   | T150         |
+| T184    | PDPA data category extensions — SALARY_DATA, BANK_DETAILS categories      | T143, T147   |
+| T185    | Audit trail for all payroll data access                                   | T153, T184   |
+| T186    | Payroll run performance test — 200 employees under 30 seconds             | T150         |
+| T187    | Employee data import — CSV upload for bulk onboarding                     | T146         |
+| T188    | Parallel run support — run AITE alongside existing HRIS, compare payslips | T152         |
+| T189    | Payroll data export — full history CSV for migration                      | T148         |
+| T190    | Red team — payroll accuracy, PDPA compliance, security                    | T183-T189    |
+| T191    | COC codification — update project agents and skills for HRIS domain       | T190         |
+| T192    | Deploy HRIS to production                                                 | T190         |
 
 ---
 
 ## Summary
 
-### Completed (T001-T108)
+### Completed (T001-T140)
 
-- **108/108 tasks complete** across 12 milestones
-- Full advisory platform with 14-step safety chain
-- Production deployed at aite.kailash.ai
-- 7 red team rounds passed
+- **140/140 tasks** across 15 milestones
+- Full advisory + shadow agent + enterprise model
 
-### Active (T109-T140) — Shadow Agent Evolution
+### Active (T141-T192) — Full HRIS + Shadow Agent Enhancement
 
-- **32 tasks active** across 3 milestones (M13-M15)
-- M13 (10 tasks): Command surface, shadow widget, action registry
-- M14 (10 tasks): Margin presence, inline annotations, contextual intelligence
-- M15 (12 tasks): Enterprise multi-tenant, employee interface, observation layer
-- Recommended order: M13 → M14 → M15 (sequential, each builds on the previous)
+- **52 tasks** across 6 milestones (M16-M21)
+- M16 (5 tasks): Shadow agent enhancement — personalisation, attention, encryption, validation
+- M17 (11 tasks): Payroll engine — calculation, payslips, PDF, dashboard
+- M18 (8 tasks): Leave management — apply/approve, calendar, payroll integration
+- M19 (7 tasks): CPF/IR8A file generation — submission files, tax data
+- M20 (11 tasks): Claims, attendance, employee lifecycle
+- M21 (10 tasks): Hardening — accuracy testing, PDPA, performance, red team, deploy
