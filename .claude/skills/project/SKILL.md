@@ -9,18 +9,19 @@ Project-specific knowledge for the AI-powered HR advisory platform serving Singa
 
 ## Skill Files
 
-| File                         | Domain                    | When to Use                                                                                     |
-| ---------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------- |
-| `sg-employment-law.md`       | Singapore employment law  | KB content, provision accuracy, regulatory domains                                              |
-| `advisory-safety-chain.md`   | 13-step safety chain      | Advisory query pipeline, guardrails, response generation                                        |
-| `platform-architecture.md`   | Platform structure        | Router setup, middleware, auth, Nexus integration                                               |
-| `trust-governance.md`        | EATP/CARE/learning        | Trust chains, citation validation, expert review                                                |
-| `calculators.md`             | HR calculators            | CPF, leave, salary, quota, overtime calculations                                                |
-| `kb-management.md`           | Knowledge base pipeline   | Content loading, search, regulatory updates                                                     |
-| `auth-security.md`           | Authentication & security | JWT tokens, tenant isolation, rate limiting, PDPA                                               |
-| `document-generation.md`     | Document templates        | Template CRUD, generation, preview, download, history                                           |
-| `company-user-management.md` | Company & user profiles   | Company onboarding, user CRUD, roles, workforce data                                            |
-| `hris-engine.md`             | Full HRIS engine          | Payroll, leave, claims, attendance, shifts, employee lifecycle, statutory files, PII encryption |
+| File                         | Domain                    | When to Use                                                                                             |
+| ---------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `sg-employment-law.md`       | Singapore employment law  | KB content, provision accuracy, regulatory domains                                                      |
+| `advisory-safety-chain.md`   | 13-step safety chain      | Advisory query pipeline, guardrails, response generation                                                |
+| `platform-architecture.md`   | Platform structure        | Router setup, middleware, auth, Nexus integration                                                       |
+| `trust-governance.md`        | EATP/CARE/learning        | Trust chains, citation validation, expert review                                                        |
+| `calculators.md`             | HR calculators            | CPF, leave, salary, quota, overtime calculations                                                        |
+| `kb-management.md`           | Knowledge base pipeline   | Content loading, search, regulatory updates                                                             |
+| `auth-security.md`           | Authentication & security | JWT tokens, tenant isolation, rate limiting, PDPA                                                       |
+| `document-generation.md`     | Document templates        | Template CRUD, generation, preview, download, history                                                   |
+| `company-user-management.md` | Company & user profiles   | Company onboarding, user CRUD, roles, workforce data                                                    |
+| `hris-engine.md`             | Full HRIS engine          | Payroll, leave, claims, attendance, shifts, employee lifecycle, statutory files, PII encryption         |
+| `mcp-integrations.md`        | MCP integration layer     | 5 MCP servers, 38 connectors, circuit breakers, idempotency, sagas, PII filter, webhooks, tool selector |
 
 ## Quick Reference
 
@@ -28,7 +29,7 @@ Project-specific knowledge for the AI-powered HR advisory platform serving Singa
 
 ```
 src/hr_advisory/
-  api/routers/      23 FastAPI routers (advisory, payroll, leave, claims, attendance, shifts, employees...)
+  api/routers/      23+ FastAPI routers (advisory, payroll, leave, claims, attendance, shifts, employees, integrations...)
   agents/           Kaizen agents (orchestrator, specialists)
   models/           34 DataFlow models (company, user, KB, payroll, leave, claims, attendance, shifts)
   services/         Payroll calculator, statutory files, encryption
@@ -38,6 +39,7 @@ src/hr_advisory/
   security/         Input validation, PDPA, rate limiting, PII encryption
   templates/        Document templates (KETs, contracts)
   config/           Settings from environment variables
+  mcp_servers/      5 MCP servers, 38 adapters, resilience infra (circuit breakers, sagas, idempotency)
 ```
 
 ### Six Regulatory Domains

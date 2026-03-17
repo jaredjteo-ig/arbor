@@ -137,3 +137,75 @@ decisions:
     date: 2026-03-17
     initiative: hr-ai-advisory
     confidence: medium
+
+  # ── M28-M32: MCP Integration Layer ────────────────────────────
+  - decision: "5 domain-grouped MCP servers instead of one-per-API or monolithic"
+    rationale: "Balances tool discoverability (LLM sees related tools together), least-privilege (separate credential scopes), and failure isolation (banking down doesn't affect accounting)."
+    alternatives_rejected: "One server per API (40+ connections), single monolithic server (shared blast radius)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "MCP tools use {domain}_{verb}_{noun} naming (e.g., gov_cpf_submit)"
+    rationale: "Self-documenting for LLM tool selection. Domain prefix groups related tools. Verb+noun describes the action clearly."
+    alternatives_rejected: "Flat names (submit_cpf), generic names (process_submission)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "File-based bank payments as default, direct bank API as premium"
+    rationale: "ISO 20022 GIRO files work with all SG banks via e-banking upload. Direct bank APIs (DBS RAPID, UOB, OCBC) require per-tenant corporate banking onboarding."
+    alternatives_rejected: "Direct API only (too much onboarding friction), file-only (misses real-time capability)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Idempotency ledger for all government and bank submissions"
+    rationale: "Red team C3: Shadow agent retries could cause duplicate CPF submissions. CPF Board does not auto-deduplicate."
+    alternatives_rejected: "No deduplication (risk), LLM-level deduplication (unreliable)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "PII stripping before LLM calls for PDPA cross-border compliance"
+    rationale: "Red team C5: Employee salary/NRIC data flows through offshore LLM providers. PDPA Section 26 requires consent or safeguards for cross-border PII transfer."
+    alternatives_rejected: "SG-region LLM only (limits model choice), explicit consent only (friction)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Human confirmation gates on all irreversible operations"
+    rationale: "Shadow agent brief Part 3: government submissions, bank payments, and bulk operations always require explicit human approval before execution."
+    alternatives_rejected: "Autonomous execution (too risky), per-operation toggle (complex UX)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Dynamic tool loading: 15-25 tools per context instead of 80+"
+    rationale: "Red team M8: LLM tool-calling accuracy degrades beyond ~20 tools. Page-context filtering reduces set to relevant tools only."
+    alternatives_rejected: "All tools always (LLM confusion), manual tool selection (poor UX)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "OAuth CSRF state validation on all external OAuth flows"
+    rationale: "Security audit found Xero/QBO/Zoho callbacks lacked CSRF protection. State parameter now generated, stored with 10-min TTL, and validated on callback."
+    alternatives_rejected: "No state (CSRF vulnerable), session-based (complex with multi-tab)"
+    date: 2026-03-18
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "One-Stop Payroll (OSP) registration as critical path for government APIs"
+    rationale: "CPF APEX, IRAS AIS, and MOM OED all go through GovTech's APEX platform. Single registration unlocks all three."
+    alternatives_rejected: "Individual API registrations (duplicated effort), file-only forever (misses 1-click submission)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "In-memory persistence for MVP, DataFlow models for production"
+    rationale: "Architectural patterns are DB-ready (singleton classes with store/retrieve interfaces). In-memory allows rapid development. Production migration is a swap, not a rewrite."
+    alternatives_rejected: "DB from day one (slower iteration), Redis only (not durable enough for submissions)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: medium
+    note: "SubmissionLedger and SagaOrchestrator MUST be persisted before production deployment."

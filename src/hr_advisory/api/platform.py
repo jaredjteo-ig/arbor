@@ -28,6 +28,7 @@ from hr_advisory.api.routers import (
     employees_router,
     emergency_router,
     help_router,
+    integrations_router,
     kb_router,
     learning_router,
     leave_router,
@@ -147,9 +148,10 @@ def _register_routers(app: Nexus) -> None:
     app.include_router(shifts_router, prefix="/shifts", tags=["Shifts"])
     app.include_router(claims_router, prefix="/claims", tags=["Claims"])
     app.include_router(attendance_router, prefix="/attendance", tags=["Attendance"])
+    app.include_router(integrations_router, prefix="/integrations", tags=["Integrations"])
     app.include_router(admin_router)  # Admin router has its own /admin prefix
     app.include_router(qa_router)  # QA router has its own /admin/qa prefix
-    logger.info("All API routers registered")
+    logger.info("All API routers registered (including MCP integrations)")
 
 
 def _register_handlers(app: Nexus, session_store) -> None:

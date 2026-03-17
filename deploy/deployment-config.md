@@ -113,6 +113,33 @@ Internet
 | `APP_ENV`           | `production`              | Environment name     |
 | `CORS_ORIGINS`      | `https://aite.kailash.ai` | Allowed CORS origins |
 
+### Integration Layer (MCP Servers — all optional, enable as needed)
+
+| Variable                     | Default       | Description                                                    |
+| ---------------------------- | ------------- | -------------------------------------------------------------- |
+| `INTEGRATION_ENCRYPTION_KEY` | —             | Fernet key for OAuth token encryption (REQUIRED in production) |
+| `ENVIRONMENT`                | `development` | Set to `production` to enforce encryption key                  |
+| `DATA_GOV_SG_API_KEY`        | —             | data.gov.sg API key (free, self-service)                       |
+| `RESEND_API_KEY`             | —             | Resend email delivery                                          |
+| `TELEGRAM_BOT_TOKEN`         | —             | Telegram notification bot                                      |
+| `TELEGRAM_MONITOR_BOT_TOKEN` | —             | Telegram regulatory monitoring bot                             |
+| `WHATSAPP_ACCESS_TOKEN`      | —             | WhatsApp Cloud API token                                       |
+| `WHATSAPP_PHONE_NUMBER_ID`   | —             | WhatsApp phone number ID                                       |
+| `SLACK_BOT_TOKEN`            | —             | Slack bot token                                                |
+| `AWS_S3_BUCKET`              | —             | S3 bucket for document storage                                 |
+| `XERO_CLIENT_ID`             | —             | Xero OAuth app client ID                                       |
+| `XERO_CLIENT_SECRET`         | —             | Xero OAuth app client secret                                   |
+| `QBO_CLIENT_ID`              | —             | QuickBooks OAuth client ID                                     |
+| `QBO_CLIENT_SECRET`          | —             | QuickBooks OAuth client secret                                 |
+| `ZOHO_CLIENT_ID`             | —             | Zoho Books OAuth client ID                                     |
+| `ZOHO_CLIENT_SECRET`         | —             | Zoho Books OAuth client secret                                 |
+| `ASPIRE_CLIENT_ID`           | —             | Aspire API client ID                                           |
+| `ASPIRE_API_KEY`             | —             | Aspire API key                                                 |
+| `WISE_API_KEY`               | —             | Wise Business API key                                          |
+| `SSG_API_KEY`                | —             | SkillsFuture SSG developer portal key                          |
+
+**Note**: Integration env vars are only needed when enabling specific connectors. The platform starts and runs without them — connectors gracefully degrade to "not configured" status.
+
 ## SSL/TLS
 
 - Provider: Let's Encrypt (automated via Caddy)
