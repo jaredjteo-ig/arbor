@@ -9,6 +9,10 @@ import {
   RiskTierBadge,
 } from "@/components/design-system";
 import type { RiskTierLevel } from "@/components/design-system";
+import {
+  ShadowBriefingCard,
+  useShadowContext,
+} from "@/components/shadow-agent";
 import { useAuth } from "@/contexts/AuthContext";
 import { complianceApi } from "@/services/api/compliance";
 import { adminApi } from "@/services/api/admin";
@@ -507,15 +511,8 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
-      {/* Greeting */}
-      <div>
-        <h1 className="text-heading text-[var(--color-gray-900)]">
-          {firstName ? `Welcome back, ${firstName}` : "Welcome to AITE"}
-        </h1>
-        <p className="text-body text-[var(--color-gray-500)] mt-1">
-          Here&apos;s your HR compliance overview
-        </p>
-      </div>
+      {/* T124: Living Briefing Card with time-aware greeting */}
+      <DashboardBriefing userName={user?.name} hasCompanyProfile />
 
       {/* Metric cards */}
       {complianceLoading || metricsLoading ? (
@@ -672,5 +669,26 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* -- Dashboard Briefing (T124) ------------------------------------ */
+
+function DashboardBriefing({
+  userName,
+  hasCompanyProfile,
+}: {
+  userName?: string | null;
+  hasCompanyProfile: boolean;
+}) {
+  const { insights, isLoading } = useShadowContext();
+
+  return (
+    <ShadowBriefingCard
+      userName={userName}
+      insights={insights}
+      isLoading={isLoading}
+      hasCompanyProfile={hasCompanyProfile}
+    />
   );
 }

@@ -16,7 +16,10 @@ import {
   HelpCircle,
   ChevronLeft,
   ChevronRight,
+  CalendarDays,
+  BookOpen,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface NavItem {
   labelKey: string;
@@ -26,8 +29,10 @@ interface NavItem {
   iconClassName?: string;
 }
 
-/* ── Group 1: Core (no label) ─────────────────────────────── */
-const coreNavItems: NavItem[] = [
+/* ── Admin nav groups ─────────────────────────────────────── */
+
+/* Group 1: Core (no label) */
+const adminCoreNavItems: NavItem[] = [
   {
     labelKey: "nav.dashboard",
     label: "Dashboard",
@@ -48,8 +53,8 @@ const coreNavItems: NavItem[] = [
   },
 ];
 
-/* ── Group 2: Tools ───────────────────────────────────────── */
-const toolsNavItems: NavItem[] = [
+/* Group 2: Tools */
+const adminToolsNavItems: NavItem[] = [
   {
     labelKey: "nav.calculators",
     label: "Calculators",
@@ -64,8 +69,14 @@ const toolsNavItems: NavItem[] = [
   },
 ];
 
-/* ── Group 3: Management ──────────────────────────────────── */
-const managementNavItems: NavItem[] = [
+/* Group 3: Management */
+const adminManagementNavItems: NavItem[] = [
+  {
+    labelKey: "nav.employees",
+    label: "Employees",
+    href: "/employees",
+    icon: Users,
+  },
   {
     labelKey: "nav.clients",
     label: "Clients",
@@ -80,8 +91,8 @@ const managementNavItems: NavItem[] = [
   },
 ];
 
-/* ── Bottom section (after separator) ─────────────────────── */
-const bottomNavItems: NavItem[] = [
+/* Admin bottom section (after separator) */
+const adminBottomNavItems: NavItem[] = [
   {
     labelKey: "nav.emergency",
     label: "Emergency",
@@ -89,6 +100,39 @@ const bottomNavItems: NavItem[] = [
     icon: AlertTriangle,
     iconClassName: "text-[var(--color-risk-amber)]",
   },
+  {
+    labelKey: "nav.settings",
+    label: "Settings",
+    href: "/settings",
+    icon: Settings,
+  },
+  { labelKey: "nav.help", label: "Help", href: "/help", icon: HelpCircle },
+];
+
+/* ── Employee nav groups ──────────────────────────────────── */
+
+const employeeCoreNavItems: NavItem[] = [
+  {
+    labelKey: "nav.my-dashboard",
+    label: "My Dashboard",
+    href: "/my-dashboard",
+    icon: LayoutDashboard,
+  },
+  {
+    labelKey: "nav.my-leave",
+    label: "My Leave",
+    href: "/my-leave",
+    icon: CalendarDays,
+  },
+  {
+    labelKey: "nav.policies",
+    label: "Policies",
+    href: "/policies",
+    icon: BookOpen,
+  },
+];
+
+const employeeBottomNavItems: NavItem[] = [
   {
     labelKey: "nav.settings",
     label: "Settings",
@@ -113,6 +157,15 @@ export function NavigationSidebar({
   onToggle,
 }: NavigationSidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
+
+  const isEmployee = user?.role === "employee";
+
+  // Select navigation items based on role
+  const coreNavItems = isEmployee ? employeeCoreNavItems : adminCoreNavItems;
+  const bottomNavItems = isEmployee
+    ? employeeBottomNavItems
+    : adminBottomNavItems;
 
   return (
     <nav
@@ -162,31 +215,36 @@ export function NavigationSidebar({
           ))}
         </ul>
 
-        {/* Tools group */}
-        <NavGroupLabel label="Tools" collapsed={collapsed} />
-        <ul className="flex flex-col gap-0.5 px-2" role="list">
-          {toolsNavItems.map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              active={isRouteActive(pathname, item.href)}
-              collapsed={collapsed}
-            />
-          ))}
-        </ul>
+        {/* Admin-only groups */}
+        {!isEmployee && (
+          <>
+            {/* Tools group */}
+            <NavGroupLabel label="Tools" collapsed={collapsed} />
+            <ul className="flex flex-col gap-0.5 px-2" role="list">
+              {adminToolsNavItems.map((item) => (
+                <NavLink
+                  key={item.href}
+                  item={item}
+                  active={isRouteActive(pathname, item.href)}
+                  collapsed={collapsed}
+                />
+              ))}
+            </ul>
 
-        {/* Management group */}
-        <NavGroupLabel label="Management" collapsed={collapsed} />
-        <ul className="flex flex-col gap-0.5 px-2" role="list">
-          {managementNavItems.map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              active={isRouteActive(pathname, item.href)}
-              collapsed={collapsed}
-            />
-          ))}
-        </ul>
+            {/* Management group */}
+            <NavGroupLabel label="Management" collapsed={collapsed} />
+            <ul className="flex flex-col gap-0.5 px-2" role="list">
+              {adminManagementNavItems.map((item) => (
+                <NavLink
+                  key={item.href}
+                  item={item}
+                  active={isRouteActive(pathname, item.href)}
+                  collapsed={collapsed}
+                />
+              ))}
+            </ul>
+          </>
+        )}
 
         {/* Divider */}
         <div className="my-3 mx-3 border-t border-white/15" role="separator" />

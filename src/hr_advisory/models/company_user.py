@@ -21,6 +21,30 @@ class UserRole:
     OWNER = "owner"
     HR_MANAGER = "hr_manager"
     CONSULTANT = "consultant"
+    EMPLOYEE = "employee"
+
+
+class EmploymentType:
+    FULL_TIME = "full_time"
+    PART_TIME = "part_time"
+    CONTRACT = "contract"
+
+
+class LeaveType:
+    ANNUAL = "annual"
+    SICK = "sick"
+    HOSPITALIZATION = "hospitalization"
+    MATERNITY = "maternity"
+    PATERNITY = "paternity"
+    CHILDCARE = "childcare"
+
+
+class PolicyType:
+    LEAVE = "leave"
+    FWA = "fwa"
+    HANDBOOK = "handbook"
+    SAFETY = "safety"
+    BENEFITS = "benefits"
 
 
 class ContentUpdateStatus:
@@ -190,5 +214,117 @@ class Template:
     __dataflow__ = {
         "indexes": [
             {"name": "idx_template_type", "fields": ["template_type"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Employee & Multi-Tenant Models (M15)
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class Employee:
+    """Employee record linked to a User and Company.
+
+    Tracks employment details including department, designation,
+    nationality/pass type (for Singapore MOM compliance), and salary.
+    """
+
+    user_id: int
+    company_id: int
+    employee_id_internal: str = ""
+    department: str = ""
+    designation: str = ""
+    employment_type: str = EmploymentType.FULL_TIME
+    start_date: str = ""
+    end_date: str = ""
+    nationality: str = ""
+    pass_type: str = ""
+    salary_monthly: float = 0.0
+    notice_period_days: int = 0
+    is_active: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_employee_user", "fields": ["user_id"]},
+            {"name": "idx_employee_company", "fields": ["company_id"]},
+            {"name": "idx_employee_department", "fields": ["department"]},
+            {"name": "idx_employee_active", "fields": ["is_active"]},
+        ],
+    }
+
+
+@db.model
+class LeaveBalance:
+    """Leave balance for an employee.
+
+    Tracks entitlement, used, and pending days per leave type per year.
+    Leave types follow Singapore Employment Act categories.
+    """
+
+    employee_id: int
+    company_id: int
+    leave_type: str
+    year: int
+    entitlement_days: float = 0.0
+    used_days: float = 0.0
+    pending_days: float = 0.0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_leave_employee", "fields": ["employee_id"]},
+            {"name": "idx_leave_company", "fields": ["company_id"]},
+            {"name": "idx_leave_type_year", "fields": ["leave_type", "year"]},
+        ],
+    }
+
+
+@db.model
+class CompanyPolicy:
+    """Company policy document.
+
+    Stores policy content (leave, FWA, handbook, safety, benefits)
+    with versioning via effective_date.
+    """
+
+    company_id: int
+    policy_type: str
+    title: str = ""
+    content: str = ""
+    effective_date: str = ""
+    is_active: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_policy_company", "fields": ["company_id"]},
+            {"name": "idx_policy_type", "fields": ["policy_type"]},
+            {"name": "idx_policy_active", "fields": ["is_active"]},
+        ],
+    }
+
+
+@db.model
+class Invitation:
+    """Employee invitation to join a company on the platform.
+
+    Created by admins (owner/hr_manager) to invite employees.
+    Token-based with expiry for secure onboarding.
+    """
+
+    company_id: int
+    inviter_id: int
+    email: str
+    role: str = UserRole.EMPLOYEE
+    token: str = ""
+    expires_at: str = ""
+    accepted_at: str = ""
+    is_active: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_invitation_company", "fields": ["company_id"]},
+            {"name": "idx_invitation_email", "fields": ["email"]},
+            {"name": "idx_invitation_token", "fields": ["token"]},
         ],
     }

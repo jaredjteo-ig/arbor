@@ -20,6 +20,8 @@ import {
 } from "@/components/design-system";
 import type { RiskTierLevel } from "@/components/design-system";
 import { AskAITEButton } from "@/components/shared/AskAITEButton";
+import { InlineAnnotation } from "@/components/shadow-agent";
+import type { AnnotationData } from "@/components/shadow-agent";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useComplianceStatus,
@@ -278,6 +280,64 @@ const CHECKS = [
     help: "TG-FWAR effective Dec 2024",
   },
 ] as const;
+
+/* -- Compliance annotation map (T122) ----------------------------- */
+
+const COMPLIANCE_ANNOTATIONS: Record<string, AnnotationData> = {
+  ket: {
+    id: "anno-ket",
+    text: "Employers must issue KET within 14 days of employment start. Non-compliance may result in a fine.",
+    severity: "high",
+    provision: "EA s95A",
+    fineAmount: "Up to $5,000 per offence",
+  },
+  contracts: {
+    id: "anno-contracts",
+    text: "Written contracts are a best practice and support KET compliance. Strongly recommended for all employees.",
+    severity: "medium",
+    provision: "EA Part II",
+  },
+  payslips: {
+    id: "anno-payslips",
+    text: "Itemised payslips must be provided for every salary payment. Non-compliance may result in a fine.",
+    severity: "high",
+    provision: "EA s88A",
+    fineAmount: "Up to $5,000 per offence",
+  },
+  leave: {
+    id: "anno-leave",
+    text: "Employers must maintain leave records for at least 2 years. MOM may request these during inspections.",
+    severity: "medium",
+    provision: "EA Part XII",
+    fineAmount: "Up to $5,000",
+  },
+  ot: {
+    id: "anno-ot",
+    text: "Overtime records are mandatory for Part IV employees (salary up to $2,600). OT pay is 1.5x hourly rate.",
+    severity: "medium",
+    provision: "EA Part IV",
+    fineAmount: "Up to $5,000",
+  },
+  safety: {
+    id: "anno-safety",
+    text: "Employers must ensure a safe workplace. Higher obligations for companies with 10+ employees or hazardous work.",
+    severity: "high",
+    provision: "WSH Act s12",
+    fineAmount: "Up to $200,000 and/or 12 months jail",
+  },
+  grievance: {
+    id: "anno-grievance",
+    text: "A formal grievance process is recommended under the Tripartite Guidelines on Fair Employment Practices.",
+    severity: "low",
+    provision: "TGFEP",
+  },
+  fwa: {
+    id: "anno-fwa",
+    text: "From 1 Dec 2024, employers must have a process to fairly consider FWA requests under TG-FWAR.",
+    severity: "low",
+    provision: "TG-FWAR",
+  },
+};
 
 /* -- Loading skeleton -------------------------------------------- */
 
@@ -722,27 +782,34 @@ function ChecklistForm({
             be combined with knowledge base analysis for a complete compliance
             picture.
           </p>
-          {CHECKS.map((check) => (
-            <label
-              key={check.key}
-              className="flex items-start gap-3 p-3 rounded-lg hover:bg-[var(--color-gray-50)] cursor-pointer transition-colors"
-            >
-              <input
-                type="checkbox"
-                checked={inputs[check.key]}
-                onChange={() => onToggle(check.key)}
-                className="h-4 w-4 rounded border-[var(--color-gray-300)] mt-0.5"
-              />
-              <div>
-                <p className="text-sm font-medium text-[var(--color-gray-900)]">
-                  {check.label}
-                </p>
-                <p className="text-xs text-[var(--color-gray-500)]">
-                  {check.help}
-                </p>
+          {CHECKS.map((check) => {
+            const annotation = COMPLIANCE_ANNOTATIONS[check.key];
+            return (
+              <div key={check.key}>
+                <label className="flex items-start gap-3 p-3 rounded-lg hover:bg-[var(--color-gray-50)] cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={inputs[check.key]}
+                    onChange={() => onToggle(check.key)}
+                    className="h-4 w-4 rounded border-[var(--color-gray-300)] mt-0.5"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                      {check.label}
+                    </p>
+                    <p className="text-xs text-[var(--color-gray-500)]">
+                      {check.help}
+                    </p>
+                  </div>
+                </label>
+                {annotation && (
+                  <div className="ml-7 mt-1 mb-2">
+                    <InlineAnnotation annotation={annotation} />
+                  </div>
+                )}
               </div>
-            </label>
-          ))}
+            );
+          })}
         </div>
       </AppCard>
 

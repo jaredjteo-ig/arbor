@@ -90,3 +90,45 @@ def validate_company_access(
             status_code=403,
             detail="Not authorized to access this resource.",
         )
+
+
+def validate_employee_self_access(
+    current_user: dict,
+    requested_employee_id: int,
+) -> None:
+    """Ensure employee users can only access their own data.
+
+    Admins (owner, hr_manager, platform_admin) can access any employee
+    record within their company (company-level isolation is handled
+    separately by validate_company_access).
+
+    Employees can only access their own record. The caller must pass
+    the user_id of the requested employee so we can compare it to the
+    authenticated user's ID.
+
+    Args:
+        current_user: The decoded JWT payload (from get_current_user).
+        requested_employee_id: The user_id linked to the requested
+            employee record.
+
+    Raises:
+        HTTPException(404): If an employee tries to access another
+            employee's data (404 to avoid leaking existence).
+    """
+    role = current_user.get("role", "")
+
+    # Admins have full access within their company
+    if role in ("owner", "hr_manager", "platform_admin"):
+        return
+
+    user_id = current_user.get("sub")
+    if str(user_id) != str(requested_employee_id):
+        logger.warning(
+            "Employee self-access denied: user %s tried to access employee user_id %s",
+            user_id,
+            requested_employee_id,
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="Employee record not found.",
+        )

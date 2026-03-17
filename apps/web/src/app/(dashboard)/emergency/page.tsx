@@ -24,6 +24,9 @@ import {
   AlertBanner,
 } from "@/components/design-system";
 import type { AuthorityLevel } from "@/components/design-system";
+import { InlineAnnotation } from "@/components/shadow-agent";
+import { useAuth } from "@/contexts/AuthContext";
+import { useCompanyProfile } from "@/hooks/api/useProfile";
 import {
   useEmergencyScenarios,
   useEmergencyEscalate,
@@ -103,9 +106,40 @@ function EmergencySkeleton() {
 
 /* ── Page ────────────────────────────────────────────────────── */
 
+/* -- Sector-specific topic priorities (T125) ──────────────────────── */
+
+const SECTOR_PRIORITY_TOPICS: Record<string, string[]> = {
+  technology: ["data-breach", "wrongful-dismissal", "tadm-claim"],
+  "information technology": ["data-breach", "wrongful-dismissal", "tadm-claim"],
+  construction: ["workplace-injury", "mom-inspection", "tadm-claim"],
+  manufacturing: ["workplace-injury", "mom-inspection", "tadm-claim"],
+  "food & beverage": ["mom-inspection", "workplace-injury", "tadm-claim"],
+  "food and beverage": ["mom-inspection", "workplace-injury", "tadm-claim"],
+  retail: ["mom-inspection", "wrongful-dismissal", "tadm-claim"],
+  healthcare: ["workplace-injury", "data-breach", "wrongful-dismissal"],
+  logistics: ["workplace-injury", "mom-inspection", "tadm-claim"],
+  finance: ["data-breach", "discrimination-complaint", "wrongful-dismissal"],
+  education: ["wrongful-dismissal", "discrimination-complaint", "tadm-claim"],
+};
+
+function getSectorAnnotation(sector: string | null | undefined): string | null {
+  if (!sector) return null;
+  const lower = sector.toLowerCase();
+  // Check known sectors
+  for (const key of Object.keys(SECTOR_PRIORITY_TOPICS)) {
+    if (lower.includes(key) || key.includes(lower)) {
+      return `Your sector (${sector}) has specific MOM inspection requirements. Sector-relevant scenarios are shown first.`;
+    }
+  }
+  return `Your sector (${sector}) may have specific regulatory requirements. Review the relevant scenarios below.`;
+}
+
 export default function EmergencyPage() {
   const { data, isPending, error } = useEmergencyScenarios();
   const escalateMutation = useEmergencyEscalate();
+  const { user } = useAuth();
+  const companyId = user?.company_id ?? 0;
+  const { data: companyProfile } = useCompanyProfile(companyId);
 
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [checkedDocs, setCheckedDocs] = useState<Record<string, boolean>>({});
@@ -526,13 +560,42 @@ export default function EmergencyPage() {
 
   /* ── Hub View (default) ────────────────────────────────────── */
 
-  // Order scenarios according to TOPIC_ORDER, then append any extras
+  // T125: Determine sector-based topic priority
+  const sector = companyProfile?.sector ?? null;
+  const sectorAnnotationText = getSectorAnnotation(sector);
+  const sectorLower = sector?.toLowerCase() ?? "";
+  const sectorPriorityTopics: string[] = (() => {
+    for (const [key, topics] of Object.entries(SECTOR_PRIORITY_TOPICS)) {
+      if (sectorLower.includes(key) || key.includes(sectorLower)) {
+        return topics;
+      }
+    }
+    return [];
+  })();
+
+  // Order scenarios: sector-priority topics first, then TOPIC_ORDER, then extras
   const orderedScenarios: EmergencyScenario[] = [];
-  for (const topicId of TOPIC_ORDER) {
-    if (scenarioMap[topicId]) orderedScenarios.push(scenarioMap[topicId]);
+  const usedIds = new Set<string>();
+
+  // 1. Sector-priority topics first (if sector is known)
+  for (const topicId of sectorPriorityTopics) {
+    if (scenarioMap[topicId] && !usedIds.has(topicId)) {
+      orderedScenarios.push(scenarioMap[topicId]);
+      usedIds.add(topicId);
+    }
   }
+
+  // 2. Then standard TOPIC_ORDER
+  for (const topicId of TOPIC_ORDER) {
+    if (scenarioMap[topicId] && !usedIds.has(topicId)) {
+      orderedScenarios.push(scenarioMap[topicId]);
+      usedIds.add(topicId);
+    }
+  }
+
+  // 3. Then any extras
   for (const s of scenarios) {
-    if (!TOPIC_ORDER.includes(s.topic_id as (typeof TOPIC_ORDER)[number])) {
+    if (!usedIds.has(s.topic_id)) {
       orderedScenarios.push(s);
     }
   }
@@ -562,6 +625,17 @@ export default function EmergencyPage() {
         title="Important Disclaimer"
         description="These guides provide immediate steps. For complex situations, always consult an employment law specialist."
       />
+
+      {/* T125: Sector-specific annotation */}
+      {sectorAnnotationText && (
+        <InlineAnnotation
+          annotation={{
+            id: "emergency-sector",
+            text: sectorAnnotationText,
+            severity: "info",
+          }}
+        />
+      )}
 
       {/* Emergency topic grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

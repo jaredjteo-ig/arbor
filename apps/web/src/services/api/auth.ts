@@ -8,7 +8,7 @@ export interface User {
   id: number;
   email: string;
   name: string;
-  role: "owner" | "hr_manager" | "consultant";
+  role: "owner" | "hr_manager" | "consultant" | "employee";
   company_id: number | null;
 }
 

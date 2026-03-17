@@ -7,6 +7,8 @@
 
 import { useState } from "react";
 import { AppCard, AppButton, AppInput } from "@/components/design-system";
+import { InlineAnnotation } from "@/components/shadow-agent";
+import type { AnnotationData } from "@/components/shadow-agent";
 import { ResultPanel } from "./ResultPanel";
 import { ResultRow } from "./ResultRow";
 import { useCpfCalculation } from "@/hooks/api/useCalculators";
@@ -63,6 +65,32 @@ export function CpfCalculator() {
       );
     }
     notes.push("Based on CPF contribution rates effective 1 January 2026.");
+  }
+
+  // Build contextual inline annotations (T123)
+  const resultAnnotations: AnnotationData[] = [];
+  if (result) {
+    if (result.ow_capped) {
+      resultAnnotations.push({
+        id: "cpf-ow-ceiling",
+        text: "This employee's ordinary wages exceed the OW ceiling ($8,000). CPF is calculated on OW up to the ceiling only.",
+        severity: "medium",
+        provision: "CPF Act, First Schedule",
+      });
+    }
+    if (result.cpf_tier.startsWith("pr_year")) {
+      resultAnnotations.push({
+        id: "cpf-pr-graduated",
+        text: `PR Year ${prYear} graduated rates apply. Rates increase in subsequent years until full rates are reached in Year 3.`,
+        severity: "info",
+        provision: "CPF Act, First Schedule",
+      });
+    }
+    resultAnnotations.push({
+      id: "cpf-rates-year",
+      text: "Based on 2026 CPF contribution rates.",
+      severity: "info",
+    });
   }
 
   return (
@@ -198,6 +226,15 @@ export function CpfCalculator() {
             CPF contributions are not applicable for this employee category.
           </div>
         </ResultPanel>
+      )}
+
+      {/* T123: Contextual inline annotations after results */}
+      {result && resultAnnotations.length > 0 && (
+        <div className="space-y-2">
+          {resultAnnotations.map((annotation) => (
+            <InlineAnnotation key={annotation.id} annotation={annotation} />
+          ))}
+        </div>
       )}
     </div>
   );

@@ -1,13 +1,15 @@
 """Authentication endpoints.
 
 Handles user registration, login, token refresh, profile retrieval,
-logout, password reset, and Google OAuth SSO.
+logout, password reset, Google OAuth SSO, and employee registration
+via invitation tokens.
 
 All business logic is delegated to AuthService -- this module only
 handles HTTP concerns (request parsing, response formatting, status codes).
 """
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -376,6 +378,242 @@ async def password_reset(
         raise HTTPException(status_code=400, detail=error_msg) from exc
 
     return result
+
+
+# --------------------------------------------------------------------------
+# POST /register-employee — Register via invitation
+# --------------------------------------------------------------------------
+
+
+@router.post("/register-employee")
+async def register_employee(
+    request: Request,
+    auth_service: AuthService = Depends(_get_auth_service),
+) -> dict:
+    """Register a new employee account via an invitation token.
+
+    Accepts: name, email, password, invitation_token.
+    Validates the invitation, creates User + Employee + initial LeaveBalance
+    records, marks the invitation as accepted, and returns JWT tokens.
+
+    Status codes:
+        200: Success
+        400: Validation error
+        404: Invalid/expired/already-used invitation
+        409: Email already registered
+    """
+    _check_auth_rate_limit(request)
+    body = await request.json()
+
+    name = body.get("name", "")
+    email = body.get("email", "").strip().lower()
+    password = body.get("password", "")
+    invitation_token = body.get("invitation_token", "")
+
+    # --- Input validation ---
+    if not invitation_token:
+        raise HTTPException(status_code=400, detail="Invitation token is required.")
+
+    try:
+        AuthService.validate_email(email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        AuthService.validate_password(password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        AuthService.validate_name(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Validate invitation ---
+    from hr_advisory.api.routers.employees import (
+        _find_invitation_by_token,
+        _update_invitation,
+    )
+
+    invitation = _find_invitation_by_token(invitation_token)
+    if invitation is None:
+        raise HTTPException(status_code=404, detail="Invitation not found.")
+
+    if invitation.get("accepted_at"):
+        raise HTTPException(status_code=404, detail="This invitation has already been used.")
+
+    if not invitation.get("is_active", True):
+        raise HTTPException(status_code=404, detail="Invitation not found.")
+
+    # Check expiry
+    expires_at_str = invitation.get("expires_at", "")
+    if expires_at_str:
+        try:
+            expires_at = datetime.fromisoformat(expires_at_str)
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires_at:
+                raise HTTPException(status_code=404, detail="This invitation has expired.")
+        except ValueError:
+            raise HTTPException(status_code=404, detail="This invitation has expired.")
+
+    # Email must match the invitation
+    if email != invitation.get("email", "").strip().lower():
+        raise HTTPException(
+            status_code=400,
+            detail="Email does not match the invitation.",
+        )
+
+    # --- Check for duplicate email ---
+    existing = auth_service._find_user_by_email(email)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=f"Email already registered: {email}")
+
+    # --- Create User with employee role ---
+    company_id = invitation.get("company_id")
+    invited_role = invitation.get("role", "employee")
+
+    password_hash = auth_service.hash_password(password)
+    try:
+        user = auth_service._create_user(
+            email=email,
+            name=name,
+            password_hash=password_hash,
+            company_id=company_id,
+            role=invited_role,
+        )
+    except Exception as exc:
+        error_msg = str(exc).lower()
+        if "unique" in error_msg or "duplicate" in error_msg or "already" in error_msg:
+            raise HTTPException(
+                status_code=409, detail=f"Email already registered: {email}"
+            ) from exc
+        raise HTTPException(
+            status_code=500, detail="Registration failed. Please try again."
+        ) from exc
+
+    user_id = user["id"]
+
+    # --- Create Employee record ---
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "EmployeeCreateNode",
+        "create_emp",
+        {
+            "user_id": user_id,
+            "company_id": company_id,
+            "employment_type": "full_time",
+            "start_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "is_active": True,
+        },
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    employee_result = results["create_emp"]
+
+    # Retrieve the employee ID — CreateNode may not return it directly
+    employee_id = employee_result.get("id")
+    if employee_id is None:
+        # Look up the employee we just created
+        wf2 = WorkflowBuilder()
+        wf2.add_node(
+            "EmployeeListNode",
+            "find_emp",
+            {
+                "filter": {"user_id": user_id, "company_id": company_id},
+                "limit": 1,
+                "enable_cache": False,
+            },
+        )
+        runtime2 = LocalRuntime()
+        results2, _ = runtime2.execute(wf2.build())
+        emp_records = results2["find_emp"].get("records", [])
+        if emp_records:
+            employee_id = emp_records[0]["id"]
+        else:
+            logger.warning(
+                "Created employee record but could not retrieve ID: user=%s, company=%s",
+                user_id,
+                company_id,
+            )
+            employee_id = 0
+
+    # --- Create initial LeaveBalance records ---
+    current_year = datetime.now(timezone.utc).year
+
+    leave_wf = WorkflowBuilder()
+    # Annual leave: 7 days for first year (Singapore EA minimum)
+    leave_wf.add_node(
+        "LeaveBalanceCreateNode",
+        "create_annual",
+        {
+            "employee_id": employee_id,
+            "company_id": company_id,
+            "leave_type": "annual",
+            "year": current_year,
+            "entitlement_days": 7.0,
+            "used_days": 0.0,
+            "pending_days": 0.0,
+        },
+    )
+    # Sick leave: 14 days (Singapore EA)
+    leave_wf.add_node(
+        "LeaveBalanceCreateNode",
+        "create_sick",
+        {
+            "employee_id": employee_id,
+            "company_id": company_id,
+            "leave_type": "sick",
+            "year": current_year,
+            "entitlement_days": 14.0,
+            "used_days": 0.0,
+            "pending_days": 0.0,
+        },
+    )
+    leave_runtime = LocalRuntime()
+    leave_runtime.execute(leave_wf.build())
+
+    # --- Mark invitation as accepted ---
+    accepted_at = datetime.now(timezone.utc).isoformat()
+    _update_invitation(
+        invitation["id"],
+        {"accepted_at": accepted_at, "is_active": False},
+    )
+
+    # --- Generate JWT tokens ---
+    access_token = auth_service.create_access_token(
+        user_id=user_id,
+        email=user["email"],
+        role=user["role"],
+        company_id=company_id,
+    )
+    refresh_token = auth_service.create_refresh_token(user_id=user_id)
+
+    logger.info(
+        "Employee registered via invitation: email=%s, user_id=%s, company_id=%s",
+        email,
+        user_id,
+        company_id,
+    )
+
+    return {
+        "user": {
+            "id": user_id,
+            "email": user["email"],
+            "name": user["name"],
+            "role": user["role"],
+            "company_id": company_id,
+        },
+        "employee_id": employee_id,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }
 
 
 # --------------------------------------------------------------------------

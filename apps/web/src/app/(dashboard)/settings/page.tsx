@@ -11,6 +11,8 @@ import {
   Trash2,
   Moon,
   Sun,
+  Brain,
+  Eye,
 } from "lucide-react";
 import {
   AppCard,
@@ -20,6 +22,7 @@ import {
 } from "@/components/design-system";
 import { settingsApi } from "@/services/api/settings";
 import { apiClient } from "@/services/api/client";
+import { useObservation } from "@/components/shadow-agent";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -611,6 +614,9 @@ export default function SettingsPage() {
           />
         </div>
       </AppCard>
+
+      {/* AI Memory Section (T139) */}
+      <AIMemorySection />
 
       {/* Data & Privacy Section */}
       <AppCard

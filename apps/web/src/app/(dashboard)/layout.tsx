@@ -6,8 +6,10 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import {
   ShadowAgentProvider,
   ShadowWidget,
+  ShadowMargin,
   CommandSurface,
   useShadowAgent,
+  useShadowContext,
 } from "@/components/shadow-agent";
 
 /**
@@ -17,6 +19,7 @@ import {
  * The ShadowAgent replaces the old AdvisoryPanel + AdvisoryFAB.
  * - ShadowWidget: 36px breathing circle at bottom-right (replaces FAB)
  * - CommandSurface: command palette overlay (replaces chat drawer)
+ * - ShadowMargin: persistent right-edge insight strip (desktop only, T126)
  */
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
@@ -25,6 +28,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <ShadowAgentProvider>
           <div className="animate-fade-in">{children}</div>
           <ShadowAgentUI />
+          <ShadowMarginWrapper />
         </ShadowAgentProvider>
       </AppShell>
     </ProtectedRoute>
@@ -61,4 +65,17 @@ function ShadowAgentUI() {
       />
     </>
   );
+}
+
+/**
+ * T126 + T127: Wrapper that feeds shadow context insights into the margin.
+ * The ShadowMargin component handles:
+ * - Desktop-only rendering (returns null on <1024px)
+ * - Graceful empty/error states
+ * - Compliance gaps, regulatory updates, and deadline reminders from the API
+ */
+function ShadowMarginWrapper() {
+  const { insights, isLoading } = useShadowContext();
+
+  return <ShadowMargin insights={insights} isLoading={isLoading} />;
 }

@@ -23,6 +23,7 @@ from hr_advisory.api.routers import (
     clients_router,
     compliance_router,
     document_router,
+    employees_router,
     emergency_router,
     help_router,
     kb_router,
@@ -126,6 +127,7 @@ def _register_routers(app: Nexus) -> None:
     app.include_router(clients_router, prefix="/clients", tags=["Clients"])
     app.include_router(compliance_router, prefix="/compliance", tags=["Compliance"])
     app.include_router(document_router, prefix="/document", tags=["Document"])
+    app.include_router(employees_router, prefix="/employees", tags=["Employees"])
     app.include_router(emergency_router, prefix="/emergency", tags=["Emergency"])
     app.include_router(help_router, prefix="/help", tags=["Help"])
     app.include_router(profile_router, prefix="/profile", tags=["Profile"])

@@ -22,6 +22,7 @@ import {
   type AuthorityLevel,
 } from "@/components/design-system/SourceCitation";
 import type { CalculatorDisplayResult } from "./ShadowAgentContext";
+import { useShadowAgent } from "./ShadowAgentContext";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -46,7 +47,7 @@ interface CommandSurfaceProps {
 
 /* ── Suggested commands (T118: includes deep advisory) ────── */
 
-const SUGGESTED_COMMANDS = [
+const ADMIN_SUGGESTED_COMMANDS = [
   { icon: Shield, text: "Check my compliance status", category: "compliance" },
   {
     icon: Calculator,
@@ -59,6 +60,30 @@ const SUGGESTED_COMMANDS = [
     icon: BookOpen,
     text: "Open deep advisory",
     category: "navigate",
+  },
+];
+
+/* T137: Employee-specific command suggestions */
+const EMPLOYEE_SUGGESTED_COMMANDS = [
+  {
+    icon: Calculator,
+    text: "How many leave days do I have?",
+    category: "advisory",
+  },
+  {
+    icon: BookOpen,
+    text: "What's my notice period?",
+    category: "advisory",
+  },
+  {
+    icon: Shield,
+    text: "Show me the company leave policy",
+    category: "navigate",
+  },
+  {
+    icon: FileText,
+    text: "What are my CPF contributions?",
+    category: "advisory",
   },
 ];
 
@@ -216,6 +241,11 @@ export function CommandSurface({
   const [result, setResult] = useState<CommandResult | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { userRole } = useShadowAgent();
+  const suggestedCommands =
+    userRole === "employee"
+      ? EMPLOYEE_SUGGESTED_COMMANDS
+      : ADMIN_SUGGESTED_COMMANDS;
 
   // Focus input when opened
   useEffect(() => {
@@ -287,7 +317,7 @@ export function CommandSurface({
 
       {/* Command palette */}
       <div
-        className="fixed inset-x-0 top-[15vh] flex justify-center px-4 animate-shadow-scale-in"
+        className="fixed inset-x-0 top-[30vh] sm:top-[15vh] flex justify-center px-4 animate-shadow-scale-in"
         style={{ zIndex: "calc(var(--z-shadow-command) + 1)" }}
         role="dialog"
         aria-label="AITE Command Surface"
@@ -429,7 +459,7 @@ export function CommandSurface({
                   <p className="text-[10px] font-medium text-[var(--color-gray-400)] uppercase tracking-wider mb-1.5">
                     Suggestions
                   </p>
-                  {SUGGESTED_COMMANDS.map((cmd) => (
+                  {suggestedCommands.map((cmd) => (
                     <button
                       key={cmd.text}
                       type="button"

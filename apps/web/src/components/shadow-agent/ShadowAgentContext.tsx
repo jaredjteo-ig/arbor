@@ -11,6 +11,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { classifyIntent, type ClassifiedIntent } from "./action-registry";
 import { calculatorsApi } from "@/services/api/calculators";
 import { complianceApi } from "@/services/api/compliance";
+import { useAuth } from "@/contexts/AuthContext";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -43,6 +44,8 @@ interface ShadowAgentState {
   isAdvisoryPage: boolean;
   /** Recent commands for suggestion list */
   recentCommands: string[];
+  /** Current user role for role-aware suggestions */
+  userRole: string | null;
 }
 
 interface ShadowAgentActions {
@@ -342,9 +345,23 @@ async function handleAdvisory(query: string): Promise<CommandResult> {
 
 const MAX_RECENT_COMMANDS = 10;
 
+/** Employee-restricted paths — employees should not navigate here */
+const ADMIN_ONLY_PATHS = [
+  "/compliance",
+  "/calculators",
+  "/documents",
+  "/advisory",
+  "/clients",
+  "/analytics",
+  "/emergency",
+  "/alerts",
+  "/admin",
+];
+
 export function ShadowAgentProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { user } = useAuth();
 
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [hasAttention, setHasAttention] = useState(false);
@@ -352,6 +369,8 @@ export function ShadowAgentProvider({ children }: { children: ReactNode }) {
   const [recentCommands, setRecentCommands] = useState<string[]>([]);
 
   const isAdvisoryPage = pathname === "/advisory";
+  const userRole = user?.role ?? null;
+  const isEmployee = userRole === "employee";
 
   const openCommand = useCallback(() => setIsCommandOpen(true), []);
   const closeCommand = useCallback(() => setIsCommandOpen(false), []);
@@ -382,6 +401,21 @@ export function ShadowAgentProvider({ children }: { children: ReactNode }) {
           case "navigate": {
             // T116: Enhanced navigation with confirmation
             const target = intent.navigateTo || "/";
+
+            // T137: Block employee navigation to admin-only pages
+            if (
+              isEmployee &&
+              ADMIN_ONLY_PATHS.some(
+                (p) => target === p || target.startsWith(p + "/"),
+              )
+            ) {
+              return {
+                type: "text",
+                content:
+                  "That section is not available for your account. Try asking about your leave balance, company policies, or notice period instead.",
+              };
+            }
+
             router.push(target);
             return {
               type: "navigation",
@@ -435,6 +469,7 @@ export function ShadowAgentProvider({ children }: { children: ReactNode }) {
     isProcessing,
     isAdvisoryPage,
     recentCommands,
+    userRole,
     openCommand,
     closeCommand,
     toggleCommand,
