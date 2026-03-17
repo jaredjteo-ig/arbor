@@ -239,14 +239,16 @@ UNCERTAINTY_DEFAULTS = {
     "confidence": 0.3,
     "degraded": True,
     "fallback_message": (
-        "I wasn't able to fully analyze this question. "
-        "For your safety, I recommend consulting an HR professional "
-        "or contacting MOM directly for guidance on this matter."
+        "Our AI advisory service is temporarily unable to generate a detailed analysis. "
+        "The relevant legal provisions have been identified and are shown below for your reference. "
+        "You can browse these provisions directly in the Knowledge Base, or connect with "
+        "an employment law specialist for personalised guidance."
     ),
     "critical_fallback_message": (
-        "I was unable to process this query reliably. "
-        "This situation may carry legal or financial risk. "
-        "Please consult an employment law specialist before taking any action."
+        "Our AI advisory service is temporarily unavailable for this query. "
+        "The relevant provisions from Singapore employment law are listed below. "
+        "For matters with legal or financial implications, we recommend connecting "
+        "with an employment law specialist who can review your specific situation."
     ),
 }
 

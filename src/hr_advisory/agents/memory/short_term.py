@@ -47,9 +47,11 @@ class ShortTermMemory:
         entities: Optional[Dict[str, Any]] = None,
         domains: Optional[List[str]] = None,
         risk_tier: str = "green",
+        provisions_cited: Optional[List[Dict[str, Any]]] = None,
+        confidence_score: Optional[float] = None,
     ) -> None:
         """Persist one query-response turn."""
-        turn = {
+        turn: Dict[str, Any] = {
             "user": query,
             "agent": response,
             "entities": entities or {},
@@ -57,6 +59,10 @@ class ShortTermMemory:
             "risk_tier": risk_tier,
             "timestamp": datetime.utcnow().isoformat(),
         }
+        if provisions_cited:
+            turn["provisions_cited"] = provisions_cited
+        if confidence_score is not None:
+            turn["confidence_score"] = confidence_score
         self._buffer.save_turn(session_id, turn)
 
     def load_context(self, session_id: str) -> Dict[str, Any]:

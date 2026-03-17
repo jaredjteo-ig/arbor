@@ -44,6 +44,8 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     # PostgreSQL driver
     "psycopg2-binary>=2.9.9",
+    # LLM provider (required by Kaizen agents for response generation)
+    "openai>=1.30.0",
 ]
 
 [project.optional-dependencies]

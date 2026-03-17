@@ -8,9 +8,8 @@ import { authApi } from "@/services/api/auth";
 /**
  * OAuth callback page.
  *
- * Handles two flows:
- * 1. Google redirects here with ?code=... — exchanges the code for AITE tokens
- * 2. Legacy: backend redirects with ?access_token=...&refresh_token=...
+ * Google redirects here with ?code=...&state=... after user authorizes.
+ * Validates the CSRF state token, then exchanges the code for AITE tokens.
  */
 function CallbackHandler() {
   const router = useRouter();
@@ -22,29 +21,27 @@ function CallbackHandler() {
     processed.current = true;
 
     const code = searchParams.get("code");
-    const accessToken = searchParams.get("access_token");
-    const refreshToken = searchParams.get("refresh_token");
+    const state = searchParams.get("state");
 
     if (code) {
-      // Google OAuth flow: exchange code for AITE tokens
-      const redirectUri = `${window.location.origin}/auth/callback`;
+      // Validate CSRF state token before exchanging
+      if (!authApi.validateOAuthState(state)) {
+        router.push("/login?error=sso_failed");
+        return;
+      }
+
       authApi
-        .googleExchange(code, redirectUri)
+        .googleExchange(code)
         .then((response) => {
           localStorage.setItem("access_token", response.access_token);
           localStorage.setItem("refresh_token", response.refresh_token);
-          window.history.replaceState({}, "", "/auth/callback");
-          router.push("/");
+          // Full page navigation (not router.push) so AuthProvider re-mounts
+          // and picks up the new tokens from localStorage
+          window.location.href = "/";
         })
         .catch(() => {
           router.push("/login?error=sso_failed");
         });
-    } else if (accessToken && refreshToken) {
-      // Legacy flow: tokens passed directly
-      localStorage.setItem("access_token", accessToken);
-      localStorage.setItem("refresh_token", refreshToken);
-      window.history.replaceState({}, "", "/auth/callback");
-      router.push("/");
     } else {
       router.push("/login?error=sso_failed");
     }

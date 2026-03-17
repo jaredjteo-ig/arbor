@@ -1,0 +1,11 @@
+export { ShadowWidget } from "./ShadowWidget";
+export { CommandSurface } from "./CommandSurface";
+export { ShadowAgentProvider, useShadowAgent } from "./ShadowAgentContext";
+export type { CalculatorDisplayResult } from "./ShadowAgentContext";
+export { classifyIntent } from "./action-registry";
+export type { ActionType, ClassifiedIntent } from "./action-registry";
+export { ShadowMargin } from "./ShadowMargin";
+export type { ShadowInsight } from "./ShadowMargin";
+export { InlineAnnotation } from "./InlineAnnotation";
+export type { AnnotationData } from "./InlineAnnotation";
+export { useShadowContext } from "./useShadowContext";

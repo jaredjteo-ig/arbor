@@ -78,6 +78,37 @@
   --shadow-raised: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.06);
   --shadow-dropdown: 0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
   --shadow-modal: 0 20px 25px rgba(0, 0, 0, 0.1), 0 8px 10px rgba(0, 0, 0, 0.04);
+
+  /* ── Shadow Agent — AI presence system ──────────────────────── */
+
+  /* Colors — derived from primary (#1E3A5F) at low opacity */
+  --shadow-glow: rgba(30, 58, 95, 0.1);
+  --shadow-accent: #2a6fa8;
+  --shadow-pulse-color: #4a90c4;
+  --shadow-border: rgba(30, 58, 95, 0.2);
+  --shadow-text: var(--foreground);
+  --shadow-surface: rgba(30, 58, 95, 0.04);
+  --shadow-surface-hover: rgba(30, 58, 95, 0.08);
+  --shadow-mark-bg: var(--color-primary-bg);
+
+  /* Layout */
+  --shadow-margin-collapsed: 48px;
+  --shadow-margin-expanded: 320px;
+  --shadow-widget-size: 44px;
+  --shadow-widget-inner: 36px;
+
+  /* Animation timing */
+  --shadow-pulse-duration: 3s;
+  --shadow-attention-interval: 5s;
+  --shadow-transition-fast: 150ms;
+  --shadow-transition-normal: 200ms;
+  --shadow-transition-slow: 300ms;
+
+  /* Z-index layers */
+  --z-shadow-annotation: 20;
+  --z-shadow-margin: 30;
+  --z-shadow-widget: 35;
+  --z-shadow-command: 50;
 }
 
 @theme inline {
@@ -183,6 +214,50 @@ body {
 
 .animate-fade-in {
   animation: fadeIn 150ms ease-out;
+}
+
+/* ── Shadow Agent animations ───────────────────────────────── */
+
+@keyframes shadow-breathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes shadow-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes shadow-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shadow-scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-shadow-breathe {
+  animation: shadow-breathe var(--shadow-pulse-duration) ease-in-out infinite;
+}
+
+.animate-shadow-ripple {
+  animation: shadow-ripple var(--shadow-attention-interval) ease-out infinite;
+}
+
+.animate-shadow-fade-in {
+  animation: shadow-fade-in var(--shadow-transition-normal) ease-out;
+}
+
+.animate-shadow-scale-in {
+  animation: shadow-scale-in var(--shadow-transition-normal) ease-out;
 }
 
 /* ── Reduced motion ─────────────────────────────────────────── */

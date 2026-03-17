@@ -20,6 +20,7 @@ from hr_advisory.api.routers.profile import router as profile_router
 from hr_advisory.api.routers.qa import router as qa_router
 from hr_advisory.api.routers.search import router as search_router
 from hr_advisory.api.routers.settings import router as settings_router
+from hr_advisory.api.routers.shadow import router as shadow_router
 
 __all__ = [
     "admin_router",
@@ -38,4 +39,5 @@ __all__ = [
     "qa_router",
     "search_router",
     "settings_router",
+    "shadow_router",
 ]

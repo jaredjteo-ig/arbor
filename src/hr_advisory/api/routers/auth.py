@@ -400,7 +400,6 @@ async def google_exchange(request: Request):
 
     body = await request.json()
     code = body.get("code")
-    redirect_uri = body.get("redirect_uri")
 
     if not code:
         raise HTTPException(status_code=400, detail="Missing authorization code")
@@ -409,8 +408,12 @@ async def google_exchange(request: Request):
     if not settings.google_oauth_client_id or not settings.google_oauth_client_secret:
         raise HTTPException(status_code=501, detail="Google OAuth not configured.")
 
-    if not redirect_uri:
-        redirect_uri = settings.google_oauth_redirect_uri
+    if not settings.google_oauth_redirect_uri:
+        raise HTTPException(status_code=501, detail="Google OAuth redirect URI not configured.")
+
+    # Always use the server-configured redirect_uri — never accept from client
+    # (RFC 6819 Section 4.4.1.7: prevent open redirect to token theft)
+    redirect_uri = settings.google_oauth_redirect_uri
 
     # Exchange authorization code for Google tokens (server-to-server)
     token_resp = http_requests.post(

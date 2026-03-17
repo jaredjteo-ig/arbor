@@ -48,20 +48,24 @@ export class AuthError extends Error {
 
 /* ── Helpers ──────────────────────────────────────────────── */
 
+import { unwrapNexusResponse } from "./client";
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let message = "An unexpected error occurred";
     try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) {
-        message = body.detail;
+      const body = await response.json();
+      const unwrapped = unwrapNexusResponse(body);
+      if (unwrapped?.detail) {
+        message = unwrapped.detail;
       }
     } catch {
       /* response body may not be JSON */
     }
     throw new AuthError(message, response.status);
   }
-  return response.json() as Promise<T>;
+  const body = await response.json();
+  return unwrapNexusResponse(body) as T;
 }
 
 function authHeaders(accessToken: string): HeadersInit {
@@ -122,13 +126,17 @@ export const authApi = {
   },
 
   /** Navigate to Google's OAuth consent screen.
-   *  Built client-side to bypass Nexus gateway response wrapping. */
+   *  Built client-side to bypass Nexus gateway response wrapping.
+   *  Generates a CSRF state token to prevent authorization code injection. */
   googleLogin(): void {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) {
       console.error("NEXT_PUBLIC_GOOGLE_CLIENT_ID not set");
       return;
     }
+    // Generate CSRF state token and store for validation in callback
+    const state = crypto.randomUUID();
+    sessionStorage.setItem("oauth_state", state);
     const redirectUri = `${window.location.origin}/auth/callback`;
     const params = new URLSearchParams({
       client_id: clientId,
@@ -137,19 +145,25 @@ export const authApi = {
       scope: "openid email profile",
       access_type: "offline",
       prompt: "consent",
+      state,
     });
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   },
 
+  /** Validate the OAuth state parameter against the stored value. */
+  validateOAuthState(state: string | null): boolean {
+    if (!state) return false;
+    const stored = sessionStorage.getItem("oauth_state");
+    sessionStorage.removeItem("oauth_state");
+    return stored === state;
+  },
+
   /** Exchange a Google OAuth authorization code for AITE tokens. */
-  async googleExchange(
-    code: string,
-    redirectUri: string,
-  ): Promise<AuthResponse> {
+  async googleExchange(code: string): Promise<AuthResponse> {
     return fetch(`${API_BASE}/auth/google/exchange`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, redirect_uri: redirectUri }),
+      body: JSON.stringify({ code }),
     }).then((res) => handleResponse<AuthResponse>(res));
   },
 

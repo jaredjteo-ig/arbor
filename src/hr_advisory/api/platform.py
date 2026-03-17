@@ -31,6 +31,7 @@ from hr_advisory.api.routers import (
     qa_router,
     search_router,
     settings_router,
+    shadow_router,
 )
 from hr_advisory.api.session import create_session_store
 from hr_advisory.config.settings import Settings, get_settings
@@ -57,7 +58,11 @@ def create_platform(settings: Settings | None = None) -> Nexus:
 
     # --- Nexus instance ---
     # auto_discovery=False is CRITICAL for DataFlow integration (prevents blocking).
-    # enable_durability=False in development to prevent caching issues during testing.
+    # enable_durability=False because the DurableWorkflowServer deduplicator caches
+    # GET responses (including /auth/me) by method+path WITHOUT considering the
+    # Authorization header — serving User A's data to User B. This is a security
+    # issue for any authenticated endpoint. Disable until per-route cache control
+    # is available.
     app = Nexus(
         api_port=settings.api_port,
         auto_discovery=False,
@@ -66,7 +71,7 @@ def create_platform(settings: Settings | None = None) -> Nexus:
         cors_allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
         cors_allow_credentials=True,
         rate_limit=100,
-        enable_durability=not settings.is_development,
+        enable_durability=False,
     )
 
     # --- Disable trailing-slash 307 redirects ---
@@ -129,6 +134,7 @@ def _register_routers(app: Nexus) -> None:
     app.include_router(search_router, prefix="/search", tags=["Search"])
     app.include_router(learning_router, prefix="/learning", tags=["Learning Pipeline"])
     app.include_router(settings_router, prefix="/settings", tags=["Settings"])
+    app.include_router(shadow_router, prefix="/shadow", tags=["Shadow Agent"])
     app.include_router(admin_router)  # Admin router has its own /admin prefix
     app.include_router(qa_router)  # QA router has its own /admin/qa prefix
     logger.info("All API routers registered")

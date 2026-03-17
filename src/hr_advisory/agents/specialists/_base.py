@@ -149,9 +149,9 @@ class BaseDomainSpecialist(BaseAgent):
             )
             degraded = True
             answer_text = (
-                f"I was unable to provide a fully analyzed response for this "
-                f"{self.domain_label} question. Please consult a professional "
-                f"for guidance."
+                f"Our {self.domain_label} specialist is temporarily unavailable. "
+                f"The relevant provisions are listed below for your reference. "
+                f"You can also connect with an employment law specialist for guidance."
             )
             cited_provisions = []
             confidence = 0.2

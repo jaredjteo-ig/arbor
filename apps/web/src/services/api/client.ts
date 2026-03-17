@@ -69,7 +69,8 @@ export async function refreshAccessToken(): Promise<string> {
       throw new ApiRequestError("Token refresh failed", response.status);
     }
 
-    const tokens = (await response.json()) as {
+    const raw = await response.json();
+    const tokens = unwrapNexusResponse(raw) as {
       access_token: string;
       refresh_token: string;
     };
@@ -83,6 +84,37 @@ export async function refreshAccessToken(): Promise<string> {
   } finally {
     refreshPromise = null;
   }
+}
+
+/* ── Nexus envelope unwrapping ────────────────────────────── */
+
+/**
+ * The Nexus gateway wraps successful responses in an envelope:
+ *   { data: { content: "{...}" }, status_code: 200, ... }
+ * where `content` is the actual JSON response as a string.
+ * This function detects and unwraps that envelope.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function unwrapNexusResponse(body: any): any {
+  if (
+    body &&
+    typeof body === "object" &&
+    "data" in body &&
+    body.data &&
+    typeof body.data === "object" &&
+    "content" in body.data
+  ) {
+    const content = body.data.content;
+    if (typeof content === "string") {
+      try {
+        return JSON.parse(content);
+      } catch {
+        return content;
+      }
+    }
+    return content;
+  }
+  return body;
 }
 
 /* ── Response handler ────────────────────────────────────── */
@@ -110,7 +142,8 @@ async function handleResponse<T>(response: Response): Promise<T> {
     const detail = await parseErrorBody(response);
     throw new ApiRequestError(detail, response.status, detail);
   }
-  return response.json() as Promise<T>;
+  const body = await response.json();
+  return unwrapNexusResponse(body) as T;
 }
 
 /* ── ApiClient class ─────────────────────────────────────── */

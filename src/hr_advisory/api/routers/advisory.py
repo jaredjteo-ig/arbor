@@ -518,8 +518,9 @@ async def advisory_query(
     response_screening = screen_response(response_text)
     if response_screening.result == ScreeningResult.BLOCK:
         response_text = (
-            "I was unable to generate a compliant response for this query. "
-            "Please rephrase your question or contact a human HR specialist."
+            "This response was flagged by our content safety review. "
+            "The relevant provisions are shown below for your reference. "
+            "Please rephrase your question or connect with an employment law specialist."
         )
         risk_tier = "red"
         confidence = 0.0
@@ -563,6 +564,8 @@ async def advisory_query(
         response=response_text,
         domains=domains,
         risk_tier=risk_tier,
+        provisions_cited=provisions_cited,
+        confidence_score=confidence,
     )
 
     advisory_response = {
@@ -1555,8 +1558,9 @@ async def advisory_stream(
     response_screening = screen_response(response_text)
     if response_screening.result == ScreeningResult.BLOCK:
         response_text = (
-            "I was unable to generate a compliant response for this query. "
-            "Please rephrase your question or contact a human HR specialist."
+            "This response was flagged by our content safety review. "
+            "The relevant provisions are shown below for your reference. "
+            "Please rephrase your question or connect with an employment law specialist."
         )
         risk_tier = "red"
         confidence = 0.0
@@ -1601,6 +1605,8 @@ async def advisory_stream(
         response=response_text,
         domains=domains,
         risk_tier=risk_tier,
+        provisions_cited=provisions_cited,
+        confidence_score=confidence,
     )
 
     async def event_generator():
@@ -1771,15 +1777,18 @@ async def advisory_history(
             # Assistant message
             agent_content = turn.get("agent", "")
             if agent_content:
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": agent_content,
-                        "domains": turn.get("domains", []),
-                        "risk_tier": turn.get("risk_tier", "green"),
-                        "timestamp": turn.get("timestamp", ""),
-                    }
-                )
+                msg: dict = {
+                    "role": "assistant",
+                    "content": agent_content,
+                    "domains": turn.get("domains", []),
+                    "risk_tier": turn.get("risk_tier", "green"),
+                    "timestamp": turn.get("timestamp", ""),
+                }
+                if turn.get("provisions_cited"):
+                    msg["provisions_cited"] = turn["provisions_cited"]
+                if turn.get("confidence_score") is not None:
+                    msg["confidence_score"] = turn["confidence_score"]
+                messages.append(msg)
 
     return {
         "conversation_id": conversation_id,
