@@ -122,7 +122,7 @@ async def create_client(
     if not uen or not uen.strip():
         raise HTTPException(status_code=400, detail="UEN is required")
 
-    employee_count = body.get("employee_count", 0)
+    employee_count = body.get("employee_count", 0) or body.get("estimated_headcount", 0)
     sector = body.get("sector", "")
 
     create_params = {

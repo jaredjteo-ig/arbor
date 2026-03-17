@@ -150,7 +150,7 @@ export function CompanySetupModal({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  UEN (optional)
+                  UEN *
                 </label>
                 <input
                   type="text"
@@ -213,7 +213,11 @@ export function CompanySetupModal({
               <button
                 onClick={handleSubmit}
                 disabled={
-                  !form.name || !form.sector || !form.headcount || isSubmitting
+                  !form.name ||
+                  !form.uen ||
+                  !form.sector ||
+                  !form.headcount ||
+                  isSubmitting
                 }
                 className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/25"
               >
