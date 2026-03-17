@@ -162,6 +162,22 @@ async def create_client(
         except Exception:
             company_id = None
 
+    # Associate the creating user with this company
+    if company_id is not None:
+        user_id = current_user.get("sub") or current_user.get("id")
+        if user_id:
+            try:
+                _execute_node(
+                    "UserUpdateNode",
+                    "assign_company",
+                    {"conditions": {"id": int(user_id)}, "updates": {"company_id": company_id}},
+                )
+                logger.info("Assigned user %s to company %s", user_id, company_id)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to assign user %s to company %s: %s", user_id, company_id, exc
+                )
+
     return {
         "id": company_id,
         "name": name.strip(),
