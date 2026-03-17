@@ -10,6 +10,7 @@ import {
   CommandSurface,
   useShadowAgent,
   useShadowContext,
+  useObservation,
 } from "@/components/shadow-agent";
 
 /**
@@ -76,6 +77,13 @@ function ShadowAgentUI() {
  */
 function ShadowMarginWrapper() {
   const { insights, isLoading } = useShadowContext();
+  const { insights: observationInsights } = useObservation();
 
-  return <ShadowMargin insights={insights} isLoading={isLoading} />;
+  return (
+    <ShadowMargin
+      insights={insights}
+      isLoading={isLoading}
+      observationInsights={observationInsights}
+    />
+  );
 }

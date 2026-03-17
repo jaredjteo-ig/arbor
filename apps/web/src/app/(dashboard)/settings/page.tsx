@@ -201,6 +201,136 @@ function ConfirmDialog({
   );
 }
 
+/* ── AI Memory Section (T139) ─────────────────────────────── */
+
+function AIMemorySection() {
+  const { visits, insights, isEnabled, setEnabled, clearAll } =
+    useObservation();
+
+  // Group visits by page for display
+  const pageCounts = new Map<string, number>();
+  for (const visit of visits) {
+    const count = pageCounts.get(visit.page) || 0;
+    pageCounts.set(visit.page, count + 1);
+  }
+
+  const PAGE_LABELS: Record<string, string> = {
+    "/": "Dashboard",
+    "/my-dashboard": "My Dashboard",
+    "/my-leave": "My Leave",
+    "/policies": "Policies",
+    "/compliance": "Compliance",
+    "/calculators": "Calculators",
+    "/advisory": "Advisory",
+    "/settings": "Settings",
+  };
+
+  return (
+    <AppCard
+      variant="standard"
+      header={
+        <div className="flex items-center gap-2">
+          <Brain
+            className="h-4 w-4 text-[var(--color-gray-500)]"
+            aria-hidden="true"
+          />
+          <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+            AI Memory
+          </h2>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-[var(--color-gray-600)]">
+          AITE learns your work patterns to provide better assistance. This data
+          is stored only in your browser session and is not shared with anyone.
+        </p>
+
+        {/* Enable/disable toggle */}
+        <ToggleSwitch
+          checked={isEnabled}
+          onChange={setEnabled}
+          label="Enable pattern learning"
+          description="Allow AITE to observe your navigation patterns and offer proactive suggestions"
+        />
+
+        {/* Observed patterns */}
+        {isEnabled && visits.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 mb-2">
+              <Eye
+                className="h-3.5 w-3.5 text-[var(--color-gray-400)]"
+                aria-hidden="true"
+              />
+              <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+                Observed Patterns ({visits.length} page views)
+              </p>
+            </div>
+
+            {/* Page visit counts */}
+            <div className="space-y-1">
+              {Array.from(pageCounts.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 8)
+                .map(([page, count]) => (
+                  <div
+                    key={page}
+                    className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-[var(--color-gray-50)]"
+                  >
+                    <span className="text-sm text-[var(--color-gray-700)]">
+                      {PAGE_LABELS[page] || page}
+                    </span>
+                    <span className="text-xs font-medium text-[var(--color-gray-500)]">
+                      {count} visit{count !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                ))}
+            </div>
+
+            {/* Generated insights */}
+            {insights.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+                  Active Insights
+                </p>
+                {insights.map((insight) => (
+                  <div
+                    key={insight.id}
+                    className="text-xs text-[var(--color-gray-600)] py-1.5 px-3 rounded-lg bg-[var(--color-primary-bg)] border border-[var(--color-primary)]/20"
+                  >
+                    {insight.message}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {isEnabled && visits.length === 0 && (
+          <p className="text-xs text-[var(--color-gray-400)] italic">
+            No patterns observed yet. Navigate around the app and patterns will
+            appear here.
+          </p>
+        )}
+
+        {/* Clear button */}
+        {visits.length > 0 && (
+          <AppButton
+            variant="outlined"
+            size="sm"
+            onClick={() => {
+              clearAll();
+              toast.success("All observations have been cleared");
+            }}
+          >
+            Clear all observations
+          </AppButton>
+        )}
+      </div>
+    </AppCard>
+  );
+}
+
 /* ── Page ─────────────────────────────────────────────────── */
 
 export default function SettingsPage() {

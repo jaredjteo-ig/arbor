@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Lightbulb } from "lucide-react";
 import clsx from "clsx";
 import { useShadowAgent } from "./ShadowAgentContext";
+import type { ObservationInsight } from "./useObservation";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -22,6 +23,8 @@ export interface ShadowInsight {
 interface ShadowMarginProps {
   insights: ShadowInsight[];
   isLoading?: boolean;
+  /** T140: Proactive observation insights from the observation layer */
+  observationInsights?: ObservationInsight[];
 }
 
 /* ── Severity colors ──────────────────────────────────────── */
@@ -53,13 +56,18 @@ const severityCardBorders: Record<string, string> = {
 export function ShadowMargin({
   insights,
   isLoading = false,
+  observationInsights = [],
 }: ShadowMarginProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const { openCommand } = useShadowAgent();
 
   const visibleInsights = insights.filter((i) => !dismissedIds.has(i.id));
-  const hasInsights = visibleInsights.length > 0;
+  const visibleObservations = observationInsights.filter(
+    (i) => !dismissedIds.has(i.id),
+  );
+  const hasInsights =
+    visibleInsights.length > 0 || visibleObservations.length > 0;
 
   // Don't render on mobile/tablet
   const [isDesktop, setIsDesktop] = useState(false);
@@ -235,11 +243,65 @@ export function ShadowMargin({
               </div>
             ))}
 
-            {!isLoading && visibleInsights.length === 0 && (
-              <p className="text-xs text-[var(--color-gray-400)] text-center py-4">
-                No insights right now
-              </p>
+            {/* T140: Proactive observation insights */}
+            {visibleObservations.length > 0 && (
+              <>
+                {visibleInsights.length > 0 && (
+                  <div className="my-2 border-t border-[var(--color-gray-200)]" />
+                )}
+                <p className="text-[10px] font-medium text-[var(--color-gray-400)] uppercase tracking-wider px-1 mb-1">
+                  Patterns
+                </p>
+                {visibleObservations.map((obs) => (
+                  <div
+                    key={obs.id}
+                    className="rounded-lg p-3 border-l-2 bg-[var(--shadow-surface)] border-l-[var(--shadow-accent)]"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <Lightbulb className="h-3 w-3 text-[var(--shadow-accent)]" />
+                          <span className="text-[10px] font-medium text-[var(--shadow-accent)]">
+                            Pattern detected
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[var(--color-gray-500)] leading-snug">
+                          {obs.message}
+                        </p>
+                        {obs.actionPrompt && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsExpanded(false);
+                              openCommand();
+                            }}
+                            className="mt-1.5 text-[10px] font-medium text-[var(--color-primary)] hover:underline"
+                          >
+                            {obs.actionPrompt}
+                          </button>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => dismissInsight(obs.id)}
+                        className="shrink-0 p-0.5 rounded text-[var(--color-gray-300)] hover:text-[var(--color-gray-500)] transition-colors"
+                        aria-label={`Dismiss pattern`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
+
+            {!isLoading &&
+              visibleInsights.length === 0 &&
+              visibleObservations.length === 0 && (
+                <p className="text-xs text-[var(--color-gray-400)] text-center py-4">
+                  No insights right now
+                </p>
+              )}
           </div>
 
           {/* Quick command bar at bottom */}

@@ -48,6 +48,14 @@ const NAVIGATION_MAP: Record<string, { path: string; label: string }> = {
   "salary calculator": { path: "/calculators", label: "Salary Calculator" },
   "deep advisory": { path: "/advisory", label: "Advisory Workspace" },
   research: { path: "/advisory", label: "Advisory Workspace" },
+  // Employee-scoped routes
+  "my dashboard": { path: "/my-dashboard", label: "My Dashboard" },
+  "my leave": { path: "/my-leave", label: "My Leave" },
+  "leave balance": { path: "/my-leave", label: "My Leave" },
+  policies: { path: "/policies", label: "Company Policies" },
+  "company policies": { path: "/policies", label: "Company Policies" },
+  "leave policy": { path: "/policies", label: "Company Policies" },
+  employees: { path: "/employees", label: "Employees" },
 };
 
 const NAVIGATION_PREFIXES = [
