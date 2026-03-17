@@ -1,0 +1,355 @@
+/* ── Integrations API Service ─────────────────────────────── */
+
+import { apiClient } from "./client";
+
+/* ── Types ────────────────────────────────────────────────── */
+
+export type ConnectionStatus = "connected" | "disconnected" | "error";
+
+export interface ProviderStatus {
+  provider: string;
+  category: string;
+  status: ConnectionStatus;
+  last_sync: string | null;
+  error_message: string | null;
+}
+
+export interface IntegrationStatusResponse {
+  providers: ProviderStatus[];
+}
+
+export interface TestConnectionResponse {
+  provider: string;
+  success: boolean;
+  message: string;
+  latency_ms: number;
+}
+
+export type ConnectorHealthStatus = "healthy" | "degraded" | "down" | "unknown";
+
+export type CircuitBreakerState = "closed" | "open" | "half-open";
+
+export interface ConnectorHealth {
+  connector_id: string;
+  name: string;
+  category: string;
+  status: ConnectorHealthStatus;
+  error_rate: number;
+  last_success: string | null;
+  last_failure: string | null;
+  circuit_breaker: CircuitBreakerState;
+  uptime_pct: number;
+  avg_latency_ms: number;
+}
+
+export interface ConnectorHealthResponse {
+  connectors: ConnectorHealth[];
+  updated_at: string;
+}
+
+export type FilingStatus = "pending" | "submitted" | "confirmed" | "failed";
+
+export interface GovernmentFiling {
+  id: string;
+  submission_type: string;
+  period: string;
+  status: FilingStatus;
+  submitted_at: string | null;
+  reference_id: string | null;
+  error_message: string | null;
+}
+
+export interface FilingListResponse {
+  filings: GovernmentFiling[];
+  total: number;
+}
+
+export type SagaStepStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+export interface SagaStep {
+  step_name: string;
+  status: SagaStepStatus;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
+export interface SagaDetail {
+  saga_id: string;
+  filing_id: string;
+  steps: SagaStep[];
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+}
+
+export type SyncStatus = "synced" | "pending" | "failed" | "not_synced";
+
+export interface AccountingSyncRecord {
+  run_id: number;
+  period: string;
+  provider: string;
+  sync_status: SyncStatus;
+  journal_reference: string | null;
+  journal_url: string | null;
+  synced_at: string | null;
+  payroll_amount: number;
+  accounting_amount: number | null;
+  bank_amount: number | null;
+  variance: number | null;
+}
+
+export interface AccountingSyncResponse {
+  records: AccountingSyncRecord[];
+  total: number;
+}
+
+export type NotificationChannel =
+  | "email"
+  | "whatsapp"
+  | "telegram"
+  | "slack"
+  | "teams"
+  | "sms";
+
+export interface NotificationPreference {
+  type: string;
+  label: string;
+  description: string;
+  channels: NotificationChannel[];
+}
+
+export interface NotificationPreferencesResponse {
+  preferences: NotificationPreference[];
+  phone_number: string | null;
+}
+
+export interface UpdateNotificationPreferencesRequest {
+  preferences: NotificationPreference[];
+  phone_number: string | null;
+}
+
+export interface SkillsFutureCourse {
+  id: string;
+  title: string;
+  provider: string;
+  duration: string;
+  fee: number;
+  grant_eligible: boolean;
+  grant_amount: number | null;
+  sfc_eligible: boolean;
+  topics: string[];
+  description: string;
+  schedule: string | null;
+  url: string | null;
+}
+
+export interface SkillsFutureCourseListResponse {
+  courses: SkillsFutureCourse[];
+  total: number;
+}
+
+export interface SkillsFutureGrantCheckResponse {
+  eligible: boolean;
+  grant_amount: number;
+  sfc_balance: number;
+  message: string;
+}
+
+export type ImportSource = "talenox" | "hreasily" | "csv";
+
+export interface FieldMapping {
+  source_field: string;
+  target_field: string;
+  sample_value: string | null;
+  is_mapped: boolean;
+}
+
+export interface ImportValidationError {
+  row: number;
+  field: string;
+  message: string;
+}
+
+export interface ImportPreviewResponse {
+  source: ImportSource;
+  total_records: number;
+  valid_records: number;
+  duplicate_count: number;
+  field_mappings: FieldMapping[];
+  validation_errors: ImportValidationError[];
+  preview_rows: Record<string, string>[];
+}
+
+export interface ImportConfirmResponse {
+  imported: number;
+  skipped: number;
+  errors: number;
+  message: string;
+}
+
+export interface PayNowQRResponse {
+  qr_data: string;
+  amount: number;
+  reference: string;
+  expires_at: string;
+}
+
+/* ── API Methods ─────────────────────────────────────────── */
+
+export const integrationsApi = {
+  /** Get connection status for all configured providers. */
+  status(): Promise<IntegrationStatusResponse> {
+    return apiClient.get<IntegrationStatusResponse>("/integrations/status");
+  },
+
+  /** Connect a provider (initiates OAuth or API key setup). */
+  connect(provider: string): Promise<{ redirect_url: string }> {
+    return apiClient.post<{ redirect_url: string }>(
+      `/integrations/${provider}/connect`,
+    );
+  },
+
+  /** Disconnect a provider. */
+  disconnect(provider: string): Promise<{ message: string }> {
+    return apiClient.post<{ message: string }>(
+      `/integrations/${provider}/disconnect`,
+    );
+  },
+
+  /** Test the connection for a specific provider. */
+  testConnection(provider: string): Promise<TestConnectionResponse> {
+    return apiClient.post<TestConnectionResponse>(
+      `/integrations/${provider}/test`,
+    );
+  },
+
+  /** Get health status for all connectors. */
+  connectorHealth(): Promise<ConnectorHealthResponse> {
+    return apiClient.get<ConnectorHealthResponse>("/admin/connector-health");
+  },
+
+  /** Get government filing submissions. */
+  filingsList(): Promise<FilingListResponse> {
+    return apiClient.get<FilingListResponse>("/admin/submission-ledger");
+  },
+
+  /** Get saga detail for a filing. */
+  sagaDetail(filingId: string): Promise<SagaDetail> {
+    return apiClient.get<SagaDetail>(`/admin/sagas/${filingId}`);
+  },
+
+  /** Retry a failed filing. */
+  retryFiling(filingId: string): Promise<{ message: string }> {
+    return apiClient.post<{ message: string }>(
+      `/admin/sagas/${filingId}/retry`,
+    );
+  },
+
+  /** Get accounting sync status for payroll runs. */
+  accountingSyncStatus(): Promise<AccountingSyncResponse> {
+    return apiClient.get<AccountingSyncResponse>(
+      "/payroll/accounting-sync-status",
+    );
+  },
+
+  /** Trigger sync for a specific payroll run. */
+  syncPayrollRun(runId: number): Promise<{ message: string }> {
+    return apiClient.post<{ message: string }>(
+      `/payroll/accounting-sync/${runId}`,
+    );
+  },
+
+  /** Get notification preferences. */
+  notificationPreferences(): Promise<NotificationPreferencesResponse> {
+    return apiClient.get<NotificationPreferencesResponse>(
+      "/settings/notification-preferences",
+    );
+  },
+
+  /** Update notification preferences. */
+  updateNotificationPreferences(
+    data: UpdateNotificationPreferencesRequest,
+  ): Promise<NotificationPreferencesResponse> {
+    return apiClient.put<NotificationPreferencesResponse>(
+      "/settings/notification-preferences",
+      data,
+    );
+  },
+
+  /** Test a notification channel. */
+  testNotification(
+    channel: NotificationChannel,
+  ): Promise<{ success: boolean; message: string }> {
+    return apiClient.post<{ success: boolean; message: string }>(
+      `/settings/notification-preferences/test`,
+      { channel },
+    );
+  },
+
+  /** Search SkillsFuture courses. */
+  skillsFutureCourses(params?: {
+    query?: string;
+    topic?: string;
+    duration?: string;
+    funding?: string;
+  }): Promise<SkillsFutureCourseListResponse> {
+    const queryParams: Record<string, string> = {};
+    if (params?.query) queryParams.query = params.query;
+    if (params?.topic) queryParams.topic = params.topic;
+    if (params?.duration) queryParams.duration = params.duration;
+    if (params?.funding) queryParams.funding = params.funding;
+    return apiClient.get<SkillsFutureCourseListResponse>(
+      "/integrations/skillsfuture/courses",
+      queryParams,
+    );
+  },
+
+  /** Check grant eligibility for a course. */
+  checkGrant(courseId: string): Promise<SkillsFutureGrantCheckResponse> {
+    return apiClient.get<SkillsFutureGrantCheckResponse>(
+      `/integrations/skillsfuture/courses/${courseId}/grant-check`,
+    );
+  },
+
+  /** Preview import data. */
+  importPreview(
+    source: ImportSource,
+    data?: FormData,
+  ): Promise<ImportPreviewResponse> {
+    if (data) {
+      return apiClient.postFormData<ImportPreviewResponse>(
+        `/integrations/import/preview`,
+        data,
+      );
+    }
+    return apiClient.post<ImportPreviewResponse>(
+      `/integrations/import/preview`,
+      { source },
+    );
+  },
+
+  /** Confirm and execute import. */
+  importConfirm(
+    source: ImportSource,
+    field_mappings: FieldMapping[],
+  ): Promise<ImportConfirmResponse> {
+    return apiClient.post<ImportConfirmResponse>(
+      `/integrations/import/confirm`,
+      { source, field_mappings },
+    );
+  },
+
+  /** Generate PayNow QR code. */
+  payNowQR(amount: number, reference: string): Promise<PayNowQRResponse> {
+    return apiClient.post<PayNowQRResponse>("/banking/paynow-qr", {
+      amount,
+      reference,
+    });
+  },
+};

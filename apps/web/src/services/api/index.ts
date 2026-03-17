@@ -24,3 +24,4 @@ export { leaveApi } from "./leave";
 export { claimsApi } from "./claims";
 export { attendanceApi } from "./attendance";
 export { humanizeError } from "./errors";
+export { integrationsApi } from "./integrations";
