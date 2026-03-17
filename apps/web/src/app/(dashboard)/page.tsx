@@ -14,6 +14,8 @@ import {
   useShadowContext,
 } from "@/components/shadow-agent";
 import { useAuth } from "@/contexts/AuthContext";
+import { HRISModuleGrid } from "@/components/management/HRISModuleGrid";
+import { CompanySetupModal } from "@/components/company/CompanySetupModal";
 import { complianceApi } from "@/services/api/compliance";
 import { adminApi } from "@/services/api/admin";
 import type {
@@ -321,6 +323,28 @@ function AdvisoryPreviewCard() {
   );
 }
 
+/* ── Company Setup CTA ────────────────────────────────────── */
+
+function CompanySetupCTA() {
+  const [showModal, setShowModal] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setShowModal(true)}
+        className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all text-sm shadow-lg shadow-blue-500/20 shrink-0"
+      >
+        <Building2 className="w-4 h-4" />
+        Set Up Company
+      </button>
+      <CompanySetupModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+      />
+    </>
+  );
+}
+
 /* ── Dashboard Page ────────────────────────────────────────── */
 
 export default function DashboardPage() {
@@ -436,18 +460,21 @@ export default function DashboardPage() {
   /* ── No company onboarding state ─────────────────────────── */
   if (!user?.company_id) {
     return (
-      <div className="max-w-4xl mx-auto space-y-6 pb-8">
-        {/* Greeting */}
-        <div>
-          <h1 className="text-heading text-[var(--color-gray-900)]">
-            {firstName ? `Welcome, ${firstName}` : "Welcome to AITE"}
-          </h1>
-          <p className="text-body text-[var(--color-gray-500)] mt-1">
-            Here&apos;s what AITE can do for you
-          </p>
+      <div className="max-w-5xl mx-auto space-y-6 pb-8">
+        {/* Greeting + Company Setup CTA */}
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-heading text-[var(--color-gray-900)]">
+              {firstName ? `Welcome, ${firstName}` : "Welcome to AITE"}
+            </h1>
+            <p className="text-body text-[var(--color-gray-500)] mt-1">
+              Your free HR management platform for Singapore
+            </p>
+          </div>
+          <CompanySetupCTA />
         </div>
 
-        {/* Getting Started progress tracker */}
+        {/* Getting Started */}
         <div>
           <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
             Getting Started
@@ -456,8 +483,8 @@ export default function DashboardPage() {
             <GettingStartedStep
               step={1}
               title="Create your company profile"
-              description="Tell us about your business so we can tailor compliance checks"
-              href="/onboarding"
+              description="Unlock payroll, leave, claims, attendance, and all HR features"
+              href="/payroll"
               icon={Building2}
               completed={false}
             />
@@ -480,15 +507,12 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Value Preview */}
+        {/* HRIS Module Grid — the key addition */}
         <div>
           <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
-            What You Get with AITE
+            Your HR Management Suite
           </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CompliancePreviewCard />
-            <AdvisoryPreviewCard />
-          </div>
+          <HRISModuleGrid hasCompany={false} />
         </div>
 
         {/* Quick Actions */}
@@ -499,12 +523,16 @@ export default function DashboardPage() {
           <QuickActions />
         </div>
 
-        {/* Deterministic callout */}
-        <AlertBanner
-          variant="info"
-          title="No AI, just the law"
-          description="Our calculators use deterministic calculations based on current Singapore regulations. All calculations are auditable — no AI involved."
-        />
+        {/* Value Preview */}
+        <div>
+          <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
+            AI Advisory & Compliance
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <CompliancePreviewCard />
+            <AdvisoryPreviewCard />
+          </div>
+        </div>
       </div>
     );
   }
@@ -555,6 +583,14 @@ export default function DashboardPage() {
           Quick Actions
         </h2>
         <QuickActions />
+      </div>
+
+      {/* HRIS Module Navigation */}
+      <div>
+        <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
+          HR Management
+        </h2>
+        <HRISModuleGrid hasCompany />
       </div>
 
       {/* Two-column: Compliance domains + Pending actions */}
