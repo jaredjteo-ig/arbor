@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import clsx from "clsx";
@@ -16,12 +17,19 @@ import {
   HelpCircle,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   CalendarDays,
   BookOpen,
   Wallet,
   Receipt,
   Clock,
   CalendarClock,
+  ListChecks,
+  FileBarChart,
+  UserPlus,
+  Building2,
+  Plug,
+  GraduationCap,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -31,11 +39,11 @@ interface NavItem {
   href: string;
   icon: typeof LayoutDashboard;
   iconClassName?: string;
+  children?: NavItem[];
 }
 
 /* ── Admin nav groups ─────────────────────────────────────── */
 
-/* Group 1: Core (no label) */
 const adminCoreNavItems: NavItem[] = [
   {
     labelKey: "nav.dashboard",
@@ -57,7 +65,6 @@ const adminCoreNavItems: NavItem[] = [
   },
 ];
 
-/* Group 2: Tools */
 const adminToolsNavItems: NavItem[] = [
   {
     labelKey: "nav.calculators",
@@ -73,19 +80,53 @@ const adminToolsNavItems: NavItem[] = [
   },
 ];
 
-/* Group 3: Management */
+/* Group 3: Management — expandable sub-categories */
 const adminManagementNavItems: NavItem[] = [
   {
     labelKey: "nav.payroll",
     label: "Payroll",
     href: "/payroll",
     icon: Wallet,
+    children: [
+      {
+        labelKey: "nav.payroll.runs",
+        label: "Payroll Runs",
+        href: "/payroll",
+        icon: ListChecks,
+      },
+      {
+        labelKey: "nav.payroll.reports",
+        label: "Reports",
+        href: "/payroll/accounting-sync",
+        icon: FileBarChart,
+      },
+      {
+        labelKey: "nav.payroll.filings",
+        label: "Gov Filings",
+        href: "/payroll/filings",
+        icon: Building2,
+      },
+    ],
   },
   {
     labelKey: "nav.leave",
     label: "Leave",
     href: "/leave",
     icon: CalendarDays,
+    children: [
+      {
+        labelKey: "nav.leave.applications",
+        label: "Applications",
+        href: "/leave",
+        icon: CalendarDays,
+      },
+      {
+        labelKey: "nav.leave.policies",
+        label: "Policies",
+        href: "/leave",
+        icon: BookOpen,
+      },
+    ],
   },
   {
     labelKey: "nav.claims",
@@ -110,6 +151,20 @@ const adminManagementNavItems: NavItem[] = [
     label: "Employees",
     href: "/employees",
     icon: Users,
+    children: [
+      {
+        labelKey: "nav.employees.directory",
+        label: "Directory",
+        href: "/employees",
+        icon: Users,
+      },
+      {
+        labelKey: "nav.employees.onboarding",
+        label: "Onboarding",
+        href: "/employees",
+        icon: UserPlus,
+      },
+    ],
   },
   {
     labelKey: "nav.analytics",
@@ -119,7 +174,6 @@ const adminManagementNavItems: NavItem[] = [
   },
 ];
 
-/* Admin bottom section (after separator) */
 const adminBottomNavItems: NavItem[] = [
   {
     labelKey: "nav.emergency",
@@ -127,6 +181,18 @@ const adminBottomNavItems: NavItem[] = [
     href: "/emergency",
     icon: AlertTriangle,
     iconClassName: "text-[var(--color-risk-amber)]",
+  },
+  {
+    labelKey: "nav.training",
+    label: "Training",
+    href: "/training/skillsfuture",
+    icon: GraduationCap,
+  },
+  {
+    labelKey: "nav.integrations",
+    label: "Integrations",
+    href: "/settings/integrations",
+    icon: Plug,
   },
   {
     labelKey: "nav.settings",
@@ -198,6 +264,11 @@ function isRouteActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
+function isGroupActive(pathname: string, item: NavItem): boolean {
+  if (isRouteActive(pathname, item.href)) return true;
+  return item.children?.some((c) => isRouteActive(pathname, c.href)) ?? false;
+}
+
 export function NavigationSidebar({
   collapsed,
   onToggle,
@@ -207,7 +278,6 @@ export function NavigationSidebar({
 
   const isEmployee = user?.role === "employee";
 
-  // Select navigation items based on role
   const coreNavItems = isEmployee ? employeeCoreNavItems : adminCoreNavItems;
   const bottomNavItems = isEmployee
     ? employeeBottomNavItems
@@ -222,7 +292,7 @@ export function NavigationSidebar({
       )}
       aria-label="Main navigation"
     >
-      {/* Logo / Brand */}
+      {/* Logo */}
       <div
         className={clsx(
           "flex items-center h-[56px] border-b border-white/10 shrink-0",
@@ -247,9 +317,9 @@ export function NavigationSidebar({
         </div>
       </div>
 
-      {/* Grouped nav */}
+      {/* Nav */}
       <div className="flex-1 overflow-y-auto py-2">
-        {/* Core group (no label) */}
+        {/* Core */}
         <ul className="flex flex-col gap-0.5 px-2" role="list">
           {coreNavItems.map((item) => (
             <NavLink
@@ -261,10 +331,10 @@ export function NavigationSidebar({
           ))}
         </ul>
 
-        {/* Admin-only groups */}
+        {/* Admin groups */}
         {!isEmployee && (
           <>
-            {/* Tools group */}
+            {/* Tools */}
             <NavGroupLabel label="Tools" collapsed={collapsed} />
             <ul className="flex flex-col gap-0.5 px-2" role="list">
               {adminToolsNavItems.map((item) => (
@@ -277,25 +347,34 @@ export function NavigationSidebar({
               ))}
             </ul>
 
-            {/* Management group */}
+            {/* Management — expandable */}
             <NavGroupLabel label="Management" collapsed={collapsed} />
             <ul className="flex flex-col gap-0.5 px-2" role="list">
-              {adminManagementNavItems.map((item) => (
-                <NavLink
-                  key={item.href}
-                  item={item}
-                  active={isRouteActive(pathname, item.href)}
-                  collapsed={collapsed}
-                />
-              ))}
+              {adminManagementNavItems.map((item) =>
+                item.children && !collapsed ? (
+                  <ExpandableNavLink
+                    key={item.href}
+                    item={item}
+                    pathname={pathname}
+                    collapsed={collapsed}
+                  />
+                ) : (
+                  <NavLink
+                    key={item.href}
+                    item={item}
+                    active={isGroupActive(pathname, item)}
+                    collapsed={collapsed}
+                  />
+                ),
+              )}
             </ul>
           </>
         )}
 
-        {/* Divider */}
+        {/* Separator */}
         <div className="my-3 mx-3 border-t border-white/15" role="separator" />
 
-        {/* Bottom nav */}
+        {/* Bottom */}
         <ul className="flex flex-col gap-0.5 px-2" role="list">
           {bottomNavItems.map((item) => (
             <NavLink
@@ -335,14 +414,14 @@ export function NavigationSidebar({
 
 /* ── NavGroupLabel ─────────────────────────────────────────── */
 
-interface NavGroupLabelProps {
+function NavGroupLabel({
+  label,
+  collapsed,
+}: {
   label: string;
   collapsed: boolean;
-}
-
-function NavGroupLabel({ label, collapsed }: NavGroupLabelProps) {
+}) {
   if (collapsed) return null;
-
   return (
     <p className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-gray-400)]">
       {label}
@@ -350,15 +429,83 @@ function NavGroupLabel({ label, collapsed }: NavGroupLabelProps) {
   );
 }
 
-/* ── NavLink item ──────────────────────────────────────────── */
+/* ── Expandable NavLink (with children) ────────────────────── */
 
-interface NavLinkProps {
+function ExpandableNavLink({
+  item,
+  pathname,
+  collapsed,
+}: {
+  item: NavItem;
+  pathname: string;
+  collapsed: boolean;
+}) {
+  const active = isGroupActive(pathname, item);
+  const [expanded, setExpanded] = useState(active);
+  const Icon = item.icon;
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className={clsx(
+          "group relative flex items-center gap-3 rounded-lg w-full text-left",
+          "min-h-[44px] px-3 py-2",
+          "transition-colors duration-200",
+          active
+            ? "bg-[var(--color-primary-light)] text-white"
+            : "text-white/70 hover:text-white hover:bg-[var(--color-surface-sidebar-hover)]",
+        )}
+      >
+        <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+        <span className="text-sm font-medium truncate flex-1">
+          {item.label}
+        </span>
+        <ChevronDown
+          className={clsx(
+            "h-4 w-4 shrink-0 transition-transform duration-200",
+            expanded && "rotate-180",
+          )}
+        />
+      </button>
+
+      {expanded && item.children && (
+        <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2">
+          {item.children.map((child) => (
+            <li key={child.labelKey}>
+              <Link
+                href={child.href}
+                className={clsx(
+                  "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs",
+                  "transition-colors duration-200",
+                  isRouteActive(pathname, child.href)
+                    ? "text-white bg-white/10"
+                    : "text-white/60 hover:text-white hover:bg-white/5",
+                )}
+              >
+                <child.icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{child.label}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/* ── Simple NavLink ────────────────────────────────────────── */
+
+function NavLink({
+  item,
+  active,
+  collapsed,
+}: {
   item: NavItem;
   active: boolean;
   collapsed: boolean;
-}
-
-function NavLink({ item, active, collapsed }: NavLinkProps) {
+}) {
   const Icon = item.icon;
 
   return (
@@ -386,7 +533,7 @@ function NavLink({ item, active, collapsed }: NavLinkProps) {
           <span className="text-sm font-medium truncate">{item.label}</span>
         )}
 
-        {/* Tooltip for collapsed state */}
+        {/* Tooltip for collapsed */}
         {collapsed && (
           <span
             className={clsx(
