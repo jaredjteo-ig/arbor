@@ -9,17 +9,18 @@ Project-specific knowledge for the AI-powered HR advisory platform serving Singa
 
 ## Skill Files
 
-| File                         | Domain                    | When to Use                                              |
-| ---------------------------- | ------------------------- | -------------------------------------------------------- |
-| `sg-employment-law.md`       | Singapore employment law  | KB content, provision accuracy, regulatory domains       |
-| `advisory-safety-chain.md`   | 13-step safety chain      | Advisory query pipeline, guardrails, response generation |
-| `platform-architecture.md`   | Platform structure        | Router setup, middleware, auth, Nexus integration        |
-| `trust-governance.md`        | EATP/CARE/learning        | Trust chains, citation validation, expert review         |
-| `calculators.md`             | HR calculators            | CPF, leave, salary, quota, overtime calculations         |
-| `kb-management.md`           | Knowledge base pipeline   | Content loading, search, regulatory updates              |
-| `auth-security.md`           | Authentication & security | JWT tokens, tenant isolation, rate limiting, PDPA        |
-| `document-generation.md`     | Document templates        | Template CRUD, generation, preview, download, history    |
-| `company-user-management.md` | Company & user profiles   | Company onboarding, user CRUD, roles, workforce data     |
+| File                         | Domain                    | When to Use                                                                                     |
+| ---------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------- |
+| `sg-employment-law.md`       | Singapore employment law  | KB content, provision accuracy, regulatory domains                                              |
+| `advisory-safety-chain.md`   | 13-step safety chain      | Advisory query pipeline, guardrails, response generation                                        |
+| `platform-architecture.md`   | Platform structure        | Router setup, middleware, auth, Nexus integration                                               |
+| `trust-governance.md`        | EATP/CARE/learning        | Trust chains, citation validation, expert review                                                |
+| `calculators.md`             | HR calculators            | CPF, leave, salary, quota, overtime calculations                                                |
+| `kb-management.md`           | Knowledge base pipeline   | Content loading, search, regulatory updates                                                     |
+| `auth-security.md`           | Authentication & security | JWT tokens, tenant isolation, rate limiting, PDPA                                               |
+| `document-generation.md`     | Document templates        | Template CRUD, generation, preview, download, history                                           |
+| `company-user-management.md` | Company & user profiles   | Company onboarding, user CRUD, roles, workforce data                                            |
+| `hris-engine.md`             | Full HRIS engine          | Payroll, leave, claims, attendance, shifts, employee lifecycle, statutory files, PII encryption |
 
 ## Quick Reference
 
@@ -27,13 +28,14 @@ Project-specific knowledge for the AI-powered HR advisory platform serving Singa
 
 ```
 src/hr_advisory/
-  api/              Nexus platform, FastAPI routers, middleware
+  api/routers/      23 FastAPI routers (advisory, payroll, leave, claims, attendance, shifts, employees...)
   agents/           Kaizen agents (orchestrator, specialists)
-  models/           DataFlow models (company, user, KB)
+  models/           34 DataFlow models (company, user, KB, payroll, leave, claims, attendance, shifts)
+  services/         Payroll calculator, statutory files, encryption
   workflows/        Core SDK workflows (calculators, guardrails)
   trust/            EATP lineage, CARE governance, citations
   kb/               Knowledge base content and pipeline
-  security/         Input validation, PDPA, rate limiting
+  security/         Input validation, PDPA, rate limiting, PII encryption
   templates/        Document templates (KETs, contracts)
   config/           Settings from environment variables
 ```

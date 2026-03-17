@@ -87,3 +87,53 @@ decisions:
     date: 2026-03-14
     initiative: hr-ai-advisory
     confidence: high
+
+  # ── M16-M27: Full HRIS Buildout ───────────────────────────────
+  - decision: "AITE is a free public platform backed by ASME, not a startup"
+    rationale: "ASME absorbs operational costs as a member service. Unit economics concerns are less relevant for a public good."
+    alternatives_rejected: "Freemium SaaS, advisory-only (user chose full HRIS)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Payroll engine is deterministic — zero LLM involvement"
+    rationale: "CPF uses specific lookup tables. AI in payroll math is a compliance and trust risk per value critique."
+    alternatives_rejected: "AI-assisted payroll, hybrid approach"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "PII encryption uses Fernet with development-mode fallback"
+    rationale: "PDPA requires encryption at rest. Dev fallback prevents local development friction."
+    alternatives_rejected: "AES-256-GCM (complex key mgmt), database-level encryption"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "CPF rates aligned with tested cpf_calculator.py"
+    rationale: "Red team found payroll calculator had wrong rates for ages 55-70. Single source of truth prevents divergence."
+    alternatives_rejected: "Payroll calling CPF calculator directly (different signatures)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Claims marked as paid only on payroll mark-paid, not during draft calculation"
+    rationale: "Red team found cancelled runs left claims incorrectly marked as paid."
+    alternatives_rejected: "Mark during calculation with rollback on cancel"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Owner-only payroll approval with separation of duties"
+    rationale: "HR managers prepare payroll, only owner authorises payment. Standard financial control."
+    alternatives_rejected: "Both roles approve, multi-signature"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: high
+
+  - decision: "Cross-module queries use try/except resilience — partial payroll over no payroll"
+    rationale: "If leave fetch fails, payroll proceeds with zero deductions. Better partial payroll for deadline compliance."
+    alternatives_rejected: "Fail entire run on module error (too disruptive)"
+    date: 2026-03-17
+    initiative: hr-ai-advisory
+    confidence: medium
