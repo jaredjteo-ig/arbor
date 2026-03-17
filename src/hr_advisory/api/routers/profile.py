@@ -18,6 +18,67 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# ---------------------------------------------------------------------------
+# Default policy data (Singapore regulatory requirements)
+# ---------------------------------------------------------------------------
+
+DEFAULT_POLICIES = [
+    {
+        "policy_type": "leave",
+        "title": "Leave Policy",
+        "content": (
+            "Annual Leave: Employees are entitled to a minimum of 7 days paid annual leave "
+            "in their first year of service, increasing by 1 day per year up to 14 days "
+            "(Employment Act s88). Unused annual leave may be carried forward as agreed with "
+            "the employer.\n\n"
+            "Sick Leave: Employees are entitled to 14 days paid outpatient sick leave and "
+            "60 days paid hospitalisation leave per year (Employment Act s89). A medical "
+            "certificate from a company-approved doctor is required.\n\n"
+            "Maternity Leave: Female employees are entitled to 16 weeks of Government-Paid "
+            "Maternity Leave if they have served for at least 3 months (CDCSA).\n\n"
+            "Paternity Leave: Male employees are entitled to 4 weeks of Government-Paid "
+            "Paternity Leave (effective January 2025)."
+        ),
+    },
+    {
+        "policy_type": "fwa",
+        "title": "Flexible Work Arrangements",
+        "content": (
+            "Under the Tripartite Guidelines on Flexible Work Arrangement Requests (TG-FWAR), "
+            "effective 1 December 2024, all employees may request FWA from their employer. "
+            "Employers must consider requests fairly and respond within 2 months.\n\n"
+            "Types of FWA: Flexi-place (work from home), Flexi-time (staggered hours), "
+            "Flexi-load (part-time or job sharing)."
+        ),
+    },
+    {
+        "policy_type": "handbook",
+        "title": "Employee Handbook",
+        "content": (
+            "This handbook outlines employment terms as required under the Employment Act. "
+            "Key Employment Terms (KETs) are provided to every employee within 14 days of "
+            "employment (EA s95A).\n\n"
+            "Notice Period: As per your employment contract. Statutory minimum: 1 day "
+            "(under 26 weeks), 1 week (26 weeks to 2 years), 2 weeks (2-5 years), "
+            "4 weeks (5+ years) — Employment Act s10.\n\n"
+            "Salary Payment: Salary must be paid within 7 days after the salary period. "
+            "Itemised payslips are required (EA s88A)."
+        ),
+    },
+    {
+        "policy_type": "safety",
+        "title": "Workplace Safety and Health",
+        "content": (
+            "Under the Workplace Safety and Health Act (WSHA), employers must take "
+            "reasonably practicable measures to ensure the safety and health of employees.\n\n"
+            "Key obligations: Conduct risk assessments, provide safety training, report "
+            "workplace accidents within prescribed timeframes, maintain safety records.\n\n"
+            "For workplaces with 50+ employees, a designated WSH Officer is required."
+        ),
+    },
+]
+
+
 def _execute_node(node_type: str, node_id: str, params: dict) -> dict:
     """Run a single DataFlow workflow node and return the result."""
     from kailash.runtime import LocalRuntime
@@ -59,6 +120,52 @@ def _compute_completeness(company: dict) -> float:
         if value is not None and value != "" and value != 0:
             filled += 1
     return round(filled / len(fields_to_check), 2)
+
+
+def _seed_default_policies(company_id: int) -> None:
+    """Create default CompanyPolicy records for a newly created company.
+
+    Only seeds if the company has no existing policies, making this safe
+    to call multiple times (idempotent).
+    """
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    # Check if policies already exist for this company
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "CompanyPolicyListNode",
+        "check",
+        {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    existing = _extract_records(results["check"])
+    if existing:
+        logger.info("Policies already exist for company_id=%s, skipping seed.", company_id)
+        return
+
+    # Seed default policies
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    for policy in DEFAULT_POLICIES:
+        wf = WorkflowBuilder()
+        wf.add_node(
+            "CompanyPolicyCreateNode",
+            "create_policy",
+            {
+                "company_id": company_id,
+                "policy_type": policy["policy_type"],
+                "title": policy["title"],
+                "content": policy["content"],
+                "effective_date": today,
+                "is_active": True,
+            },
+        )
+        runtime = LocalRuntime()
+        results, _ = runtime.execute(wf.build())
+    logger.info("Seeded %d default policies for company_id=%s", len(DEFAULT_POLICIES), company_id)
 
 
 def _company_to_response(company: dict) -> dict:
@@ -177,7 +284,20 @@ async def create_company_profile(
         except Exception as exc:
             logger.warning(
                 "Created company_id=%s but failed to link to user_id=%s: %s",
-                company_id, user_id, exc,
+                company_id,
+                user_id,
+                exc,
+            )
+
+    # Seed default policies for the newly created company
+    if company_id is not None:
+        try:
+            _seed_default_policies(company_id)
+        except Exception as exc:
+            logger.warning(
+                "Created company_id=%s but failed to seed default policies: %s",
+                company_id,
+                exc,
             )
 
     return {

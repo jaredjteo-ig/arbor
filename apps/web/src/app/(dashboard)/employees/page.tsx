@@ -1,58 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { AppCard, AppButton } from "@/components/design-system";
-import { Users, Plus, Search } from "lucide-react";
-
-/* -- Types --------------------------------------------------------- */
-
-interface Employee {
-  id: number;
-  name: string;
-  email: string;
-  department: string;
-  status: "active" | "invited" | "inactive";
-}
-
-/* -- Placeholder data ---------------------------------------------- */
-
-const PLACEHOLDER_EMPLOYEES: Employee[] = [
-  {
-    id: 1,
-    name: "Sarah Tan",
-    email: "sarah.tan@example.com",
-    department: "Operations",
-    status: "active",
-  },
-  {
-    id: 2,
-    name: "Raj Kumar",
-    email: "raj.kumar@example.com",
-    department: "Engineering",
-    status: "active",
-  },
-  {
-    id: 3,
-    name: "Li Wei",
-    email: "li.wei@example.com",
-    department: "Marketing",
-    status: "active",
-  },
-  {
-    id: 4,
-    name: "Aisha Binte Ahmad",
-    email: "aisha.ahmad@example.com",
-    department: "Finance",
-    status: "invited",
-  },
-  {
-    id: 5,
-    name: "John Lee",
-    email: "john.lee@example.com",
-    department: "Operations",
-    status: "inactive",
-  },
-];
+import { useState, useEffect, useCallback } from "react";
+import {
+  AppCard,
+  AppButton,
+  AppInput,
+  EmptyState,
+  toast,
+} from "@/components/design-system";
+import { Users, Plus, Search, X, UserPlus } from "lucide-react";
+import { employeesApi, type Employee } from "@/services/api/employees";
 
 /* -- Status badge -------------------------------------------------- */
 
@@ -73,12 +30,190 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/* -- Loading skeleton ---------------------------------------------- */
+
+function TableSkeleton() {
+  return (
+    <div className="animate-pulse">
+      {Array.from({ length: 4 }, (_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-4 py-3 px-5 border-b border-[var(--color-gray-100)] last:border-0"
+        >
+          <div className="h-4 w-32 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-4 w-48 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-4 w-24 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-5 w-16 bg-[var(--color-gray-200)] rounded-full ml-auto" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* -- Invite Employee Modal ----------------------------------------- */
+
+function InviteEmployeeModal({
+  isOpen,
+  onClose,
+  onSuccess,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("employee");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!isOpen) return null;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return;
+
+    setIsSubmitting(true);
+    try {
+      await employeesApi.invite({ email: email.trim(), role });
+      toast.success("Invitation sent successfully");
+      setEmail("");
+      setRole("employee");
+      onSuccess();
+      onClose();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to send invitation";
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Dialog */}
+      <div className="relative w-full max-w-md mx-4 rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] shadow-[var(--shadow-raised)] p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5 text-[var(--color-primary)]" />
+            <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
+              Invite Employee
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+          >
+            <X className="h-5 w-5 text-[var(--color-gray-500)]" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label
+              htmlFor="invite-email"
+              className="block text-sm font-medium text-[var(--color-gray-700)] mb-1"
+            >
+              Email address
+            </label>
+            <AppInput
+              id="invite-email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="colleague@company.com"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="invite-role"
+              className="block text-sm font-medium text-[var(--color-gray-700)] mb-1"
+            >
+              Role
+            </label>
+            <select
+              id="invite-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="
+                w-full rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+                bg-[var(--color-surface-input)] text-[var(--foreground)]
+                border-[var(--color-surface-input-border)]
+                transition-colors
+                focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                focus:border-[var(--color-surface-input-focus)]
+              "
+            >
+              <option value="employee">Employee</option>
+              <option value="hr_manager">HR Manager</option>
+            </select>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <AppButton
+              type="button"
+              variant="outlined"
+              size="sm"
+              onClick={onClose}
+              className="flex-1"
+            >
+              Cancel
+            </AppButton>
+            <AppButton
+              type="submit"
+              variant="primary"
+              size="sm"
+              loading={isSubmitting}
+              className="flex-1"
+            >
+              Send Invitation
+            </AppButton>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* -- Page ---------------------------------------------------------- */
 
 export default function EmployeesPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
-  const filteredEmployees = PLACEHOLDER_EMPLOYEES.filter(
+  const fetchEmployees = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await employeesApi.list();
+      setEmployees(data.employees ?? []);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to load employees. Please try again.";
+      setError(message);
+      setEmployees([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEmployees();
+  }, [fetchEmployees]);
+
+  const filteredEmployees = employees.filter(
     (emp) =>
       emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       emp.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -103,7 +238,11 @@ export default function EmployeesPage() {
             </p>
           </div>
         </div>
-        <AppButton variant="primary" size="sm">
+        <AppButton
+          variant="primary"
+          size="sm"
+          onClick={() => setShowInviteModal(true)}
+        >
           <Plus className="h-4 w-4 mr-1" />
           Invite Employee
         </AppButton>
@@ -129,60 +268,100 @@ export default function EmployeesPage() {
         />
       </div>
 
-      {/* Employee table */}
-      <AppCard variant="standard">
-        <div className="overflow-x-auto -mx-5 -my-4">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--color-gray-200)]">
-                <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                  Name
-                </th>
-                <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                  Email
-                </th>
-                <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                  Department
-                </th>
-                <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEmployees.map((emp) => (
-                <tr
-                  key={emp.id}
-                  className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
-                >
-                  <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                    {emp.name}
-                  </td>
-                  <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                    {emp.email}
-                  </td>
-                  <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                    {emp.department}
-                  </td>
-                  <td className="py-3 px-5 text-center">
-                    <StatusBadge status={emp.status} />
-                  </td>
+      {/* Employee table / states */}
+      {isLoading ? (
+        <AppCard variant="standard">
+          <div className="-mx-5 -my-4">
+            <TableSkeleton />
+          </div>
+        </AppCard>
+      ) : error ? (
+        <AppCard variant="standard">
+          <div className="py-8 text-center">
+            <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
+            <AppButton variant="outlined" size="sm" onClick={fetchEmployees}>
+              Try again
+            </AppButton>
+          </div>
+        </AppCard>
+      ) : employees.length === 0 ? (
+        <EmptyState
+          icon={<Users className="h-12 w-12" aria-hidden="true" />}
+          message="No employees yet"
+          description="Invite your first team member to get started."
+          action={
+            <AppButton
+              variant="primary"
+              size="sm"
+              onClick={() => setShowInviteModal(true)}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Invite Employee
+            </AppButton>
+          }
+        />
+      ) : (
+        <AppCard variant="standard">
+          <div className="overflow-x-auto -mx-5 -my-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-gray-200)]">
+                  <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                    Name
+                  </th>
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Email
+                  </th>
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Department
+                  </th>
+                  <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                    Status
+                  </th>
                 </tr>
-              ))}
-              {filteredEmployees.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="py-8 text-center text-sm text-[var(--color-gray-500)]"
+              </thead>
+              <tbody>
+                {filteredEmployees.map((emp) => (
+                  <tr
+                    key={emp.id}
+                    className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
                   >
-                    No employees found matching your search.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </AppCard>
+                    <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
+                      {emp.name}
+                    </td>
+                    <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                      {emp.email}
+                    </td>
+                    <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                      {emp.department}
+                    </td>
+                    <td className="py-3 px-5 text-center">
+                      <StatusBadge status={emp.status} />
+                    </td>
+                  </tr>
+                ))}
+                {filteredEmployees.length === 0 && employees.length > 0 && (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="py-8 text-center text-sm text-[var(--color-gray-500)]"
+                    >
+                      No employees found matching your search.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </AppCard>
+      )}
+
+      {/* Invite modal */}
+      <InviteEmployeeModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        onSuccess={fetchEmployees}
+      />
     </div>
   );
 }

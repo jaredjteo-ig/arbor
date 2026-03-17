@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppCard } from "@/components/design-system";
 import { apiClient } from "@/services/api/client";
+import { employeesApi, type LeaveBalance } from "@/services/api/employees";
 import {
   Briefcase,
   CalendarDays,
@@ -11,6 +12,7 @@ import {
   Palmtree,
   Thermometer,
   ArrowRight,
+  Info,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -93,23 +95,88 @@ function EmploymentSummaryCard({
 
 /* -- Leave Balance Card -------------------------------------------- */
 
+/** Statutory defaults for Singapore Employment Act minimums */
+const STATUTORY_LEAVE = [
+  {
+    name: "Annual Leave",
+    used: 0,
+    total: 7,
+    icon: Palmtree,
+    color: "text-emerald-600",
+  },
+  {
+    name: "Sick Leave",
+    used: 0,
+    total: 14,
+    icon: Thermometer,
+    color: "text-amber-600",
+  },
+];
+
+interface LeaveDisplay {
+  name: string;
+  used: number;
+  total: number;
+  icon: typeof Palmtree;
+  color: string;
+}
+
+const ICON_MAP: Record<string, { icon: typeof Palmtree; color: string }> = {
+  "Annual Leave": { icon: Palmtree, color: "text-emerald-600" },
+  "Sick Leave": { icon: Thermometer, color: "text-amber-600" },
+};
+
+const DEFAULT_LEAVE_ICON = { icon: CalendarDays, color: "text-blue-600" };
+
+function mapBalanceToDisplay(balance: LeaveBalance): LeaveDisplay {
+  const iconInfo = ICON_MAP[balance.name] ?? DEFAULT_LEAVE_ICON;
+  return {
+    name: balance.name,
+    used: balance.used + balance.pending,
+    total: balance.entitlement,
+    icon: iconInfo.icon,
+    color: iconInfo.color,
+  };
+}
+
 function LeaveBalanceCard() {
-  const leaveData = [
-    {
-      type: "Annual Leave",
-      used: 5,
-      total: 14,
-      icon: Palmtree,
-      color: "text-emerald-600",
-    },
-    {
-      type: "Sick Leave",
-      used: 2,
-      total: 14,
-      icon: Thermometer,
-      color: "text-amber-600",
-    },
-  ];
+  const [leaveData, setLeaveData] = useState<LeaveDisplay[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isStatutoryFallback, setIsStatutoryFallback] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchLeave() {
+      try {
+        const data = await employeesApi.leaveBalances();
+        if (!cancelled && data.balances && data.balances.length > 0) {
+          // Show at most 2 leave types in the dashboard card
+          setLeaveData(data.balances.slice(0, 2).map(mapBalanceToDisplay));
+          setIsStatutoryFallback(false);
+        } else {
+          if (!cancelled) {
+            setLeaveData(STATUTORY_LEAVE);
+            setIsStatutoryFallback(true);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setLeaveData(STATUTORY_LEAVE);
+          setIsStatutoryFallback(true);
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    fetchLeave();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (isLoading) return <CardSkeleton />;
 
   return (
     <AppCard variant="flat">
@@ -127,16 +194,17 @@ function LeaveBalanceCard() {
       <div className="space-y-3">
         {leaveData.map((leave) => {
           const remaining = leave.total - leave.used;
-          const percentage = (leave.used / leave.total) * 100;
+          const percentage =
+            leave.total > 0 ? (leave.used / leave.total) * 100 : 0;
           const Icon = leave.icon;
 
           return (
-            <div key={leave.type}>
+            <div key={leave.name}>
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <Icon className={`h-4 w-4 ${leave.color}`} />
                   <span className="text-sm text-[var(--color-gray-700)]">
-                    {leave.type}
+                    {leave.name}
                   </span>
                 </div>
                 <span className="text-sm font-medium text-[var(--color-gray-900)]">
@@ -158,6 +226,15 @@ function LeaveBalanceCard() {
           );
         })}
       </div>
+
+      {isStatutoryFallback && (
+        <div className="mt-2 flex items-start gap-1.5">
+          <Info className="h-3 w-3 text-[var(--color-gray-400)] mt-0.5 shrink-0" />
+          <p className="text-[10px] text-[var(--color-gray-500)]">
+            Statutory minimums shown. Contact HR for your actual balances.
+          </p>
+        </div>
+      )}
 
       <Link
         href="/my-leave"

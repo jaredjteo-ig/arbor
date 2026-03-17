@@ -162,6 +162,98 @@ def _find_user_by_id(user_id: int) -> dict | None:
     return result
 
 
+def _list_policies_for_company(company_id: int) -> list:
+    """List all active policies for a company."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "CompanyPolicyListNode",
+        "list",
+        {
+            "filter": {"company_id": company_id, "is_active": True},
+            "limit": 10000,
+            "enable_cache": False,
+        },
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    raw = results["list"]
+    if isinstance(raw, dict) and "records" in raw:
+        return raw["records"]
+    if isinstance(raw, list):
+        return raw
+    return []
+
+
+def _get_leave_balances(employee_id: int, company_id: int) -> list:
+    """Get leave balances for an employee in the current year."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    current_year = datetime.now(timezone.utc).year
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "LeaveBalanceListNode",
+        "list",
+        {
+            "filter": {
+                "employee_id": employee_id,
+                "company_id": company_id,
+                "year": current_year,
+            },
+            "limit": 10000,
+            "enable_cache": False,
+        },
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    raw = results["list"]
+    if isinstance(raw, dict) and "records" in raw:
+        return raw["records"]
+    if isinstance(raw, list):
+        return raw
+    return []
+
+
+def _statutory_defaults() -> list[dict]:
+    """Return statutory default leave balances for Singapore employees.
+
+    These are the minimum entitlements under the Employment Act for
+    a first-year employee. Used as a fallback when no leave balances
+    have been recorded.
+    """
+    current_year = datetime.now(timezone.utc).year
+    return [
+        {
+            "leave_type": "annual",
+            "year": current_year,
+            "entitlement_days": 7.0,
+            "used_days": 0.0,
+            "pending_days": 0.0,
+        },
+        {
+            "leave_type": "sick",
+            "year": current_year,
+            "entitlement_days": 14.0,
+            "used_days": 0.0,
+            "pending_days": 0.0,
+        },
+        {
+            "leave_type": "hospitalization",
+            "year": current_year,
+            "entitlement_days": 60.0,
+            "used_days": 0.0,
+            "pending_days": 0.0,
+        },
+    ]
+
+
 # --------------------------------------------------------------------------
 # POST /employees/invite — Admin sends invitation
 # --------------------------------------------------------------------------
@@ -401,4 +493,90 @@ async def get_my_employee_record(
         "salary_monthly": employee.get("salary_monthly", 0.0),
         "notice_period_days": employee.get("notice_period_days", 0),
         "is_active": employee.get("is_active", True),
+    }
+
+
+# --------------------------------------------------------------------------
+# GET /employees/me/leave — Get current employee's leave balances
+# --------------------------------------------------------------------------
+
+
+@router.get("/me/leave")
+async def get_my_leave_balances(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get leave balances for the current employee.
+
+    Returns leave balances for the current year. If no balances have been
+    recorded, returns the statutory minimum entitlements under the
+    Singapore Employment Act.
+
+    Status codes:
+        200: Success (may return statutory defaults if no records exist)
+    """
+    user_id = int(current_user.get("sub", 0))
+    company_id = current_user.get("company_id")
+
+    if company_id is None:
+        return {"balances": _statutory_defaults()}
+
+    employee = _find_employee_by_user_id(user_id, company_id)
+    if employee is None:
+        # Return statutory defaults for non-employee users (admins viewing their own)
+        return {"balances": _statutory_defaults()}
+
+    balances = _get_leave_balances(employee["id"], company_id)
+    if not balances:
+        return {"balances": _statutory_defaults()}
+
+    return {
+        "balances": [
+            {
+                "leave_type": b.get("leave_type", ""),
+                "year": b.get("year", 0),
+                "entitlement_days": b.get("entitlement_days", 0.0),
+                "used_days": b.get("used_days", 0.0),
+                "pending_days": b.get("pending_days", 0.0),
+            }
+            for b in balances
+        ],
+    }
+
+
+# --------------------------------------------------------------------------
+# GET /employees/policies — List company policies
+# --------------------------------------------------------------------------
+
+
+@router.get("/policies")
+async def list_policies(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """List company policies for the current user's company.
+
+    Returns all active policies (leave, FWA, handbook, safety, etc.)
+    that have been configured for the company. Default policies are
+    seeded automatically when a company profile is created.
+
+    Status codes:
+        200: Success
+    """
+    company_id = current_user.get("company_id")
+    if company_id is None:
+        return {"policies": [], "count": 0}
+
+    policies = _list_policies_for_company(company_id)
+    return {
+        "policies": [
+            {
+                "id": p.get("id"),
+                "policy_type": p.get("policy_type", ""),
+                "title": p.get("title", ""),
+                "content": p.get("content", ""),
+                "effective_date": p.get("effective_date", ""),
+                "is_active": p.get("is_active", True),
+            }
+            for p in policies
+        ],
+        "count": len(policies),
     }

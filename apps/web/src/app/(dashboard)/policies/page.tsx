@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppCard } from "@/components/design-system";
 import {
   FileText,
@@ -10,7 +10,9 @@ import {
   Laptop,
   BookOpen,
   ShieldCheck,
+  Info,
 } from "lucide-react";
+import { employeesApi, type CompanyPolicy } from "@/services/api/employees";
 
 /* -- Types --------------------------------------------------------- */
 
@@ -22,9 +24,9 @@ interface PolicySection {
   content: string[];
 }
 
-/* -- Placeholder policy data --------------------------------------- */
+/* -- Standard Singapore policies (regulatory content) -------------- */
 
-const POLICIES: PolicySection[] = [
+const STANDARD_POLICIES: PolicySection[] = [
   {
     id: "leave",
     title: "Leave Policy",
@@ -78,6 +80,41 @@ const POLICIES: PolicySection[] = [
   },
 ];
 
+/* -- Icon mapping for API policies --------------------------------- */
+
+const ICON_MAP: Record<string, typeof Palmtree> = {
+  leave: Palmtree,
+  fwa: Laptop,
+  handbook: BookOpen,
+  safety: ShieldCheck,
+};
+
+function mapApiPolicyToSection(policy: CompanyPolicy): PolicySection {
+  return {
+    id: policy.id,
+    title: policy.title,
+    icon: ICON_MAP[policy.id] ?? ICON_MAP[policy.category ?? ""] ?? FileText,
+    summary: policy.summary,
+    content: policy.content,
+  };
+}
+
+/* -- Loading skeleton ---------------------------------------------- */
+
+function PolicySkeleton() {
+  return (
+    <AppCard variant="flat">
+      <div className="animate-pulse flex items-start gap-3">
+        <div className="h-9 w-9 rounded-lg bg-[var(--color-gray-200)]" />
+        <div className="flex-1">
+          <div className="h-4 w-40 bg-[var(--color-gray-200)] rounded mb-2" />
+          <div className="h-3 w-64 bg-[var(--color-gray-100)] rounded" />
+        </div>
+      </div>
+    </AppCard>
+  );
+}
+
 /* -- Expandable Policy Card ---------------------------------------- */
 
 function PolicyCard({ policy }: { policy: PolicySection }) {
@@ -130,6 +167,41 @@ function PolicyCard({ policy }: { policy: PolicySection }) {
 /* -- Page ---------------------------------------------------------- */
 
 export default function PoliciesPage() {
+  const [policies, setPolicies] = useState<PolicySection[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isStandardFallback, setIsStandardFallback] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchPolicies() {
+      try {
+        const data = await employeesApi.policies();
+        if (!cancelled && data.policies && data.policies.length > 0) {
+          setPolicies(data.policies.map(mapApiPolicyToSection));
+          setIsStandardFallback(false);
+        } else {
+          if (!cancelled) {
+            setPolicies(STANDARD_POLICIES);
+            setIsStandardFallback(true);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setPolicies(STANDARD_POLICIES);
+          setIsStandardFallback(true);
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    fetchPolicies();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
       {/* Header */}
@@ -149,11 +221,24 @@ export default function PoliciesPage() {
         </div>
       </div>
 
+      {/* Standard policies notice */}
+      {!isLoading && isStandardFallback && (
+        <div className="flex items-start gap-2 rounded-[8px] border border-[var(--color-gray-200)] bg-[var(--color-gray-50)] px-4 py-3">
+          <Info className="h-4 w-4 text-[var(--color-gray-500)] mt-0.5 shrink-0" />
+          <p className="text-sm text-[var(--color-gray-600)]">
+            Standard Singapore employment policies. Your company may have
+            additional policies.
+          </p>
+        </div>
+      )}
+
       {/* Policy cards */}
       <div className="space-y-4">
-        {POLICIES.map((policy) => (
-          <PolicyCard key={policy.id} policy={policy} />
-        ))}
+        {isLoading
+          ? [1, 2, 3, 4].map((n) => <PolicySkeleton key={n} />)
+          : policies.map((policy) => (
+              <PolicyCard key={policy.id} policy={policy} />
+            ))}
       </div>
     </div>
   );
