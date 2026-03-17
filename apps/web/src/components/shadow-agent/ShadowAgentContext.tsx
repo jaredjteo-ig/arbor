@@ -239,9 +239,11 @@ async function handleCalculate(
 }
 
 /** Handle compliance check */
-async function handleCompliance(): Promise<CommandResult> {
+async function handleCompliance(
+  companyId: number | null,
+): Promise<CommandResult> {
   try {
-    const result = await complianceApi.status(1);
+    const result = await complianceApi.status(companyId ?? 0);
 
     const statusLabel =
       result.overall_status === "compliant"
@@ -430,8 +432,8 @@ export function ShadowAgentProvider({ children }: { children: ReactNode }) {
           }
 
           case "compliance": {
-            // Compliance check
-            return await handleCompliance();
+            // Compliance check — use actual company_id from auth context
+            return await handleCompliance(user?.company_id ?? null);
           }
 
           case "document": {
@@ -460,7 +462,7 @@ export function ShadowAgentProvider({ children }: { children: ReactNode }) {
         setIsProcessing(false);
       }
     },
-    [router],
+    [router, isEmployee, user?.company_id],
   );
 
   const value: ShadowAgentContextValue = {

@@ -225,12 +225,14 @@ async def invite_employee(
         inviter_id,
     )
 
+    # Token is NOT included in the response — it should only be delivered
+    # via a secure side-channel (email to the invitee). Exposing it in the
+    # API response risks interception via proxies, logs, or browser devtools.
     return {
-        "message": "Invitation created successfully.",
+        "message": "Invitation sent successfully.",
         "invitation": {
             "email": email,
             "role": role,
-            "token": token,
             "expires_at": expires_at,
             "company_id": company_id,
         },

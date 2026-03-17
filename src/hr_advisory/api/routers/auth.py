@@ -469,9 +469,17 @@ async def register_employee(
     if existing is not None:
         raise HTTPException(status_code=409, detail=f"Email already registered: {email}")
 
-    # --- Create User with employee role ---
+    # --- Mark invitation as accepted FIRST to prevent TOCTOU race condition ---
+    # If two concurrent requests pass the validation checks above, only the
+    # first one to mark the invitation will succeed. The second will find
+    # accepted_at already set and fail at the top of this function.
     company_id = invitation.get("company_id")
     invited_role = invitation.get("role", "employee")
+    accepted_at = datetime.now(timezone.utc).isoformat()
+    _update_invitation(
+        invitation["id"],
+        {"accepted_at": accepted_at, "is_active": False},
+    )
 
     password_hash = auth_service.hash_password(password)
     try:
@@ -578,12 +586,8 @@ async def register_employee(
     leave_runtime = LocalRuntime()
     leave_runtime.execute(leave_wf.build())
 
-    # --- Mark invitation as accepted ---
-    accepted_at = datetime.now(timezone.utc).isoformat()
-    _update_invitation(
-        invitation["id"],
-        {"accepted_at": accepted_at, "is_active": False},
-    )
+    # Invitation was already marked as accepted before user creation
+    # (see TOCTOU race condition prevention above)
 
     # --- Generate JWT tokens ---
     access_token = auth_service.create_access_token(
