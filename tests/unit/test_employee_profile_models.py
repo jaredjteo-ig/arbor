@@ -1,92 +1,133 @@
 """Unit tests for M39: Employee Profile Models & APIs.
 
-Tests model field declarations, enum values, and new model definitions
+Tests model field declarations, enum values, indexes, and new model definitions
 for employee profile extensions (T298-T307).
 
 Tier 1 (Unit): Fast (<1s), isolated, no external dependencies.
 
-NOTE: These tests require a DATABASE_URL to be set and the database to be
-reachable, because DataFlow models are registered at import time via the
-@db.model decorator which requires a live connection. Tests that need
-db.get_models() are marked as integration-tier and skipped if the DB
-is not available. Field-level tests inspect the class annotations and
-__dataflow__ dict directly, without requiring a DB connection.
+Strategy: Parse the source file directly using AST to verify field declarations,
+default values, and __dataflow__ metadata WITHOUT importing the models module
+(which requires a live database connection). This approach is completely isolated
+and does not interfere with other test modules.
 """
 
+import ast
 import os
-import sys
-from typing import Optional
-from unittest.mock import MagicMock, patch
+import textwrap
+from pathlib import Path
+from typing import Any
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Mock DataFlow to avoid requiring a live database for unit tests.
-# The @db.model decorator must still function: it should store __dataflow__
-# on the class and register it. We mock DataFlow so that `model()` acts
-# as a passthrough decorator that preserves the class and its __dataflow__.
-# ---------------------------------------------------------------------------
-
-_registered_models = {}
-
-
-def _mock_model_decorator(cls):
-    """Simulate @db.model: keep __dataflow__ and register the class."""
-    _registered_models[cls.__name__] = cls
-    return cls
-
-
-def _mock_get_models():
-    return dict(_registered_models)
-
-
-# Create a mock DataFlow instance
-_mock_db = MagicMock()
-_mock_db.model = _mock_model_decorator
-_mock_db.get_models = _mock_get_models
-
-# Patch the database module BEFORE any model imports
-# This replaces hr_advisory.models.database.db with our mock
-_db_module = MagicMock()
-_db_module.db = _mock_db
-sys.modules.setdefault("hr_advisory.models.database", _db_module)
-
-# Patch hr_advisory.models.enums if not importable (it may depend on database)
-try:
-    from hr_advisory.models.enums import RiskTier  # noqa: F401
-except Exception:
-    _enums_module = MagicMock()
-    _enums_module.RiskTier = MagicMock()
-    _enums_module.RiskTier.GREEN = MagicMock(value="green")
-    sys.modules["hr_advisory.models.enums"] = _enums_module
-
-# Now we can safely set the db reference in company_user's import chain
-import hr_advisory.models.database  # noqa: E402
-
-hr_advisory.models.database.db = _mock_db
-
-# Clear registered models before importing (in case of re-runs)
-_registered_models.clear()
-
-# Import the models module -- this triggers @db.model decorators
-from hr_advisory.models.company_user import (  # noqa: E402
-    Employee,
-    EmergencyContact,
-    EmployeeDocument,
-    ConfirmationStatus,
-    EmploymentType,
-    ImmigrationStatus,
+# Path to the source file under test
+_MODEL_FILE = (
+    Path(__file__).resolve().parents[2] / "src" / "hr_advisory" / "models" / "company_user.py"
 )
+_INIT_FILE = Path(__file__).resolve().parents[2] / "src" / "hr_advisory" / "models" / "__init__.py"
 
-# Import new models (these should exist after implementation)
-from hr_advisory.models.company_user import (  # noqa: E402
-    FamilyMember,
-    EmployeeNote,
-    EmployeeEvent,
-    EmployeeSkill,
-    CustomFieldDefinition,
-    CustomFieldValue,
-)
+
+# ---------------------------------------------------------------------------
+# AST-based model parser
+# ---------------------------------------------------------------------------
+
+
+def _parse_models(filepath: Path) -> dict[str, dict]:
+    """Parse a Python file and extract all @db.model-decorated class definitions.
+
+    Returns a dict mapping class name -> {
+        "fields": {field_name: {"annotation": str, "default": Any | _MISSING}},
+        "dataflow": dict (the __dataflow__ dict literal),
+        "docstring": str,
+    }
+    """
+    source = filepath.read_text()
+    tree = ast.parse(source, filename=str(filepath))
+
+    models = {}
+    for node in ast.iter_child_nodes(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+
+        # Check if decorated with @db.model
+        is_model = False
+        for dec in node.decorator_list:
+            if isinstance(dec, ast.Attribute) and dec.attr == "model":
+                is_model = True
+            elif isinstance(dec, ast.Name) and dec.id == "model":
+                is_model = True
+        if not is_model:
+            continue
+
+        fields = {}
+        dataflow_meta = {}
+        docstring = ast.get_docstring(node) or ""
+
+        for item in node.body:
+            # Skip the docstring node
+            if isinstance(item, ast.Expr) and isinstance(item.value, (ast.Constant, ast.Str)):
+                continue
+
+            # Annotated assignment: field_name: type = default
+            if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                field_name = item.target.id
+                annotation = ast.unparse(item.annotation) if item.annotation else ""
+                default = _MISSING
+                if item.value is not None:
+                    try:
+                        default = ast.literal_eval(item.value)
+                    except (ValueError, TypeError):
+                        # Can't literal_eval (e.g. enum references) -- store as string
+                        default = ast.unparse(item.value)
+                fields[field_name] = {"annotation": annotation, "default": default}
+
+            # __dataflow__ assignment
+            if isinstance(item, ast.Assign):
+                for target in item.targets:
+                    if isinstance(target, ast.Name) and target.id == "__dataflow__":
+                        try:
+                            dataflow_meta = ast.literal_eval(item.value)
+                        except (ValueError, TypeError):
+                            dataflow_meta = {}
+
+        models[node.name] = {
+            "fields": fields,
+            "dataflow": dataflow_meta,
+            "docstring": docstring,
+        }
+
+    return models
+
+
+class _MissingSentinel:
+    """Sentinel for fields with no default value (i.e. required fields)."""
+
+    def __repr__(self):
+        return "<MISSING>"
+
+    def __eq__(self, other):
+        return isinstance(other, _MissingSentinel)
+
+
+_MISSING = _MissingSentinel()
+
+
+# ---------------------------------------------------------------------------
+# Fixture: parse models once per session
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def models():
+    """Parse all @db.model classes from company_user.py."""
+    assert _MODEL_FILE.exists(), f"Model file not found: {_MODEL_FILE}"
+    return _parse_models(_MODEL_FILE)
+
+
+@pytest.fixture(scope="module")
+def init_source():
+    """Read the __init__.py source for import/export verification."""
+    assert _INIT_FILE.exists(), f"Init file not found: {_INIT_FILE}"
+    return _INIT_FILE.read_text()
 
 
 # ---------------------------------------------------------------------------
@@ -99,153 +140,130 @@ class TestEmployeeFieldExtensions:
 
     # --- Personal fields ---
 
-    def test_religion_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert hasattr(emp, "religion")
-        assert emp.religion == ""
+    def test_religion_field_exists(self, models):
+        assert "religion" in models["Employee"]["fields"]
+        assert models["Employee"]["fields"]["religion"]["default"] == ""
 
-    def test_phone_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert hasattr(emp, "phone")
-        assert emp.phone == ""
+    def test_phone_field_exists(self, models):
+        assert "phone" in models["Employee"]["fields"]
+        assert models["Employee"]["fields"]["phone"]["default"] == ""
 
-    def test_alias_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert hasattr(emp, "alias")
-        assert emp.alias == ""
+    def test_alias_field_exists(self, models):
+        assert "alias" in models["Employee"]["fields"]
+        assert models["Employee"]["fields"]["alias"]["default"] == ""
 
-    def test_photo_url_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert hasattr(emp, "photo_url")
-        assert emp.photo_url == ""
+    def test_photo_url_field_exists(self, models):
+        assert "photo_url" in models["Employee"]["fields"]
+        assert models["Employee"]["fields"]["photo_url"]["default"] == ""
 
-    def test_nationality_field_already_exists(self):
-        """nationality already exists on Employee -- verify it is still present."""
-        emp = Employee(user_id=1, company_id=1)
-        assert hasattr(emp, "nationality")
+    def test_nationality_field_still_present(self, models):
+        """nationality already exists on Employee -- verify it was not removed."""
+        assert "nationality" in models["Employee"]["fields"]
 
     # --- Employment fields ---
 
-    def test_salary_type_field_default_monthly(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.salary_type == "monthly"
+    def test_salary_type_default_monthly(self, models):
+        assert models["Employee"]["fields"]["salary_type"]["default"] == "monthly"
 
-    def test_hourly_rate_field_default_zero(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.hourly_rate == 0.0
+    def test_hourly_rate_default_zero(self, models):
+        assert models["Employee"]["fields"]["hourly_rate"]["default"] == 0.0
 
-    def test_daily_rate_field_default_zero(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.daily_rate == 0.0
+    def test_daily_rate_default_zero(self, models):
+        assert models["Employee"]["fields"]["daily_rate"]["default"] == 0.0
 
-    def test_payment_method_field_default_giro(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.payment_method == "giro"
+    def test_payment_method_default_giro(self, models):
+        assert models["Employee"]["fields"]["payment_method"]["default"] == "giro"
 
-    def test_payment_frequency_field_default_monthly(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.payment_frequency == "monthly"
+    def test_payment_frequency_default_monthly(self, models):
+        assert models["Employee"]["fields"]["payment_frequency"]["default"] == "monthly"
 
-    def test_overtime_eligible_field_default_true(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.overtime_eligible is True
+    def test_overtime_eligible_default_true(self, models):
+        assert models["Employee"]["fields"]["overtime_eligible"]["default"] is True
 
-    def test_working_hours_type_field_default_fixed(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.working_hours_type == "fixed"
+    def test_working_hours_type_default_fixed(self, models):
+        assert models["Employee"]["fields"]["working_hours_type"]["default"] == "fixed"
 
     # --- Bank fields ---
 
-    def test_branch_code_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert hasattr(emp, "branch_code")
-        assert emp.branch_code == ""
+    def test_branch_code_exists(self, models):
+        assert "branch_code" in models["Employee"]["fields"]
+        assert models["Employee"]["fields"]["branch_code"]["default"] == ""
 
     # --- Tax fields ---
 
-    def test_iras_auto_inclusion_field_default_true(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.iras_auto_inclusion is True
+    def test_iras_auto_inclusion_default_true(self, models):
+        assert models["Employee"]["fields"]["iras_auto_inclusion"]["default"] is True
 
-    def test_tax_reference_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert hasattr(emp, "tax_reference")
-        assert emp.tax_reference == ""
+    def test_tax_reference_exists(self, models):
+        assert "tax_reference" in models["Employee"]["fields"]
+        assert models["Employee"]["fields"]["tax_reference"]["default"] == ""
 
     # --- Tags ---
 
-    def test_tags_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert hasattr(emp, "tags")
-        assert emp.tags == ""
+    def test_tags_exists(self, models):
+        assert "tags" in models["Employee"]["fields"]
+        assert models["Employee"]["fields"]["tags"]["default"] == ""
 
     # --- Statutory fields ---
 
-    def test_cpf_status_field_default_include(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.cpf_status == "include"
+    def test_cpf_status_default_include(self, models):
+        assert models["Employee"]["fields"]["cpf_status"]["default"] == "include"
 
-    def test_amcs_enabled_field_default_false(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.amcs_enabled is False
+    def test_amcs_enabled_default_false(self, models):
+        assert models["Employee"]["fields"]["amcs_enabled"]["default"] is False
 
-    def test_pmbs_enabled_field_default_false(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.pmbs_enabled is False
+    def test_pmbs_enabled_default_false(self, models):
+        assert models["Employee"]["fields"]["pmbs_enabled"]["default"] is False
 
-    def test_community_chest_amount_default_zero(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.community_chest_amount == 0.0
+    def test_community_chest_amount_default_zero(self, models):
+        assert models["Employee"]["fields"]["community_chest_amount"]["default"] == 0.0
 
-    def test_shg_override_amount_default_zero(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.shg_override_amount == 0.0
+    def test_shg_override_amount_default_zero(self, models):
+        assert models["Employee"]["fields"]["shg_override_amount"]["default"] == 0.0
 
     # --- Address (structured) ---
 
-    def test_address_block_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.address_block == ""
+    def test_address_block_exists(self, models):
+        assert models["Employee"]["fields"]["address_block"]["default"] == ""
 
-    def test_address_street_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.address_street == ""
+    def test_address_street_exists(self, models):
+        assert models["Employee"]["fields"]["address_street"]["default"] == ""
 
-    def test_address_unit_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.address_unit == ""
+    def test_address_unit_exists(self, models):
+        assert models["Employee"]["fields"]["address_unit"]["default"] == ""
 
-    def test_address_building_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.address_building == ""
+    def test_address_building_exists(self, models):
+        assert models["Employee"]["fields"]["address_building"]["default"] == ""
 
-    def test_address_postal_code_field_exists(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.address_postal_code == ""
+    def test_address_postal_code_exists(self, models):
+        assert models["Employee"]["fields"]["address_postal_code"]["default"] == ""
 
     # --- Organization FK fields ---
 
-    def test_organization_id_optional_none(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.organization_id is None
+    def test_organization_id_optional_none(self, models):
+        f = models["Employee"]["fields"]["organization_id"]
+        assert f["default"] is None
+        assert "Optional" in f["annotation"]
 
-    def test_branch_id_optional_none(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.branch_id is None
+    def test_branch_id_optional_none(self, models):
+        f = models["Employee"]["fields"]["branch_id"]
+        assert f["default"] is None
+        assert "Optional" in f["annotation"]
 
-    def test_cost_centre_id_optional_none(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.cost_centre_id is None
+    def test_cost_centre_id_optional_none(self, models):
+        f = models["Employee"]["fields"]["cost_centre_id"]
+        assert f["default"] is None
+        assert "Optional" in f["annotation"]
 
-    def test_pay_scheme_id_optional_none(self):
-        emp = Employee(user_id=1, company_id=1)
-        assert emp.pay_scheme_id is None
+    def test_pay_scheme_id_optional_none(self, models):
+        f = models["Employee"]["fields"]["pay_scheme_id"]
+        assert f["default"] is None
+        assert "Optional" in f["annotation"]
 
     # --- Existing fields not removed ---
 
-    def test_existing_fields_preserved(self):
+    def test_existing_fields_preserved(self, models):
         """All pre-existing Employee fields must still be present."""
-        emp = Employee(user_id=1, company_id=1)
         existing_fields = [
             "user_id",
             "company_id",
@@ -281,8 +299,9 @@ class TestEmployeeFieldExtensions:
             "probation_end_date",
             "confirmation_status",
         ]
+        emp_fields = models["Employee"]["fields"]
         for field in existing_fields:
-            assert hasattr(emp, field), f"Existing field '{field}' was removed!"
+            assert field in emp_fields, f"Existing field '{field}' was removed!"
 
 
 # ---------------------------------------------------------------------------
@@ -293,25 +312,20 @@ class TestEmployeeFieldExtensions:
 class TestEmergencyContactExtensions:
     """Verify that EmergencyContact has the new phone and is_primary fields."""
 
-    def test_phone_field_exists(self):
-        """EmergencyContact should have a 'phone' field (separate from phone_primary)."""
-        ec = EmergencyContact(employee_id=1, company_id=1)
-        assert hasattr(ec, "phone")
+    def test_phone_field_exists(self, models):
+        assert "phone" in models["EmergencyContact"]["fields"]
 
-    def test_is_primary_field_exists(self):
-        ec = EmergencyContact(employee_id=1, company_id=1)
-        assert hasattr(ec, "is_primary")
-        assert ec.is_primary is False
+    def test_is_primary_field_default_false(self, models):
+        assert models["EmergencyContact"]["fields"]["is_primary"]["default"] is False
 
-    def test_existing_fields_preserved(self):
-        """Existing fields must still be present."""
-        ec = EmergencyContact(employee_id=1, company_id=1)
+    def test_existing_fields_preserved(self, models):
         for field in ["employee_id", "company_id", "name", "relationship"]:
-            assert hasattr(ec, field), f"Existing field '{field}' was removed!"
+            assert (
+                field in models["EmergencyContact"]["fields"]
+            ), f"Existing field '{field}' was removed!"
 
-    def test_indexes_include_company(self):
-        """Index on company_id should exist."""
-        indexes = EmergencyContact.__dataflow__.get("indexes", [])
+    def test_indexes_include_company(self, models):
+        indexes = models["EmergencyContact"]["dataflow"].get("indexes", [])
         index_names = [idx["name"] for idx in indexes]
         assert any(
             "company" in name for name in index_names
@@ -326,32 +340,31 @@ class TestEmergencyContactExtensions:
 class TestFamilyMemberModel:
     """Verify FamilyMember model definition and fields."""
 
-    def test_model_exists(self):
-        assert FamilyMember is not None
+    def test_model_exists(self, models):
+        assert "FamilyMember" in models
 
-    def test_required_fields(self):
-        fm = FamilyMember(employee_id=1, company_id=1)
-        assert fm.employee_id == 1
-        assert fm.company_id == 1
+    def test_required_fields(self, models):
+        fm = models["FamilyMember"]["fields"]
+        assert "employee_id" in fm
+        assert "company_id" in fm
 
-    def test_default_string_fields(self):
-        fm = FamilyMember(employee_id=1, company_id=1)
-        assert fm.name == ""
-        assert fm.relationship == ""
-        assert fm.date_of_birth == ""
-        assert fm.gender == ""
-        assert fm.citizenship_status == ""
-        assert fm.nric_fin == ""
+    def test_default_string_fields(self, models):
+        fm = models["FamilyMember"]["fields"]
+        assert fm["name"]["default"] == ""
+        assert fm["relationship"]["default"] == ""
+        assert fm["date_of_birth"]["default"] == ""
+        assert fm["gender"]["default"] == ""
+        assert fm["citizenship_status"]["default"] == ""
+        assert fm["nric_fin"]["default"] == ""
 
-    def test_indexes_defined(self):
-        indexes = FamilyMember.__dataflow__.get("indexes", [])
+    def test_indexes_defined(self, models):
+        indexes = models["FamilyMember"]["dataflow"].get("indexes", [])
         index_names = [idx["name"] for idx in indexes]
         assert any("employee" in name for name in index_names)
         assert any("company" in name for name in index_names)
 
-    def test_registered_in_mock_dataflow(self):
-        models = _mock_get_models()
-        assert "FamilyMember" in models
+    def test_exported_from_init(self, init_source):
+        assert "FamilyMember" in init_source
 
 
 # ---------------------------------------------------------------------------
@@ -360,36 +373,28 @@ class TestFamilyMemberModel:
 
 
 class TestEmployeeDocumentExtensions:
-    """Verify EmployeeDocument has the new fields: expiry_date, notification_days_before."""
+    """Verify EmployeeDocument has the new fields."""
 
-    def test_expiry_date_field_exists(self):
-        doc = EmployeeDocument(employee_id=1, company_id=1)
-        assert hasattr(doc, "expiry_date")
-        assert doc.expiry_date == ""
+    def test_expiry_date_field_exists(self, models):
+        assert "expiry_date" in models["EmployeeDocument"]["fields"]
+        assert models["EmployeeDocument"]["fields"]["expiry_date"]["default"] == ""
 
-    def test_notification_days_before_field_exists(self):
-        doc = EmployeeDocument(employee_id=1, company_id=1)
-        assert hasattr(doc, "notification_days_before")
-        assert doc.notification_days_before == 30
+    def test_notification_days_before_default_30(self, models):
+        assert models["EmployeeDocument"]["fields"]["notification_days_before"]["default"] == 30
 
-    def test_file_url_field_exists(self):
-        """T301 specifies file_url alongside existing file_path."""
-        doc = EmployeeDocument(employee_id=1, company_id=1)
-        assert hasattr(doc, "file_url")
-        assert doc.file_url == ""
+    def test_file_url_field_exists(self, models):
+        assert "file_url" in models["EmployeeDocument"]["fields"]
+        assert models["EmployeeDocument"]["fields"]["file_url"]["default"] == ""
 
-    def test_upload_date_field_exists(self):
-        doc = EmployeeDocument(employee_id=1, company_id=1)
-        assert hasattr(doc, "upload_date")
-        assert doc.upload_date == ""
+    def test_upload_date_field_exists(self, models):
+        assert "upload_date" in models["EmployeeDocument"]["fields"]
+        assert models["EmployeeDocument"]["fields"]["upload_date"]["default"] == ""
 
-    def test_notes_field_exists(self):
-        doc = EmployeeDocument(employee_id=1, company_id=1)
-        assert hasattr(doc, "notes")
-        assert doc.notes == ""
+    def test_notes_field_exists(self, models):
+        assert "notes" in models["EmployeeDocument"]["fields"]
+        assert models["EmployeeDocument"]["fields"]["notes"]["default"] == ""
 
-    def test_existing_fields_preserved(self):
-        doc = EmployeeDocument(employee_id=1, company_id=1)
+    def test_existing_fields_preserved(self, models):
         for field in [
             "employee_id",
             "company_id",
@@ -403,10 +408,12 @@ class TestEmployeeDocumentExtensions:
             "is_confidential",
             "is_active",
         ]:
-            assert hasattr(doc, field), f"Existing field '{field}' was removed!"
+            assert (
+                field in models["EmployeeDocument"]["fields"]
+            ), f"Existing field '{field}' was removed!"
 
-    def test_expiry_index_exists(self):
-        indexes = EmployeeDocument.__dataflow__.get("indexes", [])
+    def test_expiry_index_exists(self, models):
+        indexes = models["EmployeeDocument"]["dataflow"].get("indexes", [])
         index_names = [idx["name"] for idx in indexes]
         assert any(
             "expiry" in name for name in index_names
@@ -421,35 +428,29 @@ class TestEmployeeDocumentExtensions:
 class TestEmployeeNoteModel:
     """Verify EmployeeNote model definition and fields."""
 
-    def test_model_exists(self):
-        assert EmployeeNote is not None
+    def test_model_exists(self, models):
+        assert "EmployeeNote" in models
 
-    def test_required_fields(self):
-        note = EmployeeNote(employee_id=1, company_id=1)
-        assert note.employee_id == 1
-        assert note.company_id == 1
+    def test_required_fields(self, models):
+        fields = models["EmployeeNote"]["fields"]
+        assert "employee_id" in fields
+        assert "company_id" in fields
 
-    def test_default_values(self):
-        note = EmployeeNote(employee_id=1, company_id=1)
-        assert note.note_type == "general"
-        assert note.content == ""
-        assert note.created_by == 0
-        assert note.is_confidential is False
+    def test_default_values(self, models):
+        fields = models["EmployeeNote"]["fields"]
+        assert fields["note_type"]["default"] == "general"
+        assert fields["content"]["default"] == ""
+        assert fields["created_by"]["default"] == 0
+        assert fields["is_confidential"]["default"] is False
 
-    def test_note_type_accepts_values(self):
-        for note_type in ["general", "performance", "disciplinary", "confidential"]:
-            note = EmployeeNote(employee_id=1, company_id=1, note_type=note_type)
-            assert note.note_type == note_type
-
-    def test_indexes_defined(self):
-        indexes = EmployeeNote.__dataflow__.get("indexes", [])
+    def test_indexes_defined(self, models):
+        indexes = models["EmployeeNote"]["dataflow"].get("indexes", [])
         index_names = [idx["name"] for idx in indexes]
         assert any("employee" in name for name in index_names)
         assert any("company" in name for name in index_names)
 
-    def test_registered_in_mock_dataflow(self):
-        models = _mock_get_models()
-        assert "EmployeeNote" in models
+    def test_exported_from_init(self, init_source):
+        assert "EmployeeNote" in init_source
 
 
 # ---------------------------------------------------------------------------
@@ -460,50 +461,32 @@ class TestEmployeeNoteModel:
 class TestEmployeeEventModel:
     """Verify EmployeeEvent model (timeline) definition and fields."""
 
-    def test_model_exists(self):
-        assert EmployeeEvent is not None
+    def test_model_exists(self, models):
+        assert "EmployeeEvent" in models
 
-    def test_required_fields(self):
-        event = EmployeeEvent(employee_id=1, company_id=1)
-        assert event.employee_id == 1
-        assert event.company_id == 1
+    def test_required_fields(self, models):
+        fields = models["EmployeeEvent"]["fields"]
+        assert "employee_id" in fields
+        assert "company_id" in fields
 
-    def test_default_values(self):
-        event = EmployeeEvent(employee_id=1, company_id=1)
-        assert event.event_type == ""
-        assert event.description == ""
-        assert event.changed_by == 0
-        assert event.old_value == ""
-        assert event.new_value == ""
-        assert event.event_date == ""
+    def test_default_values(self, models):
+        fields = models["EmployeeEvent"]["fields"]
+        assert fields["event_type"]["default"] == ""
+        assert fields["description"]["default"] == ""
+        assert fields["changed_by"]["default"] == 0
+        assert fields["old_value"]["default"] == ""
+        assert fields["new_value"]["default"] == ""
+        assert fields["event_date"]["default"] == ""
 
-    def test_event_type_accepts_known_values(self):
-        valid_types = [
-            "created",
-            "profile_updated",
-            "salary_changed",
-            "promoted",
-            "department_changed",
-            "probation_confirmed",
-            "leave_approved",
-            "terminated",
-            "document_uploaded",
-            "note_added",
-        ]
-        for event_type in valid_types:
-            event = EmployeeEvent(employee_id=1, company_id=1, event_type=event_type)
-            assert event.event_type == event_type
-
-    def test_indexes_defined(self):
-        indexes = EmployeeEvent.__dataflow__.get("indexes", [])
+    def test_indexes_defined(self, models):
+        indexes = models["EmployeeEvent"]["dataflow"].get("indexes", [])
         index_names = [idx["name"] for idx in indexes]
         assert any("employee" in name for name in index_names)
         assert any("company" in name for name in index_names)
         assert any("date" in name for name in index_names)
 
-    def test_registered_in_mock_dataflow(self):
-        models = _mock_get_models()
-        assert "EmployeeEvent" in models
+    def test_exported_from_init(self, init_source):
+        assert "EmployeeEvent" in init_source
 
 
 # ---------------------------------------------------------------------------
@@ -514,39 +497,33 @@ class TestEmployeeEventModel:
 class TestEmployeeSkillModel:
     """Verify EmployeeSkill model definition and fields."""
 
-    def test_model_exists(self):
-        assert EmployeeSkill is not None
+    def test_model_exists(self, models):
+        assert "EmployeeSkill" in models
 
-    def test_required_fields(self):
-        skill = EmployeeSkill(employee_id=1, company_id=1)
-        assert skill.employee_id == 1
-        assert skill.company_id == 1
+    def test_required_fields(self, models):
+        fields = models["EmployeeSkill"]["fields"]
+        assert "employee_id" in fields
+        assert "company_id" in fields
 
-    def test_default_values(self):
-        skill = EmployeeSkill(employee_id=1, company_id=1)
-        assert skill.skill_name == ""
-        assert skill.proficiency_level == ""
-        assert skill.certification_name == ""
-        assert skill.certification_number == ""
-        assert skill.certified_date == ""
-        assert skill.expiry_date == ""
-        assert skill.issuing_body == ""
+    def test_default_values(self, models):
+        fields = models["EmployeeSkill"]["fields"]
+        assert fields["skill_name"]["default"] == ""
+        assert fields["proficiency_level"]["default"] == ""
+        assert fields["certification_name"]["default"] == ""
+        assert fields["certification_number"]["default"] == ""
+        assert fields["certified_date"]["default"] == ""
+        assert fields["expiry_date"]["default"] == ""
+        assert fields["issuing_body"]["default"] == ""
 
-    def test_proficiency_levels_accepted(self):
-        for level in ["basic", "intermediate", "advanced", "expert"]:
-            skill = EmployeeSkill(employee_id=1, company_id=1, proficiency_level=level)
-            assert skill.proficiency_level == level
-
-    def test_indexes_defined(self):
-        indexes = EmployeeSkill.__dataflow__.get("indexes", [])
+    def test_indexes_defined(self, models):
+        indexes = models["EmployeeSkill"]["dataflow"].get("indexes", [])
         index_names = [idx["name"] for idx in indexes]
         assert any("employee" in name for name in index_names)
         assert any("company" in name for name in index_names)
         assert any("expiry" in name for name in index_names)
 
-    def test_registered_in_mock_dataflow(self):
-        models = _mock_get_models()
-        assert "EmployeeSkill" in models
+    def test_exported_from_init(self, init_source):
+        assert "EmployeeSkill" in init_source
 
 
 # ---------------------------------------------------------------------------
@@ -557,81 +534,65 @@ class TestEmployeeSkillModel:
 class TestCustomFieldDefinitionModel:
     """Verify CustomFieldDefinition model definition and fields."""
 
-    def test_model_exists(self):
-        assert CustomFieldDefinition is not None
+    def test_model_exists(self, models):
+        assert "CustomFieldDefinition" in models
 
-    def test_required_fields(self):
-        cfd = CustomFieldDefinition(company_id=1)
-        assert cfd.company_id == 1
+    def test_required_fields(self, models):
+        fields = models["CustomFieldDefinition"]["fields"]
+        assert "company_id" in fields
 
-    def test_default_values(self):
-        cfd = CustomFieldDefinition(company_id=1)
-        assert cfd.field_name == ""
-        assert cfd.field_label == ""
-        assert cfd.field_type == "text"
-        assert cfd.dropdown_options == ""
-        assert cfd.is_required is False
-        assert cfd.display_order == 0
-        assert cfd.applies_to == "employee"
+    def test_default_values(self, models):
+        fields = models["CustomFieldDefinition"]["fields"]
+        assert fields["field_name"]["default"] == ""
+        assert fields["field_label"]["default"] == ""
+        assert fields["field_type"]["default"] == "text"
+        assert fields["dropdown_options"]["default"] == ""
+        assert fields["is_required"]["default"] is False
+        assert fields["display_order"]["default"] == 0
+        assert fields["applies_to"]["default"] == "employee"
 
-    def test_field_type_accepts_known_values(self):
-        for ft in ["text", "number", "date", "dropdown", "checkbox"]:
-            cfd = CustomFieldDefinition(company_id=1, field_type=ft)
-            assert cfd.field_type == ft
-
-    def test_indexes_defined(self):
-        indexes = CustomFieldDefinition.__dataflow__.get("indexes", [])
+    def test_indexes_defined(self, models):
+        indexes = models["CustomFieldDefinition"]["dataflow"].get("indexes", [])
         index_names = [idx["name"] for idx in indexes]
         assert any("company" in name for name in index_names)
 
-    def test_registered_in_mock_dataflow(self):
-        models = _mock_get_models()
-        assert "CustomFieldDefinition" in models
+    def test_exported_from_init(self, init_source):
+        assert "CustomFieldDefinition" in init_source
 
 
 class TestCustomFieldValueModel:
     """Verify CustomFieldValue model definition and fields."""
 
-    def test_model_exists(self):
-        assert CustomFieldValue is not None
+    def test_model_exists(self, models):
+        assert "CustomFieldValue" in models
 
-    def test_default_values(self):
-        cfv = CustomFieldValue()
-        assert cfv.entity_type == "employee"
-        assert cfv.entity_id == 0
-        assert cfv.field_definition_id == 0
-        assert cfv.company_id == 0
-        assert cfv.value == ""
+    def test_default_values(self, models):
+        fields = models["CustomFieldValue"]["fields"]
+        assert fields["entity_type"]["default"] == "employee"
+        assert fields["entity_id"]["default"] == 0
+        assert fields["field_definition_id"]["default"] == 0
+        assert fields["company_id"]["default"] == 0
+        assert fields["value"]["default"] == ""
 
-    def test_indexes_defined(self):
-        indexes = CustomFieldValue.__dataflow__.get("indexes", [])
+    def test_indexes_defined(self, models):
+        indexes = models["CustomFieldValue"]["dataflow"].get("indexes", [])
         index_names = [idx["name"] for idx in indexes]
         assert any("entity" in name for name in index_names)
         assert any("field" in name for name in index_names)
 
-    def test_registered_in_mock_dataflow(self):
-        models = _mock_get_models()
-        assert "CustomFieldValue" in models
+    def test_exported_from_init(self, init_source):
+        assert "CustomFieldValue" in init_source
 
 
 # ---------------------------------------------------------------------------
-# Registration: All new models discoverable via mock DataFlow registry
+# Registration: All new models exported from __init__.py
 # ---------------------------------------------------------------------------
 
 
-class TestAllNewModelsRegistered:
-    """All 6 new models must be importable and registered."""
+class TestAllNewModelsExported:
+    """All 6 new models must be exported from hr_advisory.models.__init__.py."""
 
-    def test_new_models_importable(self):
-        assert FamilyMember is not None
-        assert EmployeeNote is not None
-        assert EmployeeEvent is not None
-        assert EmployeeSkill is not None
-        assert CustomFieldDefinition is not None
-        assert CustomFieldValue is not None
-
-    def test_all_new_models_in_registry(self):
-        models = _mock_get_models()
+    def test_all_new_models_in_imports(self, init_source):
         new_model_names = [
             "FamilyMember",
             "EmployeeNote",
@@ -641,50 +602,114 @@ class TestAllNewModelsRegistered:
             "CustomFieldValue",
         ]
         for name in new_model_names:
-            assert name in models, f"Model '{name}' not registered in DataFlow"
+            assert (
+                name in init_source
+            ), f"Model '{name}' not found in __init__.py imports or __all__"
 
-    def test_existing_models_still_registered(self):
-        """Adding new models must not break existing model registration."""
-        models = _mock_get_models()
+    def test_all_new_models_in_all_list(self, init_source):
+        """New models should be in __all__ for explicit public API."""
+        # Parse the __all__ list from source
+        tree = ast.parse(init_source)
+        all_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "__all__":
+                        if isinstance(node.value, ast.List):
+                            for elt in node.value.elts:
+                                if isinstance(elt, ast.Constant):
+                                    all_names.add(elt.value)
+
+        for name in [
+            "FamilyMember",
+            "EmployeeNote",
+            "EmployeeEvent",
+            "EmployeeSkill",
+            "CustomFieldDefinition",
+            "CustomFieldValue",
+        ]:
+            assert name in all_names, f"Model '{name}' not found in __all__"
+
+    def test_existing_models_still_exported(self, init_source):
+        """Adding new models must not remove existing model exports."""
         existing = [
+            "Company",
+            "User",
             "Employee",
             "EmergencyContact",
             "EmployeeDocument",
+            "EmploymentEvent",
+            "SalaryComponent",
+            "PayrollRun",
+            "Payslip",
+            "LeaveBalance",
+            "LeaveApplication",
+            "Claim",
+            "AttendanceRecord",
         ]
         for name in existing:
-            assert name in models, f"Existing model '{name}' was lost during M39 changes!"
+            assert name in init_source, f"Existing model '{name}' was removed from __init__.py!"
 
 
 # ---------------------------------------------------------------------------
-# Enum / string constant coverage for new fields
+# Model field count sanity checks
 # ---------------------------------------------------------------------------
 
 
-class TestNewFieldEnumValues:
-    """Verify enum-like string fields accept expected values."""
+class TestModelFieldCounts:
+    """Verify that new models have the expected number of fields (not empty)."""
 
-    def test_religion_values(self):
-        valid = ["buddhist", "christian", "hindu", "islam", "sikh", "taoist", "none", "other"]
-        for val in valid:
-            emp = Employee(user_id=1, company_id=1, religion=val)
-            assert emp.religion == val
+    def test_family_member_has_fields(self, models):
+        assert len(models["FamilyMember"]["fields"]) >= 6
 
-    def test_salary_type_values(self):
-        for val in ["monthly", "daily", "hourly"]:
-            emp = Employee(user_id=1, company_id=1, salary_type=val)
-            assert emp.salary_type == val
+    def test_employee_note_has_fields(self, models):
+        assert len(models["EmployeeNote"]["fields"]) >= 4
 
-    def test_payment_method_values(self):
-        for val in ["giro", "fast", "cheque", "cash"]:
-            emp = Employee(user_id=1, company_id=1, payment_method=val)
-            assert emp.payment_method == val
+    def test_employee_event_has_fields(self, models):
+        assert len(models["EmployeeEvent"]["fields"]) >= 6
 
-    def test_cpf_status_values(self):
-        for val in ["include", "exclude", "full_employer"]:
-            emp = Employee(user_id=1, company_id=1, cpf_status=val)
-            assert emp.cpf_status == val
+    def test_employee_skill_has_fields(self, models):
+        assert len(models["EmployeeSkill"]["fields"]) >= 7
 
-    def test_working_hours_type_values(self):
-        for val in ["fixed", "shift", "flexible"]:
-            emp = Employee(user_id=1, company_id=1, working_hours_type=val)
-            assert emp.working_hours_type == val
+    def test_custom_field_definition_has_fields(self, models):
+        assert len(models["CustomFieldDefinition"]["fields"]) >= 6
+
+    def test_custom_field_value_has_fields(self, models):
+        assert len(models["CustomFieldValue"]["fields"]) >= 4
+
+    def test_employee_has_new_extension_fields(self, models):
+        """Employee should have gained ~30+ new fields from T298."""
+        new_fields = [
+            "religion",
+            "phone",
+            "alias",
+            "photo_url",
+            "salary_type",
+            "hourly_rate",
+            "daily_rate",
+            "payment_method",
+            "payment_frequency",
+            "overtime_eligible",
+            "working_hours_type",
+            "branch_code",
+            "iras_auto_inclusion",
+            "tax_reference",
+            "tags",
+            "cpf_status",
+            "amcs_enabled",
+            "pmbs_enabled",
+            "community_chest_amount",
+            "shg_override_amount",
+            "address_block",
+            "address_street",
+            "address_unit",
+            "address_building",
+            "address_postal_code",
+            "organization_id",
+            "branch_id",
+            "cost_centre_id",
+            "pay_scheme_id",
+        ]
+        emp_fields = models["Employee"]["fields"]
+        for field in new_fields:
+            assert field in emp_fields, f"T298 field '{field}' not found on Employee"
