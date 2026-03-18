@@ -30,10 +30,10 @@
   - HR community events and workshops
   - Referral programme
 
-**Competitive Landscape**:
+**Market Landscape**:
 
-- Employment Hero — full HRIS, less SG-specific advisory depth
-- Talenox — SG-focused payroll, no AI advisory
+- Regional HRIS platforms — full HRIS, less SG-specific advisory depth
+- SG-focused HRIS platforms — payroll processing, no AI advisory
 - HR consultants — high-touch but expensive, not scalable
 - Generic AI (ChatGPT, etc.) — no SG regulatory specialisation or accuracy guarantees
 

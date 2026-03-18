@@ -1,5 +1,5 @@
 /* ── Centralized API Type Definitions ──────────────────────── */
-/* All request/response shapes for the AITE Nexus backend.     */
+/* All request/response shapes for the Arbor Nexus backend.    */
 
 /* ── Common ──────────────────────────────────────────────────── */
 

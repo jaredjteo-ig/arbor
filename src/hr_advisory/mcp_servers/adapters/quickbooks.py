@@ -92,7 +92,7 @@ class QuickBooksAdapter:
         """Generate OAuth 2.0 authorization URL for QuickBooks.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             redirect_uri: Callback URL after authorization.
             scopes: OAuth scopes. Defaults to accounting.
 
@@ -129,7 +129,7 @@ class QuickBooksAdapter:
         """Exchange authorization code for tokens.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             code: Authorization code from QBO callback.
             realm_id: QBO company ID (from callback query param realmId).
             redirect_uri: Same redirect URI used in authorization.
@@ -213,7 +213,7 @@ class QuickBooksAdapter:
         """Make an authenticated QBO API call.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             realm_id: QBO company realm ID.
             method: HTTP method.
             endpoint: API endpoint path (appended to company base URL).
@@ -276,7 +276,7 @@ class QuickBooksAdapter:
         QBO uses a query API: GET /query?query=SELECT * FROM Account
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             realm_id: QBO realm ID. Uses stored value if not provided.
             force_refresh: Skip cache and fetch fresh.
 
@@ -342,7 +342,7 @@ class QuickBooksAdapter:
         """Post a journal entry to QuickBooks.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             journal_data: Dict with:
                 - memo: str (description)
                 - date: str (ISO format YYYY-MM-DD)

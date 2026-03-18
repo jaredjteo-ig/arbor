@@ -38,7 +38,7 @@ type AdvisoryPanelContextValue = AdvisoryPanelState & AdvisoryPanelAPI;
 
 /* ── Storage key ─────────────────────────────────────────── */
 
-const ACTIVE_CONV_KEY = "aite-advisory-active-conv";
+const ACTIVE_CONV_KEY = "arbor-advisory-active-conv";
 
 /* ── Context ─────────────────────────────────────────────── */
 

@@ -21,8 +21,8 @@ export function AdvisoryFAB() {
     <button
       type="button"
       onClick={open}
-      aria-label="Ask AITE (Ctrl+Shift+A)"
-      title="Ask AITE (Ctrl+Shift+A)"
+      aria-label="Ask Arbor (Ctrl+Shift+A)"
+      title="Ask Arbor (Ctrl+Shift+A)"
       className={clsx(
         "fixed bottom-6 right-6 z-20",
         "flex items-center justify-center",

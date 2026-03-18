@@ -18,7 +18,7 @@ Fix four identified resilience gaps: (1) technical error messages leaking to use
   - Network errors: "Connection lost. Check your internet and try again."
   - 401/403: "Your session has expired. Please log in again." (with redirect)
   - 429 (rate limit): "You have sent too many requests. Please wait a moment."
-  - 500/503: "AITE is temporarily unavailable. Please try again in a few minutes."
+  - 500/503: "Arbor is temporarily unavailable. Please try again in a few minutes."
   - Timeout: "The response took too long. Try a shorter question."
 - [ ] No raw error messages, status codes, or stack traces visible to users anywhere in the application
 - [ ] Error mapping applied consistently in advisory chat, calculator pages, and form submissions

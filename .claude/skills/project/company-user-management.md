@@ -82,4 +82,4 @@ Profile completeness score drives trust chain quality (higher = more context for
 
 ## Consult Agent
 
-For profile/user work: `aite-platform-specialist`
+For profile/user work: `arbor-platform-specialist`

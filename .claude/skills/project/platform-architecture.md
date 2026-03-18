@@ -1,6 +1,6 @@
 ---
 name: platform-architecture
-description: "AITE platform architecture patterns. Use when adding endpoints, modifying middleware, or understanding component connections."
+description: "Arbor platform architecture patterns. Use when adding endpoints, modifying middleware, or understanding component connections."
 ---
 
 # Platform Architecture
@@ -12,12 +12,23 @@ description: "AITE platform architecture patterns. Use when adding endpoints, mo
 ## Router Registration
 
 ```python
-from hr_advisory.api.routers import auth, advisory, calculator, compliance, document, kb, profile, search, learning, admin
+from hr_advisory.api.routers import (
+    auth, advisory, calculator, compliance, document, kb, profile, search,
+    learning, admin, payroll, leave, claims, attendance, shifts, employees,
+    appraisals, projects, inventory, recruitment, reports, approval_groups,
+    integrations,
+)
 
 # In create_platform():
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(advisory.router, prefix="/advisory", tags=["advisory"])
-# ... etc
+# ... core routers ...
+app.include_router(appraisals.router, prefix="/appraisals", tags=["appraisals"])
+app.include_router(projects.router, prefix="/projects", tags=["projects"])
+app.include_router(inventory.router, prefix="/inventory", tags=["inventory"])
+app.include_router(recruitment.router, prefix="/recruitment", tags=["recruitment"])
+app.include_router(reports.router, prefix="/reports", tags=["reports"])
+app.include_router(approval_groups.router, prefix="/approval-groups", tags=["approval-groups"])
 ```
 
 ## Auth Pattern
@@ -133,12 +144,21 @@ Non-owned conversations return 404 (prevents enumeration).
 - NEVER use `LocalRuntime` in containers — use `AsyncLocalRuntime`
 - NEVER hardcode model names — read from `.env`
 
+## Rate Limiting Middleware
+
+In-memory sliding window rate limiter applied before auth middleware:
+
+- Per-company and per-user keys
+- Configurable via `RATE_LIMIT_WINDOW_SECONDS` and `RATE_LIMIT_MAX_REQUESTS` env vars
+- Returns 429 with `Retry-After` header on breach
+- Advisory and auth endpoints have stricter limits
+
 ## Related Documentation
 
 - `docs/01-architecture.md` — Full system architecture
-- `docs/02-api-reference.md` — Complete API reference
+- `docs/02-api-reference.md` — Complete API reference (120+ endpoints)
 - `docs/03-security.md` — Security architecture
 
 ## Consult Agent
 
-For platform architecture: `aite-platform-specialist`
+For platform architecture: `arbor-platform-specialist`

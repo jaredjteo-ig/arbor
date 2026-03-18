@@ -271,7 +271,7 @@ class XeroAdapter:
         """Make an authenticated Xero API call with rate limiting and circuit breaker.
 
         Args:
-            tenant_id: AITE company ID (for token lookup).
+            tenant_id: Arbor company ID (for token lookup).
             method: HTTP method (GET, POST, PUT).
             endpoint: API endpoint path (e.g., "Accounts", "ManualJournals").
             xero_tenant_id: Xero organization tenant ID (required for data calls).
@@ -331,7 +331,7 @@ class XeroAdapter:
         """Fetch chart of accounts from Xero with 24hr caching.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             xero_tenant_id: Xero organization tenant ID.
             force_refresh: Skip cache and fetch fresh data.
 
@@ -387,7 +387,7 @@ class XeroAdapter:
         """Post a payroll journal entry to Xero as a ManualJournal.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             journal_data: Dict with:
                 - narration: str (description/memo)
                 - date: str (ISO format YYYY-MM-DD)
@@ -481,7 +481,7 @@ class XeroAdapter:
         """Post claims reimbursement journal to Xero.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             claims_data: Dict with:
                 - narration: str
                 - date: str (ISO)
@@ -511,7 +511,7 @@ class XeroAdapter:
         """Fetch trial balance report from Xero.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             xero_tenant_id: Xero org tenant ID.
             date: Report date in YYYY-MM-DD format. Defaults to today.
 

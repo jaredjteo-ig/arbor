@@ -16,7 +16,7 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOCAL_ENV="${PROJECT_ROOT}/.env"
 SERVER="ec2-user@52.220.50.167"
 SSH_KEY="${HOME}/.ssh/ai-coach.pem"
-REMOTE_ENV="/opt/aite/deploy/.env.prod"
+REMOTE_ENV="/opt/arbor/deploy/.env.prod"
 
 # Keys to sync from local to server
 SYNC_KEYS=(
@@ -76,4 +76,4 @@ done
 
 echo ""
 echo "Keys synced. Restart the backend to apply:"
-echo "  ssh -i $SSH_KEY $SERVER 'cd /opt/aite/deploy && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d backend'"
+echo "  ssh -i $SSH_KEY $SERVER 'cd /opt/arbor/deploy && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d backend'"

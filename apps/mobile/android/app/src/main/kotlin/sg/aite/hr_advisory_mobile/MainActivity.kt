@@ -1,4 +1,4 @@
-package sg.aite.hr_advisory_mobile
+package sg.arbor.hr_advisory_mobile
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -459,7 +459,7 @@ export function ChatContainer({
               <span className="text-2xl">&#x1F4AC;</span>
             </div>
             <h2 className="text-xl font-bold text-[var(--color-gray-900)] mb-2">
-              Ask AITE anything about Singapore HR
+              Ask Arbor anything about Singapore HR
             </h2>
             <p className="text-sm text-[var(--color-gray-500)] mb-6">
               Get instant, cited guidance about employment law, CPF, foreign
@@ -545,7 +545,7 @@ export function ChatContainer({
         <div className="max-w-3xl mx-auto flex items-start gap-1.5">
           <Info className="h-3 w-3 text-[var(--color-gray-500)] mt-0.5 shrink-0" />
           <p className="text-xs text-[var(--color-gray-500)] leading-relaxed">
-            AITE provides general guidance based on Singapore employment
+            Arbor provides general guidance based on Singapore employment
             regulations. This is not legal advice. Always consult a qualified
             employment law practitioner for specific situations.
           </p>

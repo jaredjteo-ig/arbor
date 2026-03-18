@@ -378,7 +378,7 @@ class GoogleCalendarAdapter:
                     "eventType": "outOfOffice",
                     "transparency": "opaque",
                     "extendedProperties": {
-                        "private": {"aite_leave_id": leave_id},
+                        "private": {"arbor_leave_id": leave_id},
                     },
                 }
 
@@ -443,7 +443,7 @@ class GoogleCalendarAdapter:
                     path=f"calendars/{calendar_id}/events",
                     access_token=access_token,
                     params={
-                        "privateExtendedProperty": f"aite_holiday_id={holiday_key}",
+                        "privateExtendedProperty": f"arbor_holiday_id={holiday_key}",
                         "maxResults": 1,
                     },
                 )
@@ -457,7 +457,7 @@ class GoogleCalendarAdapter:
                     "end": {"date": self._next_day(holiday["date"])},
                     "transparency": "transparent",
                     "extendedProperties": {
-                        "private": {"aite_holiday_id": holiday_key},
+                        "private": {"arbor_holiday_id": holiday_key},
                     },
                 }
 
@@ -486,14 +486,14 @@ class GoogleCalendarAdapter:
         calendar_id: str,
         access_token: str,
     ) -> set[str]:
-        """Retrieve IDs of leave events already synced by AITE."""
+        """Retrieve IDs of leave events already synced by Arbor."""
         try:
             result = await self._api_call(
                 method="GET",
                 path=f"calendars/{calendar_id}/events",
                 access_token=access_token,
                 params={
-                    "privateExtendedProperty": "aite_leave_id",
+                    "privateExtendedProperty": "arbor_leave_id",
                     "maxResults": 2500,
                     "singleEvents": "true",
                 },
@@ -501,7 +501,7 @@ class GoogleCalendarAdapter:
             ids: set[str] = set()
             for event in result.get("items", []):
                 ext = event.get("extendedProperties", {}).get("private", {})
-                leave_id = ext.get("aite_leave_id")
+                leave_id = ext.get("arbor_leave_id")
                 if leave_id:
                     ids.add(leave_id)
             return ids

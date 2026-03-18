@@ -1,9 +1,9 @@
 #!/bin/bash
-# AITE Server Setup — Run on a fresh Amazon Linux 2023 instance
+# Arbor Server Setup — Run on a fresh Amazon Linux 2023 instance
 # Usage: ssh ec2-user@<IP> 'bash -s' < deploy/setup-server.sh
 set -euo pipefail
 
-echo "=== AITE Server Setup ==="
+echo "=== Arbor Server Setup ==="
 
 # Install Docker
 echo "Installing Docker..."
@@ -23,13 +23,13 @@ sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 echo "Docker Compose v${COMPOSE_VERSION} installed"
 
 # Create app directory
-sudo mkdir -p /opt/aite
-sudo chown ec2-user:ec2-user /opt/aite
+sudo mkdir -p /opt/arbor
+sudo chown ec2-user:ec2-user /opt/arbor
 
 echo "=== Setup complete ==="
 echo "Next steps:"
 echo "  1. Log out and back in (for docker group)"
-echo "  2. Clone the repo: cd /opt/aite && git clone <repo-url> ."
+echo "  2. Clone the repo: cd /opt/arbor && git clone <repo-url> ."
 echo "  3. Create .env: cp deploy/.env.prod.example deploy/.env.prod"
 echo "  4. Edit deploy/.env.prod with real credentials"
 echo "  5. Deploy: cd deploy && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build"

@@ -12,7 +12,7 @@ interface AdvisoryPanelHeaderProps {
 
 /**
  * Header bar for the advisory side panel.
- * Shows AITE branding plus history, new conversation, and close controls.
+ * Shows Arbor branding plus history, new conversation, and close controls.
  */
 export function AdvisoryPanelHeader({
   onToggleHistory,
@@ -35,7 +35,7 @@ export function AdvisoryPanelHeader({
           <MessageSquare className="h-4 w-4 text-[var(--color-primary)]" />
         </div>
         <span className="text-sm font-semibold text-[var(--color-gray-900)]">
-          Ask AITE
+          Ask Arbor
         </span>
       </div>
 

@@ -8,7 +8,7 @@
 
 ## What to build
 
-Add a left panel to the login and signup pages that communicates what AITE is and why a user should sign up. Currently the auth pages are bare white cards that say nothing about the product. A visitor arriving from any source sees no value signal before they decide whether to create an account. The left panel must include a product tagline, 3-4 feature highlights with icons, and trust signals (e.g., "MOM-aligned", "PDPA-compliant", "Trusted by 200+ Singapore SMEs").
+Add a left panel to the login and signup pages that communicates what Arbor is and why a user should sign up. Currently the auth pages are bare white cards that say nothing about the product. A visitor arriving from any source sees no value signal before they decide whether to create an account. The left panel must include a product tagline, 3-4 feature highlights with icons, and trust signals (e.g., "MOM-aligned", "PDPA-compliant", "Trusted by 200+ Singapore SMEs").
 
 ## Acceptance Criteria
 
@@ -27,7 +27,7 @@ Add a left panel to the login and signup pages that communicates what AITE is an
   - "Generate employment contracts and HR letters in seconds"
   - "Emergency escalation to employment law specialists"
 - [ ] Trust signals section: MOM-aligned guidance, PDPA-compliant, secure infrastructure
-- [ ] AITE logo and branding in left panel
+- [ ] Arbor logo and branding in left panel
 
 ### Visual Quality
 

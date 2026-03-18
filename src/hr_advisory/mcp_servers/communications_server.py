@@ -1,4 +1,4 @@
-"""aite-communications MCP server.
+"""arbor-communications MCP server.
 
 Provides communication tools for the shadow agent:
 - Email delivery (Resend) — payslips, leave notifications, onboarding
@@ -11,7 +11,7 @@ Provides communication tools for the shadow agent:
 - Google Calendar Sync (C07) — Out-of-Office events for approved leave
 - Microsoft Outlook Calendar Sync (C08) — OOO events via Graph API
 
-T221: aite-communications MCP Server Shell
+T221: arbor-communications MCP Server Shell
 T222: Resend Email Connector
 T223: Telegram Bot Connector
 T225: AWS S3 Document Storage Connector
@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from hr_advisory.mcp_servers.base import AiteMCPServer, TenantContext
+from hr_advisory.mcp_servers.base import ArborMCPServer, TenantContext
 from hr_advisory.mcp_servers.adapters.resend_email import ResendAdapter
 from hr_advisory.mcp_servers.adapters.telegram_bot import TelegramBotAdapter
 from hr_advisory.mcp_servers.adapters.s3_storage import S3StorageAdapter
@@ -60,8 +60,8 @@ def _get_s3() -> S3StorageAdapter:
 
 # ── MCP Server ────────────────────────────────────────────────
 
-server = AiteMCPServer(
-    name="aite-communications",
+server = ArborMCPServer(
+    name="arbor-communications",
     description=(
         "Communication and delivery: email (Resend), Telegram Bot, "
         "document storage (S3), and future channels (WhatsApp, Slack, Teams, Calendar)."

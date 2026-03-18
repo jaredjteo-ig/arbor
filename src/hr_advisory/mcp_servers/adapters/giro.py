@@ -160,7 +160,7 @@ class GiroAdapter:
         num_transactions = len(valid_payslips)
 
         # Generate unique message ID
-        msg_id = f"AITE-{run_id}-{uuid.uuid4().hex[:8]}".upper()[:35]  # Max 35 chars
+        msg_id = f"Arbor-{run_id}-{uuid.uuid4().hex[:8]}".upper()[:35]  # Max 35 chars
         creation_time = datetime.now(timezone.utc)
 
         # Build XML document

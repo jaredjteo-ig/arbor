@@ -104,7 +104,7 @@ class ZohoAdapter:
         """Generate OAuth 2.0 authorization URL for Zoho Books.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             redirect_uri: Callback URL after authorization.
             scopes: OAuth scopes. Defaults to Zoho Books full access.
 
@@ -141,7 +141,7 @@ class ZohoAdapter:
         """Exchange authorization code for tokens.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             code: Authorization code from Zoho callback.
             redirect_uri: Same redirect URI used in authorization.
 
@@ -313,7 +313,7 @@ class ZohoAdapter:
         """Make an authenticated Zoho Books API call.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             organization_id: Zoho Books organization ID.
             method: HTTP method.
             endpoint: API endpoint path (e.g., "chartofaccounts", "journals").
@@ -383,7 +383,7 @@ class ZohoAdapter:
         (2500/day). Chart of accounts rarely changes.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             organization_id: Zoho org ID. Uses stored value if not provided.
             force_refresh: Skip cache and fetch fresh data.
 
@@ -442,7 +442,7 @@ class ZohoAdapter:
         """Post a journal entry to Zoho Books.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             journal_data: Dict with:
                 - notes: str (description/memo)
                 - date: str (ISO YYYY-MM-DD)

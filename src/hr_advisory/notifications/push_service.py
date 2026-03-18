@@ -1,7 +1,7 @@
 """Push Notification Service (T056).
 
 Handles creation, targeting, and delivery of push notifications for
-the AITE HR Advisory platform. Notification types include regulatory
+the Arbor HR Advisory platform. Notification types include regulatory
 updates, deadline reminders, compliance alerts, correction notices,
 and system announcements.
 

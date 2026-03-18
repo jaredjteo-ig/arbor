@@ -68,4 +68,4 @@ Client: GET /document/download/{document_id}
 
 ## Consult Agent
 
-For document work: `aite-platform-specialist`
+For document work: `arbor-platform-specialist`

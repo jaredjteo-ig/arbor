@@ -1,6 +1,6 @@
 # Authority Documents
 
-This directory contains governance and configuration documents that control how the AITE platform operates.
+This directory contains governance and configuration documents that control how the Arbor platform operates.
 
 ## Document Hierarchy
 

@@ -8,7 +8,7 @@
 
 ## What to build
 
-Fix the "Welcome, there" greeting where the user's name fails to resolve. Then redesign the dashboard experience for users who have not yet created a company profile. The current empty-state is a white void that communicates nothing. Replace it with an onboarding progress tracker, a value preview (sample compliance score, sample advisory Q&A snippet), and contextual guidance cards. The dashboard must demonstrate what AITE can do, not demand setup before showing any value.
+Fix the "Welcome, there" greeting where the user's name fails to resolve. Then redesign the dashboard experience for users who have not yet created a company profile. The current empty-state is a white void that communicates nothing. Replace it with an onboarding progress tracker, a value preview (sample compliance score, sample advisory Q&A snippet), and contextual guidance cards. The dashboard must demonstrate what Arbor can do, not demand setup before showing any value.
 
 ## Acceptance Criteria
 

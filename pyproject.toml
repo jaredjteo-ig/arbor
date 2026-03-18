@@ -7,7 +7,7 @@ name = "hr-ai-advisory"
 version = "0.1.0"
 description = "AI-powered HR advisory platform for Singapore SMEs"
 authors = [
-    {name = "ASME AITE", email = "dev@aite.sg"}
+    {name = "Terrene Foundation", email = "dev@arbor.sg"}
 ]
 readme = "README.md"
 requires-python = ">=3.11"
@@ -73,8 +73,8 @@ dev = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/asme-aite/hr-ai-advisory"
-"Bug Tracker" = "https://github.com/asme-aite/hr-ai-advisory/issues"
+"Homepage" = "https://github.com/terrene-foundation/arbor"
+"Bug Tracker" = "https://github.com/terrene-foundation/arbor/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

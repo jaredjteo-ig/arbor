@@ -5,16 +5,32 @@ attendance settings, and timesheet approval workflows.
 """
 
 import logging
+import math
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Input length limits
+MAX_TEXT_LENGTH = 2000
+MAX_NAME_LENGTH = 200
+
+
+def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_LENGTH) -> str:
+    """Validate text input to maximum length."""
+    if value and len(value) > max_len:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field_name} exceeds maximum length of {max_len} characters.",
+        )
+    return value
 
 
 # --------------------------------------------------------------------------
@@ -195,6 +211,8 @@ async def clock_in(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"clock:{user_id}", max_requests=20, window_seconds=60, action_name="clock in/out")
+
     emp = _find_employee_for_user(user_id, company_id)
     if emp is None:
         raise HTTPException(status_code=400, detail="Employee record not found.")
@@ -256,6 +274,8 @@ async def clock_out(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"clock:{user_id}", max_requests=20, window_seconds=60, action_name="clock in/out")
+
     emp = _find_employee_for_user(user_id, company_id)
     if emp is None:
         raise HTTPException(status_code=400, detail="Employee record not found.")
@@ -696,3 +716,328 @@ async def list_timesheets(
     timesheets = _dataflow_list("TimesheetApprovalListNode", filter_dict)
     timesheets.sort(key=lambda t: t.get("month", ""), reverse=True)
     return {"timesheets": timesheets, "count": len(timesheets)}
+
+
+# ==========================================================================
+# LATENESS & EARLY DEPARTURE SETTINGS (T354)
+# ==========================================================================
+
+
+def _get_lateness_settings(company_id: int) -> dict:
+    """Fetch lateness settings for a company, returning defaults if none exist."""
+    settings = _dataflow_list(
+        "LatenessSettingsListNode",
+        {"company_id": company_id},
+        limit=1,
+    )
+    if settings:
+        return settings[0]
+    return {
+        "grace_period_minutes": 15,
+        "deduction_enabled": False,
+        "deduction_per_incident": 0.0,
+        "max_incidents_per_month": 0,
+        "auto_flag": True,
+    }
+
+
+def _get_early_departure_settings(company_id: int) -> dict:
+    """Fetch early departure settings for a company, returning defaults if none exist."""
+    settings = _dataflow_list(
+        "EarlyDepartureSettingsListNode",
+        {"company_id": company_id},
+        limit=1,
+    )
+    if settings:
+        return settings[0]
+    return {
+        "threshold_minutes": 30,
+        "deduction_enabled": False,
+        "deduction_per_incident": 0.0,
+        "auto_flag": True,
+    }
+
+
+@router.get("/lateness-settings")
+async def get_lateness_settings_endpoint(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get the company's lateness settings."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    settings = _get_lateness_settings(company_id)
+    return {"settings": settings}
+
+
+@router.put("/lateness-settings")
+async def update_lateness_settings(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Create or update the company's lateness settings."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    body = await request.json()
+    allowed = {
+        "grace_period_minutes",
+        "deduction_enabled",
+        "deduction_per_incident",
+        "max_incidents_per_month",
+        "auto_flag",
+    }
+    fields = {k: v for k, v in body.items() if k in allowed}
+
+    if "deduction_per_incident" in fields:
+        val = float(fields["deduction_per_incident"])
+        if not math.isfinite(val):
+            raise HTTPException(status_code=400, detail="Invalid numeric value.")
+        fields["deduction_per_incident"] = val
+
+    existing = _dataflow_list(
+        "LatenessSettingsListNode",
+        {"company_id": company_id},
+        limit=1,
+    )
+    if existing:
+        _dataflow_update("LatenessSettingsUpdateNode", existing[0]["id"], fields)
+        updated = _dataflow_read("LatenessSettingsReadNode", existing[0]["id"])
+    else:
+        fields["company_id"] = company_id
+        updated = _dataflow_create("LatenessSettingsCreateNode", fields)
+
+    return {"settings": updated}
+
+
+@router.get("/early-departure-settings")
+async def get_early_departure_settings_endpoint(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get the company's early departure settings."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    settings = _get_early_departure_settings(company_id)
+    return {"settings": settings}
+
+
+@router.put("/early-departure-settings")
+async def update_early_departure_settings(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Create or update the company's early departure settings."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    body = await request.json()
+    allowed = {
+        "threshold_minutes",
+        "deduction_enabled",
+        "deduction_per_incident",
+        "auto_flag",
+    }
+    fields = {k: v for k, v in body.items() if k in allowed}
+
+    if "deduction_per_incident" in fields:
+        val = float(fields["deduction_per_incident"])
+        if not math.isfinite(val):
+            raise HTTPException(status_code=400, detail="Invalid numeric value.")
+        fields["deduction_per_incident"] = val
+
+    existing = _dataflow_list(
+        "EarlyDepartureSettingsListNode",
+        {"company_id": company_id},
+        limit=1,
+    )
+    if existing:
+        _dataflow_update("EarlyDepartureSettingsUpdateNode", existing[0]["id"], fields)
+        updated = _dataflow_read("EarlyDepartureSettingsReadNode", existing[0]["id"])
+    else:
+        fields["company_id"] = company_id
+        updated = _dataflow_create("EarlyDepartureSettingsCreateNode", fields)
+
+    return {"settings": updated}
+
+
+# ==========================================================================
+# ADMIN DASHBOARD VIEWS (T356)
+# ==========================================================================
+
+
+@router.get("/today/dashboard")
+async def today_dashboard(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Real-time dashboard: who's in, who's late, who's absent today."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Fetch all active employees
+    employees = _dataflow_list(
+        "EmployeeListNode",
+        {"company_id": company_id, "is_active": True},
+    )
+
+    # Fetch today's attendance records for the company
+    records = _dataflow_list(
+        "AttendanceRecordListNode",
+        {"company_id": company_id, "date": today},
+    )
+    records_by_emp = {r.get("employee_id"): r for r in records}
+
+    # Fetch approved leave for today
+    leave_apps = _dataflow_list(
+        "LeaveApplicationListNode",
+        {"company_id": company_id, "status": "approved"},
+    )
+    on_leave_ids: set[int] = set()
+    for la in leave_apps:
+        start = la.get("start_date", "")
+        end = la.get("end_date", "")
+        if start <= today <= end:
+            on_leave_ids.add(la.get("employee_id"))
+
+    present = []
+    late = []
+    absent = []
+    on_leave = []
+
+    for emp in employees:
+        emp_id = emp.get("id")
+        user_id = emp.get("user_id")
+        user = None
+        if user_id:
+            user = _dataflow_read("UserReadNode", user_id)
+        name = user.get("name", "") if user else ""
+        entry = {
+            "employee_id": emp_id,
+            "name": name,
+            "department": emp.get("department", ""),
+        }
+
+        if emp_id in on_leave_ids:
+            on_leave.append(entry)
+        elif emp_id in records_by_emp:
+            record = records_by_emp[emp_id]
+            entry["clock_in"] = record.get("clock_in", "")
+            entry["clock_out"] = record.get("clock_out", "")
+            status = record.get("status", "present")
+            if status == "late":
+                late.append(entry)
+            else:
+                present.append(entry)
+        else:
+            absent.append(entry)
+
+    return {
+        "date": today,
+        "present": present,
+        "late": late,
+        "absent": absent,
+        "on_leave": on_leave,
+        "counts": {
+            "present": len(present),
+            "late": len(late),
+            "absent": len(absent),
+            "on_leave": len(on_leave),
+            "total": len(employees),
+        },
+    }
+
+
+@router.get("/summary/aggregated")
+async def aggregated_summary(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Aggregated attendance hours for a date range across all employees.
+
+    Query params: ?start_date=, ?end_date= (ISO dates).
+    Returns per-employee totals for the range.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    start_date = request.query_params.get("start_date", "")
+    end_date = request.query_params.get("end_date", "")
+
+    if not start_date or not end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="start_date and end_date query parameters are required.",
+        )
+
+    # Fetch all attendance records for company
+    all_records = _dataflow_list(
+        "AttendanceRecordListNode",
+        {"company_id": company_id},
+    )
+
+    # Filter to date range
+    range_records = [
+        r for r in all_records
+        if start_date <= r.get("date", "") <= end_date
+    ]
+
+    # Aggregate per employee
+    from collections import defaultdict
+
+    emp_totals: dict[int, dict] = defaultdict(
+        lambda: {
+            "total_work_hours": 0.0,
+            "total_ot_hours": 0.0,
+            "present_days": 0,
+            "late_days": 0,
+            "absent_days": 0,
+        }
+    )
+
+    for r in range_records:
+        emp_id = r.get("employee_id")
+        emp_totals[emp_id]["total_work_hours"] += r.get("work_hours", 0.0)
+        emp_totals[emp_id]["total_ot_hours"] += r.get("overtime_hours", 0.0)
+        status = r.get("status", "")
+        if status == "present":
+            emp_totals[emp_id]["present_days"] += 1
+        elif status == "late":
+            emp_totals[emp_id]["late_days"] += 1
+        elif status == "absent":
+            emp_totals[emp_id]["absent_days"] += 1
+
+    # Enrich with employee info
+    results = []
+    for emp_id, totals in emp_totals.items():
+        emp_records = _dataflow_list("EmployeeListNode", {"id": emp_id}, limit=1)
+        emp = emp_records[0] if emp_records else {}
+        user = _dataflow_read("UserReadNode", emp.get("user_id")) if emp.get("user_id") else None
+        results.append(
+            {
+                "employee_id": emp_id,
+                "name": user.get("name", "") if user else "",
+                "department": emp.get("department", ""),
+                "total_work_hours": round(totals["total_work_hours"], 2),
+                "total_ot_hours": round(totals["total_ot_hours"], 2),
+                "present_days": totals["present_days"],
+                "late_days": totals["late_days"],
+                "absent_days": totals["absent_days"],
+            }
+        )
+
+    results.sort(key=lambda r: r.get("name", ""))
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "employees": results,
+        "count": len(results),
+    }

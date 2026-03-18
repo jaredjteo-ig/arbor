@@ -23,7 +23,7 @@ const features = [
 
 /**
  * Left-side value proposition panel shown on auth pages (md+ only).
- * Communicates what AITE does before the user even logs in.
+ * Communicates what Arbor does before the user even logs in.
  */
 export function ValuePropositionPanel() {
   return (
@@ -35,7 +35,7 @@ export function ValuePropositionPanel() {
             A
           </div>
           <span className="text-2xl font-bold text-white tracking-tight">
-            AITE
+            Arbor
           </span>
         </div>
         <p className="mt-1 text-base text-white/70">

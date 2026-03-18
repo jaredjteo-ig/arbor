@@ -1,6 +1,6 @@
 # Trust and Governance Framework
 
-AITE implements three complementary governance frameworks to ensure advisory responses are accurate, auditable, and safe.
+Arbor implements three complementary governance frameworks to ensure advisory responses are accurate, auditable, and safe.
 
 ## EATP Trust Lineage
 

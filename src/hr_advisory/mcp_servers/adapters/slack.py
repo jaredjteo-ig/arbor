@@ -283,7 +283,7 @@ class SlackAdapter:
         and should return a dict with "text" (and optional "blocks").
 
         Commands are registered locally. The Slack App config must
-        list the request URL pointing to the AITE webhook endpoint
+        list the request URL pointing to the Arbor webhook endpoint
         for each command.
 
         Args:

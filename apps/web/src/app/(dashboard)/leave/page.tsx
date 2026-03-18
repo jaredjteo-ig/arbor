@@ -314,6 +314,7 @@ function ApplyLeaveModal({
           <div className="grid grid-cols-2 gap-3">
             <AppInput
               label="Start Date"
+              variant="date"
               value={startDate}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 setStartDate(e.target.value)
@@ -322,6 +323,7 @@ function ApplyLeaveModal({
             />
             <AppInput
               label="End Date"
+              variant="date"
               value={endDate}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 setEndDate(e.target.value)
@@ -362,8 +364,8 @@ function ApplyLeaveModal({
           />
 
           <p className="text-xs text-[var(--color-gray-500)]">
-            Use YYYY-MM-DD format for dates. You can upload supporting documents
-            (e.g. medical certificate) after submitting.
+            You can upload supporting documents (e.g. medical certificate) after
+            submitting.
           </p>
 
           <div className="flex gap-3 pt-2">

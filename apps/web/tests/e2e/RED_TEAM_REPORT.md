@@ -1,4 +1,4 @@
-# AITE HR Advisory Platform — Red-Team E2E Test Report
+# Arbor HR Advisory Platform — Red-Team E2E Test Report
 
 **Date**: 12 March 2026
 **Tested by**: Playwright E2E Red-Team (automated, Chromium)
@@ -11,7 +11,7 @@
 
 ## Executive Summary
 
-The AITE HR Advisory Platform has a strong visual foundation and real functional depth in several areas. The design looks professional. The compliance checker, document library, calculators, alerts feed, emergency guide, and clients list all contain genuine Singapore Employment Act content and return correct results. The advisory streaming endpoint delivers real-time token-by-token responses. However, **the login system is completely broken for real users** — nobody who visits the site can actually log in or register through the browser. This is the only showstopper before a soft launch.
+The Arbor HR Advisory Platform has a strong visual foundation and real functional depth in several areas. The design looks professional. The compliance checker, document library, calculators, alerts feed, emergency guide, and clients list all contain genuine Singapore Employment Act content and return correct results. The advisory streaming endpoint delivers real-time token-by-token responses. However, **the login system is completely broken for real users** — nobody who visits the site can actually log in or register through the browser. This is the only showstopper before a soft launch.
 
 This report covers all 7 user flows described in the brief, plus the Emergency, Clients, and Admin panels that were previously untested.
 

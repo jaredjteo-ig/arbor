@@ -4,7 +4,7 @@
 
 ## Context
 
-AITE has a complete backend for employee invitation-based registration but no frontend page for employees to accept invitations. Additionally, companies are created without essential default operational data (leave types, claim categories, public holidays).
+Arbor has a complete backend for employee invitation-based registration but no frontend page for employees to accept invitations. Additionally, companies are created without essential default operational data (leave types, claim categories, public holidays).
 
 ## Backend: Employee Invite Flow (COMPLETE)
 

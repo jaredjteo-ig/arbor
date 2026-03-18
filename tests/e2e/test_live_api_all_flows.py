@@ -1,5 +1,5 @@
 """
-Comprehensive E2E tests for the AITE HR Advisory Platform.
+Comprehensive E2E tests for the Arbor HR Advisory Platform.
 
 Tests all 7 user flows against the live application using FastAPI TestClient.
 The live server at port 8099 is tested where possible; the TestClient provides

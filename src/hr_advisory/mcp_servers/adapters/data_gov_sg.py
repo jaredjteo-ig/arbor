@@ -1,7 +1,7 @@
 """Data.gov.sg API adapter for public holidays and CPF rate data.
 
 Connectors G08 (Public Holidays) and G09 (CPF Rates) from the
-aite-regulatory MCP server. Fetches live government data with
+arbor-regulatory MCP server. Fetches live government data with
 TTL-based caching to replace hardcoded values.
 
 T214: Data.gov.sg Public Holidays Connector
@@ -76,7 +76,7 @@ class DataGovSGAdapter:
 
     def _headers(self) -> dict[str, str]:
         headers = {
-            "User-Agent": "AITE-HR-Advisory/1.0 (+https://aite.sg)",
+            "User-Agent": "Arbor-HR-Advisory/1.0 (+https://arbor.sg)",
             "Accept": "application/json",
         }
         if self._api_key:

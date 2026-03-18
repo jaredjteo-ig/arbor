@@ -18,6 +18,8 @@ from hr_advisory.api.routers import (
     admin_router,
     advisory_router,
     alerts_router,
+    appraisals_router,
+    approval_groups_router,
     attendance_router,
     auth_router,
     calculator_router,
@@ -29,12 +31,16 @@ from hr_advisory.api.routers import (
     emergency_router,
     help_router,
     integrations_router,
+    inventory_router,
     kb_router,
     learning_router,
     leave_router,
     payroll_router,
     profile_router,
+    projects_router,
     qa_router,
+    recruitment_router,
+    reports_router,
     search_router,
     settings_router,
     shadow_router,
@@ -149,6 +155,12 @@ def _register_routers(app: Nexus) -> None:
     app.include_router(claims_router, prefix="/claims", tags=["Claims"])
     app.include_router(attendance_router, prefix="/attendance", tags=["Attendance"])
     app.include_router(integrations_router, prefix="/integrations", tags=["Integrations"])
+    app.include_router(appraisals_router, prefix="/appraisals", tags=["Appraisals"])
+    app.include_router(approval_groups_router, prefix="/approval-groups", tags=["Approval Groups"])
+    app.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])
+    app.include_router(projects_router, prefix="/projects", tags=["Projects"])
+    app.include_router(recruitment_router, prefix="/recruitment", tags=["Recruitment"])
+    app.include_router(reports_router, prefix="/reports", tags=["Reports"])
     app.include_router(admin_router)  # Admin router has its own /admin prefix
     app.include_router(qa_router)  # QA router has its own /admin/qa prefix
     logger.info("All API routers registered (including MCP integrations)")

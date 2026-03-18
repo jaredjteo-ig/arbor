@@ -21,7 +21,13 @@ interface BaseFieldProps {
 
 interface TextInputProps
   extends BaseFieldProps, Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
-  variant?: "text" | "number" | "email" | "password";
+  variant?:
+    | "text"
+    | "number"
+    | "email"
+    | "password"
+    | "date"
+    | "datetime-local";
 }
 
 /* ── Select (dropdown) ────────────────────────────────────── */
@@ -149,7 +155,11 @@ export const AppInput = forwardRef<
               ? "email"
               : variant === "password"
                 ? "password"
-                : "text"
+                : variant === "date"
+                  ? "date"
+                  : variant === "datetime-local"
+                    ? "datetime-local"
+                    : "text"
         }
         aria-invalid={!!error}
         aria-describedby={describedBy}

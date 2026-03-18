@@ -1,6 +1,6 @@
 ---
 name: auth-security
-description: "Authentication and security patterns for AITE. Use when working on JWT tokens, password handling, tenant isolation, rate limiting, token blocklist, or PDPA compliance."
+description: "Authentication and security patterns for Arbor. Use when working on JWT tokens, password handling, tenant isolation, rate limiting, token blocklist, or PDPA compliance."
 ---
 
 # Authentication & Security

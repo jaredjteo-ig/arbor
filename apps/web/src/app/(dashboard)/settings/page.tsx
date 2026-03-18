@@ -242,8 +242,9 @@ function AIMemorySection() {
     >
       <div className="space-y-4">
         <p className="text-sm text-[var(--color-gray-600)]">
-          AITE learns your work patterns to provide better assistance. This data
-          is stored only in your browser session and is not shared with anyone.
+          Arbor learns your work patterns to provide better assistance. This
+          data is stored only in your browser session and is not shared with
+          anyone.
         </p>
 
         {/* Enable/disable toggle */}
@@ -251,7 +252,7 @@ function AIMemorySection() {
           checked={isEnabled}
           onChange={setEnabled}
           label="Enable pattern learning"
-          description="Allow AITE to observe your navigation patterns and offer proactive suggestions"
+          description="Allow Arbor to observe your navigation patterns and offer proactive suggestions"
         />
 
         {/* Observed patterns */}
@@ -489,7 +490,7 @@ export default function SettingsPage() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `aite-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+      anchor.download = `arbor-data-export-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);

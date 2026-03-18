@@ -224,12 +224,12 @@ class GenericExportAdapter:
             )
 
         export = {
-            "export_format": "aite_journal_v1",
+            "export_format": "arbor_journal_v1",
             "metadata": {
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "company_name": company_name,
                 "currency": currency,
-                "source": "AITE HR Advisory Platform",
+                "source": "Arbor HR Advisory Platform",
             },
             "journal_entry": {
                 "date": journal_date,

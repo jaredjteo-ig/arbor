@@ -1,9 +1,9 @@
 ---
-name: aite-hr-advisory
-description: "AITE HR Advisory Platform skills — Singapore employment law advisory, safety chain, trust governance, calculators, KB pipeline. Use when working on any AITE-specific feature."
+name: arbor-hr-advisory
+description: "Arbor HR Advisory Platform skills — Singapore employment law advisory, safety chain, trust governance, calculators, KB pipeline. Use when working on any Arbor-specific feature."
 ---
 
-# AITE HR Advisory Platform Skills
+# Arbor HR Advisory Platform Skills
 
 Project-specific knowledge for the AI-powered HR advisory platform serving Singapore SMEs.
 
@@ -20,7 +20,7 @@ Project-specific knowledge for the AI-powered HR advisory platform serving Singa
 | `auth-security.md`           | Authentication & security | JWT tokens, tenant isolation, rate limiting, PDPA                                                       |
 | `document-generation.md`     | Document templates        | Template CRUD, generation, preview, download, history                                                   |
 | `company-user-management.md` | Company & user profiles   | Company onboarding, user CRUD, roles, workforce data                                                    |
-| `hris-engine.md`             | Full HRIS engine          | Payroll, leave, claims, attendance, shifts, employee lifecycle, statutory files, PII encryption         |
+| `hris-engine.md`             | Full HRIS engine          | Payroll (pay items, schemes, adhoc, simulation, variance), leave (encashment, off-in-lieu, hourly), claims (groups, co-payment, BIK), attendance (lateness brackets, today dashboard), shifts (hourly rates, multipliers, publish), appraisals (templates, periods, reviews, sign-off), projects (assignments, timesheets, allocations, costs), inventory (locations, categories, items, lifecycle state machine, requests), recruitment (job listings, candidates, interviews, hiring), reports (11 types with charts), approval workflows, rate limiting, demo seed data |
 | `mcp-integrations.md`        | MCP integration layer     | 5 MCP servers, 38 connectors, circuit breakers, idempotency, sagas, PII filter, webhooks, tool selector |
 
 ## Quick Reference
@@ -29,14 +29,16 @@ Project-specific knowledge for the AI-powered HR advisory platform serving Singa
 
 ```
 src/hr_advisory/
-  api/routers/      23+ FastAPI routers (advisory, payroll, leave, claims, attendance, shifts, employees, integrations...)
+  api/routers/      23+ FastAPI routers (advisory, payroll, leave, claims, attendance, shifts, employees,
+                    appraisals, projects, inventory, recruitment, reports, approval_groups, integrations...)
   agents/           Kaizen agents (orchestrator, specialists)
-  models/           34 DataFlow models (company, user, KB, payroll, leave, claims, attendance, shifts)
-  services/         Payroll calculator, statutory files, encryption
+  models/           60+ DataFlow models (company, user, KB, payroll, leave, claims, attendance, shifts,
+                    appraisals, projects, inventory, recruitment, approval groups)
+  services/         Payroll calculator, statutory files, encryption, demo seed data
   workflows/        Core SDK workflows (calculators, guardrails)
   trust/            EATP lineage, CARE governance, citations
   kb/               Knowledge base content and pipeline
-  security/         Input validation, PDPA, rate limiting, PII encryption
+  security/         Input validation, PDPA, rate limiting (sliding window), PII encryption
   templates/        Document templates (KETs, contracts)
   config/           Settings from environment variables
   mcp_servers/      5 MCP servers, 38 adapters, resilience infra (circuit breakers, sagas, idempotency)
@@ -81,9 +83,9 @@ require_role(current_user, "owner", "hr_manager")
 
 - `sg-employment-law-expert` — Singapore employment law domain
 - `advisory-safety-chain-specialist` — 13-step safety chain
-- `aite-platform-specialist` — Platform architecture
+- `arbor-platform-specialist` — Platform architecture
 - `trust-governance-specialist` — EATP/CARE governance
 - `hr-calculator-specialist` — Calculator implementations
 - `kb-pipeline-specialist` — KB content and pipeline
-- `aite-web-specialist` — Web frontend (Next.js/React)
-- `aite-mobile-specialist` — Mobile frontend (Flutter)
+- `arbor-web-specialist` — Web frontend (Next.js/React)
+- `arbor-mobile-specialist` — Mobile frontend (Flutter)

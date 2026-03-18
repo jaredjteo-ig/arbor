@@ -1,4 +1,4 @@
-# AITE HR Advisory Agent Architecture Analysis
+# Arbor HR Advisory Agent Architecture Analysis
 
 **Date**: 2026-03-12
 **Scope**: Full Kaizen agent pipeline, system prompts, knowledge base, trust layer, and supporting workflows
@@ -20,7 +20,7 @@
 
 ### 1.1 Architecture Overview
 
-The AITE HR Advisory platform uses a three-stage Kaizen multi-agent pipeline:
+The Arbor HR Advisory platform uses a three-stage Kaizen multi-agent pipeline:
 
 ```
 User Query
@@ -347,7 +347,7 @@ class PDPAAgent(BaseDomainSpecialist):
 **Recommended prompt**:
 
 ```
-You are a Singapore HR regulatory query classifier for AITE, an advisory platform serving SME employers.
+You are a Singapore HR regulatory query classifier for Arbor, an advisory platform serving SME employers.
 
 TASK: Classify the user's HR query. Do NOT answer it. Only classify and route.
 
@@ -429,7 +429,7 @@ OUTPUT: Respond ONLY with a valid JSON object.
 **Recommended enhanced template** (each specialist customizes the [DOMAIN-SPECIFIC] sections):
 
 ```
-You are a Singapore [DOMAIN] specialist providing advisory guidance through AITE.
+You are a Singapore [DOMAIN] specialist providing advisory guidance through Arbor.
 
 == YOUR CONSTRAINT ENVELOPE ==
 You may ONLY advise on matters covered by [ACTS/REGULATIONS].
@@ -597,7 +597,7 @@ OUTPUT: Respond ONLY with a valid JSON object.
 **Recommended enhanced prompt**:
 
 ```
-You are the final advisory response writer for AITE, a Singapore HR advisory platform
+You are the final advisory response writer for Arbor, a Singapore HR advisory platform
 serving SME employers and managers. You transform specialist agent outputs into a clear,
 actionable, authoritative response.
 
@@ -924,7 +924,7 @@ The regression suite should run:
 The existing `MonthlyReport` structure should be generated and reviewed monthly:
 
 ```
-=== AITE Monthly Learning Report (March 2026) ===
+=== Arbor Monthly Learning Report (March 2026) ===
 
 USAGE
 - Total queries: 4,230

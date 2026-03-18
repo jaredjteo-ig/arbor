@@ -43,8 +43,8 @@ test.describe("Landing & Login Page", () => {
       fullPage: true,
     });
 
-    // Branding: AITE logo/name should be visible
-    const brandText = page.getByText("AITE");
+    // Branding: Arbor logo/name should be visible
+    const brandText = page.getByText("Arbor");
     await expect(brandText.first()).toBeVisible();
 
     // Heading

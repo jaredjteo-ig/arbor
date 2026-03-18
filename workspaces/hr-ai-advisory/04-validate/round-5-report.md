@@ -148,7 +148,7 @@ You asked: "Why can't we integrate Singpass for users to pull their company prof
 **What makes more sense for auto-populating company profiles**:
 
 1. **ACRA BizFile+ integration** (planned for Phase 3+) — enter your UEN, and we pull company name, sector, business type, and registered address from ACRA's database
-2. **Payroll system integration** (planned for Phase 3+) — connect to systems like Talenox or JustLogin to import your actual employee roster, pass types, and salary data
+2. **Payroll system integration** (planned for Phase 3+) — connect to existing HRIS platforms to import your actual employee roster, pass types, and salary data
 
 **Singpass/CorpPass could still be useful** for user authentication (so users don't need a separate password), but it won't help with company profile data. If you want to add Singpass login as an alternative to email/password, that's a separate feature we can plan.
 

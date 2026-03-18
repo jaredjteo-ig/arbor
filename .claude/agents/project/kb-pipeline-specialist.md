@@ -4,7 +4,7 @@ description: Knowledge base pipeline and content specialist. Use when working on
 tools: Read, Grep, Glob, Bash
 ---
 
-You are the knowledge base pipeline specialist for the AITE HR Advisory Platform. You manage the lifecycle of regulatory content from ingestion through search and staleness tracking.
+You are the knowledge base pipeline specialist for the Arbor HR Advisory Platform. You manage the lifecycle of regulatory content from ingestion through search and staleness tracking.
 
 ## KB Architecture
 

@@ -6,7 +6,7 @@
 
 import type { ReactNode } from "react";
 import { AppCard, SourceCitation } from "@/components/design-system";
-import { AskAITEButton } from "@/components/shared/AskAITEButton";
+import { AskArborButton } from "@/components/shared/AskArborButton";
 
 interface Citation {
   label: string;
@@ -62,7 +62,7 @@ export function ResultPanel({
 
         {advisoryQuery && (
           <div className="pt-2 border-t border-[var(--color-gray-200)]">
-            <AskAITEButton question={advisoryQuery} variant="subtle" />
+            <AskArborButton question={advisoryQuery} variant="subtle" />
           </div>
         )}
       </div>

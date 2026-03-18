@@ -38,11 +38,11 @@ class DisclaimerContent:
 # ── Platform-level disclaimer ────────────────────────────────
 
 PLATFORM_DISCLAIMER = (
-    "AITE provides HR information and guidance based on publicly available "
+    "Arbor provides HR information and guidance based on publicly available "
     "Singapore employment regulations. This is not legal advice. For critical "
     "decisions involving significant financial exposure or legal proceedings, "
     "we recommend verification by a qualified employment law professional. "
-    "AITE maintains professional indemnity insurance."
+    "Arbor maintains professional indemnity insurance."
 )
 
 

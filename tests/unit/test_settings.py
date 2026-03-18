@@ -81,7 +81,7 @@ class TestProductionGuards:
             os.environ["APP_ENV"] = "production"
             os.environ["JWT_SECRET_KEY"] = "a-very-secure-custom-secret-key-here"
             os.environ["DEBUG"] = "false"
-            os.environ["DATABASE_URL"] = "postgresql://produser:securepass@db.example.com:5432/aite"
+            os.environ["DATABASE_URL"] = "postgresql://produser:securepass@db.example.com:5432/arbor"
 
             settings = get_settings()
             assert settings.jwt_secret_key == "a-very-secure-custom-secret-key-here"
@@ -118,7 +118,7 @@ class TestProductionGuards:
             os.environ["APP_ENV"] = "production"
             os.environ["JWT_SECRET_KEY"] = "a-very-secure-custom-secret-key-here"
             os.environ["DEBUG"] = "true"
-            os.environ["DATABASE_URL"] = "postgresql://produser:securepass@db.example.com:5432/aite"
+            os.environ["DATABASE_URL"] = "postgresql://produser:securepass@db.example.com:5432/arbor"
 
             with pytest.raises(RuntimeError, match="DEBUG"):
                 get_settings()
@@ -154,7 +154,7 @@ class TestProductionGuards:
             os.environ["APP_ENV"] = "production"
             os.environ["JWT_SECRET_KEY"] = "a-very-secure-custom-secret-key-here"
             os.environ["DEBUG"] = "false"
-            os.environ["DATABASE_URL"] = "postgresql://aite:aite@localhost:5432/aite"
+            os.environ["DATABASE_URL"] = "postgresql://arbor:arbor@localhost:5432/arbor"
 
             with pytest.raises(RuntimeError, match="DATABASE_URL"):
                 get_settings()

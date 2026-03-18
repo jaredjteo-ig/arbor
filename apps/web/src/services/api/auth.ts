@@ -174,7 +174,7 @@ export const authApi = {
     return stored === state;
   },
 
-  /** Exchange a Google OAuth authorization code for AITE tokens. */
+  /** Exchange a Google OAuth authorization code for Arbor tokens. */
   async googleExchange(code: string): Promise<AuthResponse> {
     return fetch(`${API_BASE}/auth/google/exchange`, {
       method: "POST",

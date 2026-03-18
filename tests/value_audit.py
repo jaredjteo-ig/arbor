@@ -1,4 +1,4 @@
-"""Value Audit of the AITE HR Advisory Platform.
+"""Value Audit of the Arbor HR Advisory Platform.
 
 Tests every major value flow from the perspective of a skeptical enterprise
 buyer (Singapore SME owner/HR manager). Uses FastAPI TestClient against
@@ -1269,7 +1269,7 @@ if logout_resp.status_code == 200:
 # ==============================================================
 print("\n\n")
 print("=" * 70)
-print("VALUE AUDIT REPORT — AITE HR Advisory Platform")
+print("VALUE AUDIT REPORT — Arbor HR Advisory Platform")
 print(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"Auditor: Enterprise CTO (skeptical buyer simulation)")
 print("=" * 70)

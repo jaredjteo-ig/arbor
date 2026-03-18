@@ -1,4 +1,4 @@
-# Value Audit Report: AITE HR Advisory Platform
+# Value Audit Report: Arbor HR Advisory Platform
 
 **Date**: 2026-03-17
 **Auditor Perspective**: Enterprise CTO / SME Platform Buyer evaluating AI-powered HR compliance tool for Singapore market
@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-AITE is a **genuinely impressive vertical AI platform** targeting Singapore SME HR compliance -- a narrow, underserved market with real pain. The platform has real regulatory knowledge (6,500+ lines of structured Singapore employment law), real deterministic calculators (CPF, leave, overtime, retrenchment, quota/levy, cost-to-company -- 2,000 lines of calculation logic), a trust/audit pipeline (EATP lineage, citation validation, risk-tiered disclaimers), and a complete advisory chat with SSE streaming. This is not a wrapper around ChatGPT. However, the platform suffers from **new-user cold-start emptiness** -- the first screen a new signup sees is a dashboard of zeros and unfilled profiles, which undermines the value story at the most critical moment. The single highest-impact fix is seeding the first-session experience so that a prospect sees the platform working before they invest effort.
+Arbor is a **genuinely impressive vertical AI platform** targeting Singapore SME HR compliance -- a narrow, underserved market with real pain. The platform has real regulatory knowledge (6,500+ lines of structured Singapore employment law), real deterministic calculators (CPF, leave, overtime, retrenchment, quota/levy, cost-to-company -- 2,000 lines of calculation logic), a trust/audit pipeline (EATP lineage, citation validation, risk-tiered disclaimers), and a complete advisory chat with SSE streaming. This is not a wrapper around ChatGPT. However, the platform suffers from **new-user cold-start emptiness** -- the first screen a new signup sees is a dashboard of zeros and unfilled profiles, which undermines the value story at the most critical moment. The single highest-impact fix is seeding the first-session experience so that a prospect sees the platform working before they invest effort.
 
 **Bottom Line**: This is a real product with real depth. The architecture is sound, the regulatory content is genuine, and the value proposition is tight. Fix the onboarding cold-start problem and this is a platform I would recommend to the board.
 
@@ -19,7 +19,7 @@ AITE is a **genuinely impressive vertical AI platform** targeting Singapore SME 
 
 ### 1. Login Page (`/login`)
 
-**What I See**: Clean branded login form with email/password, Google SSO button, forgot password link, signup link. AITE logo with blue "A" icon. Form validation using Zod schemas. i18n translation keys for all strings.
+**What I See**: Clean branded login form with email/password, Google SSO button, forgot password link, signup link. Arbor logo with blue "A" icon. Form validation using Zod schemas. i18n translation keys for all strings.
 
 **Value Assessment**:
 
@@ -81,7 +81,7 @@ AITE is a **genuinely impressive vertical AI platform** targeting Singapore SME 
 
 **What I See**: Two distinct states:
 
-**State A (No company profile)**: Welcome greeting with first name, "Getting Started" 3-step progress tracker, "What You Get with AITE" preview cards showing sample compliance data and sample advisory Q&A, quick action buttons, and an "No AI, just the law" callout for calculators.
+**State A (No company profile)**: Welcome greeting with first name, "Getting Started" 3-step progress tracker, "What You Get with Arbor" preview cards showing sample compliance data and sample advisory Q&A, quick action buttons, and an "No AI, just the law" callout for calculators.
 
 **State B (With company profile)**: Welcome back greeting, metric cards (Compliance Score, Pending Actions, Advisory Queries), quick action buttons, compliance by domain with real provision counts and risk tier badges, pending action items, "Run Compliance Check" button.
 
@@ -158,13 +158,13 @@ AITE is a **genuinely impressive vertical AI platform** targeting Singapore SME 
 
 **What I See**: Two states again. Without company profile: banner prompting profile setup, but self-assessment checklist is still available. With company profile: Knowledge Base compliance status overview showing domains (Employment Act, CPF, Foreign Manpower, Tax/IRAS, WSH) with provision counts and risk tier badges, plus the self-assessment checklist.
 
-Self-assessment checklist: 8 items covering KET issuance, written contracts, itemised payslips, leave records, overtime records, WSH policy, grievance handling, FWA policy. Company profile inputs: employee count, foreign workers checkbox. Results show combined score, findings grouped by severity (critical/high/medium/low), MOM Inspection Readiness tab, and an "Ask AITE" button for follow-up.
+Self-assessment checklist: 8 items covering KET issuance, written contracts, itemised payslips, leave records, overtime records, WSH policy, grievance handling, FWA policy. Company profile inputs: employee count, foreign workers checkbox. Results show combined score, findings grouped by severity (critical/high/medium/low), MOM Inspection Readiness tab, and an "Ask Arbor" button for follow-up.
 
 **Value Assessment**:
 
 - Purpose clarity: **CLEAR** -- "Verify your compliance posture across Singapore employment regulations."
 - Data credibility: **REAL** -- The checklist items are real EA/WSH/TGFEP requirements with actual provision IDs (EA-S95-KETs, EA-S88A-payslip, WSHA-S12, etc.). Fine amounts are quoted ($5,000 per offence). Deadlines are realistic. MOM Inspection Readiness is a genuinely useful Singapore-specific feature.
-- Value connection: **CONNECTED** -- Findings link to advisory via "Ask AITE" buttons. Results feed into dashboard metrics. Backend compliance check also runs against the KB.
+- Value connection: **CONNECTED** -- Findings link to advisory via "Ask Arbor" buttons. Results feed into dashboard metrics. Backend compliance check also runs against the KB.
 - Action clarity: **OBVIOUS** -- Check boxes, click "Run Compliance Check", see results.
 
 **Client Questions**:
@@ -173,7 +173,7 @@ Self-assessment checklist: 8 items covering KET issuance, written contracts, ite
 - "Can I track compliance over time?" (Not evident -- there is no historical compliance tracking visible)
 - "The compliance score deducts 20 for critical, 10 for high -- is this methodology documented?" (It is deterministic but the scoring model is embedded in client-side code -- this should be transparent to users)
 
-**Verdict**: **VALUE ADD** -- The combination of KB-backed compliance status + self-assessment checklist + MOM inspection readiness is genuinely valuable for Singapore SMEs. The "Ask AITE" bridge between compliance findings and advisory is a smart cross-feature connection.
+**Verdict**: **VALUE ADD** -- The combination of KB-backed compliance status + self-assessment checklist + MOM inspection readiness is genuinely valuable for Singapore SMEs. The "Ask Arbor" bridge between compliance findings and advisory is a smart cross-feature connection.
 
 ---
 
@@ -268,7 +268,7 @@ Clicking into a scenario (e.g., TADM Claim) shows: Immediate Obligations with nu
 
 **Value Assessment**:
 
-- Purpose clarity: **CLEAR** -- "Manage and switch between your client companies." This positions AITE for the HR consultant persona, not just in-house HR.
+- Purpose clarity: **CLEAR** -- "Manage and switch between your client companies." This positions Arbor for the HR consultant persona, not just in-house HR.
 - Data credibility: **DEPENDS ON STATE** -- Clients come from the backend API. Empty state is handled well with actionable CTA.
 - Value connection: **CONNECTED** -- Each client has a compliance score and risk tier, connecting to the compliance module. The multi-client model enables the consultant use case.
 - Action clarity: **OBVIOUS** -- Add client, search, filter, sort, view details.
@@ -315,7 +315,7 @@ Clicking into a scenario (e.g., TADM Claim) shows: Immediate Obligations with nu
 1. `/` (Dashboard) -> Click "Compliance check" quick action -> `/compliance`
 2. `/compliance` -> See KB compliance status overview (if company exists) -> Fill self-assessment checklist -> Click "Run Compliance Check"
 3. Results: Combined score, findings by severity, MOM Inspection Readiness, KB coverage
-4. Click "Ask AITE" on a finding -> Routes to `/advisory` with pre-filled question about compliance gap
+4. Click "Ask Arbor" on a finding -> Routes to `/advisory` with pre-filled question about compliance gap
 5. `/advisory` -> Streaming response with specific remediation guidance
 
 **Flow Assessment**:
@@ -426,7 +426,7 @@ Clicking into a scenario (e.g., TADM Claim) shows: Immediate Obligations with nu
 
 2. **Onboarding**: They enter their company profile (takes 2 minutes). The compliance snapshot shows their risk profile immediately -- "You have 3 critical compliance gaps." This is the first "wow" moment.
 
-3. **Advisory**: From the compliance snapshot, they click "Ask AITE about this" and get a streaming response that cites EA Section 95A, explains the KET requirement, quotes the $5,000 fine, and recommends specific actions. Second "wow" moment.
+3. **Advisory**: From the compliance snapshot, they click "Ask Arbor about this" and get a streaming response that cites EA Section 95A, explains the KET requirement, quotes the $5,000 fine, and recommends specific actions. Second "wow" moment.
 
 4. **Calculators**: They open CPF Calculator, enter an employee's details, and get exact employer/employee contribution amounts that match the CPF Board website. "No AI, just the law." Third "wow" moment -- the platform handles both AI advisory AND deterministic calculations.
 
@@ -475,7 +475,7 @@ Clicking into a scenario (e.g., TADM Claim) shows: Immediate Obligations with nu
 
 If I were presenting this to my board after a demo, here is what I would say:
 
-"AITE is a real product solving a real problem for Singapore SMEs. It is not a ChatGPT wrapper -- it has 6,500 lines of structured Singapore employment law, deterministic calculators that match government rates, a trust pipeline with citation validation, and an emergency response module that no competitor has. The core value chain works: company profile leads to compliance assessment leads to advisory guidance leads to calculators leads to document generation. My concern is first-impression polish: a new user sees too many empty states before experiencing value. However, this is a fixable UX problem, not an architectural flaw. The foundation is sound. I would recommend a 3-month pilot with our Singapore office, conditional on the vendor fixing the onboarding cold-start issue and confirming document template availability. Budget impact: this replaces approximately 20 hours/month of HR compliance research per office, plus reduces our exposure to MOM inspection penalties."
+"Arbor is a real product solving a real problem for Singapore SMEs. It is not a ChatGPT wrapper -- it has 6,500 lines of structured Singapore employment law, deterministic calculators that match government rates, a trust pipeline with citation validation, and an emergency response module that no competitor has. The core value chain works: company profile leads to compliance assessment leads to advisory guidance leads to calculators leads to document generation. My concern is first-impression polish: a new user sees too many empty states before experiencing value. However, this is a fixable UX problem, not an architectural flaw. The foundation is sound. I would recommend a 3-month pilot with our Singapore office, conditional on the vendor fixing the onboarding cold-start issue and confirming document template availability. Budget impact: this replaces approximately 20 hours/month of HR compliance research per office, plus reduces our exposure to MOM inspection penalties."
 
 ---
 

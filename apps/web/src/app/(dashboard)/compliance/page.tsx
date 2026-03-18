@@ -19,7 +19,7 @@ import {
   SourceCitation,
 } from "@/components/design-system";
 import type { RiskTierLevel } from "@/components/design-system";
-import { AskAITEButton } from "@/components/shared/AskAITEButton";
+import { AskArborButton } from "@/components/shared/AskArborButton";
 import { InlineAnnotation } from "@/components/shadow-agent";
 import type { AnnotationData } from "@/components/shadow-agent";
 import { useAuth } from "@/contexts/AuthContext";
@@ -697,7 +697,7 @@ function BackendStatusOverview({
                   <RiskTierBadge tier={tier} className="text-xs shrink-0" />
                 </div>
                 {(tier === "amber" || tier === "red") && (
-                  <AskAITEButton
+                  <AskArborButton
                     question={`My ${domainLabel} compliance is ${tier === "amber" ? "medium risk" : "high risk"}. What do I need to fix?`}
                     variant="subtle"
                     className="text-xs"
@@ -1093,9 +1093,9 @@ function ResultsView({
         </div>
       )}
 
-      {/* Ask AITE about compliance results */}
+      {/* Ask Arbor about compliance results */}
       {(result.risk_tier === "amber" || result.risk_tier === "red") && (
-        <AskAITEButton
+        <AskArborButton
           question={`My compliance score is ${result.score}/100 (${result.risk_tier === "amber" ? "medium" : "high"} risk) with ${result.findings.length} findings. What should I prioritise fixing?`}
         />
       )}

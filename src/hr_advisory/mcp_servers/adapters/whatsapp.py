@@ -2,7 +2,7 @@
 
 Sends approved template messages and interactive messages via Meta's
 WhatsApp Cloud API. All templates are notification-only — they direct
-the user to "View in AITE" rather than embedding financial data in
+the user to "View in Arbor" rather than embedding financial data in
 the message body (per red team H4 / PDPA).
 
 T244: WhatsApp Business Connector (C03)
@@ -30,7 +30,7 @@ class WhatsAppTemplate(str, Enum):
 
     Each template must be submitted to Meta for review and approval
     before use. Templates are notification-only — they tell the user
-    something happened and direct them to AITE for details.
+    something happened and direct them to Arbor for details.
     """
 
     PAYSLIP_READY = "payslip_ready"
@@ -45,27 +45,27 @@ class WhatsAppTemplate(str, Enum):
 # None of these contain financial data — only references.
 TEMPLATE_DEFINITIONS: dict[str, dict[str, Any]] = {
     WhatsAppTemplate.PAYSLIP_READY: {
-        "body": "Hi {{1}}, your payslip for {{2}} is ready. View it in AITE.",
+        "body": "Hi {{1}}, your payslip for {{2}} is ready. View it in Arbor.",
         "parameters": ["employee_name", "period"],
         "category": "UTILITY",
     },
     WhatsAppTemplate.LEAVE_APPROVED: {
-        "body": "Hi {{1}}, your leave request for {{2}} to {{3}} has been approved. View details in AITE.",
+        "body": "Hi {{1}}, your leave request for {{2}} to {{3}} has been approved. View details in Arbor.",
         "parameters": ["employee_name", "start_date", "end_date"],
         "category": "UTILITY",
     },
     WhatsAppTemplate.LEAVE_REJECTED: {
-        "body": "Hi {{1}}, your leave request for {{2}} to {{3}} was not approved. View details in AITE.",
+        "body": "Hi {{1}}, your leave request for {{2}} to {{3}} was not approved. View details in Arbor.",
         "parameters": ["employee_name", "start_date", "end_date"],
         "category": "UTILITY",
     },
     WhatsAppTemplate.COMPLIANCE_ALERT: {
-        "body": "Compliance alert for {{1}}: {{2}}. Please review in AITE.",
+        "body": "Compliance alert for {{1}}: {{2}}. Please review in Arbor.",
         "parameters": ["company_name", "alert_summary"],
         "category": "UTILITY",
     },
     WhatsAppTemplate.DEADLINE_REMINDER: {
-        "body": "Reminder for {{1}}: {{2}} is due on {{3}}. Take action in AITE.",
+        "body": "Reminder for {{1}}: {{2}} is due on {{3}}. Take action in Arbor.",
         "parameters": ["company_name", "task_description", "due_date"],
         "category": "UTILITY",
     },

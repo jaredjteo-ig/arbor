@@ -218,8 +218,8 @@ class SSORSSAdapter:
         """
         return {
             "User-Agent": (
-                "Mozilla/5.0 (compatible; AITE-Regulatory-Monitor/1.0; "
-                "+https://aite.sg; legal-compliance-monitoring)"
+                "Mozilla/5.0 (compatible; Arbor-Regulatory-Monitor/1.0; "
+                "+https://arbor.sg; legal-compliance-monitoring)"
             ),
             "Accept": "application/rss+xml, application/xml, text/xml, */*",
             "Accept-Language": "en-SG,en;q=0.9",

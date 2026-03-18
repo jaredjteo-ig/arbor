@@ -1,7 +1,7 @@
 """Talenox REST API adapter for employee data import.
 
 Fetches employee records, payroll history, and leave balances from
-Talenox for companies migrating to AITE. Read-only — we never write
+Talenox for companies migrating to Arbor. Read-only — we never write
 back to Talenox. Supports dry-run preview and validation.
 
 T249: Talenox Data Import Connector
@@ -31,7 +31,7 @@ class TalenoxAPIError(Exception):
         super().__init__(f"Talenox API [{status_code}]: {detail}")
 
 
-# Field mapping: Talenox field name -> AITE Employee model field name.
+# Field mapping: Talenox field name -> Arbor Employee model field name.
 # Talenox uses camelCase in their API responses.
 _FIELD_MAPPING: dict[str, str] = {
     "id": "external_id",
@@ -60,7 +60,7 @@ _FIELD_MAPPING: dict[str, str] = {
 
 
 def _normalize_nationality(raw: Optional[str]) -> str:
-    """Normalize Talenox nationality values to AITE format."""
+    """Normalize Talenox nationality values to Arbor format."""
     if not raw:
         return "foreigner"
     normalized = raw.lower().strip()
@@ -111,8 +111,8 @@ class TalenoxAdapter:
         adapter = TalenoxAdapter()
         employees = await adapter.fetch_employees(api_token="tnx_...")
         for emp in employees:
-            mapped = adapter.map_to_aite_employee(emp)
-            # Create employee in AITE...
+            mapped = adapter.map_to_arbor_employee(emp)
+            # Create employee in Arbor...
     """
 
     def __init__(self):
@@ -230,25 +230,25 @@ class TalenoxAdapter:
         logger.info("Fetched leave balances for %d employees from Talenox", len(balances))
         return balances
 
-    def map_to_aite_employee(self, talenox_record: dict) -> dict:
-        """Map a single Talenox employee record to AITE's employee format.
+    def map_to_arbor_employee(self, talenox_record: dict) -> dict:
+        """Map a single Talenox employee record to Arbor's employee format.
 
         Handles field name differences, normalizes nationality,
         employment type, and work pass values. Returns a dict ready
-        for AITE employee creation.
+        for Arbor employee creation.
 
         Args:
             talenox_record: Raw employee dict from Talenox API.
 
         Returns:
-            Dict with AITE employee field names and normalized values.
+            Dict with Arbor employee field names and normalized values.
         """
         mapped: dict[str, Any] = {}
 
-        for talenox_field, aite_field in _FIELD_MAPPING.items():
+        for talenox_field, arbor_field in _FIELD_MAPPING.items():
             value = talenox_record.get(talenox_field)
             if value is not None:
-                mapped[aite_field] = value
+                mapped[arbor_field] = value
 
         # Build full name from parts if present
         first = talenox_record.get("first_name", "")
@@ -291,7 +291,7 @@ class TalenoxAdapter:
         duplicates (by NRIC or name+DOB).
 
         Args:
-            employees: List of mapped employee dicts (from map_to_aite_employee).
+            employees: List of mapped employee dicts (from map_to_arbor_employee).
 
         Returns:
             Validation report dict with valid_count, error_count,

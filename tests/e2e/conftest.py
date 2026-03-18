@@ -1,7 +1,7 @@
 """E2E test configuration and fixtures (T058).
 
 Provides Playwright fixtures and helpers for comprehensive
-end-to-end testing of the AITE HR advisory platform.
+end-to-end testing of the Arbor HR advisory platform.
 
 Test coverage:
 - Onboarding flow

@@ -4,7 +4,7 @@ description: Specialist in the 13-step advisory safety chain. Use when reviewing
 tools: Read, Grep, Glob, Bash
 ---
 
-You are the specialist for AITE's 13-step advisory safety chain — the core pipeline that processes every HR advisory query before a response reaches the user.
+You are the specialist for Arbor's 13-step advisory safety chain — the core pipeline that processes every HR advisory query before a response reaches the user.
 
 ## The 13-Step Safety Chain
 

@@ -49,7 +49,7 @@ _TEMPLATE_PAYSLIP = """
         <td style="padding: 8px 0; text-align: right; font-weight: 700; font-size: 1.1em; color: #28a745;">${net_pay}</td>
       </tr>
     </table>
-    <p style="color: #666; font-size: 0.9em;">Log in to your AITE portal to view the full breakdown and download your payslip PDF.</p>
+    <p style="color: #666; font-size: 0.9em;">Log in to your Arbor portal to view the full breakdown and download your payslip PDF.</p>
   </div>
   <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 16px; color: #999; font-size: 0.8em;">
     <p>This is an automated message from {company_name}. Please do not reply to this email.</p>
@@ -133,7 +133,7 @@ _TEMPLATE_ONBOARDING_INVITE = """
     <p style="margin: 0; color: #004085;">Hi {employee_name},</p>
   </div>
   <div style="padding: 16px;">
-    <p>You have been invited to join <strong>{company_name}</strong> on AITE.</p>
+    <p>You have been invited to join <strong>{company_name}</strong> on Arbor.</p>
     <p>Please complete your onboarding by clicking the link below:</p>
     <div style="text-align: center; margin: 24px 0;">
       <a href="{onboarding_url}" style="background: #007bff; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600;">Complete Onboarding</a>
@@ -155,7 +155,7 @@ _TEMPLATE_ONBOARDING_INVITE = """
     </table>
   </div>
   <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 16px; color: #999; font-size: 0.8em;">
-    <p>This is an automated invitation from {company_name} via AITE HR Platform.</p>
+    <p>This is an automated invitation from {company_name} via Arbor HR Platform.</p>
   </div>
 </body>
 </html>
@@ -178,10 +178,10 @@ _TEMPLATE_COMPLIANCE_ALERT = """
     </div>
     <p><strong>Action Required:</strong></p>
     <ul>{action_items_html}</ul>
-    <p style="color: #666; font-size: 0.9em;">Log in to your AITE admin panel for details.</p>
+    <p style="color: #666; font-size: 0.9em;">Log in to your Arbor admin panel for details.</p>
   </div>
   <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 16px; color: #999; font-size: 0.8em;">
-    <p>This is an automated compliance alert from AITE for {company_name}.</p>
+    <p>This is an automated compliance alert from Arbor for {company_name}.</p>
   </div>
 </body>
 </html>
@@ -212,10 +212,10 @@ _TEMPLATE_REGULATORY_UPDATE = """
         <td style="padding: 8px 0; text-align: right;">{domains}</td>
       </tr>
     </table>
-    <p style="color: #666; font-size: 0.9em;">Review this update in the AITE admin panel.</p>
+    <p style="color: #666; font-size: 0.9em;">Review this update in the Arbor admin panel.</p>
   </div>
   <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 16px; color: #999; font-size: 0.8em;">
-    <p>This is an automated regulatory intelligence alert from AITE for {company_name}.</p>
+    <p>This is an automated regulatory intelligence alert from Arbor for {company_name}.</p>
   </div>
 </body>
 </html>
@@ -251,7 +251,7 @@ class ResendAdapter:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        default_from: str = "AITE HR Platform <noreply@aite.sg>",
+        default_from: str = "Arbor HR Platform <noreply@arbor.sg>",
     ):
         self._api_key = api_key or os.environ.get("RESEND_API_KEY", "")
         self._default_from = default_from

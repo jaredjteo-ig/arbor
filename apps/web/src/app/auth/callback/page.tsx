@@ -9,7 +9,7 @@ import { authApi } from "@/services/api/auth";
  * OAuth callback page.
  *
  * Google redirects here with ?code=...&state=... after user authorizes.
- * Validates the CSRF state token, then exchanges the code for AITE tokens.
+ * Validates the CSRF state token, then exchanges the code for Arbor tokens.
  */
 function CallbackHandler() {
   const router = useRouter();

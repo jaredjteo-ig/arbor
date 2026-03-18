@@ -17,7 +17,7 @@ import jwt as pyjwt
 import pytest
 from starlette.testclient import TestClient
 
-os.environ.setdefault("DATABASE_URL", "postgresql://aite:aite@localhost:5432/aite")
+os.environ.setdefault("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
 
 from hr_advisory.config.settings import Settings, get_settings
 

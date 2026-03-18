@@ -8,7 +8,7 @@
 
 ## What to build
 
-Remove the hardcoded `notificationCount={3}` from AppShell and wire the notification badge to real data (or suppress the badge when zero). Then seed the dashboard with realistic sample data that new users can see immediately, without requiring a completed company profile. This sample data is clearly labelled as illustrative and shows the value AITE delivers: sample compliance domain scores, a sample regulatory alert, and a sample advisory conversation preview. The goal is to eliminate the "empty product" impression on first login.
+Remove the hardcoded `notificationCount={3}` from AppShell and wire the notification badge to real data (or suppress the badge when zero). Then seed the dashboard with realistic sample data that new users can see immediately, without requiring a completed company profile. This sample data is clearly labelled as illustrative and shows the value Arbor delivers: sample compliance domain scores, a sample regulatory alert, and a sample advisory conversation preview. The goal is to eliminate the "empty product" impression on first login.
 
 ## Acceptance Criteria
 
@@ -34,9 +34,9 @@ Remove the hardcoded `notificationCount={3}` from AppShell and wire the notifica
 
 ### Sample Advisory Preview
 
-- [ ] A "What AITE can answer" preview card shows a realistic Q&A pair
+- [ ] A "What Arbor can answer" preview card shows a realistic Q&A pair
   - Example Q: "Do I need to give notice pay for resignations during probation?"
-  - Example A: Truncated answer showing 2-3 lines + "Ask AITE your question" button
+  - Example A: Truncated answer showing 2-3 lines + "Ask Arbor your question" button
 - [ ] Clicking the button navigates to /advisory
 
 ## Files

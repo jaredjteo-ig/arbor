@@ -1,28 +1,28 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: aite-postgres
+    container_name: arbor-postgres
     environment:
-      POSTGRES_USER: aite
-      POSTGRES_PASSWORD: aite
-      POSTGRES_DB: aite
+      POSTGRES_USER: arbor
+      POSTGRES_PASSWORD: arbor
+      POSTGRES_DB: arbor
     ports:
       - "5432:5432"
     volumes:
-      - aite_pgdata:/var/lib/postgresql/data
+      - arbor_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aite"]
+      test: ["CMD-SHELL", "pg_isready -U arbor"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: aite-redis
+    container_name: arbor-redis
     ports:
       - "6379:6379"
     volumes:
-      - aite_redis:/data
+      - arbor_redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -30,5 +30,5 @@ services:
       retries: 5
 
 volumes:
-  aite_pgdata:
-  aite_redis:
+  arbor_pgdata:
+  arbor_redis:

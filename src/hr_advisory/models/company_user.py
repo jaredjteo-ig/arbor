@@ -499,7 +499,7 @@ class Employee:
     community_chest_amount: float = 0.0
     shg_override_amount: float = 0.0
 
-    # Address (structured — exceeds Payboy)
+    # Address (structured)
     address_block: str = ""
     address_street: str = ""
     address_unit: str = ""  # e.g., "#05-123"
@@ -1431,5 +1431,740 @@ class CustomFieldValue:
         "indexes": [
             {"name": "idx_customval_entity", "fields": ["entity_type", "entity_id"]},
             {"name": "idx_customval_field", "fields": ["field_definition_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M45: Payroll Enhancements
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class PayItem:
+    """Pay item definition for a company (T336)."""
+
+    company_id: int
+    name: str = ""
+    category: str = "salary"  # salary/overtime/allowance/deduction/reimbursement/bonus/commission
+    cpf_type: str = "ow"  # ow/aw/exempt
+    ir8a_code: str = ""
+    unit_type: str = "fixed_amount"  # fixed_amount/hours/days
+    default_amount: float = 0.0
+    is_recurring: bool = False
+    is_taxable: bool = True
+    is_cpf_applicable: bool = True
+    display_on_shift: bool = False
+    allow_adhoc_request: bool = False
+    allow_project_costing: bool = True
+    exclude_from_project_costing: bool = False
+    is_archived: bool = False
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_payitem_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class PayScheme:
+    """Pay scheme template (T337)."""
+
+    company_id: int
+    name: str = ""
+    pay_type: str = "monthly"  # monthly/daily/hourly
+    currency: str = "SGD"
+    base_amount: float = 0.0
+    has_overtime: bool = False
+    ot_base_hourly_rate: float = 0.0
+    ot_rate_normal: float = 1.5
+    ot_rate_rest_day: float = 2.0
+    ot_rate_holiday: float = 2.0
+    ot_recording_method: str = "after_working_hours"  # after_working_hours/after_fixed_hours
+    ot_threshold_weekly: float = 44.0
+    ot_threshold_monthly: float = 0.0
+    work_hours_type: str = "fixed_days"  # fixed_days/fixed_timing/shift/flexible
+    holiday_group_id: int = 0
+    prorate_by_attendance: bool = False
+    recurring_pay_items: str = ""  # JSON array of {pay_item_id, amount}
+    is_archived: bool = False
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_payscheme_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class PayrollLineItem:
+    """Editable line item during payroll generation (T342)."""
+
+    payroll_run_id: int
+    employee_id: int
+    company_id: int
+    pay_item_id: int = 0
+    description: str = ""
+    amount: float = 0.0
+    unit_type: str = "fixed_amount"
+    units: float = 0.0
+    cpf_type: str = "ow"
+    is_manual_override: bool = False
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_pli_payroll", "fields": ["payroll_run_id"]},
+            {"name": "idx_pli_employee", "fields": ["employee_id"]},
+        ],
+    }
+
+
+@db.model
+class PayslipSettings:
+    """Payslip display settings per company (T340)."""
+
+    company_id: int
+    show_employee_address: bool = False
+    show_paid_days: bool = True
+    show_leave_balance: bool = True
+    show_payslip_id: bool = True
+    combine_pay_items_by_type: bool = False
+    password_protect_pdf: bool = False
+    password_format: str = "nric_last4"  # nric_last4/custom
+    enable_payslip_module: bool = True
+    enable_payday_countdown: bool = False
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_paysettings_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M47: Claims Enhancements
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class ClaimGroup:
+    """Group claims under a single submission (T350)."""
+
+    employee_id: int
+    company_id: int
+    name: str = ""
+    status: str = "draft"  # draft/submitted/approved/partially_approved/rejected
+    total_amount: float = 0.0
+    submitted_at: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_claimgrp_employee", "fields": ["employee_id"]},
+            {"name": "idx_claimgrp_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M48: Attendance Enhancements
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class LatenessSettings:
+    """Lateness deduction configuration per company (T354)."""
+
+    company_id: int
+    enable_lateness_deduction: bool = False
+    display_lateness: bool = True
+    grace_period_minutes: int = 15
+    deduction_brackets: str = ""  # JSON: [{from_min, to_min, amount}]
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_lateness_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class EarlyDepartureSettings:
+    """Early departure deduction configuration per company (T354)."""
+
+    company_id: int
+    enable_early_departure_deduction: bool = False
+    display_early_departure: bool = True
+    grace_period_minutes: int = 0
+    deduction_brackets: str = ""  # JSON
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_earlydep_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M49: Shift Enhancements
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class ShiftHourlyRate:
+    """Shift hourly rate definition (T357)."""
+
+    company_id: int
+    name: str = ""
+    branch_id: int = 0
+    hourly_rate: float = 0.0
+    overtime_amount: float = 0.0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_shiftrate_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class ShiftMultiplier:
+    """Shift pay multiplier (T357)."""
+
+    company_id: int
+    name: str = ""
+    branch_id: int = 0
+    multiplier_value: float = 1.0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_shiftmult_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M50: Appraisal Module
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class AppraisalTemplate:
+    """Appraisal template with sections and questions (T359)."""
+
+    company_id: int
+    name: str = ""
+    sections: str = ""  # JSON: [{title, weight, questions: [{text, type, filled_by, options}]}]
+    enable_weightage: bool = True
+    require_employee_signoff: bool = True
+    is_archived: bool = False
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_apptpl_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class AppraisalPeriod:
+    """Appraisal period for batch reviews (T359)."""
+
+    company_id: int
+    template_id: int
+    name: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    status: str = "draft"  # draft/active/closed
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_appperiod_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class Appraisal:
+    """Individual employee appraisal (T359)."""
+
+    period_id: int = 0
+    employee_id: int
+    reviewer_id: int = 0
+    template_id: int
+    company_id: int
+    status: str = "pending"  # pending/in_progress/submitted/signed_off
+    responses: str = ""  # JSON
+    scores: str = ""  # JSON
+    overall_score: float = 0.0
+    reviewer_comments: str = ""
+    employee_comments: str = ""
+    submitted_at: str = ""
+    signed_off_at: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_appraisal_employee", "fields": ["employee_id"]},
+            {"name": "idx_appraisal_period", "fields": ["period_id"]},
+            {"name": "idx_appraisal_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M51: Org Structure
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class Organization:
+    """Sub-organization within a company (T361)."""
+
+    company_id: int
+    parent_org_id: int = 0
+    name: str = ""
+    code: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_org_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class Branch:
+    """Physical branch location (T361)."""
+
+    company_id: int
+    name: str = ""
+    address: str = ""
+    postal_code: str = ""
+    geofence_radius_meters: int = 100
+    latitude: float = 0.0
+    longitude: float = 0.0
+    is_archived: bool = False
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_branch_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class ApprovalGroup:
+    """Approval routing configuration (T362)."""
+
+    company_id: int
+    name: str = ""
+    approval_type: str = "no_rules"  # no_rules/one_tier/two_tier
+    rules: str = ""  # JSON
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_approvalgrp_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class AdminPermission:
+    """Granular admin permissions (T363)."""
+
+    user_id: int
+    company_id: int
+    permissions: str = ""  # JSON with module-level booleans
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_adminperm_user", "fields": ["user_id"]},
+            {"name": "idx_adminperm_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class HolidayGroup:
+    """Holiday calendar group (T364)."""
+
+    company_id: int
+    name: str = ""
+    holidays: str = ""  # JSON array of {date, name, is_gazetted}
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_holidaygrp_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class CostCentre:
+    """Cost centre for expense tracking (T370)."""
+
+    company_id: int
+    name: str = ""
+    code: str = ""
+    is_active: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_costcentre_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M56: Project Costing
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class Project:
+    """Project for cost tracking (T386)."""
+
+    company_id: int
+    name: str = ""
+    description: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    branch_id: int = 0
+    auto_assign_new_employees: bool = False
+    budget_amount: float = 0.0
+    is_archived: bool = False
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_project_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class ProjectAssignment:
+    """Employee assignment to project (T386)."""
+
+    project_id: int
+    employee_id: int
+    company_id: int
+    assignment_type: str = "timesheet"  # timesheet/attendance/allocation
+    role_id: int = 0
+    is_active: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_projassign_project", "fields": ["project_id"]},
+            {"name": "idx_projassign_employee", "fields": ["employee_id"]},
+        ],
+    }
+
+
+@db.model
+class ProjectRole:
+    """Role with hourly rate for project costing (T386)."""
+
+    company_id: int
+    name: str = ""
+    hourly_rate: float = 0.0
+    remarks: str = ""
+    is_archived: bool = False
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_projrole_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class ProjectOverhead:
+    """Overhead cost for a project (T386)."""
+
+    project_id: int
+    company_id: int
+    overhead_type: str = "project_based"  # project_based/employee_based
+    name: str = ""
+    description: str = ""
+    months: str = ""  # JSON array
+    amount_per_month: float = 0.0
+    remarks: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_projoverhead_project", "fields": ["project_id"]},
+        ],
+    }
+
+
+@db.model
+class TimesheetEntry:
+    """Timesheet entry for project costing (T387)."""
+
+    employee_id: int
+    company_id: int
+    project_id: int
+    entry_date: str = ""
+    hours: float = 0.0
+    minutes: int = 0
+    rate_type: str = "normal"  # normal/overtime/holiday
+    billable: bool = True
+    notes: str = ""
+    created_by_type: str = "employee"  # admin/manager/employee
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_timesheet_employee", "fields": ["employee_id"]},
+            {"name": "idx_timesheet_project", "fields": ["project_id"]},
+            {"name": "idx_timesheet_date", "fields": ["entry_date"]},
+        ],
+    }
+
+
+@db.model
+class ProjectAllocation:
+    """Salary allocation to projects (T388)."""
+
+    employee_id: int
+    company_id: int
+    month: str = ""  # YYYY-MM
+    allocation_type: str = "percentage"  # percentage/nominal/equal
+    base_amount_type: str = "salary"  # salary/custom
+    custom_base_amount: float = 0.0
+    allocations: str = ""  # JSON: [{project_id, percentage_or_amount}]
+    remarks: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_projalloc_employee", "fields": ["employee_id"]},
+            {"name": "idx_projalloc_month", "fields": ["month"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M57: Inventory
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class InventoryLocation:
+    """Storage location for inventory items (T390)."""
+
+    company_id: int
+    name: str = ""
+    organization_scope: str = "all"  # all/specific
+    organization_id: int = 0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_invloc_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class InventoryCategory:
+    """Inventory category within a location (T390)."""
+
+    company_id: int
+    name: str = ""
+    location_id: int
+    tracking_mode: str = "quantity"  # quantity/individual
+    permitted_issuers: str = ""  # JSON
+    permitted_requesters: str = ""  # JSON
+    require_acknowledgment: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_invcat_company", "fields": ["company_id"]},
+            {"name": "idx_invcat_location", "fields": ["location_id"]},
+        ],
+    }
+
+
+@db.model
+class InventoryItem:
+    """Individual inventory item or quantity-based stock (T390)."""
+
+    category_id: int
+    company_id: int
+    location_id: int
+    name: str = ""
+    quantity: int = 0
+    serial_number: str = ""
+    purchase_date: str = ""
+    purchase_price: float = 0.0
+    warranty_expiry: str = ""
+    condition: str = "new"  # new/good/fair/damaged/disposed
+    status: str = "available"  # available/reserved/issued/pending_acknowledgment/returned/disposed
+    assigned_to_employee_id: int = 0
+    assigned_at: str = ""
+    notes: str = ""
+    photo_url: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_invitem_category", "fields": ["category_id"]},
+            {"name": "idx_invitem_company", "fields": ["company_id"]},
+            {"name": "idx_invitem_assigned", "fields": ["assigned_to_employee_id"]},
+        ],
+    }
+
+
+@db.model
+class InventoryMovement:
+    """Audit trail for inventory movements (T391)."""
+
+    item_id: int
+    company_id: int
+    action: str = ""  # created/reserved/issued/acknowledged/returned/disposed/transferred
+    from_employee_id: int = 0
+    to_employee_id: int = 0
+    performed_by: int = 0
+    notes: str = ""
+    movement_date: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_invmove_item", "fields": ["item_id"]},
+            {"name": "idx_invmove_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class InventoryRequest:
+    """Employee request for inventory item (T391)."""
+
+    employee_id: int
+    company_id: int
+    category_id: int
+    item_id: int = 0
+    reason: str = ""
+    status: str = "pending"  # pending/approved/denied
+    approved_by: int = 0
+    denial_reason: str = ""
+    requested_at: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_invreq_employee", "fields": ["employee_id"]},
+            {"name": "idx_invreq_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M58: ATS (Applicant Tracking System)
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class JobListing:
+    """Job listing for recruitment (T393)."""
+
+    company_id: int
+    organization_id: int = 0
+    department: str = ""
+    position_title: str = ""
+    employment_type: str = "full_time"  # full_time/part_time/contract/internship
+    location: str = ""
+    description: str = ""
+    requirements: str = ""
+    salary_range_min: float = 0.0
+    salary_range_max: float = 0.0
+    is_published: bool = False
+    unique_slug: str = ""
+    application_form_config: str = ""  # JSON
+    created_by: int = 0
+    published_at: str = ""
+    closed_at: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_joblisting_company", "fields": ["company_id"]},
+            {"name": "idx_joblisting_slug", "fields": ["unique_slug"]},
+        ],
+    }
+
+
+@db.model
+class Candidate:
+    """Job candidate/applicant (T393)."""
+
+    company_id: int
+    job_listing_id: int
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    nric_fin: str = ""  # encrypted
+    gender: str = ""
+    date_of_birth: str = ""
+    race: str = ""
+    nationality: str = ""
+    citizenship_status: str = ""
+    address: str = ""
+    resume_url: str = ""
+    cover_letter_url: str = ""
+    application_data: str = ""  # JSON
+    source: str = "direct"  # direct/linkedin/indeed/jobstreet/referral/other
+    stage: str = "new"  # new/screening/shortlisted/interview/offered/hired/rejected/withdrawn
+    overall_score: float = 0.0
+    rejection_reason: str = ""
+    pdpa_consent: bool = False
+    pdpa_consent_date: str = ""
+    notes: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_candidate_company", "fields": ["company_id"]},
+            {"name": "idx_candidate_job", "fields": ["job_listing_id"]},
+            {"name": "idx_candidate_stage", "fields": ["stage"]},
+        ],
+    }
+
+
+@db.model
+class InterviewSchedule:
+    """Interview schedule for a candidate (T393)."""
+
+    candidate_id: int
+    company_id: int
+    interview_type: str = "in_person"  # phone/video/in_person/panel
+    scheduled_at: str = ""
+    duration_minutes: int = 60
+    location_or_link: str = ""
+    interviewer_ids: str = ""  # JSON array
+    status: str = "scheduled"  # scheduled/completed/cancelled/no_show
+    notes: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_interview_candidate", "fields": ["candidate_id"]},
+            {"name": "idx_interview_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class InterviewFeedback:
+    """Interviewer feedback for a candidate (T393)."""
+
+    interview_id: int
+    interviewer_id: int
+    company_id: int
+    candidate_id: int
+    scores: str = ""  # JSON: {criteria: score}
+    overall_rating: float = 0.0
+    recommendation: str = ""  # strong_hire/hire/neutral/no_hire/strong_no_hire
+    strengths: str = ""
+    weaknesses: str = ""
+    notes: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_feedback_interview", "fields": ["interview_id"]},
+            {"name": "idx_feedback_candidate", "fields": ["candidate_id"]},
         ],
     }

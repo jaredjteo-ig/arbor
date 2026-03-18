@@ -34,8 +34,8 @@ interface UseObservationReturn {
 
 /* -- Constants ----------------------------------------------------- */
 
-const STORAGE_KEY_VISITS = "aite_observation_visits";
-const STORAGE_KEY_ENABLED = "aite_observation_enabled";
+const STORAGE_KEY_VISITS = "arbor_observation_visits";
+const STORAGE_KEY_ENABLED = "arbor_observation_enabled";
 const MIN_VISITS_FOR_INSIGHT = 3;
 
 /* -- Page label mapping -------------------------------------------- */
@@ -137,7 +137,7 @@ function generateInsights(visits: PageVisit[]): ObservationInsight[] {
     else if (page === "/policies") {
       insights.push({
         id: `obs-policies-${count}`,
-        message: `You've reviewed policies ${count} times. Looking for something specific? Ask AITE.`,
+        message: `You've reviewed policies ${count} times. Looking for something specific? Ask Arbor.`,
         page,
         visitCount: count,
       });

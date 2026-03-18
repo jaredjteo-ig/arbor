@@ -62,7 +62,7 @@ class FinancioAdapter:
                     - account_name: str
                     - description: str
                     - amount: float (positive = debit, negative = credit)
-            account_mapping: Optional dict mapping AITE account types to
+            account_mapping: Optional dict mapping Arbor account types to
                 Financio account codes. Used when chart of accounts differs.
 
         Returns:

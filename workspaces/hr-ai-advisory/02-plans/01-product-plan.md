@@ -6,7 +6,7 @@ An AI-powered HR advisory platform that gives every Singapore SME owner access t
 
 ## Product Name
 
-Working title: **AITE** (AI Trusted Expert)
+Working title: **Arbor** (AI Trusted Expert)
 
 ---
 
@@ -159,7 +159,7 @@ Use as a productivity tool and reference system. Serve more clients, faster.
 
 **Goal**: Ecosystem and advanced capabilities
 
-- HRIS integrations (Talenox, Payboy, Swingvy APIs)
+- HRIS integrations (third-party platform APIs)
 - Advanced document generation (complex employment contracts, collective agreements guidance)
 - Multi-language support (Chinese, Malay, Tamil) if demand warrants
 - Analytics dashboard (workforce composition, compliance status, cost modeling)
@@ -217,7 +217,7 @@ Human consultants make mistakes. Human lawyers give wrong advice. The standard i
 
 ## Open Questions for User Decision
 
-1. **Platform name** — "AITE" is a working title. What do you want to call it?
+1. **Platform name** — "Arbor" is a working title. What do you want to call it?
 2. **Language** — English only at launch, or multi-language from the start?
 3. **Pricing** — Freemium with paid tiers? Flat rate? Per company size?
 4. **Geographic scope** — Singapore only initially, or architect for regional expansion?

@@ -3,7 +3,7 @@
 Search SkillsFuture course catalog, calculate training grant
 eligibility, get course details, and initiate SFC credit payments.
 Unique SG differentiator — employees can discover courses and
-check government training grants directly within AITE.
+check government training grants directly within Arbor.
 
 T251: SkillsFuture SSG Integration (G11)
 """
@@ -344,13 +344,13 @@ class SkillsFutureAdapter:
         """Generate a redirect URL for SkillsFuture Credit payment.
 
         SFC payment is handled entirely by the MySkillsFuture portal.
-        We generate the URL and redirect the employee; AITE does not
+        We generate the URL and redirect the employee; Arbor does not
         handle any credit card or SFC balance data.
 
         Only Singapore citizens are eligible for SFC.
 
         Args:
-            employee_id: AITE employee ID (for audit trail).
+            employee_id: Arbor employee ID (for audit trail).
             course_id: SSG course reference number.
             course_title: Course title for display.
 

@@ -1,7 +1,7 @@
 services:
   caddy:
     image: caddy:2-alpine
-    container_name: aite-caddy
+    container_name: arbor-caddy
     ports:
       - "80:80"
       - "443:443"
@@ -20,7 +20,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.backend
-    container_name: aite-backend
+    container_name: arbor-backend
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
@@ -31,10 +31,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - APP_ENV=production
       - DEBUG=false
-      - CORS_ORIGINS=https://aite.kailash.ai
+      - CORS_ORIGINS=https://arbor.kailash.ai
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
-      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-https://aite.kailash.ai/api/auth/google/callback}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-https://arbor.kailash.ai/api/auth/google/callback}
       - KAILASH_RUNTIME=async
     depends_on:
       postgres:
@@ -53,25 +53,25 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.frontend
       args:
-        NEXT_PUBLIC_API_URL: https://aite.kailash.ai/api
+        NEXT_PUBLIC_API_URL: https://arbor.kailash.ai/api
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
-    container_name: aite-frontend
+    container_name: arbor-frontend
     environment:
-      - NEXT_PUBLIC_API_URL=https://aite.kailash.ai/api
+      - NEXT_PUBLIC_API_URL=https://arbor.kailash.ai/api
       - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
     restart: unless-stopped
 
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: aite-postgres
+    container_name: arbor-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-aite}
+      POSTGRES_USER: ${POSTGRES_USER:-arbor}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-aite}
+      POSTGRES_DB: ${POSTGRES_DB:-arbor}
     volumes:
-      - aite_pgdata:/var/lib/postgresql/data
+      - arbor_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aite}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arbor}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -79,9 +79,9 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: aite-redis
+    container_name: arbor-redis
     volumes:
-      - aite_redis:/data
+      - arbor_redis:/data
     command: redis-server --requirepass ${REDIS_PASSWORD}
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
@@ -91,7 +91,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  aite_pgdata:
-  aite_redis:
+  arbor_pgdata:
+  arbor_redis:
   caddy_data:
   caddy_config:

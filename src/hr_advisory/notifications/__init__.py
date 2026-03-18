@@ -1,4 +1,4 @@
-"""Push Notification System for AITE HR Advisory (T056).
+"""Push Notification System for Arbor HR Advisory (T056).
 
 Delivers proactive notifications to users about regulatory updates,
 compliance deadlines, correction notices, and system announcements.

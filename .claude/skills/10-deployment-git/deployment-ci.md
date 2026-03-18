@@ -1,6 +1,11 @@
-# CI/CD Infrastructure for Python Projects
+# CI/CD Infrastructure for Python SDK
 
-Patterns and principles for CI/CD pipelines in Python projects. Covers GitHub Actions workflows, test matrices, documentation deployment, and release automation.
+> **IMPORTANT**: These are REFERENCE PATTERNS only. Do NOT automatically create `.github/workflows/` files.
+> GitHub Actions minutes are a paid, finite resource. Always ask the user first and present
+> cost implications before creating any workflow. See `/deploy` command's "CI/CD GitHub Actions"
+> section for the required approval flow.
+
+Patterns and principles for CI/CD pipelines. Covers GitHub Actions workflows, multi-platform wheel building, test matrices, documentation deployment, and release automation. Use these patterns as templates when the user explicitly requests CI/CD setup.
 
 ## GitHub Actions Workflow Patterns
 
@@ -34,7 +39,49 @@ jobs:
         run: pytest --tb=short
 ```
 
-### Pure Python Package Build
+### Multi-Platform Wheel Build
+
+For Rust-backed Python packages (using maturin):
+
+```yaml
+name: Build Wheels
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build-wheels:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.target }}
+          path: dist/*.whl
+```
+
+For pure Python packages:
 
 ```yaml
   build:
@@ -64,7 +111,7 @@ jobs:
   # ... build jobs above ...
 
   publish-testpypi:
-    needs: [build]
+    needs: [build-wheels]  # or [build] for pure Python
     runs-on: ubuntu-latest
     environment: testpypi
     permissions:
@@ -72,7 +119,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dist
+          pattern: wheels-*
+          merge-multiple: true
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
@@ -87,7 +135,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dist
+          pattern: wheels-*
+          merge-multiple: true
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
 
@@ -120,8 +169,8 @@ jobs:
 | OS | When to Include | Notes |
 | -- | --------------- | ----- |
 | Linux (ubuntu-latest) | Always | Primary platform |
-| macOS (macos-latest) | If platform-specific code | ARM (M1+) |
-| Windows (windows-latest) | If platform-specific code | MSVC toolchain |
+| macOS (macos-latest) | If platform-specific code or Rust bindings | ARM (M1+) |
+| Windows (windows-latest) | If platform-specific code or Rust bindings | MSVC toolchain |
 
 ### Matrix Optimization
 
@@ -182,13 +231,13 @@ jobs:
 
 ### Preferred: Tag-Triggered Pipeline
 
-The recommended pattern:
+The recommended pattern for SDK repositories:
 
 1. Developer bumps version and updates CHANGELOG
 2. Developer pushes a version tag: `git tag v1.2.3 && git push origin v1.2.3`
 3. CI automatically:
-   - Builds packages
-   - Runs tests on built packages
+   - Builds wheels for all platforms
+   - Runs tests on built wheels
    - Publishes to TestPyPI
    - Publishes to production PyPI
    - Creates GitHub Release with auto-generated notes
@@ -208,16 +257,36 @@ on:
         default: false
 ```
 
+## Self-Hosted Runner Considerations
+
+Consider self-hosted runners when:
+
+- **Rust compilation is slow** on GitHub-hosted runners
+- **Platform-specific hardware** is needed (e.g., GPU testing)
+- **Large test suites** exceed GitHub Actions time limits
+- **Private dependencies** require network access not available on hosted runners
+
+Runner setup:
+
+```bash
+# Install runner (follow GitHub's current instructions)
+# Research: https://docs.github.com/en/actions/hosting-your-own-runners
+
+# Label runners for targeted job assignment
+# runs-on: [self-hosted, linux, x64, rust-builder]
+```
+
 ## CI Debugging
 
 ### Common Failure Patterns
 
 | Symptom | Likely Cause | Fix |
 | ------- | ------------ | --- |
-| Build fails on Linux | Missing system deps | Add `apt-get install` step |
-| Build fails on macOS | Wrong SDK version | Pin macOS runner version |
+| Wheel build fails on Linux | Missing system deps | Add `apt-get install` step |
+| Wheel build fails on macOS | Wrong SDK version | Pin macOS runner version |
 | Tests pass locally, fail on CI | Environment difference | Check Python version, OS, env vars |
 | Publishing fails | Auth misconfigured | Check trusted publisher or token setup |
+| Cross-compile fails | Missing target toolchain | Use appropriate cross-compile action |
 
 ### Debugging Commands
 
@@ -237,9 +306,10 @@ gh run rerun <run-id> --failed
 
 ## What to Research Live
 
-The agent should always research these before configuring -- they change frequently:
+The agent should always research these before configuring — they change frequently:
 
 - Current GitHub Actions action versions (@v4 vs @v5, etc.)
+- Current `maturin-action` version and options
 - Current `gh-action-pypi-publish` version and OIDC setup
 - Current ReadTheDocs build configuration format
 - Current best practices for trusted publisher (OIDC) setup on PyPI

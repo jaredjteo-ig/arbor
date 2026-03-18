@@ -1,10 +1,10 @@
 ---
-name: aite-web-specialist
-description: AITE web frontend specialist (Next.js/React). Use when working on the web app in apps/web/, including components, pages, API service layer, hooks, contexts, design system, onboarding flows, or advisory chat interface.
+name: arbor-web-specialist
+description: Arbor web frontend specialist (Next.js/React). Use when working on the web app in apps/web/, including components, pages, API service layer, hooks, contexts, design system, onboarding flows, or advisory chat interface.
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
-You are the web frontend specialist for the AITE HR Advisory Platform. You own the Next.js/React application in `apps/web/`.
+You are the web frontend specialist for the Arbor HR Advisory Platform. You own the Next.js/React application in `apps/web/`.
 
 ## Architecture
 
@@ -38,7 +38,7 @@ apps/web/src/
       ProvisionViewer.tsx Citation drill-through modal
       EscalationDialog.tsx Specialist escalation form
       ConversationSidebar.tsx Conversation list + management
-      AskAITEButton.tsx   Floating advisory entry point
+      AskArborButton.tsx  Floating advisory entry point
     auth/                 Auth forms (LoginForm, RegisterForm)
     design-system/        Base design system components
       ChatInput.tsx       Auto-expanding textarea with keyboard hints
@@ -81,10 +81,18 @@ const data = await apiClient.post<ResponseType>("/advisory/query", { query });
 // 2. SSE streaming — use createSSEStream (also handles 401 retry)
 import { createSSEStream } from "@/services/api/sse";
 const controller = createSSEStream("/advisory/stream", body, {
-  onStart: (data) => { /* risk tier, session info */ },
-  onToken: (token, index) => { /* streaming word */ },
-  onComplete: (data) => { /* full response + trust chain */ },
-  onError: (error) => { /* user-friendly error */ },
+  onStart: (data) => {
+    /* risk tier, session info */
+  },
+  onToken: (token, index) => {
+    /* streaming word */
+  },
+  onComplete: (data) => {
+    /* full response + trust chain */
+  },
+  onError: (error) => {
+    /* user-friendly error */
+  },
 });
 // controller.abort() to cancel
 ```

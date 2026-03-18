@@ -615,16 +615,16 @@ async def register_employee(
 # --------------------------------------------------------------------------
 # The frontend constructs the Google OAuth URL directly and handles the
 # callback. This endpoint receives the authorization code from the frontend
-# and exchanges it for AITE tokens. Since it returns JSON, the Nexus gateway
+# and exchanges it for Arbor tokens. Since it returns JSON, the Nexus gateway
 # wrapping is harmless.
 
 
 @router.post("/google/exchange")
 async def google_exchange(request: Request):
-    """Exchange a Google OAuth authorization code for AITE tokens.
+    """Exchange a Google OAuth authorization code for Arbor tokens.
 
     Called by the frontend callback page after Google redirects with a code.
-    Returns AITE JWT tokens and user info as JSON.
+    Returns Arbor JWT tokens and user info as JSON.
     """
     import urllib.parse
 
@@ -696,7 +696,7 @@ async def google_exchange(request: Request):
     else:
         logger.info("Google SSO: existing user email=%s, id=%s", email, user.get("id"))
 
-    # Generate AITE JWTs
+    # Generate Arbor JWTs
     access_token = auth_service.create_access_token(
         user_id=user["id"],
         email=user["email"],

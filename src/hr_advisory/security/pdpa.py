@@ -1,6 +1,6 @@
 """PDPA Compliance Helpers (T059).
 
-Personal Data Protection Act compliance for the AITE platform:
+Personal Data Protection Act compliance for the Arbor platform:
 - Data minimisation validation
 - Consent recording and tracking
 - Data retention policy enforcement
@@ -194,7 +194,7 @@ def get_breach_notification_template(
 
     return {
         "to": "Personal Data Protection Commission (PDPC)",
-        "subject": "Data Breach Notification — AITE HR Advisory Platform",
+        "subject": "Data Breach Notification — Arbor HR Advisory Platform",
         "body": (
             f"Dear PDPC,\n\n"
             f"We are writing to notify of a data breach as required under "

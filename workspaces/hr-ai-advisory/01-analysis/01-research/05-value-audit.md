@@ -88,7 +88,7 @@ If the platform only restates what MOM already publishes, it is worthless.
 
 **Complexity**: Low. This is operational, not advisory.
 
-**Can AI handle this?** This is the wrong question. A claims form template adds near-zero value — Google Docs templates, HR software (PayBoy, Talenox, JustLogin), and free downloads from HR community sites already solve this.
+**Can AI handle this?** This is the wrong question. A claims form template adds near-zero value — Google Docs templates, existing HR software, and free downloads from HR community sites already solve this.
 
 **What would add value**: "Here's a claims form template, but based on your company size (>10 employees) and the type of claims you're processing, here's what you must include for IRAS compliance and audit readiness. Also, your current claims process has a gap: you're not capturing GST registration numbers for vendor claims above $1,000, which will cause problems during tax filing."
 
@@ -355,9 +355,9 @@ Singapore SMEs under-invest in HR systematically. Many view compliance as a chec
 
 ### 6. Competition from established players (MEDIUM)
 
-Existing HR software platforms (PayBoy, Talenox, JustLogin, HReasily, Employment Hero) are adding AI features. If any of them bolts on an AI advisory layer, they have an existing user base, existing payment relationships, and existing trust.
+Existing HR software platforms are adding AI features. If any incumbent bolts on an AI advisory layer, they have an existing user base, existing payment relationships, and existing trust.
 
-**Failure scenario**: Talenox or Employment Hero launches "AI HR Advisor" as a feature within their existing payroll platform. SMEs who already use their software get it bundled. Standalone advisory platform cannot compete.
+**Failure scenario**: An established HRIS platform launches "AI HR Advisor" as a feature within their existing payroll platform. SMEs who already use their software get it bundled. Standalone advisory platform cannot compete.
 
 **Mitigation**: Move fast. The window for a dedicated advisory platform may be 12-18 months before incumbents catch up. Alternatively, position as a B2B2B product — license the advisory engine TO existing HR software platforms rather than competing with them.
 

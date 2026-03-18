@@ -127,7 +127,7 @@ class ClaimsSyncAdapter:
         posts to the specified accounting provider.
 
         Args:
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             claims: List of approved claim dicts with:
                 - id: str
                 - category: str (maps to expense account)

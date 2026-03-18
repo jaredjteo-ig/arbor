@@ -2,11 +2,11 @@
 
 ## Overview
 
-AITE is built on the Kailash SDK ecosystem -- four frameworks that handle orchestration, data, API delivery, and AI agents respectively. The platform provides HR advisory services for Singapore SMEs across six regulatory domains.
+Arbor is built on the Kailash SDK ecosystem -- four frameworks that handle orchestration, data, API delivery, and AI agents respectively. The platform provides HR advisory services for Singapore SMEs across six regulatory domains.
 
 ## Kailash SDK Ecosystem
 
-| Framework    | Role                            | Key Usage in AITE                                   |
+| Framework    | Role                            | Key Usage in Arbor                                   |
 | ------------ | ------------------------------- | --------------------------------------------------- |
 | **Core SDK** | Workflow orchestration          | Calculators, classification, guardrails, compliance |
 | **DataFlow** | Zero-config database operations | Company/user models, KB models, auto-generated CRUD |
@@ -32,11 +32,17 @@ Client (Web / CLI / MCP)
   Business Logic
   |- Advisory safety chain (13 steps)
   |- Calculators (CPF, leave, cost-to-company, quota/levy)
-  |- Payroll engine (gross-to-net, CPF, SDL, FWL, SHG)
-  |- Leave management (types, application, approval, calendar)
-  |- Claims & expenses (submission, approval, payroll integration)
-  |- Attendance (clock in/out, GPS, lateness, overtime)
-  |- Shift scheduling (templates, assignments, availability, hours)
+  |- Payroll engine (pay items, schemes, adhoc, simulation, variance, line items)
+  |- Leave management (11 types, hourly, encashment, off-in-lieu, carry-forward)
+  |- Claims & expenses (groups, co-payment, BIK, payroll integration with cut-off)
+  |- Attendance (clock in/out, lateness brackets, auto clock-out, today dashboard)
+  |- Shift scheduling (templates, hourly rates, multipliers, publish workflow)
+  |- Appraisals (templates, periods, reviews, sign-off workflow)
+  |- Projects (assignments, timesheets, allocations, cost calculations, budget variance)
+  |- Inventory (locations, categories, items, lifecycle state machine, requests, audit trail)
+  |- Recruitment (job listings, candidate pipeline, interviews, feedback, hire-to-employee)
+  |- Reports (11 types: payroll, CPF, banks, YTD, variance, leave, claims, attendance, etc.)
+  |- Approval workflows (approval groups, timesheet approvals, inventory request approvals)
   |- Statutory file generation (CPF e-Submit, IR8A, IR21, bank GIRO, payslips)
   |- Compliance checker
   |- Document generator
@@ -49,7 +55,7 @@ Client (Web / CLI / MCP)
   |- Anti-amnesia constraints
        |
   Data Layer
-  |- DataFlow models -> PostgreSQL
+  |- 60+ DataFlow models -> PostgreSQL
   |- Knowledge base (6 domains, provisions, cross-references)
   |- pgvector for semantic search (keyword-density fallback)
   |- Redis for sessions and token blocklist

@@ -68,7 +68,7 @@ Evaluated all flows from a skeptical enterprise buyer perspective — value prop
 | CPF/Leave/Salary calculators           | **REAL** — actual Singapore rates (2026 data)                                           |
 | Document generation                    | **REAL** — 12 templates with field validation                                           |
 | Knowledge Base                         | **REAL** — 24 provisions across 9 domains from actual Singapore legislation             |
-| HRIS adapters (Talenox/Payboy/Swingvy) | **INTENTIONAL NotImplementedError** — redirects to CSV import (no API partnerships yet) |
+| HRIS adapters (third-party platforms)  | **INTENTIONAL NotImplementedError** — redirects to CSV import (no API partnerships yet) |
 | Push notifications (FCM)               | **GRACEFUL DEGRADATION** — returns False when not configured, logs warning              |
 | Password reset emails                  | **GRACEFUL DEGRADATION** — checks for SENDGRID_API_KEY, warns when not configured       |
 | Error correction session lookup        | **REAL** — queries trust chain attestations for affected provisions                     |

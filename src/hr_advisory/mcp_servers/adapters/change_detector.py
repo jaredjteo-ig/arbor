@@ -288,8 +288,8 @@ class ChangeDetectionEngine:
     def _request_headers() -> dict[str, str]:
         return {
             "User-Agent": (
-                "Mozilla/5.0 (compatible; AITE-Regulatory-Monitor/1.0; "
-                "+https://aite.sg; legal-compliance-monitoring)"
+                "Mozilla/5.0 (compatible; Arbor-Regulatory-Monitor/1.0; "
+                "+https://arbor.sg; legal-compliance-monitoring)"
             ),
             "Accept": "text/html, application/xhtml+xml, */*",
             "Accept-Language": "en-SG,en;q=0.9",
@@ -381,7 +381,7 @@ class ChangeDetectionEngine:
         if rp is None:
             return True  # No robots.txt or fetch failed — allow
 
-        return rp.can_fetch("AITE-Regulatory-Monitor", url)
+        return rp.can_fetch("Arbor-Regulatory-Monitor", url)
 
     async def _fetch_robots(self, domain: str) -> Optional[RobotFileParser]:
         """Fetch and parse robots.txt for a domain."""

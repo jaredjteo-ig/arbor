@@ -1,6 +1,6 @@
 """Help centre API router — FAQ articles and getting-started guide.
 
-Provides real, actionable content about using the AITE platform features
+Provides real, actionable content about using the Arbor platform features
 for Singapore SME HR compliance and advisory.
 """
 
@@ -53,7 +53,7 @@ _FAQ_ARTICLES: list[HelpArticle] = [
         title="How does the HR Advisory chat work?",
         content=(
             "The Advisory chat lets you ask any HR question in plain English. "
-            "AITE searches its knowledge base of Singapore employment law -- including the Employment Act, "
+            "Arbor searches its knowledge base of Singapore employment law -- including the Employment Act, "
             "CPF Act, WICA, PDPA, and tripartite guidelines -- then gives you a grounded answer with "
             "specific provision references. Every response includes a confidence score and risk tier "
             "(green, amber, or red) so you know when the answer is straightforward and when you should "
@@ -70,7 +70,7 @@ _FAQ_ARTICLES: list[HelpArticle] = [
             "straightforward to apply. Amber means there is some ambiguity -- the law may require "
             "interpretation for your specific situation, or multiple provisions interact in complex ways. "
             "Red means the topic is high-risk (e.g. dismissal, discrimination, data breach) and you should "
-            "consult an employment law specialist before acting. AITE will never give definitive legal "
+            "consult an employment law specialist before acting. Arbor will never give definitive legal "
             "advice on red-tier topics -- it will explain what the law says and recommend next steps."
         ),
         category="Advisory",
@@ -78,11 +78,11 @@ _FAQ_ARTICLES: list[HelpArticle] = [
     ),
     HelpArticle(
         id="faq-advisory-03",
-        title="Can I trust the answers AITE gives?",
+        title="Can I trust the answers Arbor gives?",
         content=(
-            "AITE grounds every answer in specific provisions from Singapore employment legislation and "
+            "Arbor grounds every answer in specific provisions from Singapore employment legislation and "
             "tripartite guidelines. Each response shows which provisions were cited and whether those "
-            "citations were validated against the knowledge base. However, AITE is an advisory tool, not "
+            "citations were validated against the knowledge base. However, Arbor is an advisory tool, not "
             "a lawyer. For complex or high-stakes situations (terminations, claims, investigations), always "
             "verify with a qualified employment law professional. The confidence score tells you how well "
             "the answer is supported by the knowledge base."
@@ -152,7 +152,7 @@ _FAQ_ARTICLES: list[HelpArticle] = [
         id="faq-docs-01",
         title="What document templates are available?",
         content=(
-            "AITE provides templates for common employment documents required by Singapore law, including:\n\n"
+            "Arbor provides templates for common employment documents required by Singapore law, including:\n\n"
             "- Key Employment Terms (KETs) -- mandatory under EA s95 for all employees\n"
             "- Employment contracts\n"
             "- Payslip templates -- compliant with EA s88A requirements\n"
@@ -171,7 +171,7 @@ _FAQ_ARTICLES: list[HelpArticle] = [
         content=(
             "The templates include all fields and clauses required by Singapore employment legislation "
             "(Employment Act, CPF Act, etc.). They are designed to meet minimum statutory requirements. "
-            "However, AITE-generated documents are starting points -- you should review them for your "
+            "However, Arbor-generated documents are starting points -- you should review them for your "
             "specific business context and have legal counsel review any document before use in "
             "situations involving disputes, terminations, or significant contractual obligations."
         ),
@@ -226,12 +226,12 @@ _FAQ_ARTICLES: list[HelpArticle] = [
         id="faq-profile-01",
         title="Why should I set up my company profile?",
         content=(
-            "Your company profile helps AITE give you more relevant advice. When AITE knows your "
+            "Your company profile helps Arbor give you more relevant advice. When Arbor knows your "
             "industry, headcount, and workforce composition, it can highlight regulations that "
             "specifically apply to your business. For example, companies in the food services sector "
             "have PWM obligations, companies with foreign workers have levy and quota requirements, "
             "and companies above certain headcount thresholds have additional reporting obligations. "
-            "Without a profile, AITE gives general guidance; with a profile, it can flag what "
+            "Without a profile, Arbor gives general guidance; with a profile, it can flag what "
             "specifically matters to you."
         ),
         category="Getting Started",
@@ -242,10 +242,10 @@ _FAQ_ARTICLES: list[HelpArticle] = [
         id="faq-account-01",
         title="How is my data protected?",
         content=(
-            "AITE uses industry-standard security practices: encrypted connections (HTTPS/TLS), "
+            "Arbor uses industry-standard security practices: encrypted connections (HTTPS/TLS), "
             "JWT-based authentication with automatic token rotation, and role-based access control. "
             "Your company data and conversation history are stored securely and not shared with "
-            "other users or companies. AITE complies with PDPA data protection requirements. "
+            "other users or companies. Arbor complies with PDPA data protection requirements. "
             "Advisory conversations are retained for your reference but can be deleted on request."
         ),
         category="Account & Security",
@@ -254,9 +254,9 @@ _FAQ_ARTICLES: list[HelpArticle] = [
 ]
 
 _GETTING_STARTED: GettingStartedResponse = GettingStartedResponse(
-    title="Get started with AITE",
+    title="Get started with Arbor",
     introduction=(
-        "AITE is your AI-powered HR compliance assistant for Singapore employment law. "
+        "Arbor is your AI-powered HR compliance assistant for Singapore employment law. "
         "It helps you understand your legal obligations, calculate statutory contributions, "
         "check your compliance status, generate compliant documents, and respond to "
         "emergencies. Here is how to get the most out of it."
@@ -266,8 +266,8 @@ _GETTING_STARTED: GettingStartedResponse = GettingStartedResponse(
             step_number=1,
             title="Set up your company profile",
             description=(
-                "Tell AITE about your company -- industry, headcount, and workforce composition. "
-                "This helps AITE highlight the specific regulations that apply to your business, "
+                "Tell Arbor about your company -- industry, headcount, and workforce composition. "
+                "This helps Arbor highlight the specific regulations that apply to your business, "
                 "such as PWM requirements for certain sectors or foreign worker levy obligations."
             ),
             action_label="Go to Company Profile",
@@ -279,7 +279,7 @@ _GETTING_STARTED: GettingStartedResponse = GettingStartedResponse(
             description=(
                 "Open the Advisory chat and ask any HR question in plain English. For example: "
                 "'What are my obligations when terminating an employee?' or 'How much CPF do I "
-                "need to contribute for a 60-year-old employee earning $4,000?' AITE will give "
+                "need to contribute for a 60-year-old employee earning $4,000?' Arbor will give "
                 "you a grounded answer with specific provision references."
             ),
             action_label="Open Advisory",
@@ -341,7 +341,7 @@ _GETTING_STARTED: GettingStartedResponse = GettingStartedResponse(
 async def list_help_articles(
     category: str | None = None,
 ) -> HelpArticleListResponse:
-    """Return FAQ articles about using AITE.
+    """Return FAQ articles about using Arbor.
 
     Optionally filter by category. No authentication required --
     help content is publicly accessible.

@@ -1,10 +1,10 @@
-# AITE Connector Catalog — 38 Connectors
+# Arbor Connector Catalog — 38 Connectors
 
-Every connector AITE will build, organized by MCP server. Each entry includes the external API, authentication method, key operations, and implementation approach.
+Every connector Arbor will build, organized by MCP server. Each entry includes the external API, authentication method, key operations, and implementation approach.
 
 ---
 
-## MCP Server 1: aite-government (12 connectors)
+## MCP Server 1: arbor-government (12 connectors)
 
 ### G01: CPF APEX Submission
 
@@ -96,7 +96,7 @@ Every connector AITE will build, organized by MCP server. Each entry includes th
 - **Auth**: API key (SSG approval required)
 - **Operations**: Search courses, calculate grant eligibility, enable SFC credit payment, submit enrollment records
 - **Pricing**: Free (government service)
-- **Value**: Unique SG differentiator — employees can browse SkillsFuture courses, check grants, and use credits from within AITE
+- **Value**: Unique SG differentiator — employees can browse SkillsFuture courses, check grants, and use credits from within Arbor
 
 ### G12: MyInfo Business (Company)
 
@@ -107,7 +107,7 @@ Every connector AITE will build, organized by MCP server. Each entry includes th
 
 ---
 
-## MCP Server 2: aite-accounting (5 connectors)
+## MCP Server 2: arbor-accounting (5 connectors)
 
 ### A01: Xero Integration
 
@@ -144,7 +144,7 @@ Every connector AITE will build, organized by MCP server. Each entry includes th
 - **Auth**: TBD (partner access required)
 - **Operations**: Post payroll journal, export GL data
 - **Prerequisite**: Partnership application to ABSS
-- **Fallback**: Export payroll journal as text file for manual Financio import (Payboy does this)
+- **Fallback**: Export payroll journal as text file for manual Financio import (common HRIS pattern)
 
 ### A05: Generic Accounting Export
 
@@ -155,7 +155,7 @@ Every connector AITE will build, organized by MCP server. Each entry includes th
 
 ---
 
-## MCP Server 3: aite-banking (7 connectors)
+## MCP Server 3: arbor-banking (7 connectors)
 
 ### B01: ISO 20022 GIRO File Generator
 
@@ -200,7 +200,7 @@ Every connector AITE will build, organized by MCP server. Each entry includes th
 - **Auth**: Client ID + API key
 - **Operations**: Single and bulk payouts, multi-currency, domestic + cross-border
 - **Docs**: docs.gateway.aspireapp.com
-- **Value**: Modern neobank API, good for SMEs. Aspire already partnered with Payboy.
+- **Value**: Modern neobank API, good for SMEs. Aspire has existing partnerships with SG HRIS platforms.
 
 ### B07: PayNow QR Generator
 
@@ -211,7 +211,7 @@ Every connector AITE will build, organized by MCP server. Each entry includes th
 
 ---
 
-## MCP Server 4: aite-communications (8 connectors)
+## MCP Server 4: arbor-communications (8 connectors)
 
 ### C01: Resend Email
 
@@ -280,7 +280,7 @@ Every connector AITE will build, organized by MCP server. Each entry includes th
 
 ---
 
-## MCP Server 5: aite-regulatory (6 connectors)
+## MCP Server 5: arbor-regulatory (6 connectors)
 
 ### R01: SSO Per-Act RSS Monitor
 
@@ -332,7 +332,7 @@ Every connector AITE will build, organized by MCP server. Each entry includes th
 - **No external API** — internal LLM-based classifier
 - **Operations**: When any monitor (R01-R05) detects a change:
   1. Classify: Is this change relevant to HR/employment? (filter noise)
-  2. Map: Which AITE modules are affected? (payroll, leave, CPF, foreign workers, etc.)
+  2. Map: Which Arbor modules are affected? (payroll, leave, CPF, foreign workers, etc.)
   3. Summarize: Plain-language summary for admin notification
   4. Queue: Create update task in regulatory_updates pipeline
 - **Value**: Turns raw change detection into actionable regulatory intelligence
@@ -343,11 +343,11 @@ Every connector AITE will build, organized by MCP server. Each entry includes th
 
 | MCP Server          | Connectors | External APIs                | Ready to Build               | Needs Partnership/Registration                       |
 | ------------------- | ---------- | ---------------------------- | ---------------------------- | ---------------------------------------------------- |
-| aite-government     | 12         | 8 real APIs + 4 data sources | G08, G09 (data.gov.sg)       | G01-G05 (OSP), G06 (Singpass), G10 (ACRA), G11 (SSG) |
-| aite-accounting     | 5          | 4 OAuth APIs + 1 file gen    | A01-A03, A05                 | A04 (Financio partner)                               |
-| aite-banking        | 7          | 4 bank APIs + 3 file/QR gen  | B01, B02, B07                | B03-B06 (bank corporate accounts)                    |
-| aite-communications | 8          | 6 APIs + 2 calendar APIs     | C01, C02, C04, C05, C07, C08 | C03 (Meta business verification)                     |
-| aite-regulatory     | 6          | 2 APIs + 4 monitoring        | All ready                    | None                                                 |
+| arbor-government     | 12         | 8 real APIs + 4 data sources | G08, G09 (data.gov.sg)       | G01-G05 (OSP), G06 (Singpass), G10 (ACRA), G11 (SSG) |
+| arbor-accounting     | 5          | 4 OAuth APIs + 1 file gen    | A01-A03, A05                 | A04 (Financio partner)                               |
+| arbor-banking        | 7          | 4 bank APIs + 3 file/QR gen  | B01, B02, B07                | B03-B06 (bank corporate accounts)                    |
+| arbor-communications | 8          | 6 APIs + 2 calendar APIs     | C01, C02, C04, C05, C07, C08 | C03 (Meta business verification)                     |
+| arbor-regulatory     | 6          | 2 APIs + 4 monitoring        | All ready                    | None                                                 |
 | **Total**           | **38**     |                              | **17 ready now**             | **21 need registration**                             |
 
 **17 connectors can be built immediately** without any external partnership. The remaining 21 require registration processes (OSP, Singpass, bank corporate accounts, Meta business verification) that can proceed in parallel with development.

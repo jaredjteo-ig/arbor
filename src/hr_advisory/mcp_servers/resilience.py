@@ -249,7 +249,7 @@ def check_rate_limit(tenant_id: str, provider: str) -> None:
     If no rate limiter is configured for the provider, passes through silently.
 
     Args:
-        tenant_id: AITE company/tenant ID.
+        tenant_id: Arbor company/tenant ID.
         provider: Provider key matching RATE_LIMITERS (e.g. "xero", "zoho").
 
     Raises:

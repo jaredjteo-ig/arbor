@@ -1,7 +1,7 @@
 """HReasily API adapter for employee data import.
 
 Fetches employee records, payroll history, and leave balances from
-HReasily for companies migrating to AITE. Read-only — same pattern
+HReasily for companies migrating to Arbor. Read-only — same pattern
 as the Talenox adapter. HReasily uses a unified REST API.
 
 T250: HReasily Data Import Connector
@@ -32,7 +32,7 @@ class HREasilyAPIError(Exception):
         super().__init__(f"HReasily API [{status_code}]: {detail}")
 
 
-# Field mapping: HReasily field name -> AITE Employee model field name.
+# Field mapping: HReasily field name -> Arbor Employee model field name.
 _FIELD_MAPPING: dict[str, str] = {
     "id": "external_id",
     "first_name": "first_name",
@@ -63,7 +63,7 @@ _FIELD_MAPPING: dict[str, str] = {
 
 
 def _normalize_nationality(raw: Optional[str]) -> str:
-    """Normalize HReasily nationality values to AITE format."""
+    """Normalize HReasily nationality values to Arbor format."""
     if not raw:
         return "foreigner"
     normalized = raw.lower().strip()
@@ -116,7 +116,7 @@ class HREasilyAdapter:
         adapter = HREasilyAdapter()
         employees = await adapter.fetch_employees(api_token="hre_...")
         for emp in employees:
-            mapped = adapter.map_to_aite_employee(emp)
+            mapped = adapter.map_to_arbor_employee(emp)
     """
 
     def __init__(self):
@@ -258,21 +258,21 @@ class HREasilyAdapter:
         logger.info("Fetched leave balances for %d employees from HReasily", len(balances))
         return balances
 
-    def map_to_aite_employee(self, hreasily_record: dict) -> dict:
-        """Map a single HReasily employee record to AITE's employee format.
+    def map_to_arbor_employee(self, hreasily_record: dict) -> dict:
+        """Map a single HReasily employee record to Arbor's employee format.
 
         Args:
             hreasily_record: Raw employee dict from HReasily API.
 
         Returns:
-            Dict with AITE employee field names and normalized values.
+            Dict with Arbor employee field names and normalized values.
         """
         mapped: dict[str, Any] = {}
 
-        for hre_field, aite_field in _FIELD_MAPPING.items():
+        for hre_field, arbor_field in _FIELD_MAPPING.items():
             value = hreasily_record.get(hre_field)
-            if value is not None and aite_field not in mapped:
-                mapped[aite_field] = value
+            if value is not None and arbor_field not in mapped:
+                mapped[arbor_field] = value
 
         # Build full name if not already present
         if "name" not in mapped:

@@ -18,51 +18,17 @@ The Singapore SME HR advisory space is fragmented across three distinct layers: 
 
 These platforms handle the _operational mechanics_ of HR — payroll processing, leave management, claims, timesheets. They are NOT advisory platforms.
 
-#### Talenox
+#### Singapore HRIS Platform Landscape
 
-| Dimension                 | Assessment                                                                                                                                                                                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **What they do well**     | Payroll processing (SG/MY/HK), CPF submission integration, IRAS IR8A auto-filing, clean UI, free tier for small teams.                                                                                                         |
-| **What they DON'T cover** | Zero advisory capability. No guidance on employment law compliance, no interpretation of regulations, no templates for HR policies.                                                                                            |
-| **Pricing**               | Free for core payroll (up to 5 employees on legacy plans); paid plans from ~SGD 5/employee/month.                                                                                                                              |
-| **Target market**         | Micro to small businesses (1-50 employees), startups.                                                                                                                                                                          |
-| **Gaps we fill**          | Talenox users get payroll done but have no idea if their employment contracts comply with EA requirements, whether their termination process is legally sound, or how foreign worker levy changes affect their cost structure. |
+The Singapore market has several established HRIS/payroll platforms serving SMEs. Key characteristics of the market:
 
-#### HReasily
-
-| Dimension                 | Assessment                                                                                                                |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **What they do well**     | Payroll, leave, claims, expense management. Regional coverage (SG, MY, PH, ID, HK). Mobile app for employee self-service. |
-| **What they DON'T cover** | Same fundamental gap — purely operational. No compliance advisory, no regulatory interpretation.                          |
-| **Pricing**               | From ~SGD 3/employee/month.                                                                                               |
-| **Target market**         | SMEs across Southeast Asia, 10-200 employees.                                                                             |
-
-#### Payboy
-
-| Dimension                 | Assessment                                                                                                                    |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **What they do well**     | Payroll, CPF, leave, claims, attendance tracking. Strong CPF integration. Singapore-focused. Has a blog with some HR content. |
-| **What they DON'T cover** | Blog content is generic and not personalized. No interactive advisory. No sector-specific guidance.                           |
-| **Pricing**               | From ~SGD 4/employee/month.                                                                                                   |
-| **Target market**         | Singapore SMEs, 5-100 employees.                                                                                              |
-
-#### JustLogin
-
-| Dimension                 | Assessment                                                                                                  |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **What they do well**     | One of the oldest SG HRIS platforms. Leave, attendance, payroll, expense claims. Established customer base. |
-| **What they DON'T cover** | Legacy platform feel. No advisory layer. No AI capabilities.                                                |
-| **Pricing**               | From ~SGD 5/employee/month, modular pricing.                                                                |
-| **Target market**         | SMEs and mid-market, 20-500 employees.                                                                      |
-
-#### Swingvy
-
-| Dimension                 | Assessment                                                                                                          |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **What they do well**     | Modern UI, digital HR hub. Good onboarding flow. Regional coverage (SG, MY). Some benefits marketplace integration. |
-| **What they DON'T cover** | No compliance advisory. No AI-powered Q&A. Limited policy template support.                                         |
-| **Pricing**               | From ~SGD 5/employee/month.                                                                                         |
-| **Target market**         | Modern SMEs, 10-100 employees. Tech-savvy founders.                                                                 |
+| Dimension                 | Typical SG HRIS Platform                                                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Core capabilities**     | Payroll processing, CPF submission, leave management, claims, attendance. Some offer regional coverage (MY, HK, PH, ID).     |
+| **What they DON'T cover** | Zero advisory capability. No guidance on employment law compliance, no interpretation of regulations, no HR policy templates. |
+| **Pricing**               | Typically SGD 3-10/employee/month. Some offer limited free tiers for micro businesses.                                       |
+| **Target market**         | Singapore SMEs, 1-200 employees.                                                                                              |
+| **Gaps we fill**          | HRIS users get payroll done but have no idea if their employment contracts comply with EA requirements, whether their termination process is legally sound, or how regulatory changes affect their cost structure. |
 
 #### HRIS Platform Gap Summary
 
@@ -254,7 +220,7 @@ These platforms handle the _operational mechanics_ of HR — payroll processing,
 - Foreign worker strategy (quota optimization, levy planning, COMPASS scoring simulation)
 - Growth stage guidance (milestone-triggered advisory)
 - Dispute prevention engine (proactive alerts when practices create risk)
-- HRIS integration (Talenox, Payboy, Swingvy APIs)
+- HRIS integration (third-party platform APIs)
 
 ---
 

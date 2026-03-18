@@ -10,7 +10,7 @@ User signs up and completes onboarding. This is their first session with the sha
 
 1. **Dashboard loads with shadow widget**
    - Bottom-right: subtle 36px breathing circle (the shadow widget)
-   - Tooltip on hover: "Ask AITE anything (Ctrl+Shift+A)"
+   - Tooltip on hover: "Ask Arbor anything (Ctrl+Shift+A)"
    - No margin yet (first session — margin appears after the agent has observations to show)
    - Dashboard shows Getting Started steps as before
 
@@ -46,7 +46,7 @@ User has experienced the shadow agent as a command surface (not a chatbot) and s
 
 ### Trigger
 
-Returning admin user opens AITE on a Monday morning.
+Returning admin user opens Arbor on a Monday morning.
 
 ### Steps
 
@@ -89,12 +89,12 @@ Admin has handled Monday compliance tasks with shadow agent assistance, without 
 
 ### Trigger
 
-Employee (invited by admin) logs into their AITE account.
+Employee (invited by admin) logs into their Arbor account.
 
 ### Steps
 
 1. **Employee dashboard loads**
-   - Simplified navigation: My Dashboard, My Leave, My Terms, Policies, Ask AITE
+   - Simplified navigation: My Dashboard, My Leave, My Terms, Policies, Ask Arbor
    - No admin pages (Compliance, Calculators, Documents, Clients, Analytics, Emergency)
    - Shadow widget present (same breathing circle)
    - Dashboard shows:
@@ -131,7 +131,7 @@ Employee got answers to their HR questions and submitted a leave request without
 
 ### Trigger
 
-Experienced admin user who has been using AITE for weeks. Shadow agent has learned their patterns.
+Experienced admin user who has been using Arbor for weeks. Shadow agent has learned their patterns.
 
 ### Steps
 
@@ -224,7 +224,7 @@ A regulatory change occurs (e.g., CPF rate update), or a compliance deadline app
 
 ### Steps
 
-1. **User opens AITE on any page**
+1. **User opens Arbor on any page**
    - Shadow widget shows attention state: gentle ripple every 5 seconds
    - Right margin has a new context dot with a distinct colour (amber for attention)
 

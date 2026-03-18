@@ -103,7 +103,7 @@ export function CompanySetupModal({
               <Building2 className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-3">
-              Welcome to AITE
+              Welcome to Arbor
             </h2>
             <p className="text-gray-600 mb-2">
               Set up your company to unlock the full HR management suite —

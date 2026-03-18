@@ -15,7 +15,7 @@ def get_vector_adapter() -> PostgreSQLVectorAdapter:
     """Create the pgvector adapter for provision embeddings."""
     database_url = os.environ.get(
         "DATABASE_URL",
-        "postgresql://aite:aite@localhost:5432/aite",
+        "postgresql://arbor:arbor@localhost:5432/arbor",
     )
     return PostgreSQLVectorAdapter(
         database_url,

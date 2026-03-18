@@ -573,7 +573,7 @@ def _decrypt_jwe_response(jwe_string: str) -> dict:
 
 
 def _map_person_to_employee(myinfo_data: dict) -> dict:
-    """Map MyInfo person data fields to AITE Employee model fields.
+    """Map MyInfo person data fields to Arbor Employee model fields.
 
     MyInfo fields use a nested structure with 'value' and optional
     'source' and 'classification' metadata.
@@ -751,7 +751,7 @@ async def fetch_business_data(
 
 
 def _map_business_to_company(biz_data: dict) -> dict:
-    """Map MyInfo Business data to AITE Company model fields."""
+    """Map MyInfo Business data to Arbor Company model fields."""
     entity = biz_data.get("entity", biz_data)
 
     def _val(field: Any) -> Any:

@@ -149,7 +149,7 @@ class RedisSessionStore:
             self._using_fallback = True
 
     def _key(self, session_id: str) -> str:
-        return f"aite:session:{session_id}"
+        return f"arbor:session:{session_id}"
 
     def create(
         self,
@@ -211,7 +211,7 @@ class RedisSessionStore:
             return self._fallback.count()
 
         try:
-            keys = self._redis.keys("aite:session:*")
+            keys = self._redis.keys("arbor:session:*")
             return len(keys)
         except Exception:
             return self._fallback.count()

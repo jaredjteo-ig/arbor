@@ -5,6 +5,7 @@ availability checks, and weekly hours tracking with Employment Act limits.
 """
 
 import logging
+import math
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
@@ -16,6 +17,20 @@ from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Input length limits
+MAX_TEXT_LENGTH = 2000
+MAX_NAME_LENGTH = 200
+
+
+def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_LENGTH) -> str:
+    """Validate text input to maximum length."""
+    if value and len(value) > max_len:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field_name} exceeds maximum length of {max_len} characters.",
+        )
+    return value
 
 
 # --------------------------------------------------------------------------
@@ -136,6 +151,8 @@ async def create_shift_template(
     name = body.get("name", "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="name is required.")
+
+    _validate_text_length(name, "name", MAX_NAME_LENGTH)
 
     template = _dataflow_create(
         "ShiftTemplateCreateNode",
@@ -605,3 +622,182 @@ async def get_weekly_hours(
         "employees": employees_data,
         "warnings": warnings,
     }
+
+
+# ==========================================================================
+# HOURLY RATES (T357)
+# ==========================================================================
+
+
+@router.get("/hourly-rates")
+async def list_hourly_rates(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List shift hourly rates for the current company."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    rates = _dataflow_list("ShiftHourlyRateListNode", {"company_id": company_id})
+    return {"hourly_rates": rates, "count": len(rates)}
+
+
+@router.post("/hourly-rates")
+async def create_hourly_rate(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Create a new shift hourly rate."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    body = await request.json()
+    name = body.get("name", "").strip()
+    rate = float(body.get("rate", 0))
+
+    if not math.isfinite(rate):
+        raise HTTPException(status_code=400, detail="Invalid numeric value.")
+    if not name or rate <= 0:
+        raise HTTPException(status_code=400, detail="name and a positive rate are required.")
+
+    _validate_text_length(name, "name", MAX_NAME_LENGTH)
+    _validate_text_length(body.get("description", ""), "description")
+
+    record = _dataflow_create(
+        "ShiftHourlyRateCreateNode",
+        {
+            "company_id": company_id,
+            "name": name,
+            "rate": rate,
+            "currency": body.get("currency", "SGD"),
+            "description": body.get("description", ""),
+            "is_active": True,
+        },
+    )
+    return {"hourly_rate": record}
+
+
+@router.patch("/hourly-rates/{rate_id}")
+async def update_hourly_rate(
+    rate_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Update a shift hourly rate."""
+    company_id = get_current_company_id(current_user)
+    existing = _dataflow_read("ShiftHourlyRateReadNode", rate_id)
+    if existing is None or existing.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Hourly rate not found.")
+
+    body = await request.json()
+    allowed = {"name", "rate", "currency", "description", "is_active"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    _dataflow_update("ShiftHourlyRateUpdateNode", rate_id, updates)
+    updated = _dataflow_read("ShiftHourlyRateReadNode", rate_id)
+    return {"hourly_rate": updated}
+
+
+# ==========================================================================
+# MULTIPLIERS (T357)
+# ==========================================================================
+
+
+@router.get("/multipliers")
+async def list_multipliers(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List shift multipliers (OT, PH, weekend rates) for the current company."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    multipliers = _dataflow_list("ShiftMultiplierListNode", {"company_id": company_id})
+    return {"multipliers": multipliers, "count": len(multipliers)}
+
+
+@router.post("/multipliers")
+async def create_multiplier(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Create a shift multiplier (e.g. 1.5x OT, 2x PH).
+
+    Body: {name, multiplier, applies_to, description}
+    applies_to: weekday_ot, weekend, public_holiday, night, custom
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    body = await request.json()
+    name = body.get("name", "").strip()
+    multiplier = float(body.get("multiplier", 0))
+    applies_to = body.get("applies_to", "").strip()
+
+    if not math.isfinite(multiplier):
+        raise HTTPException(status_code=400, detail="Invalid numeric value.")
+    if not name or multiplier <= 0:
+        raise HTTPException(status_code=400, detail="name and a positive multiplier are required.")
+
+    _validate_text_length(name, "name", MAX_NAME_LENGTH)
+    _validate_text_length(body.get("description", ""), "description")
+
+    valid_applies_to = {"weekday_ot", "weekend", "public_holiday", "night", "custom"}
+    if applies_to and applies_to not in valid_applies_to:
+        raise HTTPException(
+            status_code=400,
+            detail=f"applies_to must be one of: {', '.join(sorted(valid_applies_to))}.",
+        )
+
+    record = _dataflow_create(
+        "ShiftMultiplierCreateNode",
+        {
+            "company_id": company_id,
+            "name": name,
+            "multiplier": multiplier,
+            "applies_to": applies_to,
+            "description": body.get("description", ""),
+            "is_active": True,
+        },
+    )
+    return {"multiplier": record}
+
+
+# ==========================================================================
+# PUBLISH SINGLE SHIFT (T358)
+# ==========================================================================
+
+
+@router.post("/{shift_id}/publish")
+async def publish_single_shift(
+    shift_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Publish a single shift assignment (makes it visible to the employee)."""
+    company_id = get_current_company_id(current_user)
+    existing = _dataflow_read("ShiftAssignmentReadNode", shift_id)
+    if existing is None or existing.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Shift assignment not found.")
+
+    if existing.get("status") == "cancelled":
+        raise HTTPException(status_code=400, detail="Cannot publish a cancelled shift.")
+
+    now = datetime.now(timezone.utc).isoformat()
+    actor_id = int(current_user.get("sub", 0))
+
+    _dataflow_update(
+        "ShiftAssignmentUpdateNode",
+        shift_id,
+        {
+            "status": "published",
+            "published_at": now,
+            "published_by": actor_id,
+        },
+    )
+
+    updated = _dataflow_read("ShiftAssignmentReadNode", shift_id)
+    return {"assignment": updated, "message": "Shift published."}

@@ -1,4 +1,4 @@
-"""aite-regulatory MCP server.
+"""arbor-regulatory MCP server.
 
 Provides regulatory intelligence tools for the shadow agent:
 - Real-time government data (public holidays, CPF rates)
@@ -7,7 +7,7 @@ Provides regulatory intelligence tools for the shadow agent:
 - Telegram government channel monitoring
 - Regulatory change classification and summarization
 
-T213: aite-regulatory MCP Server Shell
+T213: arbor-regulatory MCP Server Shell
 T214-T220: Individual connector implementations
 """
 
@@ -17,7 +17,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from hr_advisory.mcp_servers.base import AiteMCPServer, TenantContext
+from hr_advisory.mcp_servers.base import ArborMCPServer, TenantContext
 from hr_advisory.mcp_servers.adapters.data_gov_sg import DataGovSGAdapter
 from hr_advisory.mcp_servers.adapters.sso_rss import SSORSSAdapter
 from hr_advisory.mcp_servers.adapters.mom_sitemap import MOMSitemapAdapter
@@ -90,8 +90,8 @@ def _get_classifier() -> RegulatoryChangeClassifier:
 
 # ── MCP Server ────────────────────────────────────────────────
 
-server = AiteMCPServer(
-    name="aite-regulatory",
+server = ArborMCPServer(
+    name="arbor-regulatory",
     description=(
         "Regulatory intelligence: live government data, legislative monitoring, "
         "web change detection, and regulatory change classification."

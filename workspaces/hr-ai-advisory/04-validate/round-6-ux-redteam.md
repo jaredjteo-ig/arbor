@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-5 agents conducted parallel reviews of the AITE HR Advisory platform after completing the UX improvement milestones. **10 issues were identified, all have been fixed** in this red team round. The most critical finding was a tenant isolation gap allowing any authenticated user to read/delete other users' conversations. All fixes pass TypeScript compilation and Next.js production build.
+5 agents conducted parallel reviews of the Arbor HR Advisory platform after completing the UX improvement milestones. **10 issues were identified, all have been fixed** in this red team round. The most critical finding was a tenant isolation gap allowing any authenticated user to read/delete other users' conversations. All fixes pass TypeScript compilation and Next.js production build.
 
 ---
 

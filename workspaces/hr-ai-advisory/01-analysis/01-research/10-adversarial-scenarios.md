@@ -1,9 +1,9 @@
-# AITE HR Advisory Platform — Adversarial Test Scenarios
+# Arbor HR Advisory Platform — Adversarial Test Scenarios
 
 **Document ID**: 10-adversarial-scenarios
 **Version**: 1.0
 **Date**: 2026-03-12
-**Purpose**: 64 adversarial test scenarios to validate that the AITE HR Advisory system provides legally accurate, ethically sound advice even when users attempt to exploit loopholes, minimize compliance, or break Singapore employment law.
+**Purpose**: 64 adversarial test scenarios to validate that the Arbor HR Advisory system provides legally accurate, ethically sound advice even when users attempt to exploit loopholes, minimize compliance, or break Singapore employment law.
 
 ---
 
@@ -1748,4 +1748,4 @@ The system must understand "wayang" (putting on a show/pretending) and explain t
 
 ---
 
-_This document contains 64 adversarial test scenarios across 8 categories, designed to stress-test the AITE HR Advisory platform's ability to provide legally accurate and ethically sound guidance when users attempt to exploit loopholes in Singapore employment law._
+_This document contains 64 adversarial test scenarios across 8 categories, designed to stress-test the Arbor HR Advisory platform's ability to provide legally accurate and ethically sound guidance when users attempt to exploit loopholes in Singapore employment law._

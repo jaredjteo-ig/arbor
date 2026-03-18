@@ -1,4 +1,4 @@
-# MCP Integration Architecture for AITE Shadow Agent
+# MCP Integration Architecture for Arbor Shadow Agent
 
 ## Design Principle
 
@@ -11,19 +11,19 @@ Every external integration is exposed as MCP tools/resources. The shadow agent i
 ```
 Shadow Agent (Kaizen IterativeLLMAgentNode)
     │
-    ├── aite-government (CPF APEX, IRAS AIS, MOM OED, MyInfo, Data.gov.sg)
+    ├── arbor-government (CPF APEX, IRAS AIS, MOM OED, MyInfo, Data.gov.sg)
     │     └── OAuth 2.1 + CorpPass tokens per tenant
     │
-    ├── aite-accounting (Xero, QuickBooks, Zoho Books, Financio)
+    ├── arbor-accounting (Xero, QuickBooks, Zoho Books, Financio)
     │     └── OAuth 2.0 tokens per tenant per provider
     │
-    ├── aite-banking (DBS RAPID, UOB, OCBC, Aspire, GIRO/FAST file gen, PayNow QR)
+    ├── arbor-banking (DBS RAPID, UOB, OCBC, Aspire, GIRO/FAST file gen, PayNow QR)
     │     └── Bank-specific auth per tenant
     │
-    ├── aite-communications (Email, WhatsApp, Telegram, Slack, Teams)
+    ├── arbor-communications (Email, WhatsApp, Telegram, Slack, Teams)
     │     └── Bot tokens + webhook URLs per tenant
     │
-    └── aite-regulatory (SSO RSS, data.gov.sg, MOM sitemap, change detection)
+    └── arbor-regulatory (SSO RSS, data.gov.sg, MOM sitemap, change detection)
           └── API keys + RSS feeds (shared, not per-tenant)
 ```
 
@@ -104,7 +104,7 @@ comms_get_delivery_status          — Check delivery status of sent notificatio
 # Tools
 regulatory_check_updates           — Check all sources for new regulatory changes
 regulatory_get_act_amendments      — Get recent amendments to a specific Act (via SSO RSS)
-regulatory_classify_change         — LLM classifies if a detected change affects AITE
+regulatory_classify_change         — LLM classifies if a detected change affects Arbor
 regulatory_summarize_change        — LLM summarizes a regulatory change in plain language
 
 # MCP Resources (read-only, subscribable)
@@ -255,21 +255,21 @@ src/hr_advisory/mcp_servers/
 
 ### Phase 1: Foundation + Quick Wins
 
-- `aite-regulatory` server (read-only, uses existing KB data + SSO RSS + data.gov.sg)
-- `aite-communications` server (email via Resend, Telegram bot)
+- `arbor-regulatory` server (read-only, uses existing KB data + SSO RSS + data.gov.sg)
+- `arbor-communications` server (email via Resend, Telegram bot)
 - Data.gov.sg public holidays integration
 - ISO 20022 GIRO file generator (pain.001.001.03)
 
 ### Phase 2: Accounting + Banking Files
 
-- `aite-accounting` server (Xero Manual Journals, QBO Journal Entry, Zoho Journals)
-- `aite-banking` server (GIRO file gen, FAST file gen, PayNow QR, Aspire Payout API)
+- `arbor-accounting` server (Xero Manual Journals, QBO Journal Entry, Zoho Journals)
+- `arbor-banking` server (GIRO file gen, FAST file gen, PayNow QR, Aspire Payout API)
 - Claims-to-accounting sync pipeline
 
 ### Phase 3: Government APIs
 
 - OSP vendor registration (unlocks CPF + IRAS + MOM)
-- `aite-government` server (CPF APEX, IRAS AIS-API 2.0, MOM OED)
+- `arbor-government` server (CPF APEX, IRAS AIS-API 2.0, MOM OED)
 - CorpPass authentication flow
 - MyInfo v5 employee onboarding
 

@@ -24,7 +24,7 @@
 
 ### Problem
 
-The AITE advisory pipeline (QueryAnalyzer -> Orchestrator -> Specialists -> ResponseSynthesizer) produces responses whose quality depends on the system prompts in each agent's `_generate_system_prompt()` method. Currently, improving these prompts is a manual process: someone notices an error, a developer edits the Python file, and the change ships with the next deployment. There is no structured way to:
+The Arbor advisory pipeline (QueryAnalyzer -> Orchestrator -> Specialists -> ResponseSynthesizer) produces responses whose quality depends on the system prompts in each agent's `_generate_system_prompt()` method. Currently, improving these prompts is a manual process: someone notices an error, a developer edits the Python file, and the change ships with the next deployment. There is no structured way to:
 
 - Evaluate advisory quality across multiple dimensions
 - Identify patterns in failures
@@ -162,7 +162,7 @@ The system pre-populates a queue of conversations matching these filters.
 | [x] = reviewed            | Turn 1 — User                           |
 | Score | Risk Tier          | "Can I deduct salary for late coming?"   |
 |                           |                                          |
-|                           | Turn 1 — AITE                            |
+|                           | Turn 1 — Arbor                            |
 |                           | "Under the Employment Act, an employer   |
 |                           |  may make authorised deductions from an  |
 |                           |  employee's salary, but salary deduction |
@@ -176,7 +176,7 @@ The system pre-populates a queue of conversations matching these filters.
 |                           | "What if it's in the employment          |
 |                           |  contract?"                              |
 |                           |                                          |
-|                           | Turn 2 — AITE                            |
+|                           | Turn 2 — Arbor                            |
 |                           | "Even if salary deduction for lateness   |
 |                           |  is written in the contract, the EA      |
 |                           |  limits total deductions to..."          |

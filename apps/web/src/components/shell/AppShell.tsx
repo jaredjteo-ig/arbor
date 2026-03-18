@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { NavigationSidebar } from "./NavigationSidebar";
 import { TopBar } from "./TopBar";
 
-const STORAGE_KEY = "aite-sidebar-collapsed";
+const STORAGE_KEY = "arbor-sidebar-collapsed";
 
 export interface AppShellProps {
   children: React.ReactNode;

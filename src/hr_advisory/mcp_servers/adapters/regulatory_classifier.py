@@ -65,7 +65,7 @@ class ClassificationResult:
     urgency: Urgency
     summary: str
     action_items: list[str]
-    affected_modules: list[str]  # AITE module names
+    affected_modules: list[str]  # Arbor module names
     source: str
     title: str
     url: str
@@ -216,7 +216,7 @@ _URGENCY_SIGNALS: list[tuple[str, Urgency, float]] = [
     (r"infographic", Urgency.LOW, 0.1),
 ]
 
-# ── Domain to AITE module mapping ────────────────────────────
+# ── Domain to Arbor module mapping ───────────────────────────
 
 _DOMAIN_MODULE_MAP: dict[Domain, list[str]] = {
     Domain.CPF: ["payroll_calculator", "cpf_engine", "statutory_files"],
@@ -290,7 +290,7 @@ class RegulatoryChangeClassifier:
         # Step 2: Determine urgency
         urgency = self._determine_urgency(combined_text)
 
-        # Step 3: Determine affected AITE modules
+        # Step 3: Determine affected Arbor modules
         affected_modules = self._get_affected_modules(domains)
 
         # Step 4: Generate summary
@@ -344,7 +344,7 @@ class RegulatoryChangeClassifier:
 
     @staticmethod
     def _get_affected_modules(domains: list[Domain]) -> list[str]:
-        """Map domains to affected AITE modules."""
+        """Map domains to affected Arbor modules."""
         modules: set[str] = set()
         for domain in domains:
             module_list = _DOMAIN_MODULE_MAP.get(domain, [])

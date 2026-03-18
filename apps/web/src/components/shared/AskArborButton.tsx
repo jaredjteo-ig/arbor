@@ -1,6 +1,6 @@
 "use client";
 
-/* ── AskAITEButton ──────────────────────────────────────── */
+/* ── AskArborButton ─────────────────────────────────────── */
 /* Contextual entry point that navigates to the advisory     */
 /* chat with a pre-filled question. Two visual variants:     */
 /*   "default" — compact button with sparkle icon            */
@@ -10,17 +10,17 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Sparkles } from "lucide-react";
 
-export interface AskAITEButtonProps {
+export interface AskArborButtonProps {
   question: string;
   variant?: "default" | "subtle";
   className?: string;
 }
 
-export function AskAITEButton({
+export function AskArborButton({
   question,
   variant = "default",
   className,
-}: AskAITEButtonProps) {
+}: AskArborButtonProps) {
   const router = useRouter();
 
   const handleClick = () => {
@@ -41,7 +41,7 @@ export function AskAITEButton({
         )}
       >
         <Sparkles className="h-4 w-4" aria-hidden="true" />
-        Ask AITE about this
+        Ask Arbor about this
       </button>
     );
   }
@@ -62,7 +62,7 @@ export function AskAITEButton({
       )}
     >
       <Sparkles className="h-4 w-4" aria-hidden="true" />
-      Ask AITE about this
+      Ask Arbor about this
     </button>
   );
 }

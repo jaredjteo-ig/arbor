@@ -4,7 +4,7 @@
 
 ## What Was Built
 
-15 React components forming the complete AITE design system for web:
+15 React components forming the complete Arbor design system for web:
 
 | Component | Purpose |
 |-----------|---------|

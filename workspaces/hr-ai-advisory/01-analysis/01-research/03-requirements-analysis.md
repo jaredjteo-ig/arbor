@@ -737,7 +737,7 @@ A critical feature unique to this platform: tracking which regulations kick in a
 
 | System                                                         | Integration                            | Priority |
 | -------------------------------------------------------------- | -------------------------------------- | -------- |
-| Payroll systems (common SG ones: Talenox, JustLogin, HReasily) | Import employee data for calculations  | P3       |
+| Payroll systems (common SG HRIS platforms)                      | Import employee data for calculations  | P3       |
 | ACRA BizFile+                                                  | Auto-populate company profile from UEN | P2       |
 | CPF e-Submit                                                   | Cross-reference submission status      | P3       |
 | Calendar systems                                               | Regulatory deadline reminders          | P3       |

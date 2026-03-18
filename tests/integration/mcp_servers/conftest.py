@@ -1,7 +1,7 @@
 """Shared fixtures for MCP integration server tests.
 
 Provides:
-- Isolated AiteMCPServer instances with registered test tools
+- Isolated ArborMCPServer instances with registered test tools
 - Tenant contexts for multi-tenant testing
 - Pre-configured ExternalTokenManager with test encryption key
 - Circuit breaker reset helper
@@ -26,7 +26,7 @@ _TEST_FERNET_KEY = Fernet.generate_key().decode()
 os.environ["INTEGRATION_ENCRYPTION_KEY"] = _TEST_FERNET_KEY
 
 
-from hr_advisory.mcp_servers.base import AiteMCPServer, TenantContext
+from hr_advisory.mcp_servers.base import ArborMCPServer, TenantContext
 from hr_advisory.mcp_servers.auth.token_store import ExternalTokenManager
 from hr_advisory.mcp_servers.health import ConnectorHealthMonitor
 from hr_advisory.mcp_servers.idempotency import SubmissionLedger
@@ -55,10 +55,10 @@ USER_B = "user_b"
 
 
 @pytest.fixture()
-def mcp_server() -> AiteMCPServer:
-    """Fresh AiteMCPServer with two test tools registered."""
-    server = AiteMCPServer(
-        name="aite-test-server",
+def mcp_server() -> ArborMCPServer:
+    """Fresh ArborMCPServer with two test tools registered."""
+    server = ArborMCPServer(
+        name="arbor-test-server",
         description="Test MCP server",
         version="0.0.1",
     )

@@ -59,20 +59,20 @@ Partnerships provide:
 | Referral programme    | Existing users refer peers                 | $30          |
 | HR consultant network | Consultants bring their clients            | $20          |
 
-### Competitive Landscape
+### Market Landscape
 
-| Competitor           | Type          | Strength           | AITE Advantage                                    |
+| Category             | Type          | Strength           | Arbor Advantage                                    |
 | -------------------- | ------------- | ------------------ | ------------------------------------------------- |
-| Employment Hero      | Global HRIS   | Full HRIS platform | Singapore-specific, deeper regulatory coverage    |
-| Talenox              | SG HRIS       | Payroll focus      | Advisory intelligence, not just payroll           |
+| Global HRIS platforms| Global HRIS   | Full HRIS platform | Singapore-specific, deeper regulatory coverage    |
+| SG HRIS platforms    | SG HRIS       | Payroll focus      | Advisory intelligence, not just payroll           |
 | HR consultants       | Human service | Deep expertise     | 24/7 availability, lower cost, scalable           |
 | Generic AI (ChatGPT) | General AI    | Broad knowledge    | Source-cited, regulatory-current, liability-aware |
 
-### Competitive Monitoring
+### Market Monitoring
 
-- Employment Hero: Track Singapore market entry and feature expansion
-- Talenox/Payboy: Monitor for advisory feature additions
-- New entrants: Watch for AI-first HR advisory startups in SG
+- Track regional and international HRIS platforms entering or expanding in Singapore
+- Monitor established SG HRIS platforms for advisory feature additions
+- Watch for AI-first HR advisory startups in SG
 
 ### Pricing Strategy
 

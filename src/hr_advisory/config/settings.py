@@ -24,7 +24,7 @@ class Settings:
     cors_origins: str = "http://localhost:3000"  # Comma-separated list
 
     # Database
-    database_url: str = "postgresql://aite:aite@localhost:5432/aite"
+    database_url: str = "postgresql://arbor:arbor@localhost:5432/arbor"
     redis_url: str = "redis://localhost:6379/0"
 
     # LLM
@@ -48,7 +48,7 @@ class Settings:
 
     # Email
     sendgrid_api_key: str = ""
-    from_email: str = "noreply@aite.sg"
+    from_email: str = "noreply@arbor.sg"
 
     @property
     def is_production(self) -> bool:
@@ -78,10 +78,10 @@ def get_settings() -> Settings:
         )
 
     # SECURITY: Block startup if production uses the default database credentials
-    database_url = os.environ.get("DATABASE_URL", "postgresql://aite:aite@localhost:5432/aite")
-    if app_env == "production" and "aite:aite" in database_url:
+    database_url = os.environ.get("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
+    if app_env == "production" and "arbor:arbor" in database_url:
         raise RuntimeError(
-            "FATAL: DATABASE_URL must not use default credentials (aite:aite) in production. "
+            "FATAL: DATABASE_URL must not use default credentials (arbor:arbor) in production. "
             "Set DATABASE_URL to a connection string with secure credentials."
         )
 
@@ -117,5 +117,5 @@ def get_settings() -> Settings:
         google_oauth_client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", ""),
         google_oauth_redirect_uri=os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", ""),
         sendgrid_api_key=os.environ.get("SENDGRID_API_KEY", ""),
-        from_email=os.environ.get("FROM_EMAIL", "noreply@aite.sg"),
+        from_email=os.environ.get("FROM_EMAIL", "noreply@arbor.sg"),
     )

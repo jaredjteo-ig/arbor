@@ -76,8 +76,8 @@ export function ShadowWidget({
       <button
         type="button"
         onClick={onToggle}
-        aria-label="Ask AITE (Ctrl+Shift+A)"
-        title="Ask AITE (Ctrl+Shift+A)"
+        aria-label="Ask Arbor (Ctrl+Shift+A)"
+        title="Ask Arbor (Ctrl+Shift+A)"
         className={clsx(
           "relative flex items-center justify-center",
           "rounded-full cursor-pointer",

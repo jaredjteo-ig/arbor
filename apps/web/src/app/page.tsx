@@ -18,13 +18,13 @@ import { ManagementShowcase } from "@/components/management/ManagementShowcase";
 
 /* ── Inline logo used in the top nav ─────────────────────── */
 
-function AiteLogo() {
+function ArborLogo() {
   return (
     <div className="flex items-center gap-2">
       <div className="flex items-center justify-center rounded-lg bg-blue-600 text-white font-bold w-9 h-9 text-base">
         A
       </div>
-      <span className="text-xl font-bold text-gray-900">AITE</span>
+      <span className="text-xl font-bold text-gray-900">Arbor</span>
     </div>
   );
 }
@@ -38,8 +38,8 @@ function LandingNav() {
     <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
       <div className="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-6 h-16">
         {/* Left: Logo */}
-        <Link href="/" aria-label="AITE Home">
-          <AiteLogo />
+        <Link href="/" aria-label="Arbor Home">
+          <ArborLogo />
         </Link>
 
         {/* Center: Desktop nav links */}
@@ -355,8 +355,10 @@ function LandingFooter() {
             <div className="flex items-center justify-center rounded-lg bg-white/10 text-white font-bold w-8 h-8 text-sm">
               A
             </div>
-            <span className="text-white font-semibold">AITE</span>
-            <span className="text-sm text-gray-500 ml-2">by ASME</span>
+            <span className="text-white font-semibold">Arbor</span>
+            <span className="text-sm text-gray-500 ml-2">
+              by Terrene Foundation
+            </span>
           </div>
           <p className="text-sm text-gray-500">
             Covering Employment Act, CPF, EFMA, WSH, TAFEP, and Tax/IRAS

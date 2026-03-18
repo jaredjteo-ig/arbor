@@ -1,4 +1,4 @@
-# AITE HR Advisory Platform - API Test Report
+# Arbor HR Advisory Platform - API Test Report
 
 **Test Date:** 2026-03-12
 **Server:** http://localhost:8099
@@ -253,7 +253,7 @@ Both search endpoints return valid responses with correct structure (`query`, `r
 
 - Created: status=`draft`
 - After submit: status=`in_review`
-- After approve: status=`approved`, `reviewed_by="admin@aite.sg"`
+- After approve: status=`approved`, `reviewed_by="admin@arbor.sg"`
 
 **Admin metrics:**
 

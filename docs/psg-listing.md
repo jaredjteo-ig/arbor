@@ -4,7 +4,7 @@
 
 ### Product Name
 
-AITE — AI-powered HR Advisory Platform for Singapore SMEs
+Arbor — AI-powered HR Advisory Platform for Singapore SMEs
 
 ### Product Category
 
@@ -12,7 +12,7 @@ Human Resource Management (HRM) — AI-Powered Advisory
 
 ### Product Description
 
-AITE is an AI-powered HR advisory platform that helps Singapore SMEs navigate employment regulations with confidence. It provides instant, source-cited guidance on the Employment Act, CPF, foreign manpower regulations, workplace safety, fair employment, and tax compliance.
+Arbor is an AI-powered HR advisory platform that helps Singapore SMEs navigate employment regulations with confidence. It provides instant, source-cited guidance on the Employment Act, CPF, foreign manpower regulations, workplace safety, fair employment, and tax compliance.
 
 ### Key Capabilities
 

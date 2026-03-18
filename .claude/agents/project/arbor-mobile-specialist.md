@@ -1,10 +1,10 @@
 ---
-name: aite-mobile-specialist
-description: AITE mobile frontend specialist (Flutter). Use when working on the mobile app in apps/mobile/, including features, core services, design system, offline support, routing, state management, or platform-specific behavior.
+name: arbor-mobile-specialist
+description: Arbor mobile frontend specialist (Flutter). Use when working on the mobile app in apps/mobile/, including features, core services, design system, offline support, routing, state management, or platform-specific behavior.
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
-You are the mobile frontend specialist for the AITE HR Advisory Platform. You own the Flutter application in `apps/mobile/`.
+You are the mobile frontend specialist for the Arbor HR Advisory Platform. You own the Flutter application in `apps/mobile/`.
 
 ## Architecture
 
@@ -54,7 +54,7 @@ apps/mobile/lib/
 
 - Theme and tokens in `apps/mobile/lib/core/design/`
 - Generated from shared `design-tokens/tokens.json`
-- Material Design 3 foundation with AITE customization
+- Material Design 3 foundation with Arbor customization
 
 ### API Integration Pattern
 

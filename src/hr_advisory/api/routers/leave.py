@@ -5,6 +5,7 @@ balances, public holidays, leave policies, and team calendar.
 """
 
 import logging
+import math
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -15,6 +16,20 @@ from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Input length limits
+MAX_TEXT_LENGTH = 2000
+MAX_NAME_LENGTH = 200
+
+
+def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_LENGTH) -> str:
+    """Validate text input to maximum length."""
+    if value and len(value) > max_len:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field_name} exceeds maximum length of {max_len} characters.",
+        )
+    return value
 
 
 # --------------------------------------------------------------------------
@@ -666,6 +681,7 @@ async def apply_leave(
     start_half = body.get("start_half", "full_day")
     end_half = body.get("end_half", "full_day")
     reason = body.get("reason", "")
+    _validate_text_length(reason, "reason")
 
     if not leave_type_id or not start_date or not end_date:
         raise HTTPException(
@@ -1115,6 +1131,8 @@ async def create_public_holiday(
     if not name or not holiday_date:
         raise HTTPException(status_code=400, detail="name and date are required.")
 
+    _validate_text_length(name, "name", MAX_NAME_LENGTH)
+
     try:
         d = date.fromisoformat(holiday_date)
     except ValueError:
@@ -1199,6 +1217,8 @@ async def create_leave_policy(
     name = body.get("name", "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="name is required.")
+
+    _validate_text_length(name, "name", MAX_NAME_LENGTH)
 
     is_default = body.get("is_default", False)
 
@@ -1340,3 +1360,232 @@ async def team_calendar(
         "leave_entries": calendar_entries,
         "public_holidays": month_holidays,
     }
+
+
+# ==========================================================================
+# LEAVE ENCASHMENT (T344)
+# ==========================================================================
+
+
+@router.post("/encash")
+async def leave_encashment(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Convert unused leave to salary for an employee.
+
+    Body: {employee_id, leave_type_code, days, year?, amount_per_day}
+    Creates an encashment record and reduces leave balance.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    body = await request.json()
+    employee_id = body.get("employee_id")
+    leave_type_code = body.get("leave_type_code", "").strip()
+    days = float(body.get("days", 0))
+    amount_per_day = float(body.get("amount_per_day", 0))
+    year = body.get("year", datetime.now(timezone.utc).year)
+
+    if not math.isfinite(days) or not math.isfinite(amount_per_day):
+        raise HTTPException(status_code=400, detail="Invalid numeric value.")
+
+    if not employee_id or not leave_type_code:
+        raise HTTPException(
+            status_code=400,
+            detail="employee_id and leave_type_code are required.",
+        )
+    if days <= 0 or amount_per_day <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="days and amount_per_day must be positive.",
+        )
+
+    # Verify employee belongs to company
+    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    if not emp_records or emp_records[0].get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    # Check balance
+    balance = _get_or_create_balance(employee_id, company_id, leave_type_code, year)
+    available = (
+        balance.get("entitlement_days", 0.0)
+        - balance.get("used_days", 0.0)
+        - balance.get("pending_days", 0.0)
+    )
+    if days > available:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient balance. Available: {available}, Requested: {days}.",
+        )
+
+    total_amount = round(days * amount_per_day, 2)
+    now = datetime.now(timezone.utc).isoformat()
+    actor_id = int(current_user.get("sub", 0))
+
+    # Create encashment record
+    encashment = _dataflow_create(
+        "LeaveEncashmentCreateNode",
+        {
+            "employee_id": employee_id,
+            "company_id": company_id,
+            "leave_type_code": leave_type_code,
+            "year": year,
+            "days": days,
+            "amount_per_day": amount_per_day,
+            "total_amount": total_amount,
+            "approved_by": actor_id,
+            "approved_at": now,
+        },
+    )
+
+    # Deduct from balance (mark as used)
+    _dataflow_update(
+        "LeaveBalanceUpdateNode",
+        balance["id"],
+        {"used_days": balance.get("used_days", 0.0) + days},
+    )
+
+    return {"encashment": encashment, "balance_remaining": round(available - days, 1)}
+
+
+# ==========================================================================
+# OFF-IN-LIEU (T346)
+# ==========================================================================
+
+
+@router.post("/off-in-lieu")
+async def credit_off_in_lieu(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Admin credits off-in-lieu days to an employee's balance.
+
+    Body: {employee_id, days, reason, date_worked}
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    body = await request.json()
+    employee_id = body.get("employee_id")
+    days = float(body.get("days", 0))
+    reason = body.get("reason", "").strip()
+    date_worked = body.get("date_worked", "")
+
+    if not math.isfinite(days):
+        raise HTTPException(status_code=400, detail="Invalid numeric value.")
+
+    _validate_text_length(reason, "reason")
+
+    if not employee_id or days <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="employee_id and positive days are required.",
+        )
+
+    # Verify employee belongs to company
+    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    if not emp_records or emp_records[0].get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    year = datetime.now(timezone.utc).year
+    if date_worked:
+        try:
+            year = date.fromisoformat(date_worked).year
+        except ValueError:
+            pass
+
+    # Get or create off_in_lieu balance
+    balance = _get_or_create_balance(employee_id, company_id, "off_in_lieu", year)
+
+    # Credit by increasing entitlement
+    new_entitlement = balance.get("entitlement_days", 0.0) + days
+    _dataflow_update(
+        "LeaveBalanceUpdateNode",
+        balance["id"],
+        {"entitlement_days": new_entitlement},
+    )
+
+    actor_id = int(current_user.get("sub", 0))
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Create an audit record
+    record = _dataflow_create(
+        "OffInLieuRecordCreateNode",
+        {
+            "employee_id": employee_id,
+            "company_id": company_id,
+            "days": days,
+            "reason": reason,
+            "date_worked": date_worked,
+            "credited_by": actor_id,
+            "credited_at": now,
+        },
+    )
+
+    return {
+        "off_in_lieu": record,
+        "new_entitlement": new_entitlement,
+    }
+
+
+# ==========================================================================
+# LEAVE TYPE CONFIG EXTENDED (T343, T345, T347)
+# ==========================================================================
+
+
+@router.get("/type-configs")
+async def list_leave_type_configs(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List all leave type configs for the company (including inactive)."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    configs = _dataflow_list("LeaveTypeConfigListNode", {"company_id": company_id})
+    return {"type_configs": configs, "count": len(configs)}
+
+
+@router.patch("/type-configs/{config_id}")
+async def update_leave_type_config(
+    config_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Update a leave type config with extended fields.
+
+    Supports all base fields plus: allow_hourly, hours_per_day,
+    encashment_enabled, encashment_max_days, unused_handling,
+    carry_forward_max_days, carry_forward_expiry_months,
+    allow_overflow, entitlement_period.
+    """
+    company_id = get_current_company_id(current_user)
+    config = _dataflow_read("LeaveTypeConfigReadNode", config_id)
+    if config is None or config.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Leave type config not found.")
+
+    body = await request.json()
+    allowed_fields = {
+        # Base fields
+        "name", "is_paid", "is_pro_ratable", "default_days",
+        "max_carry_forward", "carry_forward_expiry_months",
+        "requires_attachment", "min_service_months",
+        "applicable_gender", "is_active", "category",
+        # Extended fields (T343, T345, T347)
+        "allow_hourly", "hours_per_day",
+        "encashment_enabled", "encashment_max_days",
+        "unused_handling",  # forfeit, carry_forward, encash
+        "carry_forward_max_days",
+        "allow_overflow",
+        "entitlement_period",  # calendar_year, anniversary, custom
+    }
+    updates = {k: v for k, v in body.items() if k in allowed_fields}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    _dataflow_update("LeaveTypeConfigUpdateNode", config_id, updates)
+    updated = _dataflow_read("LeaveTypeConfigReadNode", config_id)
+    return {"type_config": updated}

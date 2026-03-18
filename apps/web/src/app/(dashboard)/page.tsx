@@ -465,7 +465,7 @@ export default function DashboardPage() {
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-heading text-[var(--color-gray-900)]">
-              {firstName ? `Welcome, ${firstName}` : "Welcome to AITE"}
+              {firstName ? `Welcome, ${firstName}` : "Welcome to Arbor"}
             </h1>
             <p className="text-body text-[var(--color-gray-500)] mt-1">
               Your free HR management platform for Singapore

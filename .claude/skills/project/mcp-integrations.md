@@ -6,19 +6,19 @@ External API integrations via 5 domain-grouped MCP servers. 38 connectors, 97 to
 
 ### Infrastructure (root level)
 
-| File                | Purpose                                                                             | Singleton Getter                          |
-| ------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------- |
-| `base.py`           | `AiteMCPServer` base class: tenant isolation, audit log, tool/resource registration | N/A (instantiated per server)             |
-| `registry.py`       | Central registry: discovery, cross-server tool routing, health aggregation          | `get_all_servers()`                       |
-| `resilience.py`     | Circuit breakers (25 pre-configured) + per-tenant rate limiters (6 configured)      | `get_circuit(name)`, `check_rate_limit()` |
-| `idempotency.py`    | Submission ledger: prevents double-submit of government/bank filings                | `get_submission_ledger()`                 |
-| `saga.py`           | Multi-step workflow state machine with 8 pre-defined templates                      | `get_saga_orchestrator()`                 |
-| `pii_filter.py`     | PII stripping (NRIC, phone, bank, salary, email) before LLM calls                   | `get_pii_filter()`                        |
-| `confirm_action.py` | Human-in-the-loop approval gates for irreversible operations                        | `get_approval_store()`                    |
-| `webhooks.py`       | Inbound webhook receiver: signature verification, event routing                     | `get_webhook_router()`                    |
-| `health.py`         | Connector health monitor: aggregates circuit breaker state per connector            | `get_health_monitor()`                    |
-| `cost_tracker.py`   | Per-tenant API cost tracking for metered services (MyInfo S$1, ACRA S$5.50)         | `get_cost_tracker()`                      |
-| `tool_selector.py`  | Dynamic tool loading: 15-25 tools per page context instead of 97                    | `get_tools_for_context()`                 |
+| File                | Purpose                                                                              | Singleton Getter                          |
+| ------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------- |
+| `base.py`           | `ArborMCPServer` base class: tenant isolation, audit log, tool/resource registration | N/A (instantiated per server)             |
+| `registry.py`       | Central registry: discovery, cross-server tool routing, health aggregation           | `get_all_servers()`                       |
+| `resilience.py`     | Circuit breakers (25 pre-configured) + per-tenant rate limiters (6 configured)       | `get_circuit(name)`, `check_rate_limit()` |
+| `idempotency.py`    | Submission ledger: prevents double-submit of government/bank filings                 | `get_submission_ledger()`                 |
+| `saga.py`           | Multi-step workflow state machine with 8 pre-defined templates                       | `get_saga_orchestrator()`                 |
+| `pii_filter.py`     | PII stripping (NRIC, phone, bank, salary, email) before LLM calls                    | `get_pii_filter()`                        |
+| `confirm_action.py` | Human-in-the-loop approval gates for irreversible operations                         | `get_approval_store()`                    |
+| `webhooks.py`       | Inbound webhook receiver: signature verification, event routing                      | `get_webhook_router()`                    |
+| `health.py`         | Connector health monitor: aggregates circuit breaker state per connector             | `get_health_monitor()`                    |
+| `cost_tracker.py`   | Per-tenant API cost tracking for metered services (MyInfo S$1, ACRA S$5.50)          | `get_cost_tracker()`                      |
+| `tool_selector.py`  | Dynamic tool loading: 15-25 tools per page context instead of 97                     | `get_tools_for_context()`                 |
 
 ### Auth (`auth/`)
 
@@ -31,11 +31,11 @@ External API integrations via 5 domain-grouped MCP servers. 38 connectors, 97 to
 
 | Server File                | Server Name         | Tools | Domain                                                                            |
 | -------------------------- | ------------------- | ----- | --------------------------------------------------------------------------------- |
-| `government_server.py`     | aite-government     | 33    | CPF, IRAS (IR8A/8S/21/Appendix 8A), MOM OED, MyInfo, ACRA, CorpPass, SkillsFuture |
-| `accounting_server.py`     | aite-accounting     | 22    | Xero, QuickBooks Online, Zoho Books, Financio, CSV/JSON export, claims sync       |
-| `communications_server.py` | aite-communications | 22    | Resend email, SES, Telegram bot, WhatsApp, Slack, Teams, Google Calendar, Outlook |
-| `banking_server.py`        | aite-banking        | 12    | ISO 20022 GIRO, FAST (DBS/UOB), PayNow QR, Aspire payouts                         |
-| `regulatory_server.py`     | aite-regulatory     | 8     | data.gov.sg, SSO RSS, MOM sitemap, web change detection, Telegram monitoring      |
+| `government_server.py`     | arbor-government    | 33    | CPF, IRAS (IR8A/8S/21/Appendix 8A), MOM OED, MyInfo, ACRA, CorpPass, SkillsFuture |
+| `accounting_server.py`     | arbor-accounting     | 22    | Xero, QuickBooks Online, Zoho Books, Financio, CSV/JSON export, claims sync       |
+| `communications_server.py` | arbor-communications | 22    | Resend email, SES, Telegram bot, WhatsApp, Slack, Teams, Google Calendar, Outlook |
+| `banking_server.py`        | arbor-banking        | 12    | ISO 20022 GIRO, FAST (DBS/UOB), PayNow QR, Aspire payouts                         |
+| `regulatory_server.py`     | arbor-regulatory     | 8     | data.gov.sg, SSO RSS, MOM sitemap, web change detection, Telegram monitoring      |
 
 ### 38 Connectors (adapters/)
 
@@ -155,7 +155,7 @@ async def accounting_new_action(ctx: TenantContext, param: str) -> dict:
 2. `tool_selector.get_tools_for_context(page, role, connected_providers)` returns 15-25 relevant tool names.
 3. Shadow agent uses LLM tool-calling to select a tool and generate parameters.
 4. `registry.call_tool(tool_name, company_id=..., user_id=..., **params)` routes to the correct server.
-5. `AiteMCPServer.call_tool()` wraps with tenant context, audit logging, and error standardization.
+5. `ArborMCPServer.call_tool()` wraps with tenant context, audit logging, and error standardization.
 6. If `requires_confirmation=True`, the tool returns `status: "pending_approval"` and waits for human approval via `confirm_action.py`.
 
 ## How Idempotency Prevents Double-Submission
@@ -331,7 +331,7 @@ Patterns detected: NRIC/FIN (`[STFGM]\d{7}[A-Z]`), SG phone numbers, bank accoun
 
 | Test File                     | What It Covers                                        | Tests   |
 | ----------------------------- | ----------------------------------------------------- | ------- |
-| `test_base.py`                | AiteMCPServer tool registration, audit, tenant ctx    | ~30     |
+| `test_base.py`                | ArborMCPServer tool registration, audit, tenant ctx    | ~30     |
 | `test_resilience.py`          | Circuit breaker states, rate limiter, recovery        | ~40     |
 | `test_idempotency.py`         | Submission ledger, duplicate blocking, retry on fail  | ~35     |
 | `test_saga.py`                | Saga lifecycle, step progression, resume, cancel      | ~40     |

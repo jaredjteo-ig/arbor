@@ -196,7 +196,7 @@ class WiseAdapter:
                 - bank_code: Bank code/SWIFT (optional, depends on corridor).
                 - type: "individual" or "business" (default "individual").
                 - country: ISO country code (e.g. "PH").
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             profile_id: Wise business profile ID. Required for
                 production (obtained during Wise account connection).
             reference: Payment reference text.
@@ -205,7 +205,7 @@ class WiseAdapter:
             Transfer dict with id, status, amounts, and fee.
         """
         # Generate a unique reference for idempotency
-        transfer_ref = reference or f"AITE-{tenant_id[:8]}-{uuid.uuid4().hex[:8]}"
+        transfer_ref = reference or f"Arbor-{tenant_id[:8]}-{uuid.uuid4().hex[:8]}"
 
         # Step 1: Create a quote
         quote = await self._api_call(
@@ -340,7 +340,7 @@ class WiseAdapter:
         Args:
             transfers: List of transfer dicts with source_currency,
                 target_currency, amount, recipient.
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             profile_id: Wise business profile ID.
 
         Returns:

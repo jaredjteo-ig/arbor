@@ -1,4 +1,4 @@
-# AITE Full HRIS Roadmap — Single Run
+# Arbor Full HRIS Roadmap — Single Run
 
 **Scope**: 63 tasks (T141-T203) across 12 milestones. Covers all 83 features from the parity matrix.
 **Approach**: One continuous implementation run. No phasing. Build → integrate → harden.
@@ -1693,8 +1693,8 @@ Extend the shadow agent command surface to handle HRIS operations.
 
 **Backend — Parallel Run:**
 
-- "Comparison mode": user runs payroll on AITE and enters their current system's numbers
-- Create `ParallelRunComparison` model: employee_id, period, aite_gross, aite_net, aite_cpf, external_gross, external_net, external_cpf, variance_amount, variance_percentage
+- "Comparison mode": user runs payroll on Arbor and enters their current system's numbers
+- Create `ParallelRunComparison` model: employee_id, period, arbor_gross, arbor_net, arbor_cpf, external_gross, external_net, external_cpf, variance_amount, variance_percentage
 - Report: show variances per employee, flag discrepancies > $1
 
 **API:**
@@ -1815,7 +1815,7 @@ Extend the shadow agent command surface to handle HRIS operations.
   - Alerts
   - Analytics
   - Admin (admin only)
-- Employee sidebar (role-restricted): Dashboard, Ask AITE, My Payslips, My Leave, My Claims, My Attendance, My Schedule, Policies
+- Employee sidebar (role-restricted): Dashboard, Ask Arbor, My Payslips, My Leave, My Claims, My Attendance, My Schedule, Policies
 - Collapse secondary items into groups if sidebar gets too long
 
 **Evidence:**

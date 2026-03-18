@@ -40,3 +40,7 @@ export { AppToaster, toast } from "./Toast";
 
 export { FeedbackButtons } from "./FeedbackButtons";
 export type { FeedbackButtonsProps, FeedbackPayload } from "./FeedbackButtons";
+
+export { BarChart, DonutChart, TrendLine } from "./SimpleChart";
+
+export { EmployeePicker } from "./EmployeePicker";

@@ -158,15 +158,13 @@ function AddItemRow({
         "
       />
       <input
-        type="text"
-        placeholder="YYYY-MM-DD"
+        type="date"
         value={expenseDate}
         onChange={(e) => setExpenseDate(e.target.value)}
         className="
-          w-32 rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+          w-40 rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
           bg-[var(--color-surface-input)] text-[var(--foreground)]
           border-[var(--color-surface-input-border)]
-          placeholder:text-[var(--color-gray-400)]
           transition-colors
           focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
           focus:border-[var(--color-surface-input-focus)]

@@ -23,6 +23,7 @@ import {
   Trash2,
   Clock,
   Mail,
+  Shield,
 } from "lucide-react";
 import {
   employeesApi,
@@ -877,6 +878,13 @@ export default function EmployeesPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
 
+  /* Work pass expiry filter */
+  const [workPassFilter, setWorkPassFilter] = useState(false);
+  const [workPassExpiryMap, setWorkPassExpiryMap] = useState<
+    Record<number, string>
+  >({});
+  const [isLoadingWorkPass, setIsLoadingWorkPass] = useState(false);
+
   /* Invite link modal state */
   const [inviteLinkData, setInviteLinkData] = useState<{
     email: string;
@@ -924,6 +932,29 @@ export default function EmployeesPage() {
     }
   }, []);
 
+  /* Fetch work pass expiry data when filter is toggled on */
+  const fetchWorkPassData = useCallback(async () => {
+    if (Object.keys(workPassExpiryMap).length > 0) return; // already loaded
+    setIsLoadingWorkPass(true);
+    try {
+      const map: Record<number, string> = {};
+      const detailPromises = employees.map(async (emp) => {
+        try {
+          const detail = await employeesApi.getEmployee(emp.id);
+          if (detail.work_pass_expiry) {
+            map[emp.id] = detail.work_pass_expiry;
+          }
+        } catch {
+          // Skip on failure
+        }
+      });
+      await Promise.all(detailPromises);
+      setWorkPassExpiryMap(map);
+    } finally {
+      setIsLoadingWorkPass(false);
+    }
+  }, [employees, workPassExpiryMap]);
+
   useEffect(() => {
     fetchEmployees();
     fetchInvitations();
@@ -936,12 +967,34 @@ export default function EmployeesPage() {
     fetchInvitations();
   }
 
-  const filteredEmployees = employees.filter(
-    (emp) =>
+  function handleToggleWorkPassFilter() {
+    const newVal = !workPassFilter;
+    setWorkPassFilter(newVal);
+    if (
+      newVal &&
+      Object.keys(workPassExpiryMap).length === 0 &&
+      employees.length > 0
+    ) {
+      fetchWorkPassData();
+    }
+  }
+
+  const filteredEmployees = employees.filter((emp) => {
+    const matchesSearch =
       emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       emp.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.department.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+      emp.department.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+    if (workPassFilter) {
+      const expiry = workPassExpiryMap[emp.id];
+      if (!expiry) return false;
+      const daysLeft = Math.ceil(
+        (new Date(expiry).getTime() - Date.now()) / 86400000,
+      );
+      return daysLeft <= 90;
+    }
+    return true;
+  });
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
@@ -981,24 +1034,52 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-gray-400)]" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by name, email, or department..."
-          className="
-            w-full rounded-[8px] border px-3 py-2 pl-9 text-sm min-h-[44px]
-            bg-[var(--color-surface-input)] text-[var(--foreground)]
-            border-[var(--color-surface-input-border)]
-            placeholder:text-[var(--color-gray-400)]
-            transition-colors
-            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
-            focus:border-[var(--color-surface-input-focus)]
-          "
-        />
+      {/* Search + Filters */}
+      <div className="space-y-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-gray-400)]" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by name, email, or department..."
+            className="
+              w-full rounded-[8px] border px-3 py-2 pl-9 text-sm min-h-[44px]
+              bg-[var(--color-surface-input)] text-[var(--foreground)]
+              border-[var(--color-surface-input-border)]
+              placeholder:text-[var(--color-gray-400)]
+              transition-colors
+              focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+              focus:border-[var(--color-surface-input-focus)]
+            "
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleToggleWorkPassFilter}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+              workPassFilter
+                ? "bg-amber-100 text-amber-800 border border-amber-300"
+                : "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] hover:bg-[var(--color-gray-200)] border border-transparent"
+            }`}
+          >
+            <Shield className="h-3.5 w-3.5" />
+            Work Pass Expiring Soon
+            {isLoadingWorkPass && (
+              <span className="ml-1 inline-block h-3 w-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            )}
+          </button>
+          {workPassFilter && (
+            <button
+              type="button"
+              onClick={() => setWorkPassFilter(false)}
+              className="text-xs text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)] transition-colors"
+            >
+              Clear filter
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Employee table / states */}

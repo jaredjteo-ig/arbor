@@ -12,7 +12,55 @@ paths:
 
 These rules apply to all test files and test-related code.
 
-## RECOMMENDED Rules
+## MUST Rules
+
+### 0. Test-Once Protocol (MANDATORY)
+
+Tests run ONCE per code change, not once per phase. This eliminates redundant test execution across `/implement`, `/redteam`, and pre-commit.
+
+**The Protocol:**
+
+1. `/implement` runs the full test suite ONCE per todo and writes `.test-results` to the workspace
+2. `/redteam` READS `.test-results` — does NOT re-run existing tests
+3. `/redteam` runs only NEW tests it creates (E2E user flows, Playwright, Marionette)
+4. Pre-commit hooks (if configured) run unit tests as a fast safety net
+5. CI runs the full matrix as the final gate
+
+**`.test-results` artifact:**
+
+Written to `workspaces/<project>/.test-results` after each `/implement` todo completion. Contains commit hash, pass/fail counts, and regression count. Red team and deploy phases read this file instead of re-running.
+
+**Re-run exceptions:**
+
+- Code changed since `.test-results` was written (commit hash mismatch)
+- Infrastructure-specific tests needing real database verification
+- Red team suspects a specific test is wrong (re-run THAT test only)
+
+**Enforced by**: `/implement` and `/redteam` command templates
+**Violation**: Wasted compute, context window bloat, slower iteration
+
+### 0b. Regression Testing (MANDATORY)
+
+Every bug fix MUST include a regression test BEFORE the fix is merged.
+
+**The Rule:**
+
+1. When a bug is found, the FIRST step is writing a test that REPRODUCES the bug
+2. The test MUST fail before the fix and pass after
+3. Regression tests go in the project's `tests/regression/` directory
+4. The test name includes the issue number (e.g., `test_issue_42_user_creation_drops_pk`)
+5. Regression tests are NEVER deleted — they are permanent guards
+
+**Why:** Without regression tests, the same bugs keep coming back. A fix verified only by code review is not verified at all.
+
+**Enforcement:**
+
+- Pre-merge: regression test suite must pass
+- Code review: reviewer verifies regression test exists for every bug fix
+- Pre-release: regression suite is a mandatory checklist item
+
+**Applies to**: All bug fixes
+**Violation**: BLOCK merge — a fix without a regression test is not a fix
 
 ### 1. Test-First Development
 
@@ -101,6 +149,7 @@ Tests SHOULD be deterministic.
 
 ```
 tests/
+├── regression/     # Tier 0: Permanent bug reproduction tests
 ├── unit/           # Tier 1: Mocking allowed
 ├── integration/    # Tier 2: Real infrastructure recommended
 └── e2e/           # Tier 3: Real infrastructure recommended

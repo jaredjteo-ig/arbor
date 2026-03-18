@@ -1,20 +1,20 @@
-# Brief 05: Free Full-Service HRIS — Replacing Payboy/Talenox
+# Brief 05: Free Full-Service HRIS
 
 ## Vision
 
-AITE becomes a **free, complete HR platform** for Singapore — not just advisory, but the full operational suite: payroll calculation, CPF contribution management, leave management, payslip generation, claims processing, attendance tracking, and employee onboarding. Every feature that Payboy ($4-10/employee/month) and Talenox ($5/employee/month) charge for, AITE offers for free.
+Arbor becomes a **free, complete HR platform** for Singapore — not just advisory, but the full operational suite: payroll calculation, CPF contribution management, leave management, payslip generation, claims processing, attendance tracking, and employee onboarding. Features that paid HRIS platforms charge $4-10/employee/month for, Arbor offers for free.
 
-The AI shadow agent is the differentiator. Payboy processes payroll. AITE processes payroll AND tells you if you're doing it right, alerts you to regulatory changes, generates your compliance documents, and answers your HR questions with cited legal provisions. Free beats paid. AI beats forms-and-tables.
+The AI shadow agent is the differentiator. Traditional HRIS platforms process payroll. Arbor processes payroll AND tells you if you're doing it right, alerts you to regulatory changes, generates your compliance documents, and answers your HR questions with cited legal provisions. Free beats paid. AI beats forms-and-tables.
 
 ## Strategic Rationale
 
-1. **Eliminate the "additional cost" objection**: The value audit revealed that SME owners won't pay $99/month for advisory on top of $110/month for Talenox. If AITE IS the payroll system, the comparison becomes "free + AI" vs "$110/month + no AI."
+1. **Eliminate the "additional cost" objection**: The value audit revealed that SME owners won't pay $99/month for advisory on top of their existing HRIS costs. If Arbor IS the payroll system, the comparison becomes "free + AI" vs "paid + no AI."
 
-2. **Capture the data**: Employee records, salaries, leave balances, and payroll history are the fuel for the shadow agent's contextual intelligence. Integrating with Payboy means asking users to connect two systems. Building it in means the data is already there.
+2. **Capture the data**: Employee records, salaries, leave balances, and payroll history are the fuel for the shadow agent's contextual intelligence. Building the HRIS in means the data is already there — no need for external integrations.
 
 3. **Network effects**: Every employee invited to the platform is a potential future admin when they start their own company. Free employee access creates viral distribution.
 
-4. **Moat**: Payboy/Talenox can add a chatbot. They can't replicate the 13-step safety chain, 6-domain KB, trust lineage, and shadow agent architecture. Making the HRIS free means they can't compete on price either.
+4. **Moat**: The 13-step safety chain, 6-domain KB, trust lineage, and shadow agent architecture are not easily replicable. Making the HRIS free adds a price advantage on top of the technology advantage.
 
 ## What to Build (in addition to what exists)
 

@@ -30,6 +30,11 @@ import {
   Building2,
   Plug,
   GraduationCap,
+  Award,
+  FolderKanban,
+  Package,
+  Timer,
+  ClipboardCheck,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -167,6 +172,42 @@ const adminManagementNavItems: NavItem[] = [
     ],
   },
   {
+    labelKey: "nav.appraisals",
+    label: "Appraisals",
+    href: "/appraisals",
+    icon: Award,
+  },
+  {
+    labelKey: "nav.projects",
+    label: "Projects",
+    href: "/projects",
+    icon: FolderKanban,
+  },
+  {
+    labelKey: "nav.inventory",
+    label: "Inventory",
+    href: "/inventory",
+    icon: Package,
+  },
+  {
+    labelKey: "nav.recruitment",
+    label: "Recruitment",
+    href: "/recruitment",
+    icon: UserPlus,
+  },
+  {
+    labelKey: "nav.approvals",
+    label: "Approvals",
+    href: "/approvals",
+    icon: ClipboardCheck,
+  },
+  {
+    labelKey: "nav.reports",
+    label: "Reports",
+    href: "/reports",
+    icon: BarChart3,
+  },
+  {
     labelKey: "nav.analytics",
     label: "Analytics",
     href: "/analytics",
@@ -243,6 +284,18 @@ const employeeCoreNavItems: NavItem[] = [
     icon: Clock,
   },
   {
+    labelKey: "nav.my-timesheets",
+    label: "My Timesheets",
+    href: "/my-timesheets",
+    icon: Timer,
+  },
+  {
+    labelKey: "nav.my-inventory",
+    label: "My Inventory",
+    href: "/my-inventory",
+    icon: Package,
+  },
+  {
     labelKey: "nav.advisory",
     label: "Advisory",
     href: "/advisory",
@@ -317,7 +370,7 @@ export function NavigationSidebar({
           </div>
           {!collapsed && (
             <span className="text-white font-semibold text-lg truncate">
-              AITE
+              Arbor
             </span>
           )}
         </div>

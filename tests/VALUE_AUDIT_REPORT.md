@@ -1,4 +1,4 @@
-# Value Audit Report -- AITE HR Advisory Platform
+# Value Audit Report -- Arbor HR Advisory Platform
 
 **Date**: 2026-03-12
 **Auditor Perspective**: Enterprise CTO / VP Engineering evaluating for Singapore SME deployment
@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-The AITE HR Advisory Platform demonstrates **strong domain expertise** in Singapore employment law across its calculators, document templates, and advisory engine. The CPF calculator is deterministically correct (2026 rates, OW ceiling, PR tiers), the leave calculator handles all 8 statutory leave types accurately, and the document generation produces EA-compliant contracts with linked provisions and compliance notes. However, the platform's **knowledge base is empty** -- zero provisions, zero acts, zero domains in the database -- which means the compliance checking, KB search, and gap analysis features all return nothing. This is the single largest gap: the platform has an excellent engine with no fuel.
+The Arbor HR Advisory Platform demonstrates **strong domain expertise** in Singapore employment law across its calculators, document templates, and advisory engine. The CPF calculator is deterministically correct (2026 rates, OW ceiling, PR tiers), the leave calculator handles all 8 statutory leave types accurately, and the document generation produces EA-compliant contracts with linked provisions and compliance notes. However, the platform's **knowledge base is empty** -- zero provisions, zero acts, zero domains in the database -- which means the compliance checking, KB search, and gap analysis features all return nothing. This is the single largest gap: the platform has an excellent engine with no fuel.
 
 **Scorecard**: 107 PASSED | 1 CRITICAL | 7 HIGH | 3 MEDIUM out of 118 checks.
 
@@ -401,6 +401,6 @@ A compelling demo for a Singapore SME buyer would:
 
 ## Bottom Line
 
-If I were presenting this to my board after a $500K evaluation, I would say: "The AITE platform has **genuine domain expertise** -- its CPF calculator matches CPF Board numbers to the cent, its leave calculator handles all 8 statutory types correctly, and its document templates include EA-compliant sections with compliance guidance that our lawyers verified. The advisory engine produces substantive, cited responses for straightforward questions, and the guardrails system correctly blocks circumvention attempts. The governance workflow (regulatory updates with draft/review/approve/publish) is enterprise-grade. **However**, the knowledge base is empty, the compliance engine has no data to check against, and the guardrails block the exact questions our HR team needs answered most (wrongful dismissal, discrimination policy). I recommend **conditional adoption**: seed the KB with Singapore employment law, tune the guardrails to distinguish 'asking about discrimination' from 'attempting discrimination', and add a company onboarding flow. With those three fixes, this platform would be demo-ready and potentially worth the investment. Without them, we're buying an engine without fuel."
+If I were presenting this to my board after a $500K evaluation, I would say: "The Arbor platform has **genuine domain expertise** -- its CPF calculator matches CPF Board numbers to the cent, its leave calculator handles all 8 statutory types correctly, and its document templates include EA-compliant sections with compliance guidance that our lawyers verified. The advisory engine produces substantive, cited responses for straightforward questions, and the guardrails system correctly blocks circumvention attempts. The governance workflow (regulatory updates with draft/review/approve/publish) is enterprise-grade. **However**, the knowledge base is empty, the compliance engine has no data to check against, and the guardrails block the exact questions our HR team needs answered most (wrongful dismissal, discrimination policy). I recommend **conditional adoption**: seed the KB with Singapore employment law, tune the guardrails to distinguish 'asking about discrimination' from 'attempting discrimination', and add a company onboarding flow. With those three fixes, this platform would be demo-ready and potentially worth the investment. Without them, we're buying an engine without fuel."
 
 **Verdict: CONDITIONAL -- strong engine, needs data and guardrail tuning to deliver on its promise.**

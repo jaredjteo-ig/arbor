@@ -1,4 +1,4 @@
-"""Base MCP server class for all AITE integration servers.
+"""Base MCP server class for all Arbor integration servers.
 
 Provides shared infrastructure:
 - Tenant isolation middleware (JWT company_id validation)
@@ -61,16 +61,16 @@ class TenantContext:
         self.role = role
 
 
-class AiteMCPServer:
-    """Base class for all AITE MCP integration servers.
+class ArborMCPServer:
+    """Base class for all Arbor MCP integration servers.
 
     Wraps tool registration with automatic tenant validation,
     audit logging, and error standardization.
 
     Usage::
 
-        server = AiteMCPServer(
-            name="aite-accounting",
+        server = ArborMCPServer(
+            name="arbor-accounting",
             description="Accounting integrations: Xero, QBO, Zoho",
         )
 

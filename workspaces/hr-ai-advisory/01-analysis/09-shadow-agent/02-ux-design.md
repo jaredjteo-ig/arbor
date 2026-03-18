@@ -1,7 +1,7 @@
 # Shadow Agent UX Design: Component Specifications
 
 **Design Authority**: Brief 04 (Shadow Agent) + Impact-Verse Shadow Agent Blueprint
-**Design System**: AITE Design System (`globals.css` tokens, `design-system/` components)
+**Design System**: Arbor Design System (`globals.css` tokens, `design-system/` components)
 **Target**: Next.js 16 + Tailwind v4 + Lucide icons
 
 ---
@@ -67,7 +67,7 @@ New CSS custom properties added to `:root` in `globals.css`. These extend the ex
 }
 ```
 
-**Rationale**: The shadow agent's color identity is derived from `--color-primary` (#1E3A5F) rather than introducing an entirely new hue. This keeps the AI presence within the existing brand palette while the translucent, glowing treatments distinguish it from standard platform elements. The reference architecture uses an "ocean" palette for Impact-Verse; AITE adapts this to its navy primary.
+**Rationale**: The shadow agent's color identity is derived from `--color-primary` (#1E3A5F) rather than introducing an entirely new hue. This keeps the AI presence within the existing brand palette while the translucent, glowing treatments distinguish it from standard platform elements. The reference architecture uses an "ocean" palette for Impact-Verse; Arbor adapts this to its navy primary.
 
 ---
 
@@ -121,7 +121,7 @@ Inner circle:
 
 - **Opacity**: Circle rises to `1.0`
 - **Scale**: `scale(1.08)` on the inner circle
-- **Tooltip**: Appears above or left of widget. Text: "Ask AITE" with keyboard shortcut badge `Ctrl+Shift+A`
+- **Tooltip**: Appears above or left of widget. Text: "Ask Arbor" with keyboard shortcut badge `Ctrl+Shift+A`
 - **Transition**: `200ms ease-out`
 
 ```
@@ -178,7 +178,7 @@ When the AI backend is unavailable (API key invalid, service down):
 
 - **Opacity**: `0.3`
 - **No pulse animation**
-- **Tooltip**: "AITE is temporarily unavailable"
+- **Tooltip**: "Arbor is temporarily unavailable"
 - **Click behavior**: Shows a small toast explaining the issue rather than opening the command surface
 
 ### 2.3 Shadow Mark Icon
@@ -980,7 +980,7 @@ Bottom: Emergency, Settings, Help
 **Employee navigation** (new):
 
 ```
-Core: My Dashboard, Ask AITE
+Core: My Dashboard, Ask Arbor
 My Work: My Leave, My Payslips
 Info: Company Policies, My Terms
 Bottom: Settings, Help
@@ -991,7 +991,7 @@ Bottom: Settings, Help
 ```typescript
 const employeeNavItems: NavItem[] = [
   { label: "My Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Ask AITE", href: "/advisory", icon: MessageSquare },
+  { label: "Ask Arbor", href: "/advisory", icon: MessageSquare },
 ];
 
 const employeeWorkItems: NavItem[] = [
@@ -1338,7 +1338,7 @@ BottomSheet
 | **Touch targets (44px)**  | Shadow Widget: 44px. All buttons: min-h-[44px] min-w-[44px]. Context dots: 44px touch area with 6px visual (padding-based).                                                                                            |
 | **Focus indicators**      | All interactive elements use existing `focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]`.                                                                           |
 | **Color contrast**        | All text meets 4.5:1 ratio. `var(--color-gray-700)` on `var(--shadow-surface)` = 5.2:1. `var(--color-gray-400)` on white = 3.1:1 (used only for decorative elements, never for essential information).                 |
-| **Screen reader support** | Shadow Widget: `aria-label="Open AITE assistant (Ctrl+Shift+A)"`. Command Surface: `role="dialog" aria-modal="true" aria-label="AITE command palette"`. Margin: `role="complementary" aria-label="AI insights panel"`. |
+| **Screen reader support** | Shadow Widget: `aria-label="Open Arbor assistant (Ctrl+Shift+A)"`. Command Surface: `role="dialog" aria-modal="true" aria-label="Arbor command palette"`. Margin: `role="complementary" aria-label="AI insights panel"`. |
 | **Keyboard navigation**   | Full keyboard support for all interactions. `Ctrl+Shift+A` for command, `Ctrl+Shift+I` for margin, `Escape` to close overlays. Tab order follows visual order.                                                         |
 | **Reduced motion**        | All animations respect `prefers-reduced-motion: reduce` via existing global CSS rule. Static fallbacks provide equivalent information.                                                                                 |
 | **Text sizing**           | All text uses the existing `--text-size-multiplier` system. AI text uses the same type scale as platform text.                                                                                                         |
@@ -1351,7 +1351,7 @@ BottomSheet
 ```html
 <button
   type="button"
-  aria-label="Open AITE assistant (Ctrl+Shift+A)"
+  aria-label="Open Arbor assistant (Ctrl+Shift+A)"
   aria-expanded="{commandOpen}"
   aria-haspopup="dialog"
 ></button>
@@ -1360,13 +1360,13 @@ BottomSheet
 When in attention state, add:
 
 ```html
-aria-description="AITE has new insights available"
+aria-description="Arbor has new insights available"
 ```
 
 **Command Surface**:
 
 ```html
-<div role="dialog" aria-modal="true" aria-label="AITE command palette">
+<div role="dialog" aria-modal="true" aria-label="Arbor command palette">
   <input
     role="combobox"
     aria-expanded="{hasSuggestions}"
@@ -1411,12 +1411,12 @@ aria-description="AITE has new insights available"
 | Event                         | Announcement                                            | Method                                   |
 | ----------------------------- | ------------------------------------------------------- | ---------------------------------------- |
 | New insight arrives in margin | "New AI insight available"                              | `aria-live="polite"` region              |
-| Attention state activated     | "AITE has new insights to share"                        | `aria-live="polite"` on widget           |
+| Attention state activated     | "Arbor has new insights to share"                        | `aria-live="polite"` on widget           |
 | Command surface opens         | Focus moves to input; dialog is announced automatically | `role="dialog"`                          |
 | Result arrives                | "Result: {first 100 chars}"                             | `aria-live="polite"` on result container |
 | Thinking step completes       | "{step text} complete"                                  | `aria-live="polite"`                     |
 | Navigation confirmation       | "Navigating to {page name}"                             | `aria-live="assertive"`                  |
-| Error state                   | "AITE is temporarily unavailable"                       | `aria-live="polite"`                     |
+| Error state                   | "Arbor is temporarily unavailable"                       | `aria-live="polite"`                     |
 
 ### 10.4 Motion Sensitivity
 
@@ -1470,7 +1470,7 @@ apps/web/src/components/
 | Current Component                                  | Replaced By                             | Migration Path                                                                   |
 | -------------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------- |
 | `AdvisoryFAB` (floating button on all pages)       | `ShadowWidget`                          | Remove FAB, mount ShadowWidget in AppShell                                       |
-| `AskAITEButton` (contextual entry points)          | `ShadowAnnotation` + inline annotations | Replace static buttons with dynamic annotations                                  |
+| `AskArborButton` (contextual entry points)          | `ShadowAnnotation` + inline annotations | Replace static buttons with dynamic annotations                                  |
 | Quick Actions "Ask a question" button on dashboard | `ShadowBriefingCard` command entry      | Briefing card includes a command shortcut                                        |
 | Advisory page chat-first layout                    | Unchanged                               | Advisory page remains for deep research; command surface handles quick questions |
 

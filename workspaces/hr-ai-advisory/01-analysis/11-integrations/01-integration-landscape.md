@@ -1,8 +1,8 @@
-# AITE Integration Landscape — Full Research (March 2026)
+# Arbor Integration Landscape — Full Research (March 2026)
 
 ## Executive Summary
 
-AITE has 13 deferred items from the feature parity matrix, mostly third-party integrations. The user wants ALL possible connectors built, using MCP as the integration architecture so the shadow agent can invoke them via natural language objectives.
+Arbor has 13 deferred items from the feature parity matrix, mostly third-party integrations. The user wants ALL possible connectors built, using MCP as the integration architecture so the shadow agent can invoke them via natural language objectives.
 
 **Key findings from research:**
 
@@ -89,15 +89,13 @@ AITE has 13 deferred items from the feature parity matrix, mostly third-party in
 
 ### G. HRIS Migration (Data Import)
 
-| Platform    | API Quality                | Notes                            | Priority      |
-| ----------- | -------------------------- | -------------------------------- | ------------- |
-| Talenox     | Good (public REST + OAuth) | Public docs at talenox.github.io | P1            |
-| HReasily    | Emerging (unified API)     | Launched 2025                    | P2            |
-| Payboy      | Private/partner-only       | Integration via partnership      | P2            |
-| Swingvy     | No API                     | No programmatic access           | P3 (CSV only) |
-| JustLogin   | No public API              | Pre-built integrations only      | P3 (CSV only) |
-| Info-Tech   | No public API              | Internal integrations only       | P3 (CSV only) |
-| Generic CSV | Built (existing)           | Already implemented in AITE      | Done          |
+| Platform            | API Quality                | Notes                            | Priority      |
+| ------------------- | -------------------------- | -------------------------------- | ------------- |
+| Platforms with REST  | Good (public REST + OAuth) | Public docs available            | P1            |
+| Platforms with API   | Emerging (unified API)     | Newer API offerings              | P2            |
+| Partner-only APIs    | Private/partner-only       | Integration via partnership      | P2            |
+| No public API        | No API                     | No programmatic access           | P3 (CSV only) |
+| Generic CSV          | Built (existing)           | Already implemented in Arbor     | Done          |
 
 ### H. Regulatory Monitoring
 

@@ -13,7 +13,7 @@ set -euo pipefail
 
 SERVER="ec2-user@52.220.50.167"
 SSH_KEY="${HOME}/.ssh/ai-coach.pem"
-REMOTE_DIR="/opt/aite"
+REMOTE_DIR="/opt/arbor"
 SSH="ssh -i ${SSH_KEY} ${SERVER}"
 
 BUILD_BACKEND=true
@@ -31,7 +31,7 @@ git push origin main
 echo ""
 echo "=== Step 2: Pull on server ==="
 TOKEN=$(gh auth token)
-${SSH} "cd ${REMOTE_DIR} && git remote set-url origin https://x-access-token:${TOKEN}@github.com/esperie/aite.git && git fetch origin main && git reset --hard origin/main && git log --oneline -1"
+${SSH} "cd ${REMOTE_DIR} && git remote set-url origin https://x-access-token:${TOKEN}@github.com/terrene-foundation/arbor.git && git fetch origin main && git reset --hard origin/main && git log --oneline -1"
 
 echo ""
 echo "=== Step 3: Rebuild containers ==="
@@ -44,7 +44,7 @@ ${SSH} "cd ${REMOTE_DIR}/deploy && docker compose -f docker-compose.prod.yml --e
 echo ""
 echo "=== Step 4: Verify health ==="
 sleep 20
-${SSH} "docker ps --format 'table {{.Names}}\t{{.Status}}' && echo '---' && curl -sf https://aite.kailash.ai/api/health | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"status\",\"?\"))'"
+${SSH} "docker ps --format 'table {{.Names}}\t{{.Status}}' && echo '---' && curl -sf https://arbor.kailash.ai/api/health | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"status\",\"?\"))'"
 
 echo ""
 echo "=== Deployed ==="

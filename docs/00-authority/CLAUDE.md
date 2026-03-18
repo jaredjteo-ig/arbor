@@ -1,10 +1,10 @@
-# AITE Agent Instructions
+# Arbor Agent Instructions
 
-Preloaded context for AI agents working on the AITE HR Advisory Platform.
+Preloaded context for AI agents working on the Arbor HR Advisory Platform.
 
 ## What This Project Is
 
-AITE is an AI-powered HR advisory platform for Singapore SMEs. It provides source-cited guidance on employment regulations across six domains: Employment Act, CPF, Foreign Manpower (EFMA), Fair Employment (TAFEP/WFA), Workplace Safety and Health, and Tax/IRAS.
+Arbor is an AI-powered HR advisory platform for Singapore SMEs. It provides source-cited guidance on employment regulations across six domains: Employment Act, CPF, Foreign Manpower (EFMA), Fair Employment (TAFEP/WFA), Workplace Safety and Health, and Tax/IRAS.
 
 ## Technology Stack
 
@@ -21,13 +21,19 @@ AITE is an AI-powered HR advisory platform for Singapore SMEs. It provides sourc
 
 ```
 src/hr_advisory/
-  api/              Nexus platform, FastAPI routers, middleware
+  api/              Nexus platform, 23+ FastAPI routers, middleware (auth, rate limiting)
+  api/routers/      auth, advisory, payroll, leave, claims, attendance, shifts, employees,
+                    appraisals, projects, inventory, recruitment, reports, approval_groups,
+                    calculator, compliance, document, kb, profile, search, learning, admin,
+                    integrations
   agents/           Kaizen agents (orchestrator, specialists, memory)
-  models/           DataFlow models (company, user, knowledge base)
+  models/           60+ DataFlow models (company, user, KB, payroll, leave, claims, attendance,
+                    shifts, appraisals, projects, inventory, recruitment, approval groups)
+  services/         Payroll calculator, statutory files, PII encryption, demo seed data
   workflows/        Kailash Core SDK workflows (calculators, guardrails, classification)
   trust/            EATP lineage, CARE governance, citation validation
   kb/               Knowledge base content and pipeline
-  security/         Input validation, PDPA, rate limiting
+  security/         Input validation, PDPA, rate limiting (sliding window), PII encryption
   templates/        Document templates (KETs, contracts, policies)
   config/           Settings from environment variables
   mcp_servers/      5 MCP servers, 38 adapters, resilience infrastructure
@@ -66,17 +72,36 @@ results, run_id = await runtime.execute_workflow_async(workflow.build(), inputs=
 
 All API keys and model names come from `.env`. Never hardcode model strings. See `.env.example` for the full list.
 
+## HRIS Modules
+
+The platform includes a comprehensive HRIS engine with 120+ API endpoints across these modules:
+
+| Module      | Key Features                                                                            |
+| ----------- | --------------------------------------------------------------------------------------- |
+| Payroll     | Pay items (OW/AW, IR8A), pay schemes, adhoc/off-cycle, simulation, variance, line items |
+| Leave       | 11 types, hourly leave, encashment, off-in-lieu, carry-forward with expiry              |
+| Claims      | Co-payment, claim groups, BIK, payroll integration with cut-off                         |
+| Attendance  | Lateness/early departure brackets, auto clock-out, today dashboard, summary             |
+| Shifts      | Hourly rates, multipliers, break types, publish workflow                                |
+| Employees   | 30+ fields, self-service, PII encryption, PDPA audit logging                            |
+| Appraisals  | Template builder, periods, launch, employee/reviewer workflows, sign-off                |
+| Projects    | Role-based hourly rates, timesheets, allocations, overhead, budget variance              |
+| Inventory   | Location/category/item hierarchy, lifecycle state machine, requests, movement audit      |
+| Recruitment | Job listings, candidate pipeline, interviews, feedback, hire-to-employee conversion      |
+| Reports     | 11 report types (payroll, CPF, banks, YTD, variance, leave, claims, attendance, etc.)   |
+| Approvals   | Approval groups, timesheet approval queue, inventory request approval queue              |
+
 ## MCP Integration Layer
 
 ### Architecture
 
-- 5 MCP servers: aite-government, aite-accounting, aite-banking, aite-communications, aite-regulatory
+- 5 MCP servers: arbor-government, arbor-accounting, arbor-banking, arbor-communications, arbor-regulatory
 - 38 connectors covering SG government APIs, accounting, banking, communications, regulatory monitoring
 - Shadow agent discovers tools via registry and calls them through natural language objectives
 
 ### Key Modules
 
-- `src/hr_advisory/mcp_servers/base.py` -- AiteMCPServer base class
+- `src/hr_advisory/mcp_servers/base.py` -- ArborMCPServer base class
 - `src/hr_advisory/mcp_servers/registry.py` -- Server discovery
 - `src/hr_advisory/mcp_servers/resilience.py` -- Circuit breakers (25 pre-configured)
 - `src/hr_advisory/mcp_servers/idempotency.py` -- Submission ledger (prevents double-submit)

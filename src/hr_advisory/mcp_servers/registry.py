@@ -12,16 +12,16 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from hr_advisory.mcp_servers.base import AiteMCPServer
+from hr_advisory.mcp_servers.base import ArborMCPServer
 
 logger = logging.getLogger(__name__)
 
 # Lazy-initialized server instances
-_servers: dict[str, AiteMCPServer] = {}
+_servers: dict[str, ArborMCPServer] = {}
 _initialized = False
 
 
-def _create_servers() -> dict[str, AiteMCPServer]:
+def _create_servers() -> dict[str, ArborMCPServer]:
     """Create and configure all MCP server instances.
 
     Imports are deferred to avoid circular dependencies and to allow
@@ -32,43 +32,43 @@ def _create_servers() -> dict[str, AiteMCPServer]:
     try:
         from hr_advisory.mcp_servers.regulatory_server import server as regulatory
 
-        servers["aite-regulatory"] = regulatory
+        servers["arbor-regulatory"] = regulatory
     except ImportError:
-        logger.warning("aite-regulatory server not available")
+        logger.warning("arbor-regulatory server not available")
 
     try:
         from hr_advisory.mcp_servers.government_server import server as government
 
-        servers["aite-government"] = government
+        servers["arbor-government"] = government
     except ImportError:
-        logger.warning("aite-government server not available")
+        logger.warning("arbor-government server not available")
 
     try:
         from hr_advisory.mcp_servers.accounting_server import server as accounting
 
-        servers["aite-accounting"] = accounting
+        servers["arbor-accounting"] = accounting
     except ImportError:
-        logger.warning("aite-accounting server not available")
+        logger.warning("arbor-accounting server not available")
 
     try:
         from hr_advisory.mcp_servers.banking_server import server as banking
 
-        servers["aite-banking"] = banking
+        servers["arbor-banking"] = banking
     except ImportError:
-        logger.warning("aite-banking server not available")
+        logger.warning("arbor-banking server not available")
 
     try:
         from hr_advisory.mcp_servers.communications_server import server as comms
 
-        servers["aite-communications"] = comms
+        servers["arbor-communications"] = comms
     except ImportError:
-        logger.warning("aite-communications server not available")
+        logger.warning("arbor-communications server not available")
 
     logger.info("MCP registry initialized: %d servers", len(servers))
     return servers
 
 
-def get_all_servers() -> dict[str, AiteMCPServer]:
+def get_all_servers() -> dict[str, ArborMCPServer]:
     """Get all registered MCP servers."""
     global _servers, _initialized
     if not _initialized:
@@ -77,7 +77,7 @@ def get_all_servers() -> dict[str, AiteMCPServer]:
     return _servers
 
 
-def get_server(name: str) -> Optional[AiteMCPServer]:
+def get_server(name: str) -> Optional[ArborMCPServer]:
     """Get a specific MCP server by name."""
     return get_all_servers().get(name)
 

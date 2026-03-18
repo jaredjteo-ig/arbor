@@ -42,8 +42,18 @@ export interface EmployeeDetail {
   nationality: string;
   pass_type: string;
   salary_monthly: number;
+  salary_type: string;
+  payment_method: string;
+  payment_frequency: string;
+  working_hours_type: string;
+  overtime_eligible: boolean;
+  tags: string;
   notice_period_days: number;
   is_active: boolean;
+  /* Tax & CPF */
+  iras_auto_inclusion: string;
+  tax_reference: string;
+  cpf_status: string;
   /* Personal */
   date_of_birth: string;
   gender: string;
@@ -116,6 +126,8 @@ export interface EmployeeDocument {
   mime_type: string;
   description: string;
   is_confidential: boolean;
+  expiry_date?: string;
+  uploaded_at?: string;
 }
 
 export interface LeaveBalance {
@@ -158,6 +170,68 @@ export interface InviteValidation {
   company_name: string;
   role: string;
   status: string;
+}
+
+export interface FamilyMember {
+  id: number;
+  employee_id: number;
+  name: string;
+  relationship: string;
+  date_of_birth: string;
+  gender: string;
+  citizenship_status: string;
+  nric_fin?: string;
+  nric_fin_last4?: string;
+}
+
+export interface EmployeeNote {
+  id: number;
+  employee_id: number;
+  note_type: string;
+  content: string;
+  created_by: number;
+  is_confidential: boolean;
+  created_at?: string;
+}
+
+export interface EmployeeSkill {
+  id: number;
+  employee_id: number;
+  skill_name: string;
+  proficiency_level: string;
+  certification_name: string;
+  certification_number: string;
+  certified_date: string;
+  expiry_date: string;
+  issuing_body: string;
+}
+
+export interface CustomFieldDefinition {
+  id: number;
+  company_id: number;
+  field_name: string;
+  field_label: string;
+  field_type: string;
+  dropdown_options: string;
+  is_required: boolean;
+  display_order: number;
+  applies_to: string;
+}
+
+export interface CustomFieldValue {
+  id: number;
+  entity_type: string;
+  entity_id: number;
+  field_definition_id: number;
+  value: string;
+}
+
+export interface AdminLeaveBalance {
+  leave_type: string;
+  year: number;
+  entitlement_days: number;
+  used_days: number;
+  pending_days: number;
 }
 
 /* ── Public (no-auth) helpers ─────────────────────────────── */
@@ -396,6 +470,206 @@ export const employeesApi = {
     return apiClient.post<{ message: string }>(
       `/employees/${id}/extend-probation`,
       { new_end_date: newEndDate, remarks },
+    );
+  },
+
+  /* ── Family Members ──────────────────────────────────────── */
+
+  /** List family members for an employee. */
+  listFamilyMembers(
+    employeeId: number,
+  ): Promise<{ family_members: FamilyMember[]; count: number }> {
+    return apiClient.get<{ family_members: FamilyMember[]; count: number }>(
+      `/employees/${employeeId}/family-members`,
+    );
+  },
+
+  /** Add a new family member. */
+  createFamilyMember(
+    employeeId: number,
+    data: Partial<FamilyMember>,
+  ): Promise<FamilyMember> {
+    return apiClient.post<FamilyMember>(
+      `/employees/${employeeId}/family-members`,
+      data,
+    );
+  },
+
+  /** Update an existing family member. */
+  updateFamilyMember(
+    employeeId: number,
+    memberId: number,
+    data: Partial<FamilyMember>,
+  ): Promise<FamilyMember> {
+    return apiClient.patch<FamilyMember>(
+      `/employees/${employeeId}/family-members/${memberId}`,
+      data,
+    );
+  },
+
+  /** Delete a family member. */
+  deleteFamilyMember(employeeId: number, memberId: number): Promise<void> {
+    return apiClient.delete<void>(
+      `/employees/${employeeId}/family-members/${memberId}`,
+    );
+  },
+
+  /* ── Employee Notes ──────────────────────────────────────── */
+
+  /** List notes for an employee. */
+  listNotes(
+    employeeId: number,
+  ): Promise<{ notes: EmployeeNote[]; count: number }> {
+    return apiClient.get<{ notes: EmployeeNote[]; count: number }>(
+      `/employees/${employeeId}/notes`,
+    );
+  },
+
+  /** Add a new note. */
+  createNote(
+    employeeId: number,
+    data: Partial<EmployeeNote>,
+  ): Promise<EmployeeNote> {
+    return apiClient.post<EmployeeNote>(`/employees/${employeeId}/notes`, data);
+  },
+
+  /** Update an existing note. */
+  updateNote(
+    employeeId: number,
+    noteId: number,
+    data: Partial<EmployeeNote>,
+  ): Promise<EmployeeNote> {
+    return apiClient.patch<EmployeeNote>(
+      `/employees/${employeeId}/notes/${noteId}`,
+      data,
+    );
+  },
+
+  /** Delete a note. */
+  deleteNote(employeeId: number, noteId: number): Promise<void> {
+    return apiClient.delete<void>(`/employees/${employeeId}/notes/${noteId}`);
+  },
+
+  /* ── Employee Skills & Certifications ────────────────────── */
+
+  /** List skills and certifications for an employee. */
+  listSkills(
+    employeeId: number,
+  ): Promise<{ skills: EmployeeSkill[]; count: number }> {
+    return apiClient.get<{ skills: EmployeeSkill[]; count: number }>(
+      `/employees/${employeeId}/skills`,
+    );
+  },
+
+  /** Add a new skill or certification. */
+  createSkill(
+    employeeId: number,
+    data: Partial<EmployeeSkill>,
+  ): Promise<EmployeeSkill> {
+    return apiClient.post<EmployeeSkill>(
+      `/employees/${employeeId}/skills`,
+      data,
+    );
+  },
+
+  /** Update an existing skill or certification. */
+  updateSkill(
+    employeeId: number,
+    skillId: number,
+    data: Partial<EmployeeSkill>,
+  ): Promise<EmployeeSkill> {
+    return apiClient.patch<EmployeeSkill>(
+      `/employees/${employeeId}/skills/${skillId}`,
+      data,
+    );
+  },
+
+  /** Delete a skill or certification. */
+  deleteSkill(employeeId: number, skillId: number): Promise<void> {
+    return apiClient.delete<void>(`/employees/${employeeId}/skills/${skillId}`);
+  },
+
+  /* ── Custom Field Definitions ────────────────────────────── */
+
+  /** List custom field definitions for the current company. */
+  listCustomFields(): Promise<{
+    custom_fields: CustomFieldDefinition[];
+    count: number;
+  }> {
+    return apiClient.get<{
+      custom_fields: CustomFieldDefinition[];
+      count: number;
+    }>("/employees/custom-fields");
+  },
+
+  /** Create a new custom field definition. */
+  createCustomField(
+    data: Partial<CustomFieldDefinition>,
+  ): Promise<CustomFieldDefinition> {
+    return apiClient.post<CustomFieldDefinition>(
+      "/employees/custom-fields",
+      data,
+    );
+  },
+
+  /** Update a custom field definition. */
+  updateCustomField(
+    fieldId: number,
+    data: Partial<CustomFieldDefinition>,
+  ): Promise<CustomFieldDefinition> {
+    return apiClient.patch<CustomFieldDefinition>(
+      `/employees/custom-fields/${fieldId}`,
+      data,
+    );
+  },
+
+  /** Delete a custom field definition. */
+  deleteCustomField(fieldId: number): Promise<void> {
+    return apiClient.delete<void>(`/employees/custom-fields/${fieldId}`);
+  },
+
+  /* ── Custom Field Values ─────────────────────────────────── */
+
+  /** List custom field values for an employee. */
+  listCustomFieldValues(
+    employeeId: number,
+  ): Promise<{ values: CustomFieldValue[]; count: number }> {
+    return apiClient.get<{ values: CustomFieldValue[]; count: number }>(
+      `/employees/${employeeId}/custom-field-values`,
+    );
+  },
+
+  /** Set a custom field value for an employee. */
+  setCustomFieldValue(
+    employeeId: number,
+    data: Partial<CustomFieldValue>,
+  ): Promise<CustomFieldValue> {
+    return apiClient.post<CustomFieldValue>(
+      `/employees/${employeeId}/custom-field-values`,
+      data,
+    );
+  },
+
+  /** Update an existing custom field value. */
+  updateCustomFieldValue(
+    employeeId: number,
+    valueId: number,
+    data: Partial<CustomFieldValue>,
+  ): Promise<CustomFieldValue> {
+    return apiClient.patch<CustomFieldValue>(
+      `/employees/${employeeId}/custom-field-values/${valueId}`,
+      data,
+    );
+  },
+
+  /* ── Leave Balances (Admin) ──────────────────────────────── */
+
+  /** Admin: get leave balances for a specific employee. */
+  getEmployeeLeaveBalances(
+    employeeId: number,
+  ): Promise<{ balances: AdminLeaveBalance[] }> {
+    return apiClient.get<{ balances: AdminLeaveBalance[] }>(
+      `/employees/${employeeId}/leave-balances`,
     );
   },
 };

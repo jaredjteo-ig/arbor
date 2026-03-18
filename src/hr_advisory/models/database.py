@@ -12,7 +12,7 @@ def get_database_url() -> str:
     """Get database URL from environment, never hardcode."""
     return os.environ.get(
         "DATABASE_URL",
-        "postgresql://aite:aite@localhost:5432/aite",
+        "postgresql://arbor:arbor@localhost:5432/arbor",
     )
 
 

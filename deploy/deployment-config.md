@@ -1,4 +1,4 @@
-# AITE Deployment Configuration
+# Arbor Deployment Configuration
 
 ## Decision Summary
 
@@ -8,7 +8,7 @@
 | Instance type  | t2.medium                                | Utilizing pre-paid reserved instance capacity                |
 | Orchestration  | Docker Compose                           | Single-server deployment, simpler than K8s for current scale |
 | Reverse proxy  | Caddy                                    | Zero-config automatic HTTPS with Let's Encrypt               |
-| Domain         | aite.kailash.ai                          | Route53 A record to Elastic IP                               |
+| Domain         | arbor.kailash.ai                         | Route53 A record to Elastic IP                               |
 | Database       | PostgreSQL 16 + pgvector (containerized) | Vector search for KB embeddings                              |
 | Cache          | Redis 7 (containerized)                  | Session management                                           |
 
@@ -23,7 +23,7 @@ Internet
 │  Amazon Linux 2023 │ Elastic IP: 52.220.50.167           │
 │                                                          │
 │  ┌─────────────────────────────────────────────┐         │
-│  │ Caddy (aite-caddy)         ports 80, 443    │         │
+│  │ Caddy (arbor-caddy)         ports 80, 443    │         │
 │  │ Auto HTTPS via Let's Encrypt                │         │
 │  │ /api/* → backend:8000                       │         │
 │  │ /*     → frontend:3000                      │         │
@@ -31,36 +31,36 @@ Internet
 │           │                  │                           │
 │  ┌────────▼────────┐  ┌─────▼──────────────┐            │
 │  │ Next.js (3000)  │  │ FastAPI (8000)     │            │
-│  │ aite-frontend   │  │ aite-backend       │            │
+│  │ arbor-frontend   │  │ arbor-backend       │            │
 │  │ standalone mode  │  │ AsyncLocalRuntime  │            │
 │  └─────────────────┘  └──┬─────────┬───────┘            │
 │                          │         │                     │
 │  ┌───────────────────────▼┐  ┌─────▼──────────────────┐ │
 │  │ PostgreSQL 16 (5432)   │  │ Redis 7 (6379)         │ │
-│  │ aite-postgres           │  │ aite-redis              │ │
+│  │ arbor-postgres           │  │ arbor-redis              │ │
 │  │ pgvector extension     │  │ password-protected     │ │
-│  │ Volume: aite_pgdata    │  │ Volume: aite_redis     │ │
+│  │ Volume: arbor_pgdata    │  │ Volume: arbor_redis     │ │
 │  └────────────────────────┘  └────────────────────────┘ │
 └──────────────────────────────────────────────────────────┘
 ```
 
 ## AWS Infrastructure
 
-| Resource       | ID / Value                                     |
-| -------------- | ---------------------------------------------- |
-| EC2 Instance   | `i-0632bfeef01ee415b`                          |
-| Instance Type  | `t2.medium` (reserved)                         |
-| AMI            | Amazon Linux 2023                              |
-| Elastic IP     | `52.220.50.167`                                |
-| Security Group | `sg-08193a91dc92c2bfc` (aite-kailash)          |
-| VPC            | `vpc-22408344`                                 |
-| Subnet         | `subnet-b8ca7dde` (ap-southeast-1a)            |
-| Key Pair       | `ai-coach` (~/.ssh/ai-coach.pem)               |
-| Route53 Zone   | `Z0197289202NLLMMA8HP0` (kailash.ai)           |
-| DNS Record     | `aite.kailash.ai` → `52.220.50.167` (A record) |
-| AWS Account    | `884647653201` (integrumglobal)                |
-| AWS Profile    | `esperie`                                      |
-| Region         | `ap-southeast-1` (Singapore)                   |
+| Resource       | ID / Value                                      |
+| -------------- | ----------------------------------------------- |
+| EC2 Instance   | `i-0632bfeef01ee415b`                           |
+| Instance Type  | `t2.medium` (reserved)                          |
+| AMI            | Amazon Linux 2023                               |
+| Elastic IP     | `52.220.50.167`                                 |
+| Security Group | `sg-08193a91dc92c2bfc` (arbor-kailash)           |
+| VPC            | `vpc-22408344`                                  |
+| Subnet         | `subnet-b8ca7dde` (ap-southeast-1a)             |
+| Key Pair       | `ai-coach` (~/.ssh/ai-coach.pem)                |
+| Route53 Zone   | `Z0197289202NLLMMA8HP0` (kailash.ai)            |
+| DNS Record     | `arbor.kailash.ai` → `52.220.50.167` (A record) |
+| AWS Account    | `884647653201` (integrumglobal)                 |
+| AWS Profile    | `esperie`                                       |
+| Region         | `ap-southeast-1` (Singapore)                    |
 
 ### Security Group Rules
 
@@ -105,13 +105,13 @@ Internet
 
 ### Optional
 
-| Variable            | Default                   | Description          |
-| ------------------- | ------------------------- | -------------------- |
-| `ANTHROPIC_API_KEY` | —                         | Anthropic API key    |
-| `DEFAULT_LLM_MODEL` | `gpt-4o`                  | Default LLM model    |
-| `LOG_LEVEL`         | `INFO`                    | Logging level        |
-| `APP_ENV`           | `production`              | Environment name     |
-| `CORS_ORIGINS`      | `https://aite.kailash.ai` | Allowed CORS origins |
+| Variable            | Default                    | Description          |
+| ------------------- | -------------------------- | -------------------- |
+| `ANTHROPIC_API_KEY` | —                          | Anthropic API key    |
+| `DEFAULT_LLM_MODEL` | `gpt-4o`                   | Default LLM model    |
+| `LOG_LEVEL`         | `INFO`                     | Logging level        |
+| `APP_ENV`           | `production`               | Environment name     |
+| `CORS_ORIGINS`      | `https://arbor.kailash.ai` | Allowed CORS origins |
 
 ### Integration Layer (MCP Servers — all optional, enable as needed)
 
@@ -143,7 +143,7 @@ Internet
 ## SSL/TLS
 
 - Provider: Let's Encrypt (automated via Caddy)
-- Certificate CN: `aite.kailash.ai`
+- Certificate CN: `arbor.kailash.ai`
 - Renewal: Automatic (Caddy handles renewal before expiry)
 - HSTS: Enabled (`max-age=31536000; includeSubDomains`)
 - Security headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
@@ -165,15 +165,15 @@ ssh -i ~/.ssh/ai-coach.pem ec2-user@52.220.50.167
 rsync -avz --exclude='.git' --exclude='node_modules' --exclude='.venv' \
   --exclude='__pycache__' --exclude='.next' --exclude='*.pyc' \
   -e "ssh -i ~/.ssh/ai-coach.pem" \
-  . ec2-user@52.220.50.167:/opt/aite/
+  . ec2-user@52.220.50.167:/opt/arbor/
 
 # 3. On server: rebuild and restart
-cd /opt/aite/deploy
+cd /opt/arbor/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 # 4. Verify
 docker ps  # all 5 containers healthy
-curl -f https://aite.kailash.ai/health  # 200 OK
+curl -f https://arbor.kailash.ai/health  # 200 OK
 ```
 
 ### Rollback
@@ -183,7 +183,7 @@ curl -f https://aite.kailash.ai/health  # 200 OK
 ssh -i ~/.ssh/ai-coach.pem ec2-user@52.220.50.167
 
 # Roll back to previous code
-cd /opt/aite
+cd /opt/arbor
 git checkout <previous-commit>
 
 # Rebuild
@@ -191,7 +191,7 @@ cd deploy
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 # Verify
-curl -f https://aite.kailash.ai/health
+curl -f https://arbor.kailash.ai/health
 ```
 
 ### Server Setup (fresh instance)
@@ -216,7 +216,7 @@ ssh ec2-user@<IP> 'bash -s' < deploy/setup-server.sh
 - Daily automated backups via `pg_dump`
 - Retain 30 days of daily backups
 - Weekly backups retained for 90 days
-- Data volume: `aite_pgdata` (persistent Docker volume)
+- Data volume: `arbor_pgdata` (persistent Docker volume)
 
 ### Recovery Procedure
 

@@ -1,4 +1,4 @@
-"""Document templates for AITE HR Advisory.
+"""Document templates for Arbor HR Advisory.
 
 Each template is an EA-compliant document with placeholder fields
 that get filled in during document generation.

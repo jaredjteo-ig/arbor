@@ -26,7 +26,7 @@ Add a persistent, non-dismissible disclaimer footer to the /advisory page that m
 
 ### AI Disclosure Badge
 
-- [ ] Every system message (AI-generated response) shows a small "AI-generated" or "AITE Advisory" badge
+- [ ] Every system message (AI-generated response) shows a small "AI-generated" or "Arbor Advisory" badge
 - [ ] Badge is visually distinct but not distracting — a subtle label consistent with the design system
 - [ ] User messages do not show the badge
 

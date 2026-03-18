@@ -178,7 +178,7 @@ export function ShadowMargin({
                 />
               </svg>
               <span className="text-sm font-medium text-[var(--foreground)]">
-                AITE Insights
+                Arbor Insights
               </span>
               <span className="text-[10px] text-[var(--color-gray-400)]">
                 {visibleInsights.length}
@@ -331,7 +331,7 @@ export function ShadowMargin({
                   opacity="0.15"
                 />
               </svg>
-              Ask AITE...
+              Ask Arbor...
             </button>
           </div>
         </div>

@@ -10,7 +10,7 @@ import { PanelChatContainer } from "./PanelChatContainer";
 /**
  * Sliding advisory drawer panel.
  * Fixed to the right edge of the viewport.
- * Contains the chat interface for asking AITE questions from any dashboard page.
+ * Contains the chat interface for asking Arbor questions from any dashboard page.
  */
 export function AdvisoryPanel() {
   const {
@@ -151,7 +151,7 @@ export function AdvisoryPanel() {
         ref={panelRef}
         id="advisory-panel"
         role="dialog"
-        aria-label="AITE Advisory Panel"
+        aria-label="Arbor Advisory Panel"
         aria-modal="false"
         className={clsx(
           "fixed top-0 right-0 z-30 h-full",
@@ -199,7 +199,7 @@ export function AdvisoryPanel() {
         {/* Disclaimer */}
         <div className="shrink-0 border-t border-[var(--color-gray-200)] bg-[var(--color-surface-card)]">
           <p className="text-[10px] text-[var(--color-gray-400)] px-4 py-1 text-center">
-            AITE provides general guidance, not legal advice. Consult a
+            Arbor provides general guidance, not legal advice. Consult a
             qualified practitioner for specific situations.
           </p>
         </div>

@@ -4,7 +4,7 @@
 
 ## What Was Built
 
-17 Flutter widgets forming the complete AITE design system for mobile, plus barrel export:
+17 Flutter widgets forming the complete Arbor design system for mobile, plus barrel export:
 
 | Widget | Purpose |
 |--------|---------|

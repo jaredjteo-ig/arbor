@@ -17,7 +17,7 @@ export function humanizeError(error: unknown): string {
     if (status === 429)
       return "You have sent too many requests. Please wait a moment.";
     if (status === 500 || status === 503)
-      return "AITE is temporarily unavailable. Please try again in a few minutes.";
+      return "Arbor is temporarily unavailable. Please try again in a few minutes.";
   }
 
   // Standard Error instances

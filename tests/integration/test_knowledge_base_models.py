@@ -10,7 +10,7 @@ import os
 import pytest
 
 # Ensure DATABASE_URL is set for tests
-os.environ.setdefault("DATABASE_URL", "postgresql://aite:aite@localhost:5432/aite")
+os.environ.setdefault("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
 
 
 def _sync(coro):

@@ -5,6 +5,7 @@ You are an expert in production-quality testing for Kailash SDK. Guide users thr
 ## Core Responsibilities
 
 ### 1. 3-Tier Testing Strategy
+
 - **Tier 1**: Unit tests - Individual node testing
 - **Tier 2**: Integration tests - Multi-node workflows with real infrastructure
 - **Tier 3**: End-to-end tests - Complete workflows with external services
@@ -64,7 +65,7 @@ from kailash.runtime import LocalRuntime
 
 @pytest.fixture
 def test_database():
-    """Setup test database - NO MOCKING."""
+    """Setup test database - real infrastructure preferred."""
     import sqlite3
     conn = sqlite3.connect(":memory:")
     cursor = conn.cursor()
@@ -80,7 +81,7 @@ def test_database():
     conn.close()
 
 def test_database_workflow_integration(test_database):
-    """Test workflow with real database - NO MOCKS."""
+    """Test workflow with real database - real infrastructure preferred."""
     workflow = WorkflowBuilder()
 
     workflow.add_node("SQLReaderNode", "reader", {
@@ -108,7 +109,7 @@ result = {
     assert "test" in results["processor"]["result"]["values"]
 
 def test_api_workflow_integration():
-    """Test workflow with real API - NO MOCKS."""
+    """Test workflow with real API - real infrastructure preferred."""
     workflow = WorkflowBuilder()
 
     # Use real test API (jsonplaceholder)
@@ -152,7 +153,7 @@ def test_complete_etl_pipeline():
     # Transform
     workflow.add_node("PythonCodeNode", "transform", {
         "code": """
-import pandas as pd
+import pandas as pd  # requires: pip install pandas
 df = pd.DataFrame(data)
 
 # Clean and transform
@@ -187,7 +188,7 @@ result = {'transformed_data': df.to_dict('records')}
     assert all(output_df['category'].str.isupper())
 ```
 
-### 5. Test Organization (NO MOCKING Policy)
+### 5. Test Organization (real infrastructure preferred Policy)
 
 ```python
 # tests/unit/test_nodes.py
@@ -204,7 +205,7 @@ import pytest
 
 @pytest.fixture(scope="session")
 def test_database():
-    """Real test database - NO MOCKING."""
+    """Real test database - real infrastructure preferred."""
     # Setup real database
     pass
 
@@ -358,7 +359,7 @@ def test_workflow_performance():
 
 ## Critical Testing Rules
 
-1. **NO MOCKING in Tiers 2-3**: Use real infrastructure
+1. **real infrastructure preferred in Tiers 2-3**: Use real infrastructure
 2. **Test All Paths**: Ensure complete code coverage
 3. **Real Data**: Use realistic test data
 4. **Error Scenarios**: Test failures, not just successes
@@ -366,13 +367,15 @@ def test_workflow_performance():
 6. **Cleanup**: Always clean up test artifacts
 
 ## When to Engage
+
 - User asks about "production testing", "quality assurance", "testing strategy"
 - User needs testing guidance
 - User wants to improve test coverage
 - User has questions about test organization
 
 ## Integration with Other Skills
+
 - Route to **testing-best-practices** for testing strategies
-- Route to **test-organization** for NO MOCKING policy
+- Route to **test-organization** for real infrastructure policy
 - Route to **regression-testing** for regression testing
 - Route to **tdd-implementer** for test-first development

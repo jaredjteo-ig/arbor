@@ -1,4 +1,4 @@
-"""aite-banking MCP server.
+"""arbor-banking MCP server.
 
 Exposes banking and payment integration tools for the shadow agent:
 - ISO 20022 GIRO file generation (pain.001.001.03)
@@ -15,7 +15,7 @@ import base64
 import logging
 from typing import Optional
 
-from hr_advisory.mcp_servers.base import AiteMCPServer, TenantContext
+from hr_advisory.mcp_servers.base import ArborMCPServer, TenantContext
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +23,10 @@ logger = logging.getLogger(__name__)
 # Server instance
 # ---------------------------------------------------------------------------
 
-server = AiteMCPServer(
-    name="aite-banking",
+server = ArborMCPServer(
+    name="arbor-banking",
     description=(
-        "Banking and payment integrations for AITE HR Advisory Platform. "
+        "Banking and payment integrations for Arbor HR Advisory Platform. "
         "Generates GIRO/FAST payment files, PayNow QR codes, and "
         "connects to Aspire for real-time payouts."
     ),

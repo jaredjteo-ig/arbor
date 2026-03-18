@@ -624,3 +624,245 @@ async def get_claim_audit_trail(
     entries = _dataflow_list("ClaimAuditEntryListNode", {"claim_id": claim_id})
     entries.sort(key=lambda e: e.get("created_at", ""))
     return {"audit_trail": entries, "count": len(entries)}
+
+
+# ==========================================================================
+# CLAIM GROUPS (T350)
+# ==========================================================================
+
+
+@router.get("/groups")
+async def list_claim_groups(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """List claim groups. Employees see their own; admins see all."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    role = current_user.get("role", "employee")
+    filter_dict: dict = {"company_id": company_id}
+
+    if role not in ("owner", "hr_manager"):
+        user_id = int(current_user.get("sub", 0))
+        emp = _find_employee_for_user(user_id, company_id)
+        if emp is None:
+            return {"groups": [], "count": 0}
+        filter_dict["employee_id"] = emp["id"]
+
+    groups = _dataflow_list("ClaimGroupListNode", filter_dict)
+    groups.sort(key=lambda g: g.get("created_at", ""), reverse=True)
+    return {"groups": groups, "count": len(groups)}
+
+
+@router.post("/groups")
+async def create_claim_group(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Create a new claim group to bundle multiple claims."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    emp = _find_employee_for_user(user_id, company_id)
+    if emp is None:
+        raise HTTPException(status_code=400, detail="Employee record not found.")
+
+    body = await request.json()
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required.")
+
+    claim_ids = body.get("claim_ids", [])
+
+    # Validate claim_ids belong to the employee
+    for cid in claim_ids:
+        claim = _dataflow_read("ClaimReadNode", cid)
+        if claim is None or claim.get("company_id") != company_id:
+            raise HTTPException(status_code=404, detail=f"Claim {cid} not found.")
+        if claim.get("employee_id") != emp["id"]:
+            raise HTTPException(status_code=403, detail=f"Claim {cid} does not belong to you.")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    group = _dataflow_create(
+        "ClaimGroupCreateNode",
+        {
+            "employee_id": emp["id"],
+            "company_id": company_id,
+            "name": name,
+            "claim_ids": claim_ids,
+            "status": "draft",
+            "total_amount": 0.0,
+            "created_at": now,
+        },
+    )
+
+    # Calculate total from linked claims
+    total = 0.0
+    for cid in claim_ids:
+        claim = _dataflow_read("ClaimReadNode", cid)
+        if claim:
+            total += claim.get("total_amount", 0.0)
+
+    if total > 0:
+        _dataflow_update("ClaimGroupUpdateNode", group["id"], {"total_amount": round(total, 2)})
+        group["total_amount"] = round(total, 2)
+
+    return {"group": group}
+
+
+@router.patch("/groups/{group_id}")
+async def update_claim_group(
+    group_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Update a claim group (add/remove claims, rename)."""
+    company_id = get_current_company_id(current_user)
+    group = _dataflow_read("ClaimGroupReadNode", group_id)
+    if group is None or group.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Claim group not found.")
+
+    # Only the owner or admins can update
+    role = current_user.get("role", "employee")
+    if role not in ("owner", "hr_manager"):
+        user_id = int(current_user.get("sub", 0))
+        emp = _find_employee_for_user(user_id, company_id)
+        if emp is None or group.get("employee_id") != emp["id"]:
+            raise HTTPException(status_code=403, detail="Access denied.")
+
+    if group.get("status") != "draft":
+        raise HTTPException(status_code=400, detail="Only draft groups can be updated.")
+
+    body = await request.json()
+    allowed = {"name", "claim_ids"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    # If claim_ids updated, recalculate total
+    if "claim_ids" in updates:
+        total = 0.0
+        for cid in updates["claim_ids"]:
+            claim = _dataflow_read("ClaimReadNode", cid)
+            if claim and claim.get("company_id") == company_id:
+                total += claim.get("total_amount", 0.0)
+        updates["total_amount"] = round(total, 2)
+
+    _dataflow_update("ClaimGroupUpdateNode", group_id, updates)
+    updated = _dataflow_read("ClaimGroupReadNode", group_id)
+    return {"group": updated}
+
+
+@router.post("/groups/{group_id}/submit")
+async def submit_claim_group(
+    group_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Submit a claim group for approval. Submits all linked claims."""
+    company_id = get_current_company_id(current_user)
+    group = _dataflow_read("ClaimGroupReadNode", group_id)
+    if group is None or group.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Claim group not found.")
+
+    user_id = int(current_user.get("sub", 0))
+    emp = _find_employee_for_user(user_id, company_id)
+    if emp is None or group.get("employee_id") != emp["id"]:
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    if group.get("status") != "draft":
+        raise HTTPException(status_code=400, detail="Only draft groups can be submitted.")
+
+    claim_ids = group.get("claim_ids", [])
+    if not claim_ids:
+        raise HTTPException(status_code=400, detail="Cannot submit a group with no claims.")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Submit each claim in the group that is in draft status
+    submitted_count = 0
+    for cid in claim_ids:
+        claim = _dataflow_read("ClaimReadNode", cid)
+        if claim and claim.get("status") == "draft":
+            # Verify it has items
+            items = _dataflow_list("ClaimItemListNode", {"claim_id": cid})
+            if items:
+                _dataflow_update(
+                    "ClaimUpdateNode", cid,
+                    {"status": "pending_approval", "submitted_at": now},
+                )
+                _audit_claim(cid, company_id, "submitted_via_group", user_id, {"group_id": group_id})
+                submitted_count += 1
+
+    _dataflow_update(
+        "ClaimGroupUpdateNode", group_id,
+        {"status": "submitted", "submitted_at": now},
+    )
+
+    return {
+        "message": f"Group submitted with {submitted_count} claim(s).",
+        "status": "submitted",
+    }
+
+
+# ==========================================================================
+# CLAIMS PAYROLL INTEGRATION (T352)
+# ==========================================================================
+
+
+@router.get("/payroll-ready")
+async def get_payroll_ready_claims(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get approved claims ready for payroll inclusion.
+
+    Supports optional ?cutoff_date= filter. Claims approved on or before
+    the cutoff are included.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    cutoff_date = request.query_params.get("cutoff_date", "")
+
+    claims = _dataflow_list(
+        "ClaimListNode",
+        {"company_id": company_id, "status": "approved"},
+    )
+
+    # Exclude claims already linked to a payroll run
+    ready = [c for c in claims if not c.get("paid_in_payroll_run_id")]
+
+    # Apply cutoff filter if provided
+    if cutoff_date:
+        ready = [
+            c for c in ready
+            if c.get("submitted_at", "")[:10] <= cutoff_date
+        ]
+
+    # Enrich with employee names
+    enriched = []
+    for c in ready:
+        emp_records = _dataflow_list(
+            "EmployeeListNode", {"id": c.get("employee_id")}, limit=1
+        )
+        emp = emp_records[0] if emp_records else {}
+        enriched.append(
+            {
+                **c,
+                "employee_name": emp.get("first_name", ""),
+            }
+        )
+
+    total_amount = round(sum(c.get("total_amount", 0.0) for c in ready), 2)
+
+    return {
+        "claims": enriched,
+        "count": len(enriched),
+        "total_amount": total_amount,
+    }

@@ -185,7 +185,7 @@ class AspireAdapter:
             raise ValueError("Recipient bank account is required")
 
         # Generate idempotency key to prevent double payments
-        idempotency_key = reference or f"AITE-{uuid.uuid4().hex[:12]}"
+        idempotency_key = reference or f"Arbor-{uuid.uuid4().hex[:12]}"
 
         payload: dict[str, Any] = {
             "amount": round(amount, 2),

@@ -177,8 +177,8 @@ class MOMSitemapAdapter:
     def _request_headers() -> dict[str, str]:
         return {
             "User-Agent": (
-                "Mozilla/5.0 (compatible; AITE-Regulatory-Monitor/1.0; "
-                "+https://aite.sg; legal-compliance-monitoring)"
+                "Mozilla/5.0 (compatible; Arbor-Regulatory-Monitor/1.0; "
+                "+https://arbor.sg; legal-compliance-monitoring)"
             ),
             "Accept": "application/xml, text/xml, */*",
         }

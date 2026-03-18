@@ -30,7 +30,7 @@ Create an "Advisory History" page accessible to all authenticated users showing 
 ### Export
 
 - [ ] "Export CSV" button downloads a CSV file with columns: date, time, query, risk_tier, provisions_cited, confidence_score, conversation_id
-- [ ] "Export PDF" button generates a formatted PDF report with the AITE logo, the filtered/searched result set, and a disclaimer footer
+- [ ] "Export PDF" button generates a formatted PDF report with the Arbor logo, the filtered/searched result set, and a disclaimer footer
 - [ ] Export respects current filters (exports what is currently visible)
 - [ ] Export limited to the current user's data (enforced server-side)
 

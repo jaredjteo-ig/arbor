@@ -67,7 +67,7 @@ function ResetPasswordForm() {
             A
           </div>
           <span className="text-xl font-bold text-[var(--color-primary)]">
-            AITE
+            Arbor
           </span>
         </div>
       </div>

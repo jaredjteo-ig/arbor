@@ -42,7 +42,7 @@ The shadow agent routes employee salary data, NRIC, and CPF amounts through offs
 
 ### C6: Bank API access requires per-tenant corporate banking relationships
 
-DBS RAPID, UOB, OCBC all require the **employer** (not AITE) to have a corporate account AND authorize AITE. This is per-tenant, per-bank onboarding — not a one-time AITE registration.
+DBS RAPID, UOB, OCBC all require the **employer** (not Arbor) to have a corporate account AND authorize Arbor. This is per-tenant, per-bank onboarding — not a one-time Arbor registration.
 
 **Recommendation**: Prioritize file-based approach (GIRO/FAST files) as primary. Position direct bank API as premium feature with guided onboarding.
 
@@ -109,19 +109,19 @@ Key differentiator over competitors who leave reconciliation manual.
 
 1. **Phase order**: Should government APIs (regulatory intelligence) move ahead of accounting (convenience)?
 2. **PDPA consent model**: How does LLM processing of employee PII work under PDPA?
-3. **OSP registration entity**: Does AITE have the corporate structure GovTech requires?
+3. **OSP registration entity**: Does Arbor have the corporate structure GovTech requires?
 4. **Bank integration model**: File-based only for first 12 months, or direct API?
 5. **Scope**: 38 connectors or focus on 20 deep, well-tested ones?
 6. **Cost ceiling**: What's the per-tenant API cost at steady state?
 
 ---
 
-## Competitive Blind Spots
+## Integration Blind Spots
 
-- Payboy already has Aspire integration (potential exclusivity)
-- Talenox could restrict API access if they detect competitor migration
+- Some HRIS platforms already have exclusive banking integrations (e.g., Aspire)
+- HRIS platforms could restrict API access if they detect competitor migration
 - IRAS AIS validation window is Sep-Nov — missing it means waiting a full year for March filing
-- Payboy could release "Payboy Connect" API to let advisory tools work alongside them
+- Incumbent platforms could release connector APIs to let advisory tools work alongside them
 
 ---
 

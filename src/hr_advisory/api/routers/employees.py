@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import (
     get_current_company_id,
     validate_company_access,
@@ -697,6 +698,407 @@ def _log_pdpa_access(
             )
 
 
+# --- Employee Event helpers ---
+
+
+def _create_employee_event(data: dict) -> dict:
+    """Create an EmployeeEvent timeline record via DataFlow."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("EmployeeEventCreateNode", "create", data)
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["create"]
+
+
+def _list_employee_events(employee_id: int) -> list:
+    """List EmployeeEvent records for an employee."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "EmployeeEventListNode",
+        "list",
+        {
+            "filter": {"employee_id": employee_id},
+            "limit": 10000,
+            "enable_cache": False,
+        },
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["list"].get("records", [])
+
+
+# --- Family Member helpers ---
+
+
+def _list_family_members(employee_id: int) -> list:
+    """List family members for an employee."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "FamilyMemberListNode",
+        "list_fm",
+        {"filter": {"employee_id": employee_id}, "limit": 10000, "enable_cache": False},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["list_fm"].get("records", [])
+
+
+def _create_family_member(data: dict) -> dict:
+    """Create a FamilyMember record via DataFlow."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("FamilyMemberCreateNode", "create", data)
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["create"]
+
+
+def _update_family_member(member_id: int, updates: dict) -> dict:
+    """Update a FamilyMember record."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "FamilyMemberUpdateNode",
+        "update",
+        {"filter": {"id": member_id}, "fields": updates},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["update"]
+
+
+def _read_family_member(member_id: int) -> dict | None:
+    """Read a FamilyMember by ID."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("FamilyMemberReadNode", "read", {"id": member_id})
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    result = results.get("read", {})
+    if result.get("error") or result.get("failed"):
+        return None
+    return result
+
+
+# --- Employee Note helpers ---
+
+
+def _list_employee_notes(employee_id: int) -> list:
+    """List notes for an employee."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "EmployeeNoteListNode",
+        "list_notes",
+        {"filter": {"employee_id": employee_id}, "limit": 10000, "enable_cache": False},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["list_notes"].get("records", [])
+
+
+def _create_employee_note(data: dict) -> dict:
+    """Create an EmployeeNote record via DataFlow."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("EmployeeNoteCreateNode", "create", data)
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["create"]
+
+
+def _update_employee_note(note_id: int, updates: dict) -> dict:
+    """Update an EmployeeNote record."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "EmployeeNoteUpdateNode",
+        "update",
+        {"filter": {"id": note_id}, "fields": updates},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["update"]
+
+
+def _read_employee_note(note_id: int) -> dict | None:
+    """Read an EmployeeNote by ID."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("EmployeeNoteReadNode", "read", {"id": note_id})
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    result = results.get("read", {})
+    if result.get("error") or result.get("failed"):
+        return None
+    return result
+
+
+# --- Employee Skill helpers ---
+
+
+def _list_employee_skills(employee_id: int) -> list:
+    """List skills/certifications for an employee."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "EmployeeSkillListNode",
+        "list_skills",
+        {"filter": {"employee_id": employee_id}, "limit": 10000, "enable_cache": False},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["list_skills"].get("records", [])
+
+
+def _create_employee_skill(data: dict) -> dict:
+    """Create an EmployeeSkill record via DataFlow."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("EmployeeSkillCreateNode", "create", data)
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["create"]
+
+
+def _update_employee_skill(skill_id: int, updates: dict) -> dict:
+    """Update an EmployeeSkill record."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "EmployeeSkillUpdateNode",
+        "update",
+        {"filter": {"id": skill_id}, "fields": updates},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["update"]
+
+
+def _read_employee_skill(skill_id: int) -> dict | None:
+    """Read an EmployeeSkill by ID."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("EmployeeSkillReadNode", "read", {"id": skill_id})
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    result = results.get("read", {})
+    if result.get("error") or result.get("failed"):
+        return None
+    return result
+
+
+# --- Custom Field Definition helpers ---
+
+
+def _list_custom_field_definitions(company_id: int, applies_to: str = "") -> list:
+    """List custom field definitions for a company."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    filter_dict: dict = {"company_id": company_id}
+    if applies_to:
+        filter_dict["applies_to"] = applies_to
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "CustomFieldDefinitionListNode",
+        "list_defs",
+        {"filter": filter_dict, "limit": 10000, "enable_cache": False},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["list_defs"].get("records", [])
+
+
+def _create_custom_field_definition(data: dict) -> dict:
+    """Create a CustomFieldDefinition record via DataFlow."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("CustomFieldDefinitionCreateNode", "create", data)
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["create"]
+
+
+def _update_custom_field_definition(field_id: int, updates: dict) -> dict:
+    """Update a CustomFieldDefinition record."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "CustomFieldDefinitionUpdateNode",
+        "update",
+        {"filter": {"id": field_id}, "fields": updates},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["update"]
+
+
+def _read_custom_field_definition(field_id: int) -> dict | None:
+    """Read a CustomFieldDefinition by ID."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("CustomFieldDefinitionReadNode", "read", {"id": field_id})
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    result = results.get("read", {})
+    if result.get("error") or result.get("failed"):
+        return None
+    return result
+
+
+# --- Custom Field Value helpers ---
+
+
+def _list_custom_field_values(entity_type: str, entity_id: int, company_id: int) -> list:
+    """List custom field values for an entity."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "CustomFieldValueListNode",
+        "list_vals",
+        {
+            "filter": {
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "company_id": company_id,
+            },
+            "limit": 10000,
+            "enable_cache": False,
+        },
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["list_vals"].get("records", [])
+
+
+def _create_custom_field_value(data: dict) -> dict:
+    """Create a CustomFieldValue record via DataFlow."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("CustomFieldValueCreateNode", "create", data)
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["create"]
+
+
+def _update_custom_field_value(value_id: int, updates: dict) -> dict:
+    """Update a CustomFieldValue record."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "CustomFieldValueUpdateNode",
+        "update",
+        {"filter": {"id": value_id}, "fields": updates},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["update"]
+
+
+def _read_custom_field_value(value_id: int) -> dict | None:
+    """Read a CustomFieldValue by ID."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node("CustomFieldValueReadNode", "read", {"id": value_id})
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    result = results.get("read", {})
+    if result.get("error") or result.get("failed"):
+        return None
+    return result
+
+
 # --- Serialisation helpers ---
 
 
@@ -836,6 +1238,8 @@ async def invite_employee(
             status_code=400,
             detail="No company associated with your account.",
         )
+
+    check_rate_limit(f"invite:{company_id}", max_requests=50, window_seconds=3600, action_name="sending invitations")
 
     body = await request.json()
     email = body.get("email", "").strip().lower()
@@ -1481,6 +1885,157 @@ async def get_pdpa_logs(
     logs = _list_pdpa_logs(filter_dict)
     logs.sort(key=lambda entry: entry.get("created_at", ""), reverse=True)
     return {"logs": logs[:100]}
+
+
+# --------------------------------------------------------------------------
+# Custom Field Definition CRUD (company-level)
+# MUST be placed BEFORE /{employee_id} to avoid path conflicts
+# --------------------------------------------------------------------------
+
+
+@router.get("/custom-fields")
+async def list_custom_field_definitions(
+    applies_to: str = "",
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List custom field definitions for the company.
+
+    Optionally filter by applies_to (employee/leave/claim).
+    """
+    company_id = get_current_company_id(current_user)
+    definitions = _list_custom_field_definitions(company_id, applies_to=applies_to)
+    definitions.sort(key=lambda d: d.get("display_order", 0))
+    return {"definitions": definitions, "count": len(definitions)}
+
+
+@router.post("/custom-fields")
+async def create_custom_field_definition(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Create a custom field definition for the company."""
+    company_id = get_current_company_id(current_user)
+    body = await request.json()
+
+    field_name = body.get("field_name", "").strip()
+    field_label = body.get("field_label", "").strip()
+    if not field_name:
+        raise HTTPException(status_code=400, detail="'field_name' is required.")
+    if not field_label:
+        raise HTTPException(status_code=400, detail="'field_label' is required.")
+
+    _validate_text_length(field_name, "field_name", MAX_NAME_LENGTH)
+    _validate_text_length(field_label, "field_label", MAX_NAME_LENGTH)
+
+    field_type = body.get("field_type", "text")
+    valid_types = ("text", "number", "date", "dropdown", "checkbox")
+    if field_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"field_type must be one of: {', '.join(valid_types)}.",
+        )
+
+    applies_to = body.get("applies_to", "employee")
+    valid_applies = ("employee", "leave", "claim")
+    if applies_to not in valid_applies:
+        raise HTTPException(
+            status_code=400,
+            detail=f"applies_to must be one of: {', '.join(valid_applies)}.",
+        )
+
+    dropdown_options = body.get("dropdown_options", "")
+    if dropdown_options and isinstance(dropdown_options, list):
+        dropdown_options = json.dumps(dropdown_options)
+
+    definition = _create_custom_field_definition(
+        {
+            "company_id": company_id,
+            "field_name": field_name,
+            "field_label": field_label,
+            "field_type": field_type,
+            "dropdown_options": dropdown_options if dropdown_options else "",
+            "is_required": bool(body.get("is_required", False)),
+            "display_order": int(body.get("display_order", 0)),
+            "applies_to": applies_to,
+        }
+    )
+
+    return {"definition": definition}
+
+
+@router.patch("/custom-fields/{field_id}")
+async def update_custom_field_definition_endpoint(
+    field_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Update a custom field definition."""
+    company_id = get_current_company_id(current_user)
+    existing = _read_custom_field_definition(field_id)
+    if existing is None or existing.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Custom field definition not found.")
+
+    body = await request.json()
+    allowed_fields = {
+        "field_name",
+        "field_label",
+        "field_type",
+        "dropdown_options",
+        "is_required",
+        "display_order",
+        "applies_to",
+    }
+    updates = {}
+    for key in allowed_fields:
+        if key in body:
+            updates[key] = body[key]
+
+    if "field_name" in updates:
+        _validate_text_length(updates["field_name"], "field_name", MAX_NAME_LENGTH)
+    if "field_label" in updates:
+        _validate_text_length(updates["field_label"], "field_label", MAX_NAME_LENGTH)
+    if "field_type" in updates:
+        valid_types = ("text", "number", "date", "dropdown", "checkbox")
+        if updates["field_type"] not in valid_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"field_type must be one of: {', '.join(valid_types)}.",
+            )
+    if "applies_to" in updates:
+        valid_applies = ("employee", "leave", "claim")
+        if updates["applies_to"] not in valid_applies:
+            raise HTTPException(
+                status_code=400,
+                detail=f"applies_to must be one of: {', '.join(valid_applies)}.",
+            )
+    if "dropdown_options" in updates and isinstance(updates["dropdown_options"], list):
+        updates["dropdown_options"] = json.dumps(updates["dropdown_options"])
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    result = _update_custom_field_definition(field_id, updates)
+    return {"definition": result}
+
+
+@router.delete("/custom-fields/{field_id}")
+async def delete_custom_field_definition_endpoint(
+    field_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Delete a custom field definition (soft-delete via is_active flag)."""
+    company_id = get_current_company_id(current_user)
+    existing = _read_custom_field_definition(field_id)
+    if existing is None or existing.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Custom field definition not found.")
+
+    # Soft-delete: we mark the field_name to indicate deletion rather than
+    # hard-deleting, preserving referential integrity for existing values.
+    _update_custom_field_definition(
+        field_id,
+        {"field_name": f"__deleted__{existing.get('field_name', '')}"},
+    )
+    return {"message": "Custom field definition deleted."}
 
 
 # --------------------------------------------------------------------------
@@ -2394,3 +2949,852 @@ async def extend_probation(
     )
 
     return {"message": f"Probation extended to {new_end_date}."}
+
+
+# ==========================================================================
+# Family Member CRUD
+# ==========================================================================
+
+
+# --------------------------------------------------------------------------
+# GET /employees/{id}/family-members — List family members
+# --------------------------------------------------------------------------
+
+
+@router.get("/{employee_id}/family-members")
+async def list_family_members(
+    employee_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List family members for an employee."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    members = _list_family_members(employee_id)
+
+    # Decrypt/mask NRIC for display
+    actor_id = int(current_user.get("sub", 0))
+    has_nric = False
+    for member in members:
+        raw_nric = decrypt_field(member.get("nric_fin", ""))
+        if raw_nric:
+            has_nric = True
+            member["nric_fin"] = mask_nric(raw_nric)
+
+    # PDPA audit if sensitive data accessed
+    if has_nric:
+        _log_pdpa_access(
+            accessed_by=actor_id,
+            company_id=company_id,
+            data_subject_id=employee_id,
+            categories=["family_nric"],
+            action="view_family_members",
+        )
+
+    return {"family_members": members, "count": len(members)}
+
+
+# --------------------------------------------------------------------------
+# POST /employees/{id}/family-members — Add family member
+# --------------------------------------------------------------------------
+
+
+@router.post("/{employee_id}/family-members")
+async def create_family_member_endpoint(
+    employee_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Add a family member to an employee."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    body = await request.json()
+
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="'name' is required.")
+    _validate_text_length(name, "name", MAX_NAME_LENGTH)
+
+    relationship = body.get("relationship", "").strip()
+    valid_relationships = ("spouse", "child", "parent")
+    if relationship not in valid_relationships:
+        raise HTTPException(
+            status_code=400,
+            detail=f"relationship must be one of: {', '.join(valid_relationships)}.",
+        )
+
+    citizenship_status = body.get("citizenship_status", "").strip()
+    if citizenship_status:
+        valid_citizenship = ("citizen", "pr", "foreigner")
+        if citizenship_status not in valid_citizenship:
+            raise HTTPException(
+                status_code=400,
+                detail=f"citizenship_status must be one of: {', '.join(valid_citizenship)}.",
+            )
+
+    gender = body.get("gender", "").strip()
+    if gender:
+        valid_genders = ("male", "female")
+        if gender not in valid_genders:
+            raise HTTPException(
+                status_code=400,
+                detail=f"gender must be one of: {', '.join(valid_genders)}.",
+            )
+
+    # Encrypt NRIC if provided
+    nric_fin = body.get("nric_fin", "").strip()
+    encrypted_nric = encrypt_field(nric_fin) if nric_fin else ""
+
+    member = _create_family_member(
+        {
+            "employee_id": employee_id,
+            "company_id": company_id,
+            "name": name,
+            "relationship": relationship,
+            "date_of_birth": body.get("date_of_birth", ""),
+            "gender": gender,
+            "citizenship_status": citizenship_status,
+            "nric_fin": encrypted_nric,
+        }
+    )
+
+    # PDPA audit for NRIC write
+    if nric_fin:
+        actor_id = int(current_user.get("sub", 0))
+        _log_pdpa_access(
+            accessed_by=actor_id,
+            company_id=company_id,
+            data_subject_id=employee_id,
+            categories=["family_nric"],
+            action="create_family_member",
+        )
+
+    # Timeline event
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    actor_id = int(current_user.get("sub", 0))
+    try:
+        _create_employee_event(
+            {
+                "employee_id": employee_id,
+                "company_id": company_id,
+                "event_type": "family_member_added",
+                "description": f"Family member added: {name} ({relationship})",
+                "changed_by": actor_id,
+                "new_value": json.dumps({"name": name, "relationship": relationship}),
+                "event_date": today,
+            }
+        )
+    except Exception:
+        logger.exception("Failed to create timeline event for family member addition")
+
+    # Mask NRIC in response
+    if member.get("nric_fin"):
+        raw = decrypt_field(member["nric_fin"])
+        member["nric_fin"] = mask_nric(raw)
+
+    return {"family_member": member}
+
+
+# --------------------------------------------------------------------------
+# PATCH /employees/{id}/family-members/{member_id} — Update family member
+# --------------------------------------------------------------------------
+
+
+@router.patch("/{employee_id}/family-members/{member_id}")
+async def update_family_member_endpoint(
+    employee_id: int,
+    member_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Update a family member."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    existing = _read_family_member(member_id)
+    if existing is None or existing.get("employee_id") != employee_id:
+        raise HTTPException(status_code=404, detail="Family member not found.")
+
+    body = await request.json()
+    allowed_fields = {
+        "name",
+        "relationship",
+        "date_of_birth",
+        "gender",
+        "citizenship_status",
+        "nric_fin",
+    }
+    updates: dict = {}
+    for key in allowed_fields:
+        if key in body:
+            updates[key] = body[key]
+
+    if "name" in updates:
+        _validate_text_length(updates["name"], "name", MAX_NAME_LENGTH)
+    if "relationship" in updates:
+        valid_relationships = ("spouse", "child", "parent")
+        if updates["relationship"] not in valid_relationships:
+            raise HTTPException(
+                status_code=400,
+                detail=f"relationship must be one of: {', '.join(valid_relationships)}.",
+            )
+    if "citizenship_status" in updates and updates["citizenship_status"]:
+        valid_citizenship = ("citizen", "pr", "foreigner")
+        if updates["citizenship_status"] not in valid_citizenship:
+            raise HTTPException(
+                status_code=400,
+                detail=f"citizenship_status must be one of: {', '.join(valid_citizenship)}.",
+            )
+    if "gender" in updates and updates["gender"]:
+        valid_genders = ("male", "female")
+        if updates["gender"] not in valid_genders:
+            raise HTTPException(
+                status_code=400,
+                detail=f"gender must be one of: {', '.join(valid_genders)}.",
+            )
+
+    # Encrypt NRIC if being updated
+    if "nric_fin" in updates:
+        nric_raw = updates["nric_fin"].strip()
+        updates["nric_fin"] = encrypt_field(nric_raw) if nric_raw else ""
+        actor_id = int(current_user.get("sub", 0))
+        _log_pdpa_access(
+            accessed_by=actor_id,
+            company_id=company_id,
+            data_subject_id=employee_id,
+            categories=["family_nric"],
+            action="update_family_member",
+        )
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    result = _update_family_member(member_id, updates)
+
+    # Mask NRIC in response
+    if result.get("nric_fin"):
+        raw = decrypt_field(result["nric_fin"])
+        result["nric_fin"] = mask_nric(raw)
+
+    return {"family_member": result}
+
+
+# --------------------------------------------------------------------------
+# DELETE /employees/{id}/family-members/{member_id} — Delete family member
+# --------------------------------------------------------------------------
+
+
+@router.delete("/{employee_id}/family-members/{member_id}")
+async def delete_family_member_endpoint(
+    employee_id: int,
+    member_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Delete a family member (soft-delete by clearing name)."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    existing = _read_family_member(member_id)
+    if existing is None or existing.get("employee_id") != employee_id:
+        raise HTTPException(status_code=404, detail="Family member not found.")
+
+    # Soft-delete: clear PII and mark as deleted
+    _update_family_member(
+        member_id,
+        {"name": "__deleted__", "nric_fin": "", "date_of_birth": ""},
+    )
+
+    # Timeline event
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    actor_id = int(current_user.get("sub", 0))
+    try:
+        _create_employee_event(
+            {
+                "employee_id": employee_id,
+                "company_id": company_id,
+                "event_type": "family_member_removed",
+                "description": f"Family member removed: {existing.get('name', '')} ({existing.get('relationship', '')})",
+                "changed_by": actor_id,
+                "old_value": json.dumps(
+                    {
+                        "name": existing.get("name", ""),
+                        "relationship": existing.get("relationship", ""),
+                    }
+                ),
+                "event_date": today,
+            }
+        )
+    except Exception:
+        logger.exception("Failed to create timeline event for family member removal")
+
+    return {"message": "Family member deleted."}
+
+
+# ==========================================================================
+# Employee Note CRUD
+# ==========================================================================
+
+
+# --------------------------------------------------------------------------
+# GET /employees/{id}/notes — List notes
+# --------------------------------------------------------------------------
+
+
+@router.get("/{employee_id}/notes")
+async def list_employee_notes_endpoint(
+    employee_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List notes for an employee.
+
+    Confidential notes are only visible to owners and the note creator.
+    """
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    notes = _list_employee_notes(employee_id)
+    actor_id = int(current_user.get("sub", 0))
+    user_role = current_user.get("role", "")
+
+    # Filter confidential notes: only owner or the note creator can see them
+    visible_notes = []
+    for note in notes:
+        if note.get("is_confidential") and user_role != "owner":
+            if note.get("created_by") != actor_id:
+                continue
+        visible_notes.append(note)
+
+    # Sort by created_at descending
+    visible_notes.sort(key=lambda n: n.get("created_at", ""), reverse=True)
+
+    return {"notes": visible_notes, "count": len(visible_notes)}
+
+
+# --------------------------------------------------------------------------
+# POST /employees/{id}/notes — Add note
+# --------------------------------------------------------------------------
+
+
+@router.post("/{employee_id}/notes")
+async def create_employee_note_endpoint(
+    employee_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Add a note to an employee."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    body = await request.json()
+
+    content = body.get("content", "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="'content' is required.")
+    _validate_text_length(content, "content", MAX_TEXT_LENGTH)
+
+    note_type = body.get("note_type", "general").strip()
+    valid_types = ("general", "performance", "disciplinary", "confidential")
+    if note_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"note_type must be one of: {', '.join(valid_types)}.",
+        )
+
+    is_confidential = bool(body.get("is_confidential", False))
+    # Confidential type implies confidential flag
+    if note_type == "confidential":
+        is_confidential = True
+
+    actor_id = int(current_user.get("sub", 0))
+    note = _create_employee_note(
+        {
+            "employee_id": employee_id,
+            "company_id": company_id,
+            "note_type": note_type,
+            "content": content,
+            "created_by": actor_id,
+            "is_confidential": is_confidential,
+        }
+    )
+
+    # Timeline event
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        _create_employee_event(
+            {
+                "employee_id": employee_id,
+                "company_id": company_id,
+                "event_type": "note_added",
+                "description": f"Note added ({note_type})",
+                "changed_by": actor_id,
+                "event_date": today,
+            }
+        )
+    except Exception:
+        logger.exception("Failed to create timeline event for note addition")
+
+    return {"note": note}
+
+
+# --------------------------------------------------------------------------
+# PATCH /employees/{id}/notes/{note_id} — Update note
+# --------------------------------------------------------------------------
+
+
+@router.patch("/{employee_id}/notes/{note_id}")
+async def update_employee_note_endpoint(
+    employee_id: int,
+    note_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Update a note on an employee."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    existing = _read_employee_note(note_id)
+    if existing is None or existing.get("employee_id") != employee_id:
+        raise HTTPException(status_code=404, detail="Note not found.")
+
+    # Only the creator or an owner can update a note
+    actor_id = int(current_user.get("sub", 0))
+    user_role = current_user.get("role", "")
+    if existing.get("created_by") != actor_id and user_role != "owner":
+        raise HTTPException(status_code=403, detail="You can only edit your own notes.")
+
+    body = await request.json()
+    allowed_fields = {"content", "note_type", "is_confidential"}
+    updates: dict = {}
+    for key in allowed_fields:
+        if key in body:
+            updates[key] = body[key]
+
+    if "content" in updates:
+        _validate_text_length(updates["content"], "content", MAX_TEXT_LENGTH)
+    if "note_type" in updates:
+        valid_types = ("general", "performance", "disciplinary", "confidential")
+        if updates["note_type"] not in valid_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"note_type must be one of: {', '.join(valid_types)}.",
+            )
+        if updates["note_type"] == "confidential":
+            updates["is_confidential"] = True
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    result = _update_employee_note(note_id, updates)
+    return {"note": result}
+
+
+# --------------------------------------------------------------------------
+# DELETE /employees/{id}/notes/{note_id} — Delete note
+# --------------------------------------------------------------------------
+
+
+@router.delete("/{employee_id}/notes/{note_id}")
+async def delete_employee_note_endpoint(
+    employee_id: int,
+    note_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Delete a note on an employee (soft-delete by clearing content)."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    existing = _read_employee_note(note_id)
+    if existing is None or existing.get("employee_id") != employee_id:
+        raise HTTPException(status_code=404, detail="Note not found.")
+
+    # Only the creator or an owner can delete a note
+    actor_id = int(current_user.get("sub", 0))
+    user_role = current_user.get("role", "")
+    if existing.get("created_by") != actor_id and user_role != "owner":
+        raise HTTPException(status_code=403, detail="You can only delete your own notes.")
+
+    _update_employee_note(note_id, {"content": "__deleted__", "note_type": "general"})
+    return {"message": "Note deleted."}
+
+
+# ==========================================================================
+# Employee Skill CRUD
+# ==========================================================================
+
+
+# --------------------------------------------------------------------------
+# GET /employees/{id}/skills — List skills/certifications
+# --------------------------------------------------------------------------
+
+
+@router.get("/{employee_id}/skills")
+async def list_employee_skills_endpoint(
+    employee_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List skills and certifications for an employee."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    skills = _list_employee_skills(employee_id)
+    return {"skills": skills, "count": len(skills)}
+
+
+# --------------------------------------------------------------------------
+# POST /employees/{id}/skills — Add skill
+# --------------------------------------------------------------------------
+
+
+@router.post("/{employee_id}/skills")
+async def create_employee_skill_endpoint(
+    employee_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Add a skill or certification to an employee."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    body = await request.json()
+
+    skill_name = body.get("skill_name", "").strip()
+    if not skill_name:
+        raise HTTPException(status_code=400, detail="'skill_name' is required.")
+    _validate_text_length(skill_name, "skill_name", MAX_NAME_LENGTH)
+
+    proficiency_level = body.get("proficiency_level", "").strip()
+    if proficiency_level:
+        valid_levels = ("basic", "intermediate", "advanced", "expert")
+        if proficiency_level not in valid_levels:
+            raise HTTPException(
+                status_code=400,
+                detail=f"proficiency_level must be one of: {', '.join(valid_levels)}.",
+            )
+
+    certification_name = body.get("certification_name", "").strip()
+    if certification_name:
+        _validate_text_length(certification_name, "certification_name", MAX_NAME_LENGTH)
+
+    issuing_body = body.get("issuing_body", "").strip()
+    if issuing_body:
+        _validate_text_length(issuing_body, "issuing_body", MAX_NAME_LENGTH)
+
+    skill = _create_employee_skill(
+        {
+            "employee_id": employee_id,
+            "company_id": company_id,
+            "skill_name": skill_name,
+            "proficiency_level": proficiency_level,
+            "certification_name": certification_name,
+            "certification_number": body.get("certification_number", "").strip(),
+            "certified_date": body.get("certified_date", ""),
+            "expiry_date": body.get("expiry_date", ""),
+            "issuing_body": issuing_body,
+        }
+    )
+
+    # Timeline event
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    actor_id = int(current_user.get("sub", 0))
+    try:
+        _create_employee_event(
+            {
+                "employee_id": employee_id,
+                "company_id": company_id,
+                "event_type": "skill_added",
+                "description": f"Skill added: {skill_name}",
+                "changed_by": actor_id,
+                "new_value": json.dumps(
+                    {"skill_name": skill_name, "certification_name": certification_name}
+                ),
+                "event_date": today,
+            }
+        )
+    except Exception:
+        logger.exception("Failed to create timeline event for skill addition")
+
+    return {"skill": skill}
+
+
+# --------------------------------------------------------------------------
+# PATCH /employees/{id}/skills/{skill_id} — Update skill
+# --------------------------------------------------------------------------
+
+
+@router.patch("/{employee_id}/skills/{skill_id}")
+async def update_employee_skill_endpoint(
+    employee_id: int,
+    skill_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Update a skill or certification."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    existing = _read_employee_skill(skill_id)
+    if existing is None or existing.get("employee_id") != employee_id:
+        raise HTTPException(status_code=404, detail="Skill not found.")
+
+    body = await request.json()
+    allowed_fields = {
+        "skill_name",
+        "proficiency_level",
+        "certification_name",
+        "certification_number",
+        "certified_date",
+        "expiry_date",
+        "issuing_body",
+    }
+    updates: dict = {}
+    for key in allowed_fields:
+        if key in body:
+            updates[key] = body[key]
+
+    if "skill_name" in updates:
+        _validate_text_length(updates["skill_name"], "skill_name", MAX_NAME_LENGTH)
+    if "proficiency_level" in updates and updates["proficiency_level"]:
+        valid_levels = ("basic", "intermediate", "advanced", "expert")
+        if updates["proficiency_level"] not in valid_levels:
+            raise HTTPException(
+                status_code=400,
+                detail=f"proficiency_level must be one of: {', '.join(valid_levels)}.",
+            )
+    if "certification_name" in updates:
+        _validate_text_length(updates["certification_name"], "certification_name", MAX_NAME_LENGTH)
+    if "issuing_body" in updates:
+        _validate_text_length(updates["issuing_body"], "issuing_body", MAX_NAME_LENGTH)
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    result = _update_employee_skill(skill_id, updates)
+    return {"skill": result}
+
+
+# --------------------------------------------------------------------------
+# DELETE /employees/{id}/skills/{skill_id} — Delete skill
+# --------------------------------------------------------------------------
+
+
+@router.delete("/{employee_id}/skills/{skill_id}")
+async def delete_employee_skill_endpoint(
+    employee_id: int,
+    skill_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Delete a skill or certification (soft-delete by clearing name)."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    existing = _read_employee_skill(skill_id)
+    if existing is None or existing.get("employee_id") != employee_id:
+        raise HTTPException(status_code=404, detail="Skill not found.")
+
+    _update_employee_skill(skill_id, {"skill_name": "__deleted__"})
+
+    # Timeline event
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    actor_id = int(current_user.get("sub", 0))
+    try:
+        _create_employee_event(
+            {
+                "employee_id": employee_id,
+                "company_id": company_id,
+                "event_type": "skill_removed",
+                "description": f"Skill removed: {existing.get('skill_name', '')}",
+                "changed_by": actor_id,
+                "old_value": json.dumps({"skill_name": existing.get("skill_name", "")}),
+                "event_date": today,
+            }
+        )
+    except Exception:
+        logger.exception("Failed to create timeline event for skill removal")
+
+    return {"message": "Skill deleted."}
+
+
+# ==========================================================================
+# Custom Field Value CRUD (per-entity)
+# ==========================================================================
+
+
+# --------------------------------------------------------------------------
+# GET /employees/{id}/custom-field-values — List values for employee
+# --------------------------------------------------------------------------
+
+
+@router.get("/{employee_id}/custom-field-values")
+async def list_custom_field_values_endpoint(
+    employee_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List custom field values for an employee."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    values = _list_custom_field_values("employee", employee_id, company_id)
+    return {"values": values, "count": len(values)}
+
+
+# --------------------------------------------------------------------------
+# POST /employees/{id}/custom-field-values — Set value
+# --------------------------------------------------------------------------
+
+
+@router.post("/{employee_id}/custom-field-values")
+async def create_custom_field_value_endpoint(
+    employee_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Set a custom field value for an employee."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    body = await request.json()
+
+    field_definition_id = body.get("field_definition_id")
+    if not field_definition_id:
+        raise HTTPException(status_code=400, detail="'field_definition_id' is required.")
+
+    # Validate the field definition exists and belongs to this company
+    definition = _read_custom_field_definition(int(field_definition_id))
+    if definition is None or definition.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Custom field definition not found.")
+
+    value = body.get("value", "")
+    if isinstance(value, (dict, list)):
+        value = json.dumps(value)
+    _validate_text_length(str(value), "value", MAX_TEXT_LENGTH)
+
+    # Check if a value already exists for this entity+field — if so, update it
+    existing_values = _list_custom_field_values("employee", employee_id, company_id)
+    existing_match = None
+    for v in existing_values:
+        if v.get("field_definition_id") == int(field_definition_id):
+            existing_match = v
+            break
+
+    if existing_match:
+        result = _update_custom_field_value(existing_match["id"], {"value": str(value)})
+        return {"value": result, "updated": True}
+
+    result = _create_custom_field_value(
+        {
+            "entity_type": "employee",
+            "entity_id": employee_id,
+            "field_definition_id": int(field_definition_id),
+            "company_id": company_id,
+            "value": str(value),
+        }
+    )
+    return {"value": result, "updated": False}
+
+
+# --------------------------------------------------------------------------
+# PATCH /employees/{id}/custom-field-values/{value_id} — Update value
+# --------------------------------------------------------------------------
+
+
+@router.patch("/{employee_id}/custom-field-values/{value_id}")
+async def update_custom_field_value_endpoint(
+    employee_id: int,
+    value_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Update a custom field value for an employee."""
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    existing = _read_custom_field_value(value_id)
+    if existing is None or existing.get("entity_id") != employee_id:
+        raise HTTPException(status_code=404, detail="Custom field value not found.")
+    if existing.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Custom field value not found.")
+
+    body = await request.json()
+    value = body.get("value", "")
+    if isinstance(value, (dict, list)):
+        value = json.dumps(value)
+    _validate_text_length(str(value), "value", MAX_TEXT_LENGTH)
+
+    result = _update_custom_field_value(value_id, {"value": str(value)})
+    return {"value": result}
+
+
+# ==========================================================================
+# Admin Leave Balances for specific employee
+# ==========================================================================
+
+
+# --------------------------------------------------------------------------
+# GET /employees/{id}/leave-balances — Admin view of employee leave balances
+# --------------------------------------------------------------------------
+
+
+@router.get("/{employee_id}/leave-balances")
+async def get_employee_leave_balances(
+    employee_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get leave balances for a specific employee (admin only).
+
+    Returns the employee's leave balances for the current year,
+    falling back to statutory defaults if no balances have been recorded.
+    """
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    # Try to ensure leave balances exist via the leave engine
+    try:
+        from hr_advisory.services.leave_engine import ensure_leave_balances
+
+        ensure_leave_balances(employee_id, company_id)
+    except Exception:
+        logger.debug("Leave engine not available, falling back to direct query")
+
+    balances = _get_leave_balances(employee_id, company_id)
+
+    if not balances:
+        balances = _statutory_defaults()
+
+    return {
+        "employee_id": employee_id,
+        "balances": balances,
+        "count": len(balances),
+    }

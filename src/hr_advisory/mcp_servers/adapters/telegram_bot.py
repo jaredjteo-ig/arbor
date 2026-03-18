@@ -1,6 +1,6 @@
 """Telegram Bot adapter for sending notifications and documents.
 
-Provides outbound messaging capabilities for the AITE communications
+Provides outbound messaging capabilities for the Arbor communications
 server: text messages, interactive keyboards, and document delivery
 (payslip PDFs) via the Telegram Bot API.
 

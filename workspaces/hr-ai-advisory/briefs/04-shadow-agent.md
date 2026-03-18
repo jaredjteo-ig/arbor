@@ -2,9 +2,9 @@
 
 ## Vision
 
-Replace the floating chatbot ("Ask AITE") with a shadow agent — an AI presence that permeates every feature, learns from every interaction, and acts as each user's always-available institutional memory and platform operator. Not a chatbot bolted onto a tool. The intelligence layer of the platform itself.
+Replace the floating chatbot ("Ask Arbor") with a shadow agent — an AI presence that permeates every feature, learns from every interaction, and acts as each user's always-available institutional memory and platform operator. Not a chatbot bolted onto a tool. The intelligence layer of the platform itself.
 
-This is the defining product differentiator. Every HR SaaS competitor (Payboy, Talenox, HReasily) is a forms-and-tables tool. AITE with a shadow agent is a tool that thinks alongside you.
+This is the defining product differentiator. Traditional HR SaaS platforms are forms-and-tables tools. Arbor with a shadow agent is a tool that thinks alongside you.
 
 ## Reference Architecture
 
@@ -14,7 +14,7 @@ The shadow agent design follows the CO (Cognitive Orchestration) five-layer arch
 
 ## Part 1: Why Not a Chat Interface
 
-The current "Ask AITE" floating button opens a slide-out drawer. This is a chatbot — the same pattern as every competitor's AI bolt-on. Three problems:
+The current "Ask Arbor" floating button opens a slide-out drawer. This is a chatbot — the same pattern as every competitor's AI bolt-on. Three problems:
 
 1. **Chat is a mode switch.** Opening a drawer is a context switch. The user leaves what they're doing and enters "AI conversation mode." Then they describe in words what they were looking at. This is friction, not assistance.
 
@@ -46,7 +46,7 @@ Continuously observes and processes in background. No visual representation.
 - Store raw behavioral data — only extracted intent patterns
 - Track anything for any purpose other than improving the user's experience
 
-**Privacy contract:** "AITE learns your work patterns to provide better assistance. All learned preferences are visible in Settings > AI Memory and can be edited or deleted at any time."
+**Privacy contract:** "Arbor learns your work patterns to provide better assistance. All learned preferences are visible in Settings > AI Memory and can be edited or deleted at any time."
 
 ### Layer B: The Margin (Persistent, Peripheral)
 
@@ -96,7 +96,7 @@ Not a chat drawer. A command palette — like Cmd+K search, but for AI interacti
 A small, unobtrusive widget at the bottom-right of every page. Not the current floating chat button — a minimal animated element:
 
 - **Resting state**: A subtle 36px circle with the shadow mark icon, semi-transparent (`opacity: 0.6`), with a slow breathing animation (2s pulse cycle). Positioned in the margin area if the margin is visible, or bottom-right corner if not.
-- **Hover state**: Circle solidifies (`opacity: 1.0`), slight scale up, tooltip shows "Ask AITE (Ctrl+Shift+A)".
+- **Hover state**: Circle solidifies (`opacity: 1.0`), slight scale up, tooltip shows "Ask Arbor (Ctrl+Shift+A)".
 - **Attention state**: When the agent has something to surface, a gentle ripple emanates from the widget once every 5 seconds (not continuously — not a notification). The ripple uses `--color-primary` at low opacity.
 - **Click or keyboard shortcut**: Opens the command surface.
 
@@ -176,9 +176,9 @@ Every action the shadow agent can take, mapped to platform features:
 
 ## Part 4: Multi-Tenant Enterprise Model
 
-### The Payboy Paradigm
+### The Enterprise Platform Paradigm
 
-AITE evolves from "HR advisory tool for the owner" to "HR platform for the enterprise." This means:
+Arbor evolves from "HR advisory tool for the owner" to "HR platform for the enterprise." This means:
 
 **Two user types, one platform, same shadow agent:**
 
@@ -206,7 +206,7 @@ A simplified view of the platform for employees:
 | **My Leave**         | Apply for leave, view history, check entitlements    | "You have 11 days remaining. Public holidays: 4 more this year." |
 | **My Payslips**      | View itemised payslips, CPF breakdown                | "Your CPF this month: employer $765, employee $900."             |
 | **Company Policies** | View company handbook, safety policies, FWA policy   | "Your company offers 3 days WFH per week under the FWA policy."  |
-| **Ask AITE**         | Shadow agent command surface                         | "What's my sick leave entitlement?" → instant cited answer       |
+| **Ask Arbor**         | Shadow agent command surface                         | "What's my sick leave entitlement?" → instant cited answer       |
 
 ### Tenant Isolation
 
@@ -236,7 +236,7 @@ Both use the same backend advisory pipeline, same safety chain, same KB, same tr
 
 ## Part 6: CO Five-Layer Mapping
 
-| CO Layer             | AITE Shadow Agent Implementation                                                                                                                                                                                        |
+| CO Layer             | Arbor Shadow Agent Implementation                                                                                                                                                                                        |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **L1: Intent**       | Supervisor agent routes to: Search Agent (KB lookup), Calculator Agent (deterministic calculations), Compliance Agent (gap analysis), Action Agent (navigate, generate, escalate), Advisory Agent (multi-turn research) |
 | **L2: Context**      | User's company profile + compliance status + employee data + conversation history + learned preferences injected into every interaction                                                                                 |
@@ -250,10 +250,10 @@ Both use the same backend advisory pipeline, same safety chain, same KB, same tr
 
 | Current Feature                         | Becomes                                                                     |
 | --------------------------------------- | --------------------------------------------------------------------------- |
-| Ask AITE floating button + drawer panel | Shadow widget + command surface (Layer D)                                   |
-| Ask AITE conversation in panel          | Command surface for quick queries; Advisory page for deep research          |
+| Ask Arbor floating button + drawer panel | Shadow widget + command surface (Layer D)                                   |
+| Ask Arbor conversation in panel          | Command surface for quick queries; Advisory page for deep research          |
 | AdvisoryFAB on every page               | Shadow widget (unobtrusive, animated, always present)                       |
-| AskAITEButton (contextual entry points) | Inline annotations (Layer C) with one-click actions                         |
+| AskArborButton (contextual entry points) | Inline annotations (Layer C) with one-click actions                         |
 | Advisory page                           | Advisory deep workspace (same page, enhanced with shadow agent integration) |
 
 ---
@@ -276,4 +276,4 @@ Both use the same backend advisory pipeline, same safety chain, same KB, same tr
 2. An admin can say "Onboard a new employee" and be guided through the complete workflow
 3. An employee can ask "How many leave days do I have left?" and get their exact balance
 4. The shadow agent proactively surfaces "Your KET compliance gap has been open for 30 days — fine risk increasing" without being asked
-5. An enterprise buyer sees a fundamentally different product from Payboy/Talenox — not a better form, but a platform that thinks
+5. An enterprise buyer sees a fundamentally different product from traditional HRIS platforms — not a better form, but a platform that thinks

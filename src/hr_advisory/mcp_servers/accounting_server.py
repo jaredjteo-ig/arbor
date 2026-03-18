@@ -1,4 +1,4 @@
-"""aite-accounting MCP server.
+"""arbor-accounting MCP server.
 
 Exposes accounting integration tools for the shadow agent:
 - Xero, QuickBooks, Zoho Books: OAuth connect, chart of accounts, journal posting
@@ -16,7 +16,7 @@ import time
 import uuid
 from typing import Optional
 
-from hr_advisory.mcp_servers.base import AiteMCPServer, TenantContext
+from hr_advisory.mcp_servers.base import ArborMCPServer, TenantContext
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +24,10 @@ logger = logging.getLogger(__name__)
 # Server instance
 # ---------------------------------------------------------------------------
 
-server = AiteMCPServer(
-    name="aite-accounting",
+server = ArborMCPServer(
+    name="arbor-accounting",
     description=(
-        "Accounting integrations for AITE HR Advisory Platform. "
+        "Accounting integrations for Arbor HR Advisory Platform. "
         "Connects payroll and claims to Xero, QuickBooks Online, Zoho Books, "
         "Financio, or generic CSV/JSON exports."
     ),
@@ -96,7 +96,7 @@ def _validate_oauth_state(state: str, tenant_id: str, provider: str) -> None:
     "accounting_connect_xero",
     description=(
         "Generate Xero OAuth authorization URL. The admin visits this URL "
-        "to authorize AITE to access their Xero organization."
+        "to authorize Arbor to access their Xero organization."
     ),
 )
 async def connect_xero(ctx: TenantContext, redirect_uri: str) -> dict:

@@ -1,13 +1,13 @@
-# Onboarding Completion & Payboy Parity Roadmap — T278-T398
+# Onboarding Completion & Feature Enhancements Roadmap — T278-T398
 
-**Scope**: 121 tasks across 21 milestones. Completes employee lifecycle AND matches/exceeds every Payboy module — zero deferred.
+**Scope**: 121 tasks across 21 milestones. Completes employee lifecycle AND delivers comprehensive HRIS modules — zero deferred.
 **Baseline**: T001-T277 complete. Advisory, HRIS engine, MCP integrations all live.
 **User Decisions**:
 
 1. Single company creation endpoint (no duplication)
 2. Self-registration collects personal data; post-registration admin enters HR-sensitive data
 3. Leave rollover default Jan 1 (pro-rated), company-configurable
-4. Employee profile must match Payboy and exceed it
+4. Employee profile must be comprehensive and industry-leading
 5. No deferment except email delivery and social proof
 
 ---
@@ -291,13 +291,13 @@ Make leave balances accurate, gender-aware, service-aware, and self-renewing.
 
 ---
 
-## M39: Employee Profile — Payboy Parity & Beyond
+## M39: Employee Profile — Comprehensive Fields
 
-Employee profiles must be comprehensive, matching every Payboy field and exceeding with features they don't offer.
+Employee profiles must be comprehensive, covering all standard HRIS fields and adding advanced features.
 
 ### T298: Employee Model Extensions
 
-Add missing fields to match Payboy feature parity.
+Add missing fields for comprehensive employee profiles.
 
 **Backend — Add to Employee model:**
 
@@ -329,7 +329,7 @@ Add missing fields to match Payboy feature parity.
 
 ### T300: Family Members Model & API
 
-**Problem**: Payboy tracks spouse and children for leave eligibility (maternity, paternity, childcare require child details).
+**Problem**: Leave eligibility (maternity, paternity, childcare) requires child details. Need to track spouse and children.
 
 **Backend:**
 
@@ -355,7 +355,7 @@ Add missing fields to match Payboy feature parity.
   - `DELETE /employees/{id}/documents/{doc_id}`
 - Document expiry tracking: query for documents expiring within N days
 - `GET /documents/expiring?days=30` — admin view of all expiring documents across company
-- Exceeds Payboy: expiry alerts on any document type, not just work passes
+- Advanced: expiry alerts on any document type, not just work passes
 
 **Files**: `src/hr_advisory/models/company_user.py`, new router `src/hr_advisory/api/routers/documents.py`
 
@@ -377,7 +377,7 @@ Add missing fields to match Payboy feature parity.
 
 ### T303: Custom Fields
 
-**Problem**: Payboy and Talenox have fixed schemas. AITE should let admins define their own fields.
+**Problem**: Most HRIS platforms have fixed schemas. Arbor should let admins define their own fields.
 
 **Backend:**
 
@@ -396,7 +396,7 @@ Add missing fields to match Payboy feature parity.
 
 ### T304: Employee Timeline / Activity Log
 
-**Problem**: No unified timeline of changes to employee records. Exceeds Payboy.
+**Problem**: No unified timeline of changes to employee records. Advanced feature.
 
 **Backend:**
 
@@ -410,7 +410,7 @@ Add missing fields to match Payboy feature parity.
 
 ### T305: Structured Singapore Address
 
-**Problem**: Current model has single `residential_address` string. Payboy also uses freetext. We can do better.
+**Problem**: Current model has single `residential_address` string. Most platforms use freetext. We can do better.
 
 **Backend:**
 
@@ -423,7 +423,7 @@ Add missing fields to match Payboy feature parity.
 
 ### T306: Work Pass Lifecycle Management
 
-**Problem**: Payboy has expiry reminders. We should have full lifecycle tracking.
+**Problem**: Basic platforms only have expiry reminders. We should have full lifecycle tracking.
 
 **Backend:**
 
@@ -445,13 +445,13 @@ Add missing fields to match Payboy feature parity.
 - API: CRUD on `/employees/{id}/skills`
 - `GET /skills/expiring?days=90` — certifications expiring (e.g., food safety, WSH, first aid)
 - `GET /skills/search?skill=first_aid` — find employees with specific skills
-- Exceeds Payboy: searchable skills matrix across company
+- Advanced: searchable skills matrix across company
 
 **Files**: `src/hr_advisory/models/company_user.py`, `src/hr_advisory/api/routers/employees.py`
 
 ### T308: Digital Onboarding Checklist
 
-**Problem**: Payboy's onboarding is data entry. We should have task-based checklists.
+**Problem**: Traditional onboarding is just data entry. We should have task-based checklists.
 
 **Backend:**
 
@@ -725,7 +725,7 @@ Two-phase registration: employee provides personal data, admin completes HR-sens
 - Use ManagementShowcase component with modifications:
   - Hero CTA: "Get Started Free" → links to `/signup` (NOT CompanySetupModal)
   - Bottom CTA: "Start Free" → links to `/signup`
-- Add navigation header: AITE logo, feature links (anchor to sections), Login button, "Get Started Free" button
+- Add navigation header: Arbor logo, feature links (anchor to sections), Login button, "Get Started Free" button
 - Ensure root layout does NOT wrap this page in ProtectedRoute
 - Mobile responsive
 
@@ -868,13 +868,13 @@ Two-phase registration: employee provides personal data, admin completes HR-sens
 
 ---
 
-## M45: Payroll Enhancements — Payboy Parity
+## M45: Payroll Enhancements
 
-Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, variance reports, payslip settings.
+Implement comprehensive payroll features: pay items, pay schemes, adhoc payroll, variance reports, payslip settings.
 
 ### T336: Pay Item System
 
-**Problem**: Payboy has a full pay item system (custom allowances, deductions, bonuses) with OW/AW classification and IR8A codes. We have no equivalent.
+**Problem**: A full pay item system (custom allowances, deductions, bonuses) with OW/AW classification and IR8A codes is needed. We have no equivalent.
 
 **Backend:**
 
@@ -892,7 +892,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ### T337: Pay Scheme Templates
 
-**Problem**: Payboy has reusable pay scheme templates (monthly/daily/hourly with OT rates, holiday groups). We have salary_type on Employee but no templates.
+**Problem**: Reusable pay scheme templates (monthly/daily/hourly with OT rates, holiday groups) are needed. We have salary_type on Employee but no templates.
 
 **Backend:**
 
@@ -905,7 +905,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ### T338: Adhoc/Off-Cycle Payroll
 
-**Problem**: Payboy supports adhoc payroll runs (off-cycle payments for bonuses, final salary, etc.). We only support monthly runs.
+**Problem**: Adhoc payroll runs (off-cycle payments for bonuses, final salary, etc.) are needed. We only support monthly runs.
 
 **Backend:**
 
@@ -918,7 +918,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ### T339: Payroll Variance Report
 
-**Problem**: Payboy shows month-over-month payroll comparison. We have no variance reporting.
+**Problem**: Month-over-month payroll comparison is needed. We have no variance reporting.
 
 **Backend:**
 
@@ -936,7 +936,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ### T340: Payslip Settings & Features
 
-**Problem**: Payboy has extensive payslip configuration. Our payslips are basic.
+**Problem**: Extensive payslip configuration is needed. Our payslips are basic.
 
 **Backend:**
 
@@ -950,7 +950,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ### T341: CPF Enhanced Settings
 
-**Problem**: Payboy has per-employee CPF control (include/exclude/full employer), AMCS, PMBS, Community Chest. We auto-calculate but don't support overrides.
+**Problem**: Per-employee CPF control (include/exclude/full employer), AMCS, PMBS, Community Chest is needed. We auto-calculate but don't support overrides.
 
 **Backend:**
 
@@ -962,7 +962,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ### T342: Payroll Pay Items Per Employee
 
-**Problem**: Payboy lets admin add/edit/remove pay items per employee during payroll generation. Our payroll is one-shot calculation.
+**Problem**: Admin needs to add/edit/remove pay items per employee during payroll generation. Our payroll is one-shot calculation.
 
 **Backend:**
 
@@ -982,7 +982,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ---
 
-## M46: Leave Enhancements — Payboy Parity
+## M46: Leave Enhancements
 
 ### T343: Hourly/Time-Based Leave (Time Off)
 
@@ -1044,7 +1044,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 **Frontend:**
 
-- Leave type configuration page (admin): all Payboy settings per leave type
+- Leave type configuration page (admin): all standard settings per leave type
 - Leave calendar view: visibility scoped (company/department/self)
 - Leave application: support half-day (AM/PM) and hourly options
 - Proof upload (medical certificate for sick leave)
@@ -1055,7 +1055,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ---
 
-## M47: Claims Enhancements — Payboy Parity
+## M47: Claims Enhancements
 
 ### T349: Claims Co-Payment & Limits
 
@@ -1118,7 +1118,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ---
 
-## M48: Attendance Enhancements — Payboy Parity
+## M48: Attendance Enhancements
 
 ### T354: Lateness & Early Departure Settings
 
@@ -1163,7 +1163,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ---
 
-## M49: Shift Enhancements — Payboy Parity
+## M49: Shift Enhancements
 
 ### T357: Shift Hourly Rates & Multipliers
 
@@ -1197,7 +1197,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ---
 
-## M50: Appraisal Module (NEW — Payboy has, we don't)
+## M50: Appraisal Module (NEW)
 
 ### T359: Appraisal Models & API
 
@@ -1302,7 +1302,7 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ---
 
-## M52: Reports Module — Payboy Parity (22 Reports)
+## M52: Reports Module (22 Reports)
 
 ### T366: Payroll Reports
 
@@ -1404,13 +1404,13 @@ Match every Payboy payroll feature: pay items, pay schemes, adhoc payroll, varia
 
 ---
 
-## M54: Beyond Payboy — AI-Powered Advantages
+## M54: AI-Powered Advantages
 
-Features that Payboy cannot replicate. Our competitive moat.
+Advanced features powered by our AI capabilities.
 
 ### T371: Payroll Simulation/Preview
 
-**Problem**: Payboy has no payroll preview. Admin must generate → review → delete if wrong. We can do better.
+**Problem**: Most platforms have no payroll preview. Admin must generate → review → delete if wrong. We can do better.
 
 **Backend:**
 
@@ -1428,7 +1428,7 @@ Features that Payboy cannot replicate. Our competitive moat.
 
 ### T372: Org Chart Visualization
 
-**Problem**: Payboy has no org chart. We can build one using reporting_manager_id.
+**Problem**: Most platforms lack org chart visualization. We can build one using reporting_manager_id.
 
 **Frontend:**
 
@@ -1459,7 +1459,7 @@ Features that Payboy cannot replicate. Our competitive moat.
 
 ### T374: Employee Self-Service Salary History
 
-**Problem**: Payboy employees cannot view salary history. We can provide transparency.
+**Problem**: Most platforms don't let employees view salary history. We can provide transparency.
 
 **Frontend:**
 
@@ -1472,7 +1472,7 @@ Features that Payboy cannot replicate. Our competitive moat.
 
 ### T375: Workflow Automation for Approvals
 
-**Problem**: Payboy has fixed approval flows (max 2 tiers). We can be flexible.
+**Problem**: Most platforms have fixed approval flows (max 2 tiers). We can be flexible.
 
 **Backend:**
 
@@ -1485,7 +1485,7 @@ Features that Payboy cannot replicate. Our competitive moat.
 
 ---
 
-## M55: E2E — Payboy Parity Verification
+## M55: E2E — Feature Verification
 
 ### T376: E2E — Pay Items & Pay Schemes
 
@@ -1569,7 +1569,7 @@ Features that Payboy cannot replicate. Our competitive moat.
 2. Compare simulation with actual payroll → numbers match
 3. Simulate with salary change → shows difference
 
-### T385: E2E — Full Payboy Feature Parity
+### T385: E2E — Full Feature Coverage
 
 **Comprehensive test:**
 
@@ -1588,9 +1588,9 @@ Features that Payboy cannot replicate. Our competitive moat.
 
 ---
 
-## Summary — Payboy Parity Coverage
+## Summary — Module Coverage
 
-| Payboy Module                                | Our Equivalent  | Gap Status    |
+| Module                                       | Implementation  | Gap Status    |
 | -------------------------------------------- | --------------- | ------------- |
 | Payroll (16 settings, pay items, schemes)    | T336-T342       | COVERED       |
 | Leave (17 per-type settings, hourly, encash) | T343-T348       | COVERED       |
@@ -1607,7 +1607,7 @@ Features that Payboy cannot replicate. Our competitive moat.
 | Inventory                                    | T390-T392       | COVERED       |
 | ATS                                          | T393-T395       | COVERED       |
 
-**Beyond Payboy (our advantages):**
+**AI-Powered Advantages:**
 
 - AI compliance alerts (T373)
 - Payroll simulation/preview (T371)
@@ -1626,14 +1626,14 @@ Features that Payboy cannot replicate. Our competitive moat.
 
 ## M56: Project Costing Module
 
-Match Payboy's 12-subsection project costing and exceed with budget tracking and profitability analysis.
+Comprehensive project costing with budget tracking and profitability analysis.
 
 ### T386: Project Models & Core API
 
 **Backend:**
 
 - Create `Project` DataFlow model:
-  - company_id, name (max 30 chars), description, start_date, end_date (nullable for ongoing), branch_id (optional), auto_assign_new_employees (bool), is_archived (bool), budget_amount (float, optional — exceeds Payboy)
+  - company_id, name (max 30 chars), description, start_date, end_date (nullable for ongoing), branch_id (optional), auto_assign_new_employees (bool), is_archived (bool), budget_amount (float, optional)
 - Create `ProjectAssignment` model:
   - project_id, employee_id, company_id, assignment_type (enum: timesheet/attendance/allocation), role_id (optional), is_active (bool)
 - Create `ProjectRole` model:
@@ -1652,7 +1652,7 @@ Match Payboy's 12-subsection project costing and exceed with budget tracking and
 
 - Extend existing `TimesheetApproval` stub model with full fields
 - Create `TimesheetEntry` DataFlow model:
-  - employee_id, company_id, project_id, date, hours (float), minutes (int), rate_type (enum: normal/overtime/holiday), billable (bool — exceeds Payboy), notes, created_by (enum: admin/manager/employee)
+  - employee_id, company_id, project_id, date, hours (float), minutes (int), rate_type (enum: normal/overtime/holiday), billable (bool), notes, created_by (enum: admin/manager/employee)
 - API:
   - `POST /timesheets/entries` — create entry (admin, manager, or employee self-service)
   - `GET /timesheets?employee_id=&month=&project_id=` — list entries
@@ -1684,7 +1684,7 @@ Match Payboy's 12-subsection project costing and exceed with budget tracking and
   - Status: unapproved → approved (irreversible)
 - `POST /projects/{calc_id}/approve` — approve calculation
 - `GET /projects/report?month=&year=` — Excel report with filters (org/dept/employee/project)
-- **Beyond Payboy**: budget vs actual comparison, project profitability (revenue - cost), variance alerts
+- **Advanced**: budget vs actual comparison, project profitability (revenue - cost), variance alerts
 
 **Frontend:**
 
@@ -1692,7 +1692,7 @@ Match Payboy's 12-subsection project costing and exceed with budget tracking and
 - Project detail: assignments, timesheets, allocations, overheads, calculations
 - Employee timesheet self-service: `/my-timesheets`
 - Project costing report: filterable, exportable
-- **Beyond Payboy**: project profitability dashboard, budget burn-down chart
+- **Advanced**: project profitability dashboard, budget burn-down chart
 
 **Files**: `src/hr_advisory/api/routers/projects.py`, `apps/web/src/app/(dashboard)/projects/`
 
@@ -1700,7 +1700,7 @@ Match Payboy's 12-subsection project costing and exceed with budget tracking and
 
 ## M57: Inventory / Asset Management Module
 
-Match Payboy's quantity-based inventory AND exceed with individual asset tracking, serial numbers, depreciation, and return workflows.
+Comprehensive inventory management with both quantity-based tracking AND individual asset tracking, serial numbers, depreciation, and return workflows.
 
 ### T390: Inventory Models & Core API
 
@@ -1709,9 +1709,9 @@ Match Payboy's quantity-based inventory AND exceed with individual asset trackin
 - Create `InventoryLocation` DataFlow model:
   - company_id, name, organization_scope (enum: all/specific), organization_id (optional)
 - Create `InventoryCategory` DataFlow model:
-  - company_id, name, location_id, tracking_mode (enum: quantity/individual — exceeds Payboy), permitted_issuers (JSON: {positions: [int], employees: [int]}), permitted_requesters (JSON: same), require_acknowledgment (bool)
+  - company_id, name, location_id, tracking_mode (enum: quantity/individual), permitted_issuers (JSON: {positions: [int], employees: [int]}), permitted_requesters (JSON: same), require_acknowledgment (bool)
 - Create `InventoryItem` DataFlow model:
-  - category_id, company_id, location_id, name, quantity (int, for quantity mode), serial_number (string, for individual mode — exceeds Payboy), purchase_date (date — exceeds Payboy), purchase_price (float — exceeds Payboy), warranty_expiry (date — exceeds Payboy), condition (enum: new/good/fair/damaged/disposed — exceeds Payboy), status (enum: available/reserved/issued/pending_acknowledgment/returned/disposed), assigned_to_employee_id (optional), assigned_at (datetime), notes, photo_url (string — exceeds Payboy)
+  - category_id, company_id, location_id, name, quantity (int, for quantity mode), serial_number (string, for individual mode — advanced feature), purchase_date (date — advanced feature), purchase_price (float — advanced feature), warranty_expiry (date — advanced feature), condition (enum: new/good/fair/damaged/disposed — advanced feature), status (enum: available/reserved/issued/pending_acknowledgment/returned/disposed), assigned_to_employee_id (optional), assigned_at (datetime), notes, photo_url (string — advanced feature)
 - API: CRUD on `/inventory/locations`, `/inventory/categories`, `/inventory/items`
 
 **Files**: `src/hr_advisory/models/company_user.py`, new `src/hr_advisory/api/routers/inventory.py`
@@ -1723,8 +1723,8 @@ Match Payboy's quantity-based inventory AND exceed with individual asset trackin
 - `POST /inventory/items/{id}/reserve` — reserve for employee (pre-allocation)
 - `POST /inventory/items/{id}/issue` — issue to employee (with timestamp)
 - `POST /inventory/items/{id}/acknowledge` — employee acknowledges receipt
-- `POST /inventory/items/{id}/return` — return to inventory (exceeds Payboy: return workflow)
-- `POST /inventory/items/{id}/dispose` — mark as disposed (exceeds Payboy)
+- `POST /inventory/items/{id}/return` — return to inventory (full return workflow)
+- `POST /inventory/items/{id}/dispose` — mark as disposed
 - `POST /inventory/requests` — employee requests an item
 - `PUT /inventory/requests/{id}/approve` — admin approves (reserve or issue)
 - `PUT /inventory/requests/{id}/deny` — admin denies with reason
@@ -1744,7 +1744,7 @@ Match Payboy's quantity-based inventory AND exceed with individual asset trackin
 - Employee view: `/my-inventory` — items assigned to me, request new items, acknowledge receipts
 - Request management: admin view of pending requests with approve/deny
 - Expiry alerts: items with warranty expiring (dashboard widget)
-- **Beyond Payboy**: asset depreciation report (purchase price, age, estimated current value), condition tracking, item photos
+- **Advanced**: asset depreciation report (purchase price, age, estimated current value), condition tracking, item photos
 
 **Files**: `apps/web/src/app/(dashboard)/inventory/`, `apps/web/src/app/(dashboard)/my-inventory/`
 
@@ -1752,7 +1752,7 @@ Match Payboy's quantity-based inventory AND exceed with individual asset trackin
 
 ## M58: ATS / Recruitment Module
 
-Match Payboy's basic ATS and exceed with interview scheduling, scoring, offer letters, career page, and AI screening.
+Full-featured ATS with interview scheduling, scoring, offer letters, career page, and AI screening.
 
 ### T393: ATS Models & Core API
 
@@ -1761,12 +1761,12 @@ Match Payboy's basic ATS and exceed with interview scheduling, scoring, offer le
 - Create `JobListing` DataFlow model:
   - company_id, organization_id, department_id, position_title, employment_type (enum: full_time/part_time/contract/internship), location, description (rich text), requirements (rich text), salary_range_min (float, optional), salary_range_max (float, optional), is_published (bool), unique_slug (auto-generated), application_form_config (JSON: custom fields, mandatory flags), created_by, published_at, closed_at
 - Create `Candidate` DataFlow model:
-  - company_id, job_listing_id, name, email, phone, nric_fin (encrypted), gender, dob, race, nationality, citizenship_status, address, resume_url, cover_letter_url, application_data (JSON: answers to custom questions), source (enum: direct/linkedin/indeed/jobstreet/referral/other), stage (enum: new/screening/shortlisted/interview/offered/hired/rejected/withdrawn), overall_score (float, optional — exceeds Payboy), rejection_reason, pdpa_consent (bool — exceeds Payboy), pdpa_consent_date, notes
-- Create `InterviewSchedule` DataFlow model (exceeds Payboy):
+  - company_id, job_listing_id, name, email, phone, nric_fin (encrypted), gender, dob, race, nationality, citizenship_status, address, resume_url, cover_letter_url, application_data (JSON: answers to custom questions), source (enum: direct/linkedin/indeed/jobstreet/referral/other), stage (enum: new/screening/shortlisted/interview/offered/hired/rejected/withdrawn), overall_score (float, optional — advanced feature), rejection_reason, pdpa_consent (bool — advanced feature), pdpa_consent_date, notes
+- Create `InterviewSchedule` DataFlow model (advanced feature):
   - candidate_id, company_id, interview_type (enum: phone/video/in_person/panel), scheduled_at (datetime), duration_minutes (int), location_or_link, interviewer_ids (JSON array), status (enum: scheduled/completed/cancelled/no_show), notes
-- Create `InterviewFeedback` DataFlow model (exceeds Payboy):
+- Create `InterviewFeedback` DataFlow model (advanced feature):
   - interview_id, candidate_id, interviewer_id, company_id, scores (JSON: [{criteria, score_1_to_5}]), recommendation (enum: strong_hire/hire/maybe/no_hire/strong_no_hire), comments, submitted_at
-- Create `OfferLetter` DataFlow model (exceeds Payboy):
+- Create `OfferLetter` DataFlow model (advanced feature):
   - candidate_id, company_id, position_title, salary, start_date, benefits_summary, template_id, status (enum: draft/sent/accepted/declined/expired), sent_at, responded_at
 - API:
   - Job listings: CRUD on `/recruitment/jobs`
@@ -1787,14 +1787,14 @@ Match Payboy's basic ATS and exceed with interview scheduling, scoring, offer le
 
 - Job listings page: `/recruitment/jobs` — list, create, edit, publish/unpublish
 - Public application page: `/careers/{slug}` — no auth required, PDPA consent, resume upload
-- **Career page** (exceeds Payboy): `/careers` — public page listing all open positions with company branding
+- **Career page** (advanced feature): `/careers` — public page listing all open positions with company branding
 - Candidate pipeline: `/recruitment/candidates` — kanban board with drag-and-drop between stages
 - Candidate detail: application data, interview schedule, feedback scores, timeline
 - Interview scheduling: calendar view, send invite (ICS file), interviewer assignment
 - Feedback form: scoring criteria, recommendation, comments
 - Offer management: create from template, track status
 - Recruitment reports: time-to-hire, pipeline conversion rates, source effectiveness
-- **AI screening** (exceeds Payboy): shadow agent scores candidates against job requirements
+- **AI screening** (advanced feature): shadow agent scores candidates against job requirements
 
 **Files**: `apps/web/src/app/(dashboard)/recruitment/`, `apps/web/src/app/careers/`
 
@@ -1856,9 +1856,9 @@ Match Payboy's basic ATS and exceed with interview scheduling, scoring, offer le
 
 ---
 
-## Updated Summary — Full Parity Coverage
+## Updated Summary — Full Module Coverage
 
-| Payboy Module         | Our Equivalent  | Gap Status        |
+| Module                | Implementation  | Gap Status        |
 | --------------------- | --------------- | ----------------- |
 | Payroll               | T336-T342       | COVERED           |
 | Leave                 | T343-T348       | COVERED           |
@@ -1875,4 +1875,4 @@ Match Payboy's basic ATS and exceed with interview scheduling, scoring, offer le
 | **Inventory**         | **T390-T392**   | **COVERED (NEW)** |
 | **ATS**               | **T393-T395**   | **COVERED (NEW)** |
 
-**Total: 121 tasks (T278-T398) across 21 milestones. Zero deferred Payboy modules.**
+**Total: 121 tasks (T278-T398) across 21 milestones. Zero deferred modules.**

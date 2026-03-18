@@ -1,4 +1,4 @@
-# AITE Integration Roadmap — 38 Connectors via MCP
+# Arbor Integration Roadmap — 38 Connectors via MCP
 
 **Scope**: 80 tasks (T204-T283) across 6 milestones. Covers all 38 connectors, 5 MCP servers, infrastructure, testing, and red team mitigations.
 **Baseline**: T001-T203 complete. Advisory engine, HRIS, shadow agent, compliance, all live.
@@ -17,11 +17,11 @@ Create the `src/hr_advisory/mcp_servers/` directory structure and base classes. 
 **Backend:**
 
 - Create `src/hr_advisory/mcp_servers/__init__.py` with server registry
-- Create `src/hr_advisory/mcp_servers/base.py` with `AiteMCPServer` base class wrapping Kailash `MCPServer`. Includes: tenant validation middleware (JWT company_id check), audit logging decorator, health endpoint, error standardization
+- Create `src/hr_advisory/mcp_servers/base.py` with `ArborMCPServer` base class wrapping Kailash `MCPServer`. Includes: tenant validation middleware (JWT company_id check), audit logging decorator, health endpoint, error standardization
 - Create `src/hr_advisory/mcp_servers/registry.py` — registers all 5 servers, provides `get_server(name)` and `list_servers()` for the shadow agent
 - Wire MCP servers into Nexus platform startup in `src/hr_advisory/api/platform.py`
 
-**Evidence**: Import `AiteMCPServer`, instantiate, register a dummy tool, call it with a test JWT. Health endpoint returns 200.
+**Evidence**: Import `ArborMCPServer`, instantiate, register a dummy tool, call it with a test JWT. Health endpoint returns 200.
 
 **Dependencies**: None
 
@@ -55,7 +55,7 @@ Per-external-API circuit breakers with configurable thresholds. Prevents cascade
 - Create `ExternalAPIUnavailable` exception
 - Pre-configure circuit breakers for each external API: CPF Board (3/120s), IRAS (3/120s), Xero/QBO/Zoho (5/60s), DBS/UOB/OCBC (3/300s), Email (10/30s), WhatsApp (5/60s), data.gov.sg (5/30s)
 - Create `src/hr_advisory/mcp_servers/rate_limiter.py` — per-tenant, per-provider rate limiter to respect external API limits
-- Integrate circuit breaker into `AiteMCPServer` base class as a decorator
+- Integrate circuit breaker into `ArborMCPServer` base class as a decorator
 
 **Evidence**: Trigger 3 failures on a test circuit → verify it opens. Wait recovery_timeout → verify half_open. Successful call → verify closed.
 
@@ -71,7 +71,7 @@ PDPA-compliant audit trail for every MCP tool call. Extends existing PdpaAccessL
 - Never log request/response payloads (may contain PII)
 - Create DataFlow model `ToolInvocationLog` with the above fields
 - Add `GET /admin/tool-audit-log` endpoint for admin access with pagination + filtering by tool, company, date range
-- Wire into `AiteMCPServer` base class so all tools are automatically audited
+- Wire into `ArborMCPServer` base class so all tools are automatically audited
 
 **Evidence**: Call a test tool → verify log entry created in DB with correct fields. Verify no PII in log.
 
@@ -167,7 +167,7 @@ Create mock adapters for all external APIs so connectors can be tested without l
 - Create `src/hr_advisory/mcp_servers/adapters/mock_adapter.py` — base class for mock adapters that return realistic test data
 - Create mock adapters for: data.gov.sg, Xero, QBO, Zoho, Resend, Telegram, each government API
 - Each mock adapter records calls for assertion (spy pattern)
-- Create `tests/integration/mcp_servers/test_base.py` — tests for AiteMCPServer base class, tenant isolation, audit logging
+- Create `tests/integration/mcp_servers/test_base.py` — tests for ArborMCPServer base class, tenant isolation, audit logging
 
 **Evidence**: Run `pytest tests/integration/mcp_servers/` — all pass. Mock adapters return realistic data. Tenant isolation blocks cross-tenant access.
 
@@ -179,13 +179,13 @@ Create mock adapters for all external APIs so connectors can be tested without l
 
 The shadow agent gains real-time regulatory awareness and can send notifications. Users get live government data (public holidays, CPF rates) and upgraded bank file generation.
 
-### T213: aite-regulatory MCP Server Shell
+### T213: arbor-regulatory MCP Server Shell
 
 Create the regulatory MCP server with its tool and resource registrations.
 
 **Backend:**
 
-- Create `src/hr_advisory/mcp_servers/regulatory_server.py` — instantiate `AiteMCPServer(name="aite-regulatory")`
+- Create `src/hr_advisory/mcp_servers/regulatory_server.py` — instantiate `ArborMCPServer(name="arbor-regulatory")`
 - Register MCP resources: `regulatory://cpf/rates/2026`, `regulatory://public-holidays/2026`, `regulatory://sdl/rates`, `regulatory://fwl/rates`, `regulatory://updates/feed`
 - Resources backed by existing KB data from `hr_advisory/kb/` and `hr_advisory/workflows/regulatory_updates.py`
 - Register tool stubs for R01-R06 (implemented in subsequent tasks)
@@ -307,7 +307,7 @@ Monitor @sgministryofmanpower, @CPFBoard, @govsg Telegram channels for regulator
 
 ### T220: Regulatory Change Classifier (R06)
 
-LLM-powered classification of detected changes — is this relevant to HR/employment? Which AITE modules are affected?
+LLM-powered classification of detected changes — is this relevant to HR/employment? Which Arbor modules are affected?
 
 **Backend:**
 
@@ -323,13 +323,13 @@ LLM-powered classification of detected changes — is this relevant to HR/employ
 
 **Dependencies**: T210 (PII filter — shared dependency), T216
 
-### T221: aite-communications MCP Server Shell
+### T221: arbor-communications MCP Server Shell
 
 Create the communications MCP server.
 
 **Backend:**
 
-- Create `src/hr_advisory/mcp_servers/communications_server.py` — instantiate `AiteMCPServer(name="aite-communications")`
+- Create `src/hr_advisory/mcp_servers/communications_server.py` — instantiate `ArborMCPServer(name="arbor-communications")`
 - Register tool stubs for C01-C08
 
 **Evidence**: Start server, list tools. All return "not yet implemented" placeholder.
@@ -385,7 +385,7 @@ Upgrade existing bank file generation from DBS fixed-width + generic CSV to ISO 
   - Supports all SG banks: DBS, OCBC, UOB, Maybank, HSBC, Standard Chartered
   - Fields: BIC, payment purpose code, creditor reference, remittance info
   - Validates against pain.001 XSD schema before returning
-- Create `src/hr_advisory/mcp_servers/banking_server.py` — instantiate aite-banking MCP server
+- Create `src/hr_advisory/mcp_servers/banking_server.py` — instantiate arbor-banking MCP server
 - Register `banking_generate_giro_file` tool — generates file, stores in S3/local, returns download URL
 - Keep existing DBS fixed-width generator as fallback option
 - Update payroll router to offer ISO 20022 as default format
@@ -418,7 +418,7 @@ Centralized document storage for payslips, receipts, statutory files, and genera
 
 ## M30: Government API Integrations
 
-AITE can submit CPF contributions, file IR8A/IR21/IR8S with IRAS, submit employment data to MOM, and auto-populate employee data from MyInfo. The shadow agent handles the entire government filing workflow with human confirmation gates.
+Arbor can submit CPF contributions, file IR8A/IR21/IR8S with IRAS, submit employment data to MOM, and auto-populate employee data from MyInfo. The shadow agent handles the entire government filing workflow with human confirmation gates.
 
 ### T226: CorpPass Authorization Flow (G07)
 
@@ -433,7 +433,7 @@ OAuth 2.1 + CorpPass authentication for all government APIs via APEX.
   - Stores tokens via `ExternalTokenManager` (T205)
   - JWKS endpoint for client assertion verification
   - PKI certificate management for APEX mTLS
-- Create `src/hr_advisory/mcp_servers/government_server.py` — instantiate aite-government MCP server
+- Create `src/hr_advisory/mcp_servers/government_server.py` — instantiate arbor-government MCP server
 - Add `/integrations/corppass/connect` and `/integrations/corppass/callback` endpoints to Nexus
 - Admin UI flow: "Connect to CorpPass" → redirects to CorpPass → callback stores token
 
@@ -570,9 +570,9 @@ Auto-populate company profile from MyInfo Business during company registration.
 
 ## M31: Accounting + Banking File Integrations
 
-AITE can post payroll journals to Xero, QuickBooks, and Zoho Books. Generate FAST payment files, PayNow QR codes, and Aspire bulk payouts. Claims sync to accounting.
+Arbor can post payroll journals to Xero, QuickBooks, and Zoho Books. Generate FAST payment files, PayNow QR codes, and Aspire bulk payouts. Claims sync to accounting.
 
-### T234: aite-accounting MCP Server Shell
+### T234: arbor-accounting MCP Server Shell
 
 Create the accounting MCP server with OAuth connection management.
 
@@ -763,7 +763,7 @@ Notifications via WhatsApp Cloud API using approved templates.
   - `send_template(phone, template_name, parameters)` — sends approved template message
   - `send_interactive(phone, body, buttons)` — within 24hr window only
   - Templates: `payslip_ready`, `leave_approved`, `leave_rejected`, `compliance_alert`, `deadline_reminder`
-  - All templates notification-only ("View in AITE") — no financial data in message body (red team H4)
+  - All templates notification-only ("View in Arbor") — no financial data in message body (red team H4)
   - Meta business verification required
   - Phone number from `WHATSAPP_PHONE_NUMBER_ID` env var
 - Register `comms_send_whatsapp` tool
@@ -783,7 +783,7 @@ Post notifications and interactive messages to Slack.
   - `post_message(channel, text, blocks)` — posts to channel or DM
   - `send_interactive(channel, text, actions)` — buttons for approve/reject
   - Webhook handler for interactive message callbacks
-  - Slash commands: `/leave-balance`, `/payslip`, `/ask-aite`
+  - Slash commands: `/leave-balance`, `/payslip`, `/ask-arbor`
   - OAuth app installation flow
 - Register `comms_send_slack` tool
 - Add `/integrations/slack/install` and `/integrations/slack/callback` endpoints
@@ -849,7 +849,7 @@ Sync approved leave to Outlook Calendar via Microsoft Graph API.
 
 ### T249: Talenox Data Import Connector
 
-Import employee data from Talenox for companies migrating to AITE.
+Import employee data from Talenox for companies migrating to Arbor.
 
 **Backend:**
 
@@ -857,13 +857,13 @@ Import employee data from Talenox for companies migrating to AITE.
   - `fetch_employees(api_token)` — retrieves all employee records via Talenox REST API
   - `fetch_payroll_history(api_token, year)` — retrieves payroll data
   - `fetch_leave_balances(api_token)` — retrieves leave data
-  - Maps Talenox fields to AITE Employee model
+  - Maps Talenox fields to Arbor Employee model
   - Dry-run mode: preview import without committing
   - Validation report: missing fields, format mismatches, duplicate detection
 - Register `hris_import_from_talenox` tool
 - Migration flow: admin enters Talenox API token → preview → confirm → import
 
-**Evidence**: Import test employees from Talenox sandbox. Preview shows field mapping. Confirm creates employees in AITE. Duplicate detection works.
+**Evidence**: Import test employees from Talenox sandbox. Preview shows field mapping. Confirm creates employees in Arbor. Duplicate detection works.
 
 **Dependencies**: T204
 
@@ -975,7 +975,7 @@ Real-time salary payments via DBS RAPID API. Premium feature — requires employ
   - Developer token + corporate banking auth
   - Idempotency ledger integration
 - Register `banking_initiate_payment` tool with provider="dbs"
-- Per-tenant onboarding flow: employer grants AITE access via DBS IDEAL
+- Per-tenant onboarding flow: employer grants Arbor access via DBS IDEAL
 
 **Evidence**: Initiate test payment in DBS sandbox. Status polling works. Duplicate blocked.
 

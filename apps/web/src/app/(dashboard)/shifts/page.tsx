@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { AppCard } from "@/components/design-system/AppCard";
 import { AppButton } from "@/components/design-system/AppButton";
 import { AppInput } from "@/components/design-system/AppInput";
+import { EmployeePicker } from "@/components/design-system/EmployeePicker";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   shiftsApi,
@@ -60,7 +61,7 @@ export default function ShiftsPage() {
   // Assignment form
   const [showAssignForm, setShowAssignForm] = useState(false);
   const [newAssignment, setNewAssignment] = useState({
-    employee_id: "",
+    employee_id: null as number | null,
     shift_template_id: "",
     date: "",
   });
@@ -120,12 +121,12 @@ export default function ShiftsPage() {
   const handleAssign = useCallback(async () => {
     try {
       await shiftsApi.createAssignment({
-        employee_id: parseInt(newAssignment.employee_id),
+        employee_id: newAssignment.employee_id!,
         shift_template_id: parseInt(newAssignment.shift_template_id),
         date: newAssignment.date,
       });
       setShowAssignForm(false);
-      setNewAssignment({ employee_id: "", shift_template_id: "", date: "" });
+      setNewAssignment({ employee_id: null, shift_template_id: "", date: "" });
       fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to assign shift.");
@@ -520,17 +521,15 @@ export default function ShiftsPage() {
           <AppCard className="w-full max-w-md mx-4">
             <h2 className="text-lg font-semibold mb-4">Assign Shift</h2>
             <div className="space-y-3">
-              <AppInput
-                label="Employee ID"
-                variant="number"
+              <EmployeePicker
+                label="Employee"
                 value={newAssignment.employee_id}
-                onChange={(e) =>
+                onChange={(id) =>
                   setNewAssignment({
                     ...newAssignment,
-                    employee_id: e.target.value,
+                    employee_id: id,
                   })
                 }
-                placeholder="Employee ID"
               />
               <div>
                 <label

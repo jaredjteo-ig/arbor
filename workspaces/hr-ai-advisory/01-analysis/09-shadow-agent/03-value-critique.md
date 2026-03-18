@@ -11,15 +11,15 @@
 
 ### Context
 
-Ah Keat runs a 22-person IT services company in one-north. He uses Talenox for payroll ($5/employee/month = $110/month). He handles HR himself. His HR knowledge comes from Google, his accountant, and occasionally calling the TAFEP hotline. He has been fined $2,000 by MOM once for a KET documentation gap. He does not want that to happen again.
+Ah Keat runs a 22-person IT services company in one-north. He uses the existing HRIS for payroll ($5/employee/month = $110/month). He handles HR himself. His HR knowledge comes from Google, his accountant, and occasionally calling the TAFEP hotline. He has been fined $2,000 by MOM once for a KET documentation gap. He does not want that to happen again.
 
-### Would the shadow agent convince him to switch from Talenox?
+### Would the shadow agent convince him to switch from the existing HRIS?
 
 **No. And this is the fundamental strategic confusion in the brief.**
 
-Ah Keat does not switch FROM Talenox. Talenox processes payroll. It submits CPF. It generates IR8A. The shadow agent does none of these things. AITE is not a replacement for Talenox. It is an additional product he needs to justify paying for.
+Ah Keat does not switch FROM his existing HRIS. His current platform processes payroll. It submits CPF. It generates IR8A. The shadow agent does none of these things. Arbor is not a replacement for the existing HRIS. It is an additional product he needs to justify paying for.
 
-The brief's Part 4 ("The Payboy Paradigm") suggests AITE will evolve to include employee interfaces with leave balances, payslips, and onboarding -- which IS Payboy/Talenox territory. But the shadow agent brief does not describe how any of these operational features actually work. It describes an AI presence layer on top of features that do not exist yet. This is a vision document for a product three levels deep from what has been built.
+The brief's Part 4 ("The Enterprise Platform Paradigm") suggests Arbor will evolve to include employee interfaces with leave balances, payslips, and onboarding -- which IS traditional HRIS territory. But the shadow agent brief does not describe how any of these operational features actually work. It describes an AI presence layer on top of features that do not exist yet. This is a vision document for a product three levels deep from what has been built.
 
 What Ah Keat actually needs:
 
@@ -32,7 +32,7 @@ The shadow agent is a sophisticated delivery mechanism for these answers. But Ah
 
 ### Objections Ah Keat would raise
 
-1. **"I already pay $110/month for Talenox. You want me to pay another $99/month for advice? That is doubling my HR software cost."** -- Price anchoring against existing tool, not against consultant fees.
+1. **"I already pay $110/month for the existing HRIS. You want me to pay another $99/month for advice? That is doubling my HR software cost."** -- Price anchoring against existing tool, not against consultant fees.
 
 2. **"The MOM website is free. How is this different from a nicer version of the MOM website?"** -- The brief does not answer this concretely enough. The differentiator (contextual, personalized) requires the user to set up a company profile first. During a demo, this is a cold start problem.
 
@@ -54,7 +54,7 @@ That is the demo. The shadow agent architecture is invisible to him. If the answ
 - $29/month: Possible impulse buy after a compliance scare. Would try it for 3 months.
 - $49/month: Needs to see clear value in the first session. Would compare against "just calling TAFEP."
 - $99/month: Hard no unless PSG-subsidized (then effectively $49.50). Would need to see it replace at least 2 consultant calls per year ($600-1,000 saved).
-- $199/month: Laughable for a 22-person company. That is more than Talenox for all his employees.
+- $199/month: Laughable for a 22-person company. That is more than the existing HRIS for all his employees.
 
 ---
 
@@ -62,9 +62,9 @@ That is the demo. The shadow agent architecture is invisible to him. If the answ
 
 ### Context
 
-Priya is the sole HR manager at a 120-person logistics company. She has an IHRP-CP certification. She uses JustLogin for HRIS ($5/employee/month = $600/month). She handles everything from onboarding to terminations. She is competent but overwhelmed. She attends SNEF workshops twice a year to stay current.
+Priya is the sole HR manager at a 120-person logistics company. She has an IHRP-CP certification. She uses the existing HRIS for HRIS ($5/employee/month = $600/month). She handles everything from onboarding to terminations. She is competent but overwhelmed. She attends SNEF workshops twice a year to stay current.
 
-### Would the shadow agent convince her to adopt AITE?
+### Would the shadow agent convince her to adopt Arbor?
 
 **Maybe, but not for the reasons the brief thinks.**
 
@@ -80,7 +80,7 @@ The shadow agent's value for Priya is in the **employee interface** (Part 4) and
 
 ### Objections Priya would raise
 
-1. **"The employee interface looks like a Payboy competitor. But it does not actually do payroll, leave applications, or payslip generation. So my employees still need JustLogin. Now I am asking them to use two systems."** -- The employee portal as described adds cognitive load, not value, unless it replaces JustLogin entirely. And replacing JustLogin means building payroll, CPF submission, IR8A, leave workflow, claims -- which is years of work.
+1. **"The employee interface looks like a incumbent HRIS competitor. But it does not actually do payroll, leave applications, or payslip generation. So my employees still need the existing HRIS. Now I am asking them to use two systems."** -- The employee portal as described adds cognitive load, not value, unless it replaces the existing HRIS entirely. And replacing the existing HRIS means building payroll, CPF submission, IR8A, leave workflow, claims -- which is years of work.
 
 2. **"I need to be able to verify the AI's answers. I am the one accountable if it is wrong. How do I audit the knowledge base?"** -- The brief mentions the 13-step safety chain but does not describe how Priya validates that the underlying KB is current. If MOM updates the retirement age on April 1 and the AI still cites the old age on April 2, Priya's credibility is damaged.
 
@@ -100,8 +100,8 @@ The shadow agent's value for Priya is in the **employee interface** (Part 4) and
 
 - $199/month (flat, admin-only): Reasonable if it saves her 4+ consultant calls per year.
 - $499/month (admin + unlimited employee access): Competitive if it genuinely reduces her query load by 50%.
-- $2/employee/month for the employee portal: $240/month on top of $600/month JustLogin. Possible but needs strong justification.
-- $5/employee/month: $600/month for the employee portal alone. That is a second HRIS cost. Hard to justify unless it replaces JustLogin.
+- $2/employee/month for the employee portal: $240/month on top of $600/month the existing HRIS. Possible but needs strong justification.
+- $5/employee/month: $600/month for the employee portal alone. That is a second HRIS cost. Hard to justify unless it replaces the existing HRIS.
 
 ---
 
@@ -130,7 +130,7 @@ Wei Lin is CTO at an HR tech startup evaluating whether to build this shadow age
 1. **Layer A (Substrate / Behavioral Learning)** -- The brief claims the agent "learns from every interaction" and extracts "intent patterns." This is significantly harder than it sounds.
    - **Data sparsity problem**: An SME owner uses this platform maybe 2-3 times per month. In 6 months, you have 12-18 interactions. That is not enough data to learn meaningful patterns. You cannot build a behavioral model from 18 data points.
    - **Pattern vs. calendar**: The brief says the agent detects "time patterns (compliance checks on Mondays, CPF calculations at month-end)." These are not learned patterns. They are calendar events. You do not need AI to know CPF is calculated monthly. A cron job sends a reminder.
-   - **Privacy promise is expensive**: "All learned preferences are visible in Settings > AI Memory and can be edited or deleted at any time." This means building a full preference management system with CRUD operations, explanation generation ("AITE learned that you frequently check KET compliance"), and preference-level granularity. This is a significant product surface for a feature whose value has not been validated.
+   - **Privacy promise is expensive**: "All learned preferences are visible in Settings > AI Memory and can be edited or deleted at any time." This means building a full preference management system with CRUD operations, explanation generation ("Arbor learned that you frequently check KET compliance"), and preference-level granularity. This is a significant product surface for a feature whose value has not been validated.
 
 2. **Layer B (The Margin)** -- A persistent 48px strip on every page with a "breathing glow" and "context thread" dots is a design choice, not a technical challenge. But the brief describes it with language borrowed from science fiction ("ambient energy," "shadow pulse," "action seed"). Stripped of the language, this is: a sidebar with 5 notification dots and an expand/collapse toggle. The implementation is trivial. The value is the content IN the margin, not the margin itself.
 
@@ -183,12 +183,12 @@ What HubSpot Breeze does: surfaces AI insights in the CRM context. "This deal is
 
 What Salesforce Einstein does: predictive scoring, auto-generated emails, conversational analytics. Embedded in the Salesforce UI.
 
-What the AITE shadow agent proposes: contextual annotations, ambient awareness, a command surface, and behavioral learning. Embedded in the HR advisory UI.
+What the Arbor shadow agent proposes: contextual annotations, ambient awareness, a command surface, and behavioral learning. Embedded in the HR advisory UI.
 
-**The structural difference** is that HubSpot/Salesforce AI operates on YOUR data (your deals, your contacts, your pipeline). The AITE shadow agent operates on REGULATORY data (employment law, CPF rates, foreign worker quotas) applied to your context. This is a meaningful distinction because:
+**The structural difference** is that HubSpot/Salesforce AI operates on YOUR data (your deals, your contacts, your pipeline). The Arbor shadow agent operates on REGULATORY data (employment law, CPF rates, foreign worker quotas) applied to your context. This is a meaningful distinction because:
 
 - HubSpot's AI can be wrong about your deal pipeline and the consequence is a missed email.
-- AITE's AI can be wrong about your legal obligations and the consequence is a $5,000 fine.
+- Arbor's AI can be wrong about your legal obligations and the consequence is a $5,000 fine.
 
 The safety chain, citation requirement, and risk tiering are the actual differentiators -- not the four-layer presence model. The presence model is a UI choice. The safety chain is an architectural moat.
 
@@ -213,21 +213,21 @@ None of these require a "shadow agent." They require a well-built advisory engin
 
 **It adds value in theory. In practice, it creates a build-vs-buy crisis.**
 
-The employee interface as described (My Dashboard, My Terms, My Leave, My Payslips, Company Policies, Ask AITE) is a simplified HRIS. Building this means:
+The employee interface as described (My Dashboard, My Terms, My Leave, My Payslips, Company Policies, Ask Arbor) is a simplified HRIS. Building this means:
 
-- **My Leave**: Leave balance tracking, leave application workflow, approval routing, public holiday calendar, leave type management (annual, sick, hospitalization, maternity, paternity, childcare, NS). This is a standalone product. Talenox, Payboy, and JustLogin each spent years building this.
+- **My Leave**: Leave balance tracking, leave application workflow, approval routing, public holiday calendar, leave type management (annual, sick, hospitalization, maternity, paternity, childcare, NS). This is a standalone product. the existing HRIS, incumbent HRIS, and the existing HRIS each spent years building this.
 
 - **My Payslips**: Payslip generation, itemized breakdown, CPF contribution display, historical payslips. This requires integration with a payroll engine. Without actual payroll processing, the payslips are static documents uploaded by the admin -- which is what HRIS platforms already do.
 
-- **My Terms**: Employment contract display, KET summary. This adds value only if the admin has entered the employment terms into AITE -- which means building an employee data management system. Which is an HRIS.
+- **My Terms**: Employment contract display, KET summary. This adds value only if the admin has entered the employment terms into Arbor -- which means building an employee data management system. Which is an HRIS.
 
-The shadow agent on the employee interface (asking "How many leave days do I have?") only works if the underlying data exists in AITE. If the data lives in JustLogin/Talenox/Payboy, the shadow agent cannot answer the question. This means either:
+The shadow agent on the employee interface (asking "How many leave days do I have?") only works if the underlying data exists in Arbor. If the data lives in the existing HRIS/the existing HRIS/incumbent HRIS, the shadow agent cannot answer the question. This means either:
 
-1. **AITE integrates with existing HRIS platforms** (API integration with Talenox, Payboy, JustLogin) to pull employee data -- technically feasible but dependent on those platforms' API availability and cooperation.
+1. **Arbor integrates with existing HRIS platforms** (API integration with the existing HRIS, incumbent HRIS, the existing HRIS) to pull employee data -- technically feasible but dependent on those platforms' API availability and cooperation.
 
-2. **AITE becomes the HRIS** -- replacing Talenox/Payboy/JustLogin as the system of record for employee data, leave, and payroll.
+2. **Arbor becomes the HRIS** -- replacing the existing HRIS/incumbent HRIS/the existing HRIS as the system of record for employee data, leave, and payroll.
 
-Option 1 positions AITE as an advisory layer ON TOP of existing tools. This is the defensible position. It means smaller scope, faster build, and no head-to-head competition with entrenched HRIS players.
+Option 1 positions Arbor as an advisory layer ON TOP of existing tools. This is the defensible position. It means smaller scope, faster build, and no head-to-head competition with entrenched HRIS players.
 
 Option 2 is building a new HRIS from scratch while simultaneously building an AI advisory engine. This is two startups in one. History says this does not work. The HRIS market is mature, competitive, and commoditized. The AI advisory market is nascent and differentiated. Trying to win both simultaneously dilutes focus and capital.
 
@@ -237,7 +237,7 @@ Option 2 is building a new HRIS from scratch while simultaneously building an AI
 
 ## Build vs. Buy Risk Assessment
 
-### Is AITE trying to do too much?
+### Is Arbor trying to do too much?
 
 **Yes. The brief conflates three distinct products:**
 
@@ -322,8 +322,8 @@ An SME owner hearing "there is a shadow agent watching your behavior" will be un
 
 The concept is sound. The name is counterproductive. Consider:
 
-- "AITE Advisor" (simple, clear, trustworthy)
-- "AITE Intelligence Layer" (technical, B2B appropriate)
+- "Arbor Advisor" (simple, clear, trustworthy)
+- "Arbor Intelligence Layer" (technical, B2B appropriate)
 - "Contextual AI" (descriptive, non-threatening)
 - Nothing at all -- the best AI is invisible AI. Users do not need to know there is an "agent." They need answers.
 
@@ -364,7 +364,7 @@ This does not require a shadow agent. It requires a good dashboard, a good KB, a
 
 She logs in. She sees:
 
-1. An employee self-service portal she can share with her 120 employees (but it pulls data from JustLogin via API, not from a separate database).
+1. An employee self-service portal she can share with her 120 employees (but it pulls data from the existing HRIS via API, not from a separate database).
 2. An advisory interface where she can ask complex questions and get cited, risk-tiered answers.
 3. An audit log of all advisory interactions, exportable for compliance documentation.
 4. Regulatory change alerts specific to her company (logistics, 120 employees, 40 foreign workers).

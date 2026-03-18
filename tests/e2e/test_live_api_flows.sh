@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# AITE HR Advisory Platform — Comprehensive Live API Flow Tests
+# Arbor HR Advisory Platform — Comprehensive Live API Flow Tests
 # Target: http://localhost:8099
 # Tests all 7 user flows + additional checks
 # ============================================================================

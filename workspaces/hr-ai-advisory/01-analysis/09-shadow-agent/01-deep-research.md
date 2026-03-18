@@ -4,17 +4,17 @@ See full analysis in agent output. Key findings summarized below.
 
 ## Competitive Landscape Summary
 
-All 6 Singapore HR SaaS platforms (Payboy, Talenox, HReasily, JustLogin, Swingvy, InfoTech) share one universal gap: **none answer "Am I doing HR right?"** They process payroll and manage leave but provide zero regulatory guidance, no compliance monitoring, and no AI advisory.
+All established Singapore HR SaaS platforms share one universal gap: **none answer "Am I doing HR right?"** They process payroll and manage leave but provide zero regulatory guidance, no compliance monitoring, and no AI advisory.
 
 ## Critical Strategic Insight
 
-**AITE should NOT become an HRIS.** The brief conflates three products:
+**Arbor should NOT become an HRIS.** The brief conflates three products:
 
 1. AI advisory engine (built)
 2. Shadow agent UX presence (unbuilt)
 3. Multi-tenant employee platform (unbuilt — equivalent to building an HRIS)
 
-**Resolution**: AITE is the **intelligence layer** that works alongside an HRIS. Employee data comes from HRIS integration (Payboy/Talenox APIs), not from building a competing payroll engine.
+**Resolution**: Arbor is the **intelligence layer** that works alongside an HRIS. Employee data comes from HRIS integration (third-party APIs), not from building a competing payroll engine.
 
 ## Layer Feasibility (by complexity)
 

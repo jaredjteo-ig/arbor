@@ -1,11 +1,11 @@
 ---
 name: sg-employment-law
-description: "Singapore employment law reference for AITE. Use when working on KB content, domain classification, provision accuracy, or regulatory compliance."
+description: "Singapore employment law reference for Arbor. Use when working on KB content, domain classification, provision accuracy, or regulatory compliance."
 ---
 
 # Singapore Employment Law Reference
 
-Quick reference for the six regulatory domains served by the AITE platform.
+Quick reference for the six regulatory domains served by the Arbor platform.
 
 ## Domain Map
 

@@ -46,7 +46,7 @@ export function CreateUpdateForm({ onClose }: { onClose: () => void }) {
             { value: "critical", label: "Critical" },
           ]}
         />
-        <AppInput label="Effective Date" placeholder="YYYY-MM-DD" />
+        <AppInput label="Effective Date" variant="date" />
         <div className="md:col-span-2">
           <AppInput
             label="Description"

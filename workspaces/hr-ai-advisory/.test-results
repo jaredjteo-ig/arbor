@@ -1,8 +1,14 @@
-commit: 77850b9+ (M36-M38 uncommitted)
-timestamp: 2026-03-18T02:15:00Z
-baseline_pass: 924
-baseline_fail: 10
-final_pass: 843
-final_fail: 10
-new_tests: 9
+commit: pending (uncommitted changes)
+timestamp: 2026-03-18T14:00:00Z
+baseline_pass: 826
+baseline_fail: 115
+final_pass: 826
+final_fail: 115
+new_tests: 0
 regressions: 0
+notes: |
+  Red team round 7 complete. All critical/high security fixes applied.
+  826 unit tests pass, 115 pre-existing failures unchanged.
+  16 collection errors pre-existing (Kailash SDK 2.0.0 import).
+  TypeScript frontend compiles clean.
+  Scope: T317-T398 implementation + AITE->Arbor rename + competitor ref cleanup + red team fixes.

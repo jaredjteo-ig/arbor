@@ -1,4 +1,4 @@
-"""aite-government MCP server — Singapore government API integrations.
+"""arbor-government MCP server — Singapore government API integrations.
 
 Registers all government-related tools for the shadow agent:
 - CPF monthly contribution submission (G01)
@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from hr_advisory.mcp_servers.base import AiteMCPServer, TenantContext
+from hr_advisory.mcp_servers.base import ArborMCPServer, TenantContext
 from hr_advisory.mcp_servers.idempotency import (
     DuplicateSubmissionError,
     get_submission_ledger,
@@ -45,8 +45,8 @@ logger = logging.getLogger(__name__)
 # Create the server instance
 # ---------------------------------------------------------------------------
 
-server = AiteMCPServer(
-    name="aite-government",
+server = ArborMCPServer(
+    name="arbor-government",
     description=(
         "Singapore government API integrations: CPF submissions, "
         "IRAS tax filings, MOM occupational data, MyInfo onboarding, "
@@ -855,7 +855,7 @@ def gov_connectors_resource() -> dict:
 @server.resource(
     "gov://health",
     name="Government Server Health",
-    description="Health status of the aite-government MCP server.",
+    description="Health status of the arbor-government MCP server.",
 )
 def gov_health_resource() -> dict:
     """Government server health."""

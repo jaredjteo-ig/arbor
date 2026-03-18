@@ -45,7 +45,7 @@ class TeamsAdapter:
         card = adapter.create_adaptive_card(
             title="Leave Approved",
             body="Your annual leave from 15-17 Mar has been approved.",
-            actions=[{"title": "View in AITE", "url": "https://app.aite.sg/leave"}],
+            actions=[{"title": "View in Arbor", "url": "https://app.arbor.sg/leave"}],
         )
         result = await adapter.send_webhook(webhook_url, card)
     """
@@ -246,7 +246,7 @@ class TeamsAdapter:
             title=title,
             body=body,
             facts=facts,
-            actions=[{"title": "View in AITE", "url": "https://app.aite.sg/leave"}],
+            actions=[{"title": "View in Arbor", "url": "https://app.arbor.sg/leave"}],
             color=color,
         )
         return await self.send_webhook(webhook_url, card, tenant_id=tenant_id)
@@ -261,7 +261,7 @@ class TeamsAdapter:
         """Send a payslip-ready notification to the HR channel.
 
         Note: No salary amounts or financial data in the message
-        (PDPA compliance). Just a notification to view in AITE.
+        (PDPA compliance). Just a notification to view in Arbor.
         """
         card = self.create_adaptive_card(
             title="Payslips Ready",
@@ -270,7 +270,7 @@ class TeamsAdapter:
                 {"title": "Period", "value": period},
                 {"title": "Employees", "value": str(employee_count)},
             ],
-            actions=[{"title": "View in AITE", "url": "https://app.aite.sg/payroll"}],
+            actions=[{"title": "View in Arbor", "url": "https://app.arbor.sg/payroll"}],
         )
         return await self.send_webhook(webhook_url, card, tenant_id=tenant_id)
 
@@ -287,7 +287,7 @@ class TeamsAdapter:
         card = self.create_adaptive_card(
             title=f"Compliance Alert: {alert_title}",
             body=alert_body,
-            actions=[{"title": "Review in AITE", "url": "https://app.aite.sg/compliance"}],
+            actions=[{"title": "Review in Arbor", "url": "https://app.arbor.sg/compliance"}],
             color=color_map.get(severity, "warning"),
         )
         return await self.send_webhook(webhook_url, card, tenant_id=tenant_id)

@@ -1,6 +1,6 @@
 # HR AI Advisory — Master Todo Index
 
-**Project**: AITE — Free AI-Powered HR Platform for Singapore (backed by ASME)
+**Project**: Arbor — Free AI-Powered HR Platform for Singapore (backed by ASME)
 **Last Updated**: 2026-03-17
 **Total Tasks**: 192 across 21 milestones
 **Status**: T001-T140 complete. T141-T192 active (Full HRIS + Shadow Agent Enhancement).
@@ -23,7 +23,7 @@ T001-T140 across 15 milestones. Covers:
 - Full advisory platform with 14-step safety chain, 6 regulatory domains, 7 calculators
 - Shadow agent (command surface, margin, inline annotations, observation layer)
 - Enterprise model (admin + employee roles, invitation system, tenant isolation)
-- Production deployment at aite.kailash.ai
+- Production deployment at arbor.kailash.ai
 - 8 red team rounds
 
 ---
@@ -126,7 +126,7 @@ T001-T140 across 15 milestones. Covers:
 | T185    | Audit trail for all payroll data access                                   | T153, T184   |
 | T186    | Payroll run performance test — 200 employees under 30 seconds             | T150         |
 | T187    | Employee data import — CSV upload for bulk onboarding                     | T146         |
-| T188    | Parallel run support — run AITE alongside existing HRIS, compare payslips | T152         |
+| T188    | Parallel run support — run Arbor alongside existing HRIS, compare payslips | T152         |
 | T189    | Payroll data export — full history CSV for migration                      | T148         |
 | T190    | Red team — payroll accuracy, PDPA compliance, security                    | T183-T189    |
 | T191    | COC codification — update project agents and skills for HRIS domain       | T190         |

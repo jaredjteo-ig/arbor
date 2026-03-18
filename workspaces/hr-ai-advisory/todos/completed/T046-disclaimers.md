@@ -12,7 +12,7 @@
 
 **Platform Disclaimer**:
 
-- `PLATFORM_DISCLAIMER` constant — persistent footer stating AITE provides HR information (not legal advice), recommending professional verification for critical decisions, and noting professional indemnity insurance
+- `PLATFORM_DISCLAIMER` constant — persistent footer stating Arbor provides HR information (not legal advice), recommending professional verification for critical decisions, and noting professional indemnity insurance
 
 **Per-Response Disclaimer Logic**:
 

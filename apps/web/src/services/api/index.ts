@@ -25,3 +25,8 @@ export { claimsApi } from "./claims";
 export { attendanceApi } from "./attendance";
 export { humanizeError } from "./errors";
 export { integrationsApi } from "./integrations";
+export { appraisalsApi } from "./appraisals";
+export { projectsApi } from "./projects";
+export { inventoryApi } from "./inventory";
+export { recruitmentApi } from "./recruitment";
+export { reportsApi } from "./reports";

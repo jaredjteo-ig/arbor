@@ -180,8 +180,8 @@ class MicrosoftGraphAdapter:
         Args:
             code: Authorization code from Entra ID callback.
             redirect_uri: Must match the auth URL redirect_uri.
-            tenant_id: AITE tenant (company) ID.
-            user_id: AITE employee ID.
+            tenant_id: Arbor tenant (company) ID.
+            user_id: Arbor employee ID.
 
         Returns:
             Token metadata dict.
@@ -275,12 +275,12 @@ class MicrosoftGraphAdapter:
         Out-of-Office status and isAllDay=true for all-day events.
 
         Args:
-            user_id: AITE employee ID (for token lookup). Uses "me"
+            user_id: Arbor employee ID (for token lookup). Uses "me"
                 endpoint with delegated tokens.
             start: Start date (YYYY-MM-DD).
             end: End date (YYYY-MM-DD), inclusive.
             summary: Event subject line.
-            tenant_id: AITE company ID.
+            tenant_id: Arbor company ID.
             description: Optional event body text.
 
         Returns:
@@ -305,7 +305,7 @@ class MicrosoftGraphAdapter:
             },
             "showAs": "oof",
             "isReminderOn": False,
-            "categories": ["AITE Leave"],
+            "categories": ["Arbor Leave"],
         }
         if description:
             event_body["body"] = {
@@ -313,10 +313,10 @@ class MicrosoftGraphAdapter:
                 "content": description,
             }
 
-        # Use transactional property to tag AITE-managed events
+        # Use transactional property to tag Arbor-managed events
         event_body["singleValueExtendedProperties"] = [
             {
-                "id": "String {66f5a359-4659-4830-9070-00047ec6ac6e} Name aite_managed",
+                "id": "String {66f5a359-4659-4830-9070-00047ec6ac6e} Name arbor_managed",
                 "value": "true",
             }
         ]
@@ -350,11 +350,11 @@ class MicrosoftGraphAdapter:
         """Batch-sync approved leave records to a user's Outlook Calendar.
 
         Creates OOO events for each leave record. Uses categories and
-        extended properties to identify AITE-managed events and prevent
+        extended properties to identify Arbor-managed events and prevent
         duplicates.
 
         Args:
-            user_id: AITE employee ID.
+            user_id: Arbor employee ID.
             leave_records: List of leave dicts with id, start_date,
                 end_date, leave_type, employee_name.
             tenant_id: Company ID.
@@ -368,8 +368,8 @@ class MicrosoftGraphAdapter:
         failed = 0
         errors: list[str] = []
 
-        # Get existing AITE-managed events to check for duplicates
-        existing_ids = await self._get_existing_aite_event_subjects(access_token)
+        # Get existing Arbor-managed events to check for duplicates
+        existing_ids = await self._get_existing_arbor_event_subjects(access_token)
 
         for leave in leave_records:
             leave_id = leave.get("id", "")
@@ -431,7 +431,7 @@ class MicrosoftGraphAdapter:
         created = 0
         skipped = 0
 
-        existing_subjects = await self._get_existing_aite_event_subjects(access_token)
+        existing_subjects = await self._get_existing_arbor_event_subjects(access_token)
 
         for holiday in holidays:
             subject = f"[SG] {holiday['holiday']}"
@@ -454,7 +454,7 @@ class MicrosoftGraphAdapter:
                     },
                     "showAs": "free",
                     "isReminderOn": False,
-                    "categories": ["AITE Holiday"],
+                    "categories": ["Arbor Holiday"],
                 }
 
                 await self._api_call(
@@ -477,18 +477,18 @@ class MicrosoftGraphAdapter:
 
     # ── Internal helpers ─────────────────────────────────────────
 
-    async def _get_existing_aite_event_subjects(
+    async def _get_existing_arbor_event_subjects(
         self,
         access_token: str,
     ) -> set[str]:
-        """Get subjects of events in AITE categories for dedup."""
+        """Get subjects of events in Arbor categories for dedup."""
         try:
             result = await self._api_call(
                 method="GET",
                 path="me/events",
                 access_token=access_token,
                 params={
-                    "$filter": "categories/any(c:c eq 'AITE Leave' or c eq 'AITE Holiday')",
+                    "$filter": "categories/any(c:c eq 'Arbor Leave' or c eq 'Arbor Holiday')",
                     "$select": "subject",
                     "$top": "999",
                 },
