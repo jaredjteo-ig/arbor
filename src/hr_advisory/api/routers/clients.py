@@ -118,9 +118,9 @@ async def create_client(
             status_code=400, detail="Company name is required (use 'name' or 'company_name' field)"
         )
 
-    uen = body.get("uen", "")
-    if not uen or not uen.strip():
-        raise HTTPException(status_code=400, detail="UEN is required")
+    uen = (
+        body.get("uen", "") or ""
+    ).strip()  # Optional — users may not have UEN during initial setup
 
     employee_count = body.get("employee_count", 0) or body.get("estimated_headcount", 0)
     sector = body.get("sector", "")
