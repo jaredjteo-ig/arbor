@@ -921,7 +921,10 @@ export default function EmployeesPage() {
     setInvitationsError(null);
     try {
       const data = await employeesApi.listInvitations();
-      setInvitations(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data)
+        ? data
+        : ((data as any)?.invitations ?? []);
+      setInvitations(list);
     } catch (err: unknown) {
       const message =
         err instanceof Error
