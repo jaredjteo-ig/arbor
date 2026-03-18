@@ -11,12 +11,13 @@ import {
 } from "@/components/onboarding";
 import type { CompanyProfileData } from "@/components/onboarding";
 import { useAuth } from "@/contexts/AuthContext";
+import { clientsApi } from "@/services/api/clients";
 
 const STEPS = ["Welcome", "Company", "Snapshot", "Ask"];
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const isLoggedIn = !!user;
 
   const [currentStep, setCurrentStep] = useState(0);
@@ -33,11 +34,22 @@ export default function OnboardingPage() {
   }, []);
 
   const handleProfileComplete = useCallback(
-    (data: CompanyProfileData) => {
+    async (data: CompanyProfileData) => {
       setProfileData(data);
+      try {
+        await clientsApi.create({
+          name: data.companyName,
+          sector: data.sector,
+          estimated_headcount: data.totalEmployees || 5,
+        } as any);
+        await refreshUser?.();
+      } catch (err: any) {
+        // Company may already exist — continue with onboarding
+        console.warn("Company creation during onboarding:", err?.message);
+      }
       goNext();
     },
-    [goNext],
+    [goNext, refreshUser],
   );
 
   const handleQuestion = useCallback(
