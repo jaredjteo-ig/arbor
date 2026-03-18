@@ -138,6 +138,21 @@ export interface InviteEmployeeData {
   role: string;
 }
 
+export interface InviteResponse {
+  message: string;
+  invite_url: string;
+}
+
+export interface Invitation {
+  id: number;
+  email: string;
+  role: string;
+  status: "pending" | "expired" | "accepted" | "revoked";
+  created_at: string;
+  expires_at: string;
+  invite_url?: string;
+}
+
 export interface InviteValidation {
   email: string;
   company_name: string;
@@ -203,8 +218,25 @@ export const employeesApi = {
   },
 
   /** Admin: invite a new employee by email. */
-  invite(data: InviteEmployeeData): Promise<{ message: string }> {
-    return apiClient.post<{ message: string }>("/employees/invite", data);
+  invite(data: InviteEmployeeData): Promise<InviteResponse> {
+    return apiClient.post<InviteResponse>("/employees/invite", data);
+  },
+
+  /** Admin: list all invitations for the current company. */
+  listInvitations(): Promise<Invitation[]> {
+    return apiClient.get<Invitation[]>("/employees/invitations");
+  },
+
+  /** Admin: revoke a pending invitation. */
+  revokeInvitation(id: number): Promise<void> {
+    return apiClient.delete<void>(`/employees/invite/${id}`);
+  },
+
+  /** Admin: resend an invitation (generates fresh link). */
+  resendInvitation(id: number): Promise<{ invite_url: string }> {
+    return apiClient.post<{ invite_url: string }>(
+      `/employees/invite/${id}/resend`,
+    );
   },
 
   /** Get leave balances for the current employee. */

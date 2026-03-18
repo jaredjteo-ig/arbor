@@ -1,23 +1,23 @@
-import { ShieldCheck, Calculator, FileText } from "lucide-react";
+import { Wallet, Sparkles, LayoutGrid } from "lucide-react";
 
 const features = [
   {
-    icon: ShieldCheck,
-    title: "Instant Compliance Guidance",
+    icon: Wallet,
+    title: "Free Payroll & CPF",
     description:
-      "Get answers grounded in Singapore employment law with source citations",
+      "Run payroll, generate CPF files, create payslips \u2014 all free",
   },
   {
-    icon: Calculator,
-    title: "Accurate HR Calculators",
+    icon: Sparkles,
+    title: "AI Compliance Advisor",
     description:
-      "CPF, leave, notice periods, retrenchment \u2014 deterministic calculations, no AI",
+      "Answers grounded in Singapore employment law with source citations",
   },
   {
-    icon: FileText,
-    title: "Ready-Made Templates",
+    icon: LayoutGrid,
+    title: "Full HR Suite",
     description:
-      "Employment contracts, policies, and letters aligned with current regulations",
+      "Leave, claims, attendance, shifts, employee management \u2014 everything in one place",
   },
 ] as const;
 
@@ -39,7 +39,7 @@ export function ValuePropositionPanel() {
           </span>
         </div>
         <p className="mt-1 text-base text-white/70">
-          AI-Powered HR Compliance for Singapore
+          Your Complete HR Platform for Singapore
         </p>
       </div>
 

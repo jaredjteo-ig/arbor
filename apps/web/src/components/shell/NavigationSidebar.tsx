@@ -213,10 +213,10 @@ const employeeCoreNavItems: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
-    labelKey: "nav.my-payslips",
-    label: "My Payslips",
-    href: "/my-payslips",
-    icon: Receipt,
+    labelKey: "nav.my-profile",
+    label: "My Profile",
+    href: "/my-profile",
+    icon: Users,
   },
   {
     labelKey: "nav.my-leave",
@@ -231,16 +231,22 @@ const employeeCoreNavItems: NavItem[] = [
     icon: Receipt,
   },
   {
+    labelKey: "nav.my-payslips",
+    label: "My Payslips",
+    href: "/my-payslips",
+    icon: Wallet,
+  },
+  {
     labelKey: "nav.my-attendance",
     label: "My Attendance",
     href: "/attendance",
     icon: Clock,
   },
   {
-    labelKey: "nav.policies",
-    label: "Policies",
-    href: "/policies",
-    icon: BookOpen,
+    labelKey: "nav.advisory",
+    label: "Advisory",
+    href: "/advisory",
+    icon: MessageSquare,
   },
 ];
 

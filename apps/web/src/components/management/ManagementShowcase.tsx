@@ -229,10 +229,24 @@ const VALUE_PROPS = [
 
 interface ManagementShowcaseProps {
   hasCompany: boolean;
+  /** When true, CTAs link to /signup instead of opening CompanySetupModal */
+  isPublic?: boolean;
 }
 
-export function ManagementShowcase({ hasCompany }: ManagementShowcaseProps) {
+export function ManagementShowcase({
+  hasCompany,
+  isPublic,
+}: ManagementShowcaseProps) {
   const [showSetup, setShowSetup] = useState(false);
+
+  /** CTA handler: public pages navigate to signup; authenticated pages open setup modal */
+  const handleCta = () => {
+    if (isPublic) {
+      window.location.href = "/signup";
+    } else {
+      setShowSetup(true);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -259,11 +273,11 @@ export function ManagementShowcase({ hasCompany }: ManagementShowcaseProps) {
               that knows Singapore employment law.
             </p>
             <button
-              onClick={() => setShowSetup(true)}
+              onClick={handleCta}
               className="inline-flex items-center gap-2 px-6 py-3 bg-white text-blue-700 font-semibold rounded-xl hover:bg-white/90 transition-all shadow-lg"
             >
               <Building2 className="w-5 h-5" />
-              Set Up Your Company
+              {isPublic ? "Get Started Free" : "Set Up Your Company"}
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -331,7 +345,7 @@ export function ManagementShowcase({ hasCompany }: ManagementShowcaseProps) {
                 if (hasCompany) {
                   window.location.href = module.href;
                 } else {
-                  setShowSetup(true);
+                  handleCta();
                 }
               }}
             >
@@ -404,20 +418,22 @@ export function ManagementShowcase({ hasCompany }: ManagementShowcaseProps) {
             free — no credit card, no limits, no catch.
           </p>
           <button
-            onClick={() => setShowSetup(true)}
+            onClick={handleCta}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors"
           >
             <Building2 className="w-4 h-4" />
-            Set Up Company
+            {isPublic ? "Get Started Free" : "Set Up Company"}
           </button>
         </div>
       )}
 
-      {/* Company Setup Modal */}
-      <CompanySetupModal
-        isOpen={showSetup}
-        onClose={() => setShowSetup(false)}
-      />
+      {/* Company Setup Modal — only rendered for authenticated users */}
+      {!isPublic && (
+        <CompanySetupModal
+          isOpen={showSetup}
+          onClose={() => setShowSetup(false)}
+        />
+      )}
     </div>
   );
 }

@@ -17,8 +17,18 @@ import {
   UserPlus,
   Upload,
   FileSpreadsheet,
+  Copy,
+  Check,
+  RefreshCw,
+  Trash2,
+  Clock,
+  Mail,
 } from "lucide-react";
-import { employeesApi, type Employee } from "@/services/api/employees";
+import {
+  employeesApi,
+  type Employee,
+  type Invitation,
+} from "@/services/api/employees";
 
 /* -- Status badge -------------------------------------------------- */
 
@@ -118,6 +128,127 @@ function TableSkeleton() {
   );
 }
 
+/* -- Copy-to-clipboard hook --------------------------------------- */
+
+function useCopyToClipboard(resetMs = 2000) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const copy = useCallback(
+    (text: string, id = "default") => {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedId(id);
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => setCopiedId(null), resetMs);
+      });
+    },
+    [resetMs],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  return { copiedId, copy };
+}
+
+/* -- Invite Link Success Modal ------------------------------------ */
+
+function InviteLinkModal({
+  isOpen,
+  email,
+  inviteUrl,
+  onClose,
+}: {
+  isOpen: boolean;
+  email: string;
+  inviteUrl: string;
+  onClose: () => void;
+}) {
+  const { copiedId, copy } = useCopyToClipboard();
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-md mx-4 rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] shadow-[var(--shadow-raised)] p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Check className="h-5 w-5 text-emerald-600" />
+            <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
+              Invitation Created
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+          >
+            <X className="h-5 w-5 text-[var(--color-gray-500)]" />
+          </button>
+        </div>
+
+        <p className="text-sm text-[var(--color-gray-600)] mb-4">
+          Share this link with <strong>{email}</strong> via WhatsApp, email, or
+          any channel.
+        </p>
+
+        <div className="flex items-center gap-2 mb-4">
+          <input
+            readOnly
+            value={inviteUrl}
+            className="
+              flex-1 rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+              bg-[var(--color-gray-50)] text-[var(--color-gray-700)]
+              border-[var(--color-gray-200)] font-mono text-xs
+              select-all truncate
+            "
+            onClick={(e) => (e.target as HTMLInputElement).select()}
+          />
+          <button
+            type="button"
+            onClick={() => copy(inviteUrl, "invite-link")}
+            className="
+              flex items-center justify-center gap-1.5 rounded-[8px] border px-3 py-2 min-h-[44px] text-sm font-medium
+              transition-colors whitespace-nowrap
+              border-[var(--color-gray-200)] hover:bg-[var(--color-gray-50)]
+              text-[var(--color-gray-700)]
+            "
+          >
+            {copiedId === "invite-link" ? (
+              <>
+                <Check className="h-4 w-4 text-emerald-600" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy className="h-4 w-4" />
+                Copy
+              </>
+            )}
+          </button>
+        </div>
+
+        <AppButton
+          variant="primary"
+          size="sm"
+          onClick={onClose}
+          className="w-full"
+        >
+          Done
+        </AppButton>
+      </div>
+    </div>
+  );
+}
+
 /* -- Invite Employee Modal ----------------------------------------- */
 
 function InviteEmployeeModal({
@@ -127,7 +258,7 @@ function InviteEmployeeModal({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (email: string, inviteUrl: string) => void;
 }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("employee");
@@ -141,12 +272,11 @@ function InviteEmployeeModal({
 
     setIsSubmitting(true);
     try {
-      await employeesApi.invite({ email: email.trim(), role });
-      toast.success("Invitation sent successfully");
+      const result = await employeesApi.invite({ email: email.trim(), role });
+      const submittedEmail = email.trim();
       setEmail("");
       setRole("employee");
-      onSuccess();
-      onClose();
+      onSuccess(submittedEmail, result.invite_url);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to send invitation";
@@ -246,6 +376,264 @@ function InviteEmployeeModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+/* -- Invitation status badge -------------------------------------- */
+
+const INVITATION_STATUS_STYLES: Record<string, string> = {
+  pending: "bg-blue-50 text-blue-700 border-blue-200",
+  expired: "bg-red-50 text-red-700 border-red-200",
+  accepted: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  revoked:
+    "bg-[var(--color-gray-100)] text-[var(--color-gray-500)] border-[var(--color-gray-200)]",
+};
+
+function InvitationStatusBadge({ status }: { status: string }) {
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${INVITATION_STATUS_STYLES[status] || INVITATION_STATUS_STYLES.revoked}`}
+    >
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  );
+}
+
+/* -- Invitation table skeleton ------------------------------------ */
+
+function InvitationTableSkeleton() {
+  return (
+    <div className="animate-pulse">
+      {Array.from({ length: 3 }, (_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-4 py-3 px-5 border-b border-[var(--color-gray-100)] last:border-0"
+        >
+          <div className="h-4 w-40 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-4 w-20 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-5 w-16 bg-[var(--color-gray-200)] rounded-full" />
+          <div className="h-4 w-24 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-4 w-24 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-4 w-20 bg-[var(--color-gray-200)] rounded ml-auto" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* -- Pending Invitations Section ---------------------------------- */
+
+function PendingInvitationsSection({
+  invitations,
+  isLoading,
+  error,
+  onRefresh,
+}: {
+  invitations: Invitation[];
+  isLoading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}) {
+  const { copiedId, copy } = useCopyToClipboard();
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  function formatDate(isoDate: string): string {
+    try {
+      return new Date(isoDate).toLocaleDateString("en-SG", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return isoDate;
+    }
+  }
+
+  async function handleResend(inv: Invitation) {
+    setActionLoading(`resend-${inv.id}`);
+    try {
+      const result = await employeesApi.resendInvitation(inv.id);
+      copy(result.invite_url, `resend-${inv.id}`);
+      toast.success("Invitation resent — link copied to clipboard");
+      onRefresh();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to resend invitation";
+      toast.error(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleRevoke(inv: Invitation) {
+    setActionLoading(`revoke-${inv.id}`);
+    try {
+      await employeesApi.revokeInvitation(inv.id);
+      toast.success("Invitation revoked");
+      onRefresh();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to revoke invitation";
+      toast.error(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <Mail
+          className="h-5 w-5 text-[var(--color-gray-500)]"
+          aria-hidden="true"
+        />
+        <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
+          Pending Invitations
+        </h2>
+        {!isLoading && invitations.length > 0 && (
+          <span className="text-xs font-medium text-[var(--color-gray-400)] bg-[var(--color-gray-100)] rounded-full px-2 py-0.5">
+            {invitations.length}
+          </span>
+        )}
+      </div>
+
+      {isLoading ? (
+        <AppCard variant="standard">
+          <div className="-mx-5 -my-4">
+            <InvitationTableSkeleton />
+          </div>
+        </AppCard>
+      ) : error ? (
+        <AppCard variant="standard">
+          <div className="py-6 text-center">
+            <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
+            <AppButton variant="outlined" size="sm" onClick={onRefresh}>
+              Try again
+            </AppButton>
+          </div>
+        </AppCard>
+      ) : invitations.length === 0 ? (
+        <AppCard variant="standard">
+          <div className="py-6 text-center">
+            <Clock
+              className="h-8 w-8 text-[var(--color-gray-300)] mx-auto mb-2"
+              aria-hidden="true"
+            />
+            <p className="text-sm text-[var(--color-gray-500)]">
+              No pending invitations
+            </p>
+          </div>
+        </AppCard>
+      ) : (
+        <AppCard variant="standard">
+          <div className="overflow-x-auto -mx-5 -my-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-gray-200)]">
+                  <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                    Email
+                  </th>
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Role
+                  </th>
+                  <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Status
+                  </th>
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Sent
+                  </th>
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Expires
+                  </th>
+                  <th className="text-right py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {invitations.map((inv) => {
+                  const isPending = inv.status === "pending";
+                  const canResend =
+                    inv.status === "pending" || inv.status === "expired";
+
+                  return (
+                    <tr
+                      key={inv.id}
+                      className="border-b border-[var(--color-gray-100)] last:border-0"
+                    >
+                      <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
+                        {inv.email}
+                      </td>
+                      <td className="py-3 px-3 text-[var(--color-gray-600)] capitalize">
+                        {inv.role.replace(/_/g, " ")}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <InvitationStatusBadge status={inv.status} />
+                      </td>
+                      <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                        {formatDate(inv.created_at)}
+                      </td>
+                      <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                        {formatDate(inv.expires_at)}
+                      </td>
+                      <td className="py-3 px-5">
+                        <div className="flex items-center justify-end gap-1">
+                          {/* Copy link — only for pending invitations with a URL */}
+                          {isPending && inv.invite_url && (
+                            <button
+                              type="button"
+                              title="Copy invite link"
+                              onClick={() =>
+                                copy(inv.invite_url as string, `copy-${inv.id}`)
+                              }
+                              className="p-1.5 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)]"
+                            >
+                              {copiedId === `copy-${inv.id}` ? (
+                                <Check className="h-4 w-4 text-emerald-600" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
+
+                          {/* Resend — for pending or expired */}
+                          {canResend && (
+                            <button
+                              type="button"
+                              title="Resend invitation"
+                              disabled={actionLoading === `resend-${inv.id}`}
+                              onClick={() => handleResend(inv)}
+                              className="p-1.5 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)] disabled:opacity-50"
+                            >
+                              <RefreshCw
+                                className={`h-4 w-4 ${actionLoading === `resend-${inv.id}` ? "animate-spin" : ""}`}
+                              />
+                            </button>
+                          )}
+
+                          {/* Revoke — only for pending */}
+                          {isPending && (
+                            <button
+                              type="button"
+                              title="Revoke invitation"
+                              disabled={actionLoading === `revoke-${inv.id}`}
+                              onClick={() => handleRevoke(inv)}
+                              className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-[var(--color-gray-500)] hover:text-red-600 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </AppCard>
+      )}
     </div>
   );
 }
@@ -489,6 +877,17 @@ export default function EmployeesPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
 
+  /* Invite link modal state */
+  const [inviteLinkData, setInviteLinkData] = useState<{
+    email: string;
+    inviteUrl: string;
+  } | null>(null);
+
+  /* Invitations state */
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [invitationsLoading, setInvitationsLoading] = useState(true);
+  const [invitationsError, setInvitationsError] = useState<string | null>(null);
+
   const fetchEmployees = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -507,9 +906,35 @@ export default function EmployeesPage() {
     }
   }, []);
 
+  const fetchInvitations = useCallback(async () => {
+    setInvitationsLoading(true);
+    setInvitationsError(null);
+    try {
+      const data = await employeesApi.listInvitations();
+      setInvitations(Array.isArray(data) ? data : []);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to load invitations. Please try again.";
+      setInvitationsError(message);
+      setInvitations([]);
+    } finally {
+      setInvitationsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchEmployees();
-  }, [fetchEmployees]);
+    fetchInvitations();
+  }, [fetchEmployees, fetchInvitations]);
+
+  function handleInviteSuccess(email: string, inviteUrl: string) {
+    setShowInviteModal(false);
+    setInviteLinkData({ email, inviteUrl });
+    fetchEmployees();
+    fetchInvitations();
+  }
 
   const filteredEmployees = employees.filter(
     (emp) =>
@@ -683,16 +1108,33 @@ export default function EmployeesPage() {
         </AppCard>
       )}
 
+      {/* Pending Invitations */}
+      <PendingInvitationsSection
+        invitations={invitations}
+        isLoading={invitationsLoading}
+        error={invitationsError}
+        onRefresh={fetchInvitations}
+      />
+
       {/* Modals */}
       <InviteEmployeeModal
         isOpen={showInviteModal}
         onClose={() => setShowInviteModal(false)}
-        onSuccess={fetchEmployees}
+        onSuccess={handleInviteSuccess}
+      />
+      <InviteLinkModal
+        isOpen={inviteLinkData !== null}
+        email={inviteLinkData?.email ?? ""}
+        inviteUrl={inviteLinkData?.inviteUrl ?? ""}
+        onClose={() => setInviteLinkData(null)}
       />
       <ImportCsvModal
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
-        onSuccess={fetchEmployees}
+        onSuccess={() => {
+          fetchEmployees();
+          fetchInvitations();
+        }}
       />
     </div>
   );
