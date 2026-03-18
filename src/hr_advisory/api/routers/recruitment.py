@@ -194,8 +194,14 @@ async def update_job(
 
     body = await request.json()
     allowed = {
-        "title", "description", "department", "location", "employment_type",
-        "salary_range_min", "salary_range_max", "requirements",
+        "title",
+        "description",
+        "department",
+        "location",
+        "employment_type",
+        "salary_range_min",
+        "salary_range_max",
+        "requirements",
     }
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
@@ -320,7 +326,7 @@ async def list_candidates(
 
     _verify_job_ownership(job_id, company_id)
 
-    filters: dict = {"job_id": job_id}
+    filters: dict = {"job_listing_id": job_id}
     if stage:
         filters["stage"] = stage
 
@@ -353,7 +359,7 @@ async def add_candidate(
     # Check for duplicate candidate on same job
     existing = _dataflow_list(
         "CandidateListNode",
-        {"job_id": job_id, "email": email},
+        {"job_listing_id": job_id, "email": email},
         limit=1,
     )
     if existing:
@@ -363,7 +369,7 @@ async def add_candidate(
         "CandidateCreateNode",
         {
             "company_id": company_id,
-            "job_id": job_id,
+            "job_listing_id": job_id,
             "name": name,
             "email": email,
             "phone": body.get("phone", ""),
@@ -462,9 +468,7 @@ async def list_interviews(
 
     _verify_candidate_ownership(candidate_id, company_id)
 
-    interviews = _dataflow_list(
-        "InterviewListNode", {"candidate_id": candidate_id}
-    )
+    interviews = _dataflow_list("InterviewListNode", {"candidate_id": candidate_id})
     return {"interviews": interviews, "count": len(interviews)}
 
 
@@ -485,8 +489,13 @@ async def update_interview(
 
     body = await request.json()
     allowed = {
-        "scheduled_at", "duration_minutes", "interview_type",
-        "location", "interviewers", "notes", "status",
+        "scheduled_at",
+        "duration_minutes",
+        "interview_type",
+        "location",
+        "interviewers",
+        "notes",
+        "status",
     }
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
@@ -551,9 +560,7 @@ async def list_candidate_feedback(
 
     _verify_candidate_ownership(candidate_id, company_id)
 
-    feedback = _dataflow_list(
-        "InterviewFeedbackListNode", {"candidate_id": candidate_id}
-    )
+    feedback = _dataflow_list("InterviewFeedbackListNode", {"candidate_id": candidate_id})
     return {"feedback": feedback, "count": len(feedback)}
 
 
@@ -579,9 +586,7 @@ async def generate_offer(
     salary = body.get("salary")
     start_date = body.get("start_date", "")
     if salary is None or not start_date:
-        raise HTTPException(
-            status_code=400, detail="salary and start_date are required."
-        )
+        raise HTTPException(status_code=400, detail="salary and start_date are required.")
 
     salary = float(salary)
     if not math.isfinite(salary):
@@ -592,7 +597,7 @@ async def generate_offer(
         {
             "company_id": company_id,
             "candidate_id": candidate_id,
-            "job_id": candidate.get("job_id"),
+            "job_listing_id": candidate.get("job_listing_id"),
             "salary": salary,
             "start_date": start_date,
             "position_title": body.get("position_title", ""),
@@ -628,13 +633,13 @@ async def hire_candidate(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    check_rate_limit(f"hire:{company_id}", max_requests=10, window_seconds=3600, action_name="hiring candidates")
+    check_rate_limit(
+        f"hire:{company_id}", max_requests=10, window_seconds=3600, action_name="hiring candidates"
+    )
 
     candidate = _verify_candidate_ownership(candidate_id, company_id)
     if candidate.get("stage") not in ("offered",):
-        raise HTTPException(
-            status_code=400, detail="Candidate must be in 'offered' stage to hire."
-        )
+        raise HTTPException(status_code=400, detail="Candidate must be in 'offered' stage to hire.")
 
     body = await request.json()
     actor_id = int(current_user.get("sub", 0))

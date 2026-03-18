@@ -147,9 +147,22 @@ function ReportViewer({
   async function handleGenerate() {
     setIsLoading(true);
     try {
+      /* Map generic filter names to backend-specific query params.
+         - payroll: period_start / period_end (required)
+         - attendance: date_from / date_to (required)
+         - leave/claims: year / status (optional, no date range)
+         - employees/projects: no date range params */
       const params: Record<string, string> = {};
-      if (startDate) params.start_date = startDate;
-      if (endDate) params.end_date = endDate;
+      if (report.id === "payroll") {
+        if (startDate) params.period_start = startDate;
+        if (endDate) params.period_end = endDate;
+      } else if (report.id === "attendance") {
+        if (startDate) params.date_from = startDate;
+        if (endDate) params.date_to = endDate;
+      } else {
+        if (startDate) params.start_date = startDate;
+        if (endDate) params.end_date = endDate;
+      }
       if (department) params.department = department;
 
       /* The backend returns domain-specific shapes. We extract the

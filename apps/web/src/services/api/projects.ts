@@ -78,10 +78,10 @@ export interface ProjectCostSummary {
 export const projectsApi = {
   /* Projects */
   listProjects: () =>
-    apiClient.get<{ projects: Project[]; count: number }>("/projects"),
+    apiClient.get<{ projects: Project[]; count: number }>("/projects/"),
   getProject: (id: number) => apiClient.get<Project>(`/projects/${id}`),
   createProject: (data: Partial<Project>) =>
-    apiClient.post<Project>("/projects", data),
+    apiClient.post<Project>("/projects/", data),
   updateProject: (id: number, data: Partial<Project>) =>
     apiClient.put<Project>(`/projects/${id}`, data),
 
