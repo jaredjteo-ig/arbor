@@ -140,6 +140,75 @@ def _update_invitation(invitation_id: int, updates: dict) -> dict:
     return results["update"]
 
 
+def _find_invitation_by_id(invitation_id: int) -> dict | None:
+    """Look up an invitation by its primary key ID."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "InvitationListNode",
+        "find_inv",
+        {"filter": {"id": invitation_id}, "limit": 1, "enable_cache": False},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    records = results["find_inv"].get("records", [])
+    return records[0] if records else None
+
+
+def _list_invitations_for_company(company_id: int) -> list:
+    """List all invitations for a company."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "InvitationListNode",
+        "list_inv",
+        {
+            "filter": {"company_id": company_id},
+            "limit": 10000,
+            "enable_cache": False,
+        },
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results["list_inv"].get("records", [])
+
+
+def _compute_invitation_status(invitation: dict) -> str:
+    """Derive the display status of an invitation.
+
+    Priority order:
+    1. accepted — accepted_at is set (terminal state)
+    2. revoked — is_active is False (explicit admin action)
+    3. expired — expires_at is in the past
+    4. pending — active, not expired, not accepted
+    """
+    if invitation.get("accepted_at"):
+        return "accepted"
+    if not invitation.get("is_active"):
+        return "revoked"
+
+    expires_at_str = invitation.get("expires_at", "")
+    if expires_at_str:
+        try:
+            expires_at = datetime.fromisoformat(expires_at_str)
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires_at:
+                return "expired"
+        except ValueError:
+            return "expired"
+
+    return "pending"
+
+
 def _list_employees_for_company(company_id: int) -> list:
     """List all employees for a company."""
     from kailash.runtime import LocalRuntime
@@ -782,6 +851,46 @@ async def invite_employee(
             detail="Invited role must be 'employee' or 'hr_manager'.",
         )
 
+    # T281: Duplicate invitation guard — check for existing user or active invite
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+    import hr_advisory.models  # noqa: F401
+
+    wf_check = WorkflowBuilder()
+    wf_check.add_node(
+        "UserListNode",
+        "check_user",
+        {"filter": {"email": email}, "limit": 10, "enable_cache": False},
+    )
+    rt = LocalRuntime()
+    res, _ = rt.execute(wf_check.build())
+    existing_users = (
+        res["check_user"].get("records", []) if isinstance(res["check_user"], dict) else []
+    )
+    for u in existing_users:
+        if u.get("company_id") == company_id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{email} is already a member of this company.",
+            )
+
+    # Deactivate any existing active invitation for this email + company
+    wf_inv = WorkflowBuilder()
+    wf_inv.add_node(
+        "InvitationListNode",
+        "check_inv",
+        {"filter": {"email": email, "company_id": company_id}, "limit": 100, "enable_cache": False},
+    )
+    rt2 = LocalRuntime()
+    res2, _ = rt2.execute(wf_inv.build())
+    existing_invites = (
+        res2["check_inv"].get("records", []) if isinstance(res2["check_inv"], dict) else []
+    )
+    for inv in existing_invites:
+        if inv.get("is_active") and not inv.get("accepted_at"):
+            _update_invitation(inv["id"], {"is_active": False})
+            logger.info("Deactivated previous invitation %s for %s", inv["id"], email)
+
     # Generate unique token and expiry
     token = str(uuid.uuid4())
     expires_at = (datetime.now(timezone.utc) + timedelta(days=_INVITATION_EXPIRY_DAYS)).isoformat()
@@ -804,11 +913,16 @@ async def invite_employee(
         inviter_id,
     )
 
-    # Token is NOT included in the response — it should only be delivered
-    # via a secure side-channel (email to the invitee). Exposing it in the
-    # API response risks interception via proxies, logs, or browser devtools.
+    # T284: Return token in response — single-use, email-locked, 7-day expiry
+    # makes interception low-risk. Admin shares link via WhatsApp/email.
+    import os
+
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    invite_url = f"{frontend_url}/signup?token={token}"
+
     return {
-        "message": "Invitation sent successfully.",
+        "message": "Invitation created successfully.",
+        "invite_url": invite_url,
         "invitation": {
             "email": email,
             "role": role,
@@ -869,11 +983,224 @@ async def validate_invitation(token: str) -> dict:
                 detail="This invitation has expired.",
             )
 
+    # T282: Look up company name so frontend can show it during invite acceptance
+    company_name = ""
+    inv_company_id = invitation.get("company_id")
+    if inv_company_id:
+        try:
+            from kailash.runtime import LocalRuntime as _LR
+            from kailash.workflow.builder import WorkflowBuilder as _WB
+            import hr_advisory.models  # noqa: F401
+
+            _wf = _WB()
+            _wf.add_node("CompanyReadNode", "read_co", {"id": inv_company_id})
+            _rt = _LR()
+            _res, _ = _rt.execute(_wf.build())
+            company_name = _res["read_co"].get("name", "") if _res.get("read_co") else ""
+        except Exception:
+            company_name = ""
+
     return {
         "valid": True,
         "email": invitation.get("email"),
         "role": invitation.get("role"),
-        "company_id": invitation.get("company_id"),
+        "company_id": inv_company_id,
+        "company_name": company_name,
+    }
+
+
+# --------------------------------------------------------------------------
+# GET /employees/invitations — List invitations for current company (T283)
+# --------------------------------------------------------------------------
+
+
+@router.get("/invitations")
+async def list_invitations(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List all invitations for the current user's company.
+
+    Returns each invitation enriched with a computed status:
+    - pending: active, not expired, not accepted
+    - expired: past expires_at
+    - accepted: accepted_at is set
+    - revoked: is_active=False (admin revoked)
+
+    Status codes:
+        200: Success with list of invitations
+        400: No company associated with the user
+        403: Insufficient permissions
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No company associated with your account.",
+        )
+
+    invitations = _list_invitations_for_company(company_id)
+
+    enriched = []
+    for inv in invitations:
+        status = _compute_invitation_status(inv)
+        enriched.append(
+            {
+                "id": inv.get("id"),
+                "email": inv.get("email"),
+                "role": inv.get("role"),
+                "status": status,
+                "sent_date": inv.get("created_at"),
+                "expires_at": inv.get("expires_at"),
+                "accepted_at": inv.get("accepted_at"),
+            }
+        )
+
+    return {
+        "invitations": enriched,
+        "count": len(enriched),
+        "company_id": company_id,
+    }
+
+
+# --------------------------------------------------------------------------
+# DELETE /employees/invite/{invitation_id} — Revoke an invitation (T283)
+# --------------------------------------------------------------------------
+
+
+@router.delete("/invite/{invitation_id}")
+async def revoke_invitation(
+    invitation_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Revoke a pending invitation.
+
+    Sets is_active=False on the invitation, preventing the token from being
+    used to register. Only active, non-accepted invitations can be revoked.
+
+    Status codes:
+        200: Invitation revoked successfully
+        400: No company associated with the user
+        404: Invitation not found or belongs to another company
+        409: Invitation already accepted or already revoked
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No company associated with your account.",
+        )
+
+    invitation = _find_invitation_by_id(invitation_id)
+    if invitation is None or invitation.get("company_id") != company_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Invitation not found.",
+        )
+
+    if invitation.get("accepted_at"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot revoke an invitation that has already been accepted.",
+        )
+
+    if not invitation.get("is_active"):
+        raise HTTPException(
+            status_code=409,
+            detail="Invitation has already been revoked.",
+        )
+
+    _update_invitation(invitation_id, {"is_active": False})
+
+    logger.info(
+        "Invitation %s revoked by user %s (company %s)",
+        invitation_id,
+        current_user.get("sub"),
+        company_id,
+    )
+
+    return {"message": "Invitation revoked successfully."}
+
+
+# --------------------------------------------------------------------------
+# POST /employees/invite/{invitation_id}/resend — Resend invitation (T283)
+# --------------------------------------------------------------------------
+
+
+@router.post("/invite/{invitation_id}/resend")
+async def resend_invitation(
+    invitation_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Resend an invitation with a fresh token and 7-day expiry.
+
+    Deactivates the original invitation and creates a new one with the same
+    email and role but a fresh token. Returns the new invite URL for sharing.
+
+    Status codes:
+        200: New invitation created with fresh token
+        400: No company associated with the user
+        404: Invitation not found or belongs to another company
+        409: Invitation already accepted
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No company associated with your account.",
+        )
+
+    invitation = _find_invitation_by_id(invitation_id)
+    if invitation is None or invitation.get("company_id") != company_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Invitation not found.",
+        )
+
+    if invitation.get("accepted_at"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot resend an invitation that has already been accepted.",
+        )
+
+    # Deactivate old invitation
+    _update_invitation(invitation_id, {"is_active": False})
+
+    # Create new invitation with fresh token and expiry
+    new_token = str(uuid.uuid4())
+    new_expires_at = (
+        datetime.now(timezone.utc) + timedelta(days=_INVITATION_EXPIRY_DAYS)
+    ).isoformat()
+    inviter_id = int(current_user.get("sub", 0))
+
+    _create_invitation(
+        company_id=company_id,
+        inviter_id=inviter_id,
+        email=invitation["email"],
+        role=invitation["role"],
+        token=new_token,
+        expires_at=new_expires_at,
+    )
+
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    invite_url = f"{frontend_url}/signup?token={new_token}"
+
+    logger.info(
+        "Invitation %s resent as new invitation for %s by user %s (company %s)",
+        invitation_id,
+        invitation["email"],
+        current_user.get("sub"),
+        company_id,
+    )
+
+    return {
+        "message": "Invitation resent successfully.",
+        "invite_url": invite_url,
+        "invitation": {
+            "email": invitation["email"],
+            "role": invitation["role"],
+            "expires_at": new_expires_at,
+            "company_id": company_id,
+        },
     }
 
 
@@ -1800,6 +2127,9 @@ async def import_confirm(
     created = 0
     skipped = 0
     import_errors = []
+    invitations = []
+
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
     for record in records:
         if not record.get("valid", True):
@@ -1827,6 +2157,8 @@ async def import_confirm(
                 expires_at=expires_at,
             )
             created += 1
+            invite_url = f"{frontend_url}/signup?token={token}"
+            invitations.append({"email": email, "invite_url": invite_url})
         except Exception as exc:
             logger.warning("Import failed for %s: %s", email, exc)
             import_errors.append(
@@ -1839,6 +2171,7 @@ async def import_confirm(
         "created": created,
         "skipped": skipped,
         "errors": import_errors,
+        "invitations": invitations,
     }
 
 

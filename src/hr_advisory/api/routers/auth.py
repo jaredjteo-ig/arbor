@@ -496,6 +496,16 @@ async def register_employee(
             raise HTTPException(
                 status_code=409, detail=f"Email already registered: {email}"
             ) from exc
+        # Rollback invitation — allow retry (T280: invitation must not be
+        # permanently burned when user creation fails for transient reasons)
+        try:
+            _update_invitation(
+                invitation["id"],
+                {"accepted_at": "", "is_active": True},
+            )
+            logger.info("Reverted invitation %s after user creation failure", invitation["id"])
+        except Exception as revert_exc:
+            logger.error("Failed to revert invitation %s: %s", invitation["id"], revert_exc)
         raise HTTPException(
             status_code=500, detail="Registration failed. Please try again."
         ) from exc
@@ -552,39 +562,19 @@ async def register_employee(
             employee_id = 0
 
     # --- Create initial LeaveBalance records ---
-    current_year = datetime.now(timezone.utc).year
+    # T293: Use ensure_leave_balances instead of hardcoded values.
+    # This creates balances for ALL configured leave types, respecting
+    # gender, service-month rules, and pro-ration for mid-year joiners.
+    if employee_id and company_id:
+        try:
+            from hr_advisory.api.routers.leave import ensure_leave_balances
 
-    leave_wf = WorkflowBuilder()
-    # Annual leave: 7 days for first year (Singapore EA minimum)
-    leave_wf.add_node(
-        "LeaveBalanceCreateNode",
-        "create_annual",
-        {
-            "employee_id": employee_id,
-            "company_id": company_id,
-            "leave_type": "annual",
-            "year": current_year,
-            "entitlement_days": 7.0,
-            "used_days": 0.0,
-            "pending_days": 0.0,
-        },
-    )
-    # Sick leave: 14 days (Singapore EA)
-    leave_wf.add_node(
-        "LeaveBalanceCreateNode",
-        "create_sick",
-        {
-            "employee_id": employee_id,
-            "company_id": company_id,
-            "leave_type": "sick",
-            "year": current_year,
-            "entitlement_days": 14.0,
-            "used_days": 0.0,
-            "pending_days": 0.0,
-        },
-    )
-    leave_runtime = LocalRuntime()
-    leave_runtime.execute(leave_wf.build())
+            ensure_leave_balances(employee_id, company_id)
+            logger.info("Created leave balances for employee_id=%s", employee_id)
+        except Exception as leave_exc:
+            logger.warning(
+                "Failed to create leave balances for employee %s: %s", employee_id, leave_exc
+            )
 
     # Invitation was already marked as accepted before user creation
     # (see TOCTOU race condition prevention above)

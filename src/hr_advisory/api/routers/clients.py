@@ -178,6 +178,16 @@ async def create_client(
                     "Failed to assign user %s to company %s: %s", user_id, company_id, exc
                 )
 
+    # Seed all default data for the new company
+    seed_summary = {}
+    if company_id is not None:
+        try:
+            from hr_advisory.services.company_seeding import seed_company_defaults
+
+            seed_summary = seed_company_defaults(company_id)
+        except Exception as exc:
+            logger.warning("Company %s created but seeding failed: %s", company_id, exc)
+
     return {
         "id": company_id,
         "name": name.strip(),
@@ -188,6 +198,7 @@ async def create_client(
         "risk_tier": None,
         "last_activity": None,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "seed_summary": seed_summary,
     }
 
 

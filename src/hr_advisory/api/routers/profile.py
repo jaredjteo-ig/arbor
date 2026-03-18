@@ -289,13 +289,15 @@ async def create_company_profile(
                 exc,
             )
 
-    # Seed default policies for the newly created company
+    # Seed all default data for the newly created company
     if company_id is not None:
         try:
-            _seed_default_policies(company_id)
+            from hr_advisory.services.company_seeding import seed_company_defaults
+
+            seed_company_defaults(company_id)
         except Exception as exc:
             logger.warning(
-                "Created company_id=%s but failed to seed default policies: %s",
+                "Created company_id=%s but seeding failed: %s",
                 company_id,
                 exc,
             )

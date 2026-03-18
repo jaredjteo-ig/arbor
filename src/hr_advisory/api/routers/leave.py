@@ -194,7 +194,11 @@ def _check_overlapping_applications(
 def _get_or_create_balance(
     employee_id: int, company_id: int, leave_type_code: str, year: int
 ) -> dict:
-    """Get or create a LeaveBalance record for the given employee/type/year."""
+    """Get or create a LeaveBalance record for the given employee/type/year.
+
+    T291: Lazy balance creation — looks up LeaveTypeConfig to determine
+    proper entitlement, respecting gender and service-month rules.
+    """
     balances = _dataflow_list(
         "LeaveBalanceListNode",
         {
@@ -207,7 +211,17 @@ def _get_or_create_balance(
     if balances:
         return balances[0]
 
-    # Create default balance (0 entitlement — should be set via policy)
+    # Look up the LeaveTypeConfig for this company + code to get proper entitlement
+    entitlement = 0.0
+    configs = _dataflow_list(
+        "LeaveTypeConfigListNode",
+        {"company_id": company_id, "code": leave_type_code},
+        limit=1,
+    )
+    if configs:
+        config = configs[0]
+        entitlement = _calculate_entitlement_for_employee(config, employee_id, company_id, year)
+
     return _dataflow_create(
         "LeaveBalanceCreateNode",
         {
@@ -215,11 +229,109 @@ def _get_or_create_balance(
             "company_id": company_id,
             "leave_type": leave_type_code,
             "year": year,
-            "entitlement_days": 0.0,
+            "entitlement_days": entitlement,
             "used_days": 0.0,
             "pending_days": 0.0,
         },
     )
+
+
+def _calculate_entitlement_for_employee(
+    config: dict, employee_id: int, company_id: int, year: int
+) -> float:
+    """Calculate leave entitlement for an employee based on LeaveTypeConfig.
+
+    T292: Respects applicable_gender, min_service_months, service-year
+    progression for annual leave, and pro-ration for mid-year joiners.
+    """
+    default_days = config.get("default_days", 0.0)
+    applicable_gender = config.get("applicable_gender", "")
+    min_service_months = config.get("min_service_months", 0)
+    is_pro_ratable = config.get("is_pro_ratable", False)
+    code = config.get("code", "")
+
+    # Look up employee details for gender and start_date checks
+    employees = _dataflow_list(
+        "EmployeeListNode",
+        {"id": employee_id, "company_id": company_id},
+        limit=1,
+    )
+    if not employees:
+        return default_days
+
+    emp = employees[0]
+    emp_gender = emp.get("gender", "").lower()
+    start_date_str = emp.get("start_date", "")
+
+    # Gender filter: skip if leave type is gender-restricted and doesn't match
+    if applicable_gender and emp_gender and emp_gender != applicable_gender.lower():
+        return 0.0
+
+    # Service months check
+    if start_date_str and min_service_months > 0:
+        try:
+            start_dt = date.fromisoformat(start_date_str)
+            as_of = date(year, 12, 31)  # entitlement for this year
+            months_of_service = (as_of.year - start_dt.year) * 12 + (as_of.month - start_dt.month)
+            if months_of_service < min_service_months:
+                return 0.0
+        except (ValueError, TypeError):
+            pass
+
+    # T295: Annual leave service-year progression (EA schedule)
+    if code == "annual" and start_date_str:
+        try:
+            start_dt = date.fromisoformat(start_date_str)
+            completed_years = year - start_dt.year
+            if date(year, 1, 1) < start_dt:
+                completed_years = 0  # haven't completed first year yet
+            # EA: 7 days year 1, +1 per year, max 14
+            default_days = min(7 + max(0, completed_years - 1), 14)
+        except (ValueError, TypeError):
+            pass
+
+    # T297: Pro-ration for mid-year joiners
+    if is_pro_ratable and start_date_str:
+        try:
+            start_dt = date.fromisoformat(start_date_str)
+            if start_dt.year == year and start_dt.month > 1:
+                remaining_months = 12 - start_dt.month + 1
+                prorated = default_days * remaining_months / 12
+                # Round up to nearest 0.5 (standard SG practice)
+                import math
+
+                default_days = math.ceil(prorated * 2) / 2
+        except (ValueError, TypeError):
+            pass
+
+    return default_days
+
+
+def ensure_leave_balances(employee_id: int, company_id: int, year: int | None = None) -> list[dict]:
+    """Ensure LeaveBalance records exist for all applicable leave types.
+
+    T291: Called when employee views leave or applies for leave.
+    Creates missing balances on demand from LeaveTypeConfig.
+    Returns all balances for the employee/year.
+    """
+    if year is None:
+        year = date.today().year
+
+    # Get all leave type configs for this company
+    configs = _dataflow_list(
+        "LeaveTypeConfigListNode",
+        {"company_id": company_id},
+    )
+
+    balances = []
+    for config in configs:
+        code = config.get("code", "")
+        if not code:
+            continue
+        balance = _get_or_create_balance(employee_id, company_id, code, year)
+        balances.append(balance)
+
+    return balances
 
 
 # --------------------------------------------------------------------------
@@ -280,7 +392,7 @@ SINGAPORE_STATUTORY_LEAVE_TYPES = [
         "name": "Paternity Leave",
         "category": "statutory",
         "is_paid": True,
-        "default_days": 14.0,  # 2 weeks
+        "default_days": 28.0,  # 4 weeks (CDCSA amendment effective 1 Jan 2025)
         "max_carry_forward": 0.0,
         "is_pro_ratable": False,
         "requires_attachment": True,

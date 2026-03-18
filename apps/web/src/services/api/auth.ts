@@ -18,6 +18,13 @@ export interface RegisterData {
   password: string;
 }
 
+export interface RegisterEmployeeData {
+  name: string;
+  email: string;
+  password: string;
+  invitation_token: string;
+}
+
 export interface LoginData {
   email: string;
   password: string;
@@ -80,6 +87,15 @@ function authHeaders(accessToken: string): HeadersInit {
 export const authApi = {
   register(data: RegisterData): Promise<AuthResponse> {
     return fetch(`${API_BASE}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }).then((res) => handleResponse<AuthResponse>(res));
+  },
+
+  /** Accept an employee invitation and create an account in one step. */
+  registerEmployee(data: RegisterEmployeeData): Promise<AuthResponse> {
+    return fetch(`${API_BASE}/auth/register-employee`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),

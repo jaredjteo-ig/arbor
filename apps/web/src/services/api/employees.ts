@@ -138,6 +138,55 @@ export interface InviteEmployeeData {
   role: string;
 }
 
+export interface InviteValidation {
+  email: string;
+  company_name: string;
+  role: string;
+  status: string;
+}
+
+/* ── Public (no-auth) helpers ─────────────────────────────── */
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+/**
+ * Validate an employee invitation token.
+ * This is a public endpoint — no auth token required.
+ * Throws an object with `status` and `message` on failure so callers
+ * can distinguish expired / already-used / invalid states.
+ */
+export async function validateInvite(token: string): Promise<InviteValidation> {
+  const response = await fetch(`${API_BASE}/employees/invite/${token}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    let message = "This invitation link is not valid.";
+    try {
+      const body = await response.json();
+      // Nexus gateway may wrap the response
+      const inner = body?.data?.content
+        ? typeof body.data.content === "string"
+          ? JSON.parse(body.data.content)
+          : body.data.content
+        : body;
+      if (inner?.detail) message = inner.detail;
+    } catch {
+      /* non-JSON body */
+    }
+    throw { status: response.status, message };
+  }
+
+  const body = await response.json();
+  // Unwrap Nexus envelope if present
+  if (body?.data?.content) {
+    const content = body.data.content;
+    return typeof content === "string" ? JSON.parse(content) : content;
+  }
+  return body as InviteValidation;
+}
+
 /* ── API Methods ─────────────────────────────────────────── */
 
 export const employeesApi = {
