@@ -6,6 +6,10 @@ This repository is the **COC (Cognitive Orchestration for Codegen) setup** for b
 
 These override ALL other instructions. They govern behavior before any rule file is consulted.
 
+### 0. Foundation Independence — No Commercial Coupling
+
+Kailash Python SDK is a **Terrene Foundation project**. It is fully independent. There is NO relationship between Kailash Python SDK and any commercial product, proprietary codebase, or commercial entity. Do not reference, compare with, or design against any proprietary product. Do not use language like "open-source version of X" or "Python port of Y." Kailash Python SDK IS the product — not a derivative of anything. See `rules/independence.md` for full policy.
+
 ### 1. Framework-First
 
 Never write code from scratch before checking whether the Kailash frameworks already handle it.
@@ -55,20 +59,25 @@ Phase commands replace the manual copy-paste workflow. Each loads the correspond
 
 ## Rules Index
 
-| Concern                           | Rule File                    | Scope                                               |
-| --------------------------------- | ---------------------------- | --------------------------------------------------- |
-| Plain-language communication      | `rules/communication.md`     | Global                                              |
-| Agent orchestration & reviews     | `rules/agents.md`            | Global                                              |
-| E2E god-mode testing              | `rules/e2e-god-mode.md`      | `tests/e2e/**`, `**/*e2e*`, `**/*playwright*`       |
-| API keys & model names            | `rules/env-models.md`        | `**/*.py`, `**/*.ts`, `**/*.js`, `.env*`            |
-| Deployment operations             | `rules/deployment.md`        | Global                                              |
-| Git commits, branches, PRs        | `rules/git.md`               | Global                                              |
-| No stubs or placeholders          | `rules/no-stubs.md`          | Global                                              |
-| Kailash SDK execution patterns    | `rules/patterns.md`          | `**/*.py`, `**/*.ts`, `**/*.js`                     |
-| README & Sphinx docs maintenance  | `rules/documentation.md`     | `README.md`, `docs/**`, `CHANGELOG.md`              |
-| Security (secrets, injection)     | `rules/security.md`          | Global                                              |
-| 3-tier testing strategy           | `rules/testing.md`           | `tests/**`, `**/*test*`, `**/*spec*`, `conftest.py` |
-| Auto-generated workflow instincts | `rules/learned-instincts.md` | Global                                              |
+| Concern                           | Rule File                       | Scope                                                        |
+| --------------------------------- | ------------------------------- | ------------------------------------------------------------ |
+| **Foundation independence**       | `rules/independence.md`         | **Global — overrides all**                                   |
+| **Terrene naming conventions**    | `rules/terrene-naming.md`       | Global                                                       |
+| Plain-language communication      | `rules/communication.md`        | Global                                                       |
+| Agent orchestration & reviews     | `rules/agents.md`               | Global                                                       |
+| EATP SDK conventions              | `rules/eatp.md`                 | `packages/eatp/**`                                           |
+| Trust-plane security              | `rules/trust-plane-security.md` | `packages/trust-plane/**`, `packages/eatp/src/eatp/store/**` |
+| E2E god-mode testing              | `rules/e2e-god-mode.md`         | `tests/e2e/**`, `**/*e2e*`, `**/*playwright*`                |
+| API keys & model names            | `rules/env-models.md`           | `**/*.py`, `**/*.ts`, `**/*.js`, `.env*`                     |
+| Deployment operations             | `rules/deployment.md`           | Global                                                       |
+| Git commits, branches, PRs        | `rules/git.md`                  | Global                                                       |
+| No stubs or placeholders          | `rules/no-stubs.md`             | Global                                                       |
+| Kailash SDK execution patterns    | `rules/patterns.md`             | `**/*.py`, `**/*.ts`, `**/*.js`                              |
+| Security (secrets, injection)     | `rules/security.md`             | Global                                                       |
+| 3-tier testing strategy           | `rules/testing.md`              | `tests/**`, `**/*test*`, `**/*spec*`, `conftest.py`          |
+| Infrastructure SQL safety         | `rules/infrastructure-sql.md`   | Infrastructure database code                                 |
+| README & Sphinx docs maintenance  | `rules/documentation.md`        | `README.md`, `docs/**`, `CHANGELOG.md`                       |
+| Auto-generated workflow instincts | `rules/learned-instincts.md`    | Global                                                       |
 
 **Note**: Rules with path scoping are loaded only when editing matching files. Global rules load every session.
 
@@ -87,6 +96,7 @@ Phase commands replace the manual copy-paste workflow. Each loads the correspond
 - **nexus-specialist** — Multi-channel platform (API/CLI/MCP)
 - **kaizen-specialist** — AI agents, signatures, multi-agent coordination
 - **mcp-specialist** — MCP server implementation
+- **infrastructure-specialist** — Progressive infrastructure (Level 0/1/2), dialect-portable SQL, task queues, idempotency
 
 ### Core Implementation
 
@@ -127,7 +137,7 @@ Phase commands replace the manual copy-paste workflow. Each loads the correspond
 
 ## Skills Navigation
 
-For SDK implementation patterns, see `.claude/skills/` — organized by framework (`01-core-sdk` through `05-kailash-mcp`) and topic (`06-cheatsheets` through `28-coc-reference`).
+For SDK implementation patterns, see `.claude/skills/` — organized by framework (`01-core-sdk` through `05-kailash-mcp`), enterprise infrastructure (`15-enterprise-infrastructure`), and topic (`06-cheatsheets` through `28-coc-reference`).
 
 ## Critical Execution Rules
 
@@ -157,3 +167,23 @@ workflow.add_node("NodeType", "node_id", {"param": "value"})
 | **Kaizen**   | AI agent framework                     | `pip install kailash-kaizen`   |
 
 All frameworks are built ON Core SDK — they don't replace it.
+
+## Arbor Project Context
+
+This repository is **Arbor** — an AI-powered HRIS (Human Resource Information System) with employment law advisory for Singapore SMEs, built on the Kailash SDK and open-sourced under Terrene Foundation.
+
+### Project-Specific Agents (`agents/project/`)
+
+- **arbor-platform-specialist** — Overall platform architecture, 23+ routers, 60+ models
+- **arbor-web-specialist** — Next.js/React frontend
+- **arbor-mobile-specialist** — Flutter mobile app
+- **sg-payroll-expert** — Payroll engine (zero LLM, deterministic)
+- **sg-employment-law-expert** — 6 regulatory domains
+- **hr-calculator-specialist** — 7 SG HR calculators
+- **advisory-safety-chain-specialist** — 13-step advisory pipeline
+- **kb-pipeline-specialist** — Knowledge base and search
+- **trust-governance-specialist** — EATP/CARE governance
+
+### Project-Specific Skills (`skills/project/`)
+
+See `skills/project/SKILL.md` for the full index covering: HRIS engine (12 modules), platform architecture, employment law, advisory safety chain, trust governance, calculators, KB pipeline, auth/security, documents, company/user management, and MCP integrations.
