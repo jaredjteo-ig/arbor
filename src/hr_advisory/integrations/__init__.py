@@ -1,10 +1,6 @@
 """HRIS integration adapters (T053).
 
-Provides read-only data sync from Singapore HRIS platforms:
-- Talenox
-- Payboy
-- Swingvy
-- Generic CSV import
+Provides read-only data sync from third-party HRIS platforms and CSV import.
 """
 
 from hr_advisory.integrations.hris_adapters import (

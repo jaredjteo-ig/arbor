@@ -1,13 +1,9 @@
 """HRIS Integration Adapters (T053).
 
-Read-only data sync from Singapore HRIS platforms to auto-populate
-company profiles. Supports:
-- Talenox API
-- Payboy API
-- Swingvy API
-- Generic CSV import
+Read-only data sync from third-party HRIS platforms to auto-populate
+company profiles. Supports multiple providers via API and generic CSV import.
 
-All integrations are read-only (we don't write back to HRIS).
+All integrations are read-only (we don't write back to source HRIS).
 OAuth-based authentication for API integrations.
 """
 
@@ -25,11 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 class HrisProvider(str, Enum):
-    """Supported HRIS providers."""
+    """Supported HRIS providers for data import."""
 
-    TALENOX = "talenox"
-    PAYBOY = "payboy"
-    SWINGVY = "swingvy"
+    PROVIDER_A = "provider_a"
+    PROVIDER_B = "provider_b"
+    PROVIDER_C = "provider_c"
     CSV = "csv"
 
 
@@ -138,65 +134,30 @@ def _normalise_pass_type(raw: str) -> Optional[str]:
     return normalised
 
 
-async def _sync_talenox(config: HrisSyncConfig) -> list[EmployeeRecord]:
-    """Sync employee data from Talenox API.
-
-    Requires TALENOX_API_KEY in environment. API docs: https://docs.talenox.com/
+async def _sync_api_provider(config: HrisSyncConfig) -> list[EmployeeRecord]:
+    """Sync employee data from a third-party HRIS API.
 
     Raises:
-        NotImplementedError: API integration requires Talenox partnership agreement.
+        NotImplementedError: API integrations require partnership agreements.
     """
     logger.warning(
-        "Talenox API sync requested for company %s — API integration not yet available. "
+        "HRIS API sync requested for company %s (provider: %s) — not yet available. "
         "Use CSV import instead (POST /integrations/hris/import-csv).",
         config.company_id,
+        config.provider.value,
     )
     raise NotImplementedError(
-        "Talenox API integration is not yet available. "
+        f"{config.provider.value} API integration is not yet available. "
         "Please use CSV import: POST /integrations/hris/import-csv with a CSV file "
         "containing columns: employee_id, name, email, citizenship_status, date_of_birth, "
         "monthly_basic_salary, job_title, department, employment_type, start_date, pass_type."
     )
 
 
-async def _sync_payboy(config: HrisSyncConfig) -> list[EmployeeRecord]:
-    """Sync employee data from Payboy API.
-
-    Raises:
-        NotImplementedError: API integration requires Payboy partnership agreement.
-    """
-    logger.warning(
-        "Payboy API sync requested for company %s — API integration not yet available. "
-        "Use CSV import instead.",
-        config.company_id,
-    )
-    raise NotImplementedError(
-        "Payboy API integration is not yet available. "
-        "Please use CSV import: POST /integrations/hris/import-csv"
-    )
-
-
-async def _sync_swingvy(config: HrisSyncConfig) -> list[EmployeeRecord]:
-    """Sync employee data from Swingvy API.
-
-    Raises:
-        NotImplementedError: API integration requires Swingvy partnership agreement.
-    """
-    logger.warning(
-        "Swingvy API sync requested for company %s — API integration not yet available. "
-        "Use CSV import instead.",
-        config.company_id,
-    )
-    raise NotImplementedError(
-        "Swingvy API integration is not yet available. "
-        "Please use CSV import: POST /integrations/hris/import-csv"
-    )
-
-
 _PROVIDER_ADAPTERS = {
-    HrisProvider.TALENOX: _sync_talenox,
-    HrisProvider.PAYBOY: _sync_payboy,
-    HrisProvider.SWINGVY: _sync_swingvy,
+    HrisProvider.PROVIDER_A: _sync_api_provider,
+    HrisProvider.PROVIDER_B: _sync_api_provider,
+    HrisProvider.PROVIDER_C: _sync_api_provider,
 }
 
 

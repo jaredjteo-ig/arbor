@@ -219,8 +219,8 @@ decisions:
     initiative: open-source-prep
     confidence: high
 
-  - decision: "Remove all competitor references (Payboy parity language) before open-source"
-    rationale: "Competitor-specific language inappropriate for open-source project; replaced with generic feature descriptions"
+  - decision: "Remove all competitor analysis and comparison language before open-source"
+    rationale: "Competitor-specific benchmarking inappropriate for open-source project; replaced with generic feature descriptions"
     alternatives_rejected: "Keep references as historical context"
     date: 2026-03-18
     initiative: open-source-prep
@@ -234,7 +234,7 @@ decisions:
     confidence: high
 
   - decision: "12-tab employee detail page instead of separate pages"
-    rationale: "Single-page with tabs provides complete employee view; Payboy uses similar pattern; reduces navigation"
+    rationale: "Single-page with tabs provides complete employee view; industry-standard pattern; reduces navigation"
     alternatives_rejected: "Separate pages per section (more files, more navigation)"
     date: 2026-03-18
     initiative: employee-detail

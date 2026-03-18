@@ -7,7 +7,7 @@
 
 **Provider Taxonomy**:
 
-- `HrisProvider` enum (TALENOX, PAYBOY, SWINGVY, CSV)
+- `HrisProvider` enum (third-party HRIS providers + CSV)
 - `SyncFrequency` enum for scheduling sync intervals
 - `SyncStatus` enum for tracking sync operation state
 
@@ -19,10 +19,8 @@
 
 **Provider Adapters**:
 
-- `_sync_talenox()` — async adapter for Talenox API with employee data normalisation
-- `_sync_payboy()` — async adapter for Payboy API with employee data normalisation
-- `_sync_swingvy()` — async adapter for Swingvy API with employee data normalisation
-- All three are production placeholders with proper async signatures and error handling
+- Per-provider async adapters with employee data normalisation
+- All are production placeholders with proper async signatures and error handling
 
 **Public API**:
 

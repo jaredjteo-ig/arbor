@@ -10,9 +10,7 @@
 
 Build integration adapters for Singapore HRIS platforms:
 
-- Talenox API: pull employee data (headcount, salary, CPF status) to auto-populate company profile
-- Payboy API: same data sync capability
-- Swingvy API: same data sync capability
+- Third-party HRIS API adapters: pull employee data (headcount, salary, CPF status) to auto-populate company profile
 - Generic CSV import: for companies using Excel or unsupported HRIS
 - Data sync is read-only from HRIS (we don't write back)
 - OAuth-based authentication for each integration
