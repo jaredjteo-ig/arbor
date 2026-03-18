@@ -1239,7 +1239,12 @@ async def invite_employee(
             detail="No company associated with your account.",
         )
 
-    check_rate_limit(f"invite:{company_id}", max_requests=50, window_seconds=3600, action_name="sending invitations")
+    check_rate_limit(
+        f"invite:{company_id}",
+        max_requests=50,
+        window_seconds=3600,
+        action_name="sending invitations",
+    )
 
     body = await request.json()
     email = body.get("email", "").strip().lower()
@@ -2691,8 +2696,22 @@ async def import_preview(
         raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.")
 
     reader = csv.DictReader(io.StringIO(text))
+    # Normalize headers to lowercase/snake_case so CSVs with any casing work
+    if reader.fieldnames:
+        reader.fieldnames = [f.strip().lower().replace(" ", "_") for f in reader.fieldnames]
     records = []
     errors = []
+
+    def _parse_date(raw: str) -> str:
+        """Try common date formats and return YYYY-MM-DD or empty string."""
+        if not raw:
+            return ""
+        for fmt in ("%Y-%m-%d", "%d-%b-%y", "%d-%b-%Y", "%d/%m/%Y", "%d/%m/%y", "%m/%d/%Y"):
+            try:
+                return datetime.strptime(raw.strip(), fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+        return raw
 
     for i, row in enumerate(reader, start=2):  # Row 1 is header
         if i > MAX_IMPORT_ROWS + 1:  # +1 because i starts at 2
@@ -2708,13 +2727,13 @@ async def import_preview(
             "nationality": row.get("nationality", "").strip(),
             "pass_type": row.get("pass_type", "").strip(),
             "salary_monthly": row.get("salary_monthly", "0").strip(),
-            "date_of_birth": row.get("date_of_birth", "").strip(),
+            "date_of_birth": _parse_date(row.get("date_of_birth", "")),
             "nric_fin": row.get("nric_fin", "").strip(),
             "bank_name": row.get("bank_name", "").strip(),
             "bank_account_number": row.get("bank_account_number", "").strip(),
-            "start_date": row.get("start_date", "").strip(),
+            "start_date": _parse_date(row.get("start_date", "")),
             "work_pass_number": row.get("work_pass_number", "").strip(),
-            "work_pass_expiry": row.get("work_pass_expiry", "").strip(),
+            "work_pass_expiry": _parse_date(row.get("work_pass_expiry", "")),
         }
 
         row_errors = []
@@ -2804,6 +2823,31 @@ async def import_confirm(
                 token=token,
                 expires_at=expires_at,
             )
+
+            # Pre-create employee record with CSV data so profile is populated on registration
+            name = record.get("name", "").strip()
+            emp_data = {
+                "company_id": company_id,
+                "email": email,
+                "name": name,
+                "department": record.get("department", ""),
+                "designation": record.get("designation", ""),
+                "employment_type": record.get("employment_type", "full_time"),
+                "start_date": record.get("start_date", ""),
+                "nationality": record.get("nationality", ""),
+                "pass_type": record.get("pass_type", ""),
+                "date_of_birth": record.get("date_of_birth", ""),
+                "is_active": True,
+                "status": "invited",
+            }
+            salary = record.get("salary_monthly", 0)
+            if salary and float(salary) > 0:
+                emp_data["salary_monthly"] = float(salary)
+            try:
+                _create_employee(emp_data)
+            except Exception:
+                logger.debug("Employee pre-creation skipped for %s (may already exist)", email)
+
             created += 1
             invite_url = f"{frontend_url}/signup?token={token}"
             invitations.append({"email": email, "invite_url": invite_url})
