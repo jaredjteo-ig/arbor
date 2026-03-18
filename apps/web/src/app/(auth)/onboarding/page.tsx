@@ -40,7 +40,7 @@ export default function OnboardingPage() {
         await clientsApi.create({
           name: data.companyName,
           sector: data.sector,
-          estimated_headcount: data.totalEmployees || 5,
+          estimated_headcount: data.totalHeadcount || 5,
         } as any);
         await refreshUser?.();
       } catch (err: any) {
