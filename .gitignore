@@ -10,8 +10,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-!scripts/hooks/lib/
+/lib/
 lib64/
 parts/
 sdist/
