@@ -37,7 +37,7 @@ function CallbackHandler() {
           localStorage.setItem("refresh_token", response.refresh_token);
           // Full page navigation (not router.push) so AuthProvider re-mounts
           // and picks up the new tokens from localStorage
-          window.location.href = "/";
+          window.location.href = "/my-dashboard";
         })
         .catch(() => {
           router.push("/login?error=sso_failed");
