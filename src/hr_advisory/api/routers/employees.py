@@ -1281,6 +1281,99 @@ async def get_my_employee_record(
 
 
 # --------------------------------------------------------------------------
+# PUT /employees/me — Update own profile (employee self-service, T309/T316)
+# --------------------------------------------------------------------------
+
+
+@router.put("/me")
+async def update_my_profile(
+    request: Request,
+    current_user: dict = Depends(require_role("employee", "owner", "hr_manager")),
+) -> dict:
+    """Update the current employee's personal profile fields.
+
+    Employees can update their own personal data (name, phone, address,
+    bank details, etc.) but NOT HR-sensitive fields (salary, department,
+    designation). Those are admin-only via PUT /employees/{id}.
+    """
+    user_id = int(current_user.get("sub", 0))
+    company_id = current_user.get("company_id")
+
+    if company_id is None:
+        raise HTTPException(status_code=404, detail="No employee record found.")
+
+    employee = _find_employee_by_user_id(user_id, company_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="No employee record found.")
+
+    body = await request.json()
+
+    # Fields employees can update themselves
+    SELF_SERVICE_FIELDS = {
+        "name",
+        "alias",
+        "date_of_birth",
+        "gender",
+        "race",
+        "nationality",
+        "religion",
+        "marital_status",
+        "phone",
+        "photo_url",
+        "nric_fin",
+        "nric_fin_last4",
+        "residential_address",
+        "postal_code",
+        "address_block",
+        "address_street",
+        "address_unit",
+        "address_building",
+        "address_postal_code",
+        "bank_name",
+        "bank_account_number",
+        "bank_account_last4",
+        "bank_code",
+        "branch_code",
+    }
+
+    updates = {k: v for k, v in body.items() if k in SELF_SERVICE_FIELDS}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    # Auto-set last4 masks for sensitive fields
+    if "nric_fin" in updates and updates["nric_fin"]:
+        updates["nric_fin_last4"] = updates["nric_fin"][-4:]
+    if "bank_account_number" in updates and updates["bank_account_number"]:
+        updates["bank_account_last4"] = updates["bank_account_number"][-4:]
+
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        "EmployeeUpdateNode",
+        "update_me",
+        {"conditions": {"id": employee["id"]}, "updates": updates},
+    )
+    runtime = LocalRuntime()
+    runtime.execute(wf.build())
+
+    # PDPA audit log for sensitive field access
+    sensitive_accessed = {"nric_fin", "bank_account_number"} & set(updates.keys())
+    if sensitive_accessed:
+        _log_pdpa_access(
+            accessed_by=user_id,
+            company_id=company_id,
+            data_subject_id=employee["id"],
+            categories=list(sensitive_accessed),
+            action="self_service_update",
+        )
+
+    return {"updated": True, "fields": list(updates.keys())}
+
+
+# --------------------------------------------------------------------------
 # GET /employees/me/leave — Get current employee's leave balances
 # --------------------------------------------------------------------------
 

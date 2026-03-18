@@ -33,6 +33,32 @@ from fastapi.testclient import TestClient
 # hr_advisory.api.routers.employees triggers the kailash import chain.
 # ---------------------------------------------------------------------------
 
+import importlib.util
+import pathlib
+
+# Determine paths relative to this test file
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_SRC = _REPO_ROOT / "src"
+
+
+def _load_module_from_file(module_name: str, file_path: pathlib.Path):
+    """Load a single Python module from its file path without triggering __init__.py."""
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    # Ensure parent packages exist in sys.modules as empty modules
+    parts = module_name.split(".")
+    for i in range(1, len(parts)):
+        parent = ".".join(parts[:i])
+        if parent not in sys.modules:
+            sys.modules[parent] = ModuleType(parent)
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# Pre-mock the kailash/dataflow modules so employees.py can be loaded
 _MOCK_MODULES = [
     "kailash",
     "kailash._kailash",
@@ -43,29 +69,61 @@ _MOCK_MODULES = [
     "kailash.nodes",
     "kailash.nodes.base",
     "dataflow",
-    "dataflow.dataflow",
+    "hr_advisory.models",
 ]
 
 for _mod_name in _MOCK_MODULES:
     if _mod_name not in sys.modules:
-        _mock_mod = ModuleType(_mod_name)
-        sys.modules[_mod_name] = _mock_mod
+        sys.modules[_mod_name] = ModuleType(_mod_name)
 
-# Provide stubs for commonly-used names so attribute access works
+# Provide stubs for commonly-used names
 sys.modules["kailash"].runtime = sys.modules["kailash.runtime"]  # type: ignore[attr-defined]
 sys.modules["kailash"].workflow = sys.modules["kailash.workflow"]  # type: ignore[attr-defined]
 sys.modules["kailash.runtime"].LocalRuntime = MagicMock  # type: ignore[attr-defined]
 sys.modules["kailash.runtime"].AsyncLocalRuntime = MagicMock  # type: ignore[attr-defined]
 sys.modules["kailash.runtime.async_local"].AsyncLocalRuntime = MagicMock  # type: ignore[attr-defined]
 sys.modules["kailash.workflow.builder"].WorkflowBuilder = MagicMock  # type: ignore[attr-defined]
-
-# DataFlow stubs
 sys.modules["dataflow"].DataFlow = MagicMock  # type: ignore[attr-defined]
-sys.modules["dataflow"].register_models = MagicMock  # type: ignore[attr-defined]
 
-# Now we can safely import the employees module (bypasses __init__.py chain)
-_employees_mod = importlib.import_module("hr_advisory.api.routers.employees")
-_auth_mod = importlib.import_module("hr_advisory.api.middleware.auth_middleware")
+# Load tenant isolation first (no external deps, used by employees.py)
+_load_module_from_file(
+    "hr_advisory.api.middleware.tenant_isolation",
+    _SRC / "hr_advisory" / "api" / "middleware" / "tenant_isolation.py",
+)
+
+# Load encryption module (no external deps, used by employees.py)
+_load_module_from_file(
+    "hr_advisory.security.encryption",
+    _SRC / "hr_advisory" / "security" / "encryption.py",
+)
+
+# Create a fake auth middleware module with just get_current_user as a
+# callable dependency we can override in FastAPI tests. We don't need the
+# real implementation — FastAPI dependency_overrides replaces it entirely.
+_auth_mod = ModuleType("hr_advisory.api.middleware.auth_middleware")
+
+
+async def _fake_get_current_user():
+    """Placeholder -- overridden in tests via dependency_overrides."""
+    raise RuntimeError("get_current_user not overridden in test")
+
+
+_auth_mod.get_current_user = _fake_get_current_user  # type: ignore[attr-defined]
+
+
+def _require_role_factory(*roles):
+    """Create a dependency that checks user role."""
+    return _fake_get_current_user
+
+
+_auth_mod.require_role = _require_role_factory  # type: ignore[attr-defined]
+sys.modules["hr_advisory.api.middleware.auth_middleware"] = _auth_mod
+
+# Load the employees module directly from file
+_employees_mod = _load_module_from_file(
+    "hr_advisory.api.routers.employees",
+    _SRC / "hr_advisory" / "api" / "routers" / "employees.py",
+)
 
 MODULE = "hr_advisory.api.routers.employees"
 
@@ -537,8 +595,8 @@ class TestFindInvitationById:
         """Returns invitation dict when found."""
         inv = _make_invitation(id=7)
         with (
-            patch(f"{MODULE}.LocalRuntime") as MockRT,
-            patch(f"{MODULE}.WorkflowBuilder") as MockWB,
+            patch("kailash.runtime.LocalRuntime") as MockRT,
+            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
         ):
             mock_runtime = MagicMock()
             mock_runtime.execute.return_value = (
@@ -555,8 +613,8 @@ class TestFindInvitationById:
     def test_returns_none_for_missing(self):
         """Returns None when invitation not found."""
         with (
-            patch(f"{MODULE}.LocalRuntime") as MockRT,
-            patch(f"{MODULE}.WorkflowBuilder") as MockWB,
+            patch("kailash.runtime.LocalRuntime") as MockRT,
+            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
         ):
             mock_runtime = MagicMock()
             mock_runtime.execute.return_value = (
@@ -572,8 +630,8 @@ class TestFindInvitationById:
     def test_filters_by_id(self):
         """Helper must use InvitationListNode with id filter."""
         with (
-            patch(f"{MODULE}.LocalRuntime") as MockRT,
-            patch(f"{MODULE}.WorkflowBuilder") as MockWB,
+            patch("kailash.runtime.LocalRuntime") as MockRT,
+            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
         ):
             mock_runtime = MagicMock()
             mock_runtime.execute.return_value = (
@@ -606,8 +664,8 @@ class TestListInvitationsForCompanyHelper:
         """Helper returns a list of invitation dicts."""
         inv = _make_invitation()
         with (
-            patch(f"{MODULE}.LocalRuntime") as MockRT,
-            patch(f"{MODULE}.WorkflowBuilder") as MockWB,
+            patch("kailash.runtime.LocalRuntime") as MockRT,
+            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
         ):
             mock_runtime = MagicMock()
             mock_runtime.execute.return_value = (
@@ -625,8 +683,8 @@ class TestListInvitationsForCompanyHelper:
     def test_returns_empty_list_when_none(self):
         """Helper returns empty list when no invitations exist."""
         with (
-            patch(f"{MODULE}.LocalRuntime") as MockRT,
-            patch(f"{MODULE}.WorkflowBuilder") as MockWB,
+            patch("kailash.runtime.LocalRuntime") as MockRT,
+            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
         ):
             mock_runtime = MagicMock()
             mock_runtime.execute.return_value = (
@@ -642,8 +700,8 @@ class TestListInvitationsForCompanyHelper:
     def test_passes_company_id_filter(self):
         """Helper must filter by company_id with caching disabled."""
         with (
-            patch(f"{MODULE}.LocalRuntime") as MockRT,
-            patch(f"{MODULE}.WorkflowBuilder") as MockWB,
+            patch("kailash.runtime.LocalRuntime") as MockRT,
+            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
         ):
             mock_runtime = MagicMock()
             mock_runtime.execute.return_value = (

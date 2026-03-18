@@ -465,6 +465,53 @@ class Employee:
     probation_end_date: str = ""
     confirmation_status: str = ConfirmationStatus.ON_PROBATION
 
+    # --- M39: Employee Profile Extensions (T298) ---
+
+    # Personal (extended)
+    religion: str = ""  # buddhist/christian/hindu/islam/sikh/taoist/none/other
+    phone: str = ""
+    alias: str = ""  # display name
+    photo_url: str = ""
+
+    # Employment (extended)
+    salary_type: str = "monthly"  # monthly/daily/hourly
+    hourly_rate: float = 0.0
+    daily_rate: float = 0.0
+    payment_method: str = "giro"  # giro/fast/cheque/cash
+    payment_frequency: str = "monthly"  # monthly/bi_weekly/weekly
+    overtime_eligible: bool = True
+    working_hours_type: str = "fixed"  # fixed/shift/flexible
+
+    # Bank (extended)
+    branch_code: str = ""
+
+    # Tax
+    iras_auto_inclusion: bool = True
+    tax_reference: str = ""
+
+    # Tags (JSON string — DataFlow doesn't support native JSON arrays)
+    tags: str = ""
+
+    # Statutory (extended)
+    cpf_status: str = "include"  # include/exclude/full_employer
+    amcs_enabled: bool = False
+    pmbs_enabled: bool = False
+    community_chest_amount: float = 0.0
+    shg_override_amount: float = 0.0
+
+    # Address (structured — exceeds Payboy)
+    address_block: str = ""
+    address_street: str = ""
+    address_unit: str = ""  # e.g., "#05-123"
+    address_building: str = ""
+    address_postal_code: str = ""  # 6-digit SG postal
+
+    # Organization
+    organization_id: Optional[int] = None
+    branch_id: Optional[int] = None
+    cost_centre_id: Optional[int] = None
+    pay_scheme_id: Optional[int] = None
+
     __dataflow__ = {
         "indexes": [
             {"name": "idx_employee_user", "fields": ["user_id"]},
@@ -515,16 +562,19 @@ class EmergencyContact:
     employee_id: int
     company_id: int
     name: str = ""
-    relationship: str = ""
+    relationship: str = ""  # spouse/parent/sibling/child/friend/other
+    phone: str = ""
     phone_primary: str = ""
     phone_secondary: str = ""
     email: str = ""
+    is_primary: bool = False
     is_next_of_kin: bool = False
     priority: int = 1
 
     __dataflow__ = {
         "indexes": [
             {"name": "idx_emgcontact_employee", "fields": ["employee_id"]},
+            {"name": "idx_emergency_company", "fields": ["company_id"]},
         ],
     }
 
@@ -569,10 +619,15 @@ class EmployeeDocument:
     document_type: str = DocumentType.OTHER
     file_name: str = ""
     file_path: str = ""
+    file_url: str = ""
     file_size: int = 0
     mime_type: str = ""
     uploaded_by: int = 0
+    upload_date: str = ""
     description: str = ""
+    expiry_date: str = ""
+    notification_days_before: int = 30
+    notes: str = ""
     is_confidential: bool = False
     is_active: bool = True
 
@@ -581,6 +636,7 @@ class EmployeeDocument:
             {"name": "idx_empdoc_employee", "fields": ["employee_id"]},
             {"name": "idx_empdoc_company", "fields": ["company_id"]},
             {"name": "idx_empdoc_type", "fields": ["document_type"]},
+            {"name": "idx_empdoc_expiry", "fields": ["expiry_date"]},
         ],
     }
 
@@ -1218,5 +1274,162 @@ class TimesheetApproval:
             {"name": "idx_timesheet_company", "fields": ["company_id"]},
             {"name": "idx_timesheet_status", "fields": ["status"]},
             {"name": "idx_timesheet_month", "fields": ["month"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M39: Employee Profile Models (T300-T307)
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class FamilyMember:
+    """Family member record for an employee (T300).
+
+    Tracks dependants for benefits, tax relief, and emergency contact purposes.
+    Supports spouse, children, and parents.
+    """
+
+    employee_id: int
+    company_id: int
+    name: str = ""
+    relationship: str = ""  # spouse/child/parent
+    date_of_birth: str = ""
+    gender: str = ""
+    citizenship_status: str = ""  # citizen/pr/foreigner
+    nric_fin: str = ""  # encrypted
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_family_employee", "fields": ["employee_id"]},
+            {"name": "idx_family_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class EmployeeNote:
+    """Internal note on an employee record (T302).
+
+    Supports general, performance, disciplinary, and confidential notes.
+    Confidential notes are restricted to HR managers and owners.
+    """
+
+    employee_id: int
+    company_id: int
+    note_type: str = "general"  # general/performance/disciplinary/confidential
+    content: str = ""
+    created_by: int = 0
+    is_confidential: bool = False
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_empnote_employee", "fields": ["employee_id"]},
+            {"name": "idx_empnote_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class EmployeeEvent:
+    """Timeline event for an employee (T304).
+
+    Captures the full audit trail of changes to an employee's profile,
+    salary, department, and status. Each event stores old/new values
+    as JSON strings for diffing.
+    """
+
+    employee_id: int
+    company_id: int
+    event_type: str = (
+        ""  # created/profile_updated/salary_changed/promoted/department_changed/probation_confirmed/leave_approved/terminated/document_uploaded/note_added
+    )
+    description: str = ""
+    changed_by: int = 0
+    old_value: str = ""  # JSON string
+    new_value: str = ""  # JSON string
+    event_date: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_event_employee", "fields": ["employee_id"]},
+            {"name": "idx_event_company", "fields": ["company_id"]},
+            {"name": "idx_event_date", "fields": ["event_date"]},
+        ],
+    }
+
+
+@db.model
+class EmployeeSkill:
+    """Skill or certification record for an employee (T307).
+
+    Tracks professional skills, certifications, and their expiry dates
+    for compliance and workforce planning.
+    """
+
+    employee_id: int
+    company_id: int
+    skill_name: str = ""
+    proficiency_level: str = ""  # basic/intermediate/advanced/expert
+    certification_name: str = ""
+    certification_number: str = ""
+    certified_date: str = ""
+    expiry_date: str = ""
+    issuing_body: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_skill_employee", "fields": ["employee_id"]},
+            {"name": "idx_skill_company", "fields": ["company_id"]},
+            {"name": "idx_skill_expiry", "fields": ["expiry_date"]},
+        ],
+    }
+
+
+@db.model
+class CustomFieldDefinition:
+    """Custom field definition for a company (T303).
+
+    Allows companies to define their own fields for employees, leave,
+    or claims without schema changes. Supports text, number, date,
+    dropdown, and checkbox types.
+    """
+
+    company_id: int
+    field_name: str = ""
+    field_label: str = ""
+    field_type: str = "text"  # text/number/date/dropdown/checkbox
+    dropdown_options: str = ""  # JSON array string
+    is_required: bool = False
+    display_order: int = 0
+    applies_to: str = "employee"  # employee/leave/claim
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_customdef_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class CustomFieldValue:
+    """Custom field value for an entity (T303).
+
+    Stores the actual value for a custom field on a specific entity
+    (employee, leave application, or claim). Values stored as JSON
+    strings to support any type.
+    """
+
+    entity_type: str = "employee"  # employee/leave/claim
+    entity_id: int = 0
+    field_definition_id: int = 0
+    company_id: int = 0
+    value: str = ""  # JSON — supports any type
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_customval_entity", "fields": ["entity_type", "entity_id"]},
+            {"name": "idx_customval_field", "fields": ["field_definition_id"]},
         ],
     }
