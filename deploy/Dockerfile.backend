@@ -12,23 +12,24 @@ COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
 # Install Python dependencies
-# Kailash SDK is enterprise — install direct deps as fallback for open-source builds
+# Pre-install all transitive deps so Kailash SDK imports resolve at build time
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
-      fastapi>=0.110.0 uvicorn>=0.29.0 pydantic>=2.7.0 \
-      sqlalchemy>=2.0.0 psycopg2-binary>=2.9.9 \
-      python-dotenv>=1.0.0 structlog>=23.1.0 \
-      PyJWT>=2.8.0 bcrypt>=4.0.0 \
-      openai>=1.30.0 httpx>=0.27.0 \
-      cryptography>=42.0.0 pgvector>=0.3.0 psutil>=5.9.0 \
-      requests>=2.31.0 pandas>=2.0.0 numpy>=1.24.0 \
-      jinja2>=3.1.0 aiohttp>=3.9.0 websockets>=12.0 \
-      Pillow>=10.0.0 tiktoken>=0.7.0 tenacity>=8.2.0 \
-      python-multipart>=0.0.7 email-validator>=2.0.0 \
-      python-docx>=1.1.0 sendgrid>=6.11.0 \
-      click>=8.0 rich>=13.0.0 alembic>=1.12.0 && \
-    pip install --no-cache-dir . 2>/dev/null || \
-    echo "Note: Kailash SDK not available — using direct dependencies"
+      # --- Kailash Core SDK deps ---
+      fastapi uvicorn pydantic sqlalchemy httpx psutil requests \
+      pandas numpy aiohttp aiohttp-cors websockets aiofiles \
+      jsonschema matplotlib plotly prometheus-client networkx \
+      msal mcp pyotp qrcode redis scikit-learn scipy twilio \
+      pyyaml click bcrypt PyJWT Pillow \
+      # --- Kailash DataFlow deps ---
+      alembic asyncpg aiomysql aiosqlite dnspython motor pymongo \
+      # --- Kailash Kaizen deps ---
+      typing-extensions \
+      # --- Arbor app deps ---
+      python-dotenv structlog openai cryptography pgvector \
+      psycopg2-binary python-docx sendgrid rich \
+      python-multipart email-validator tiktoken tenacity jinja2 && \
+    pip install --no-cache-dir .
 
 # Non-root user
 RUN useradd --create-home appuser
