@@ -484,7 +484,7 @@ function PendingInvitationsSection({
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-3">
+      <div id="pending-invitations" className="flex items-center gap-2 mb-3">
         <Mail
           className="h-5 w-5 text-[var(--color-gray-500)]"
           aria-hidden="true"
@@ -690,7 +690,9 @@ function ImportCsvModal({
     setError(null);
     try {
       await employeesApi.importConfirm(previewRecords);
-      toast.success("Employees imported successfully");
+      toast.success(
+        "Invitations sent! Share the invite links with your employees to complete registration.",
+      );
       setStep("done");
       onSuccess();
       onClose();
@@ -1215,6 +1217,12 @@ export default function EmployeesPage() {
         onSuccess={() => {
           fetchEmployees();
           fetchInvitations();
+          // Scroll to invitations section after import
+          setTimeout(() => {
+            document
+              .getElementById("pending-invitations")
+              ?.scrollIntoView({ behavior: "smooth" });
+          }, 500);
         }}
       />
     </div>

@@ -2824,30 +2824,6 @@ async def import_confirm(
                 expires_at=expires_at,
             )
 
-            # Pre-create employee record with CSV data so profile is populated on registration
-            name = record.get("name", "").strip()
-            emp_data = {
-                "company_id": company_id,
-                "email": email,
-                "name": name,
-                "department": record.get("department", ""),
-                "designation": record.get("designation", ""),
-                "employment_type": record.get("employment_type", "full_time"),
-                "start_date": record.get("start_date", ""),
-                "nationality": record.get("nationality", ""),
-                "pass_type": record.get("pass_type", ""),
-                "date_of_birth": record.get("date_of_birth", ""),
-                "is_active": True,
-                "status": "invited",
-            }
-            salary = record.get("salary_monthly", 0)
-            if salary and float(salary) > 0:
-                emp_data["salary_monthly"] = float(salary)
-            try:
-                _create_employee(emp_data)
-            except Exception:
-                logger.debug("Employee pre-creation skipped for %s (may already exist)", email)
-
             created += 1
             invite_url = f"{frontend_url}/signup?token={token}"
             invitations.append({"email": email, "invite_url": invite_url})
