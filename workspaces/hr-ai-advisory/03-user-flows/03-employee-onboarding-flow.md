@@ -3,7 +3,7 @@
 ## Flow 1: New Visitor → Company Owner
 
 ```
-1. Visitor lands on https://arbor.kailash.ai/
+1. Visitor lands on https://arbor.terrene.foundation/
    → Sees ManagementShowcase (public landing page)
    → Hero: "Your Complete HR Management Suite"
    → Value props: Free, AI-Powered, Singapore Compliant, All-in-One
@@ -63,7 +63,7 @@
 
 ```
 1. Employee clicks invite link
-   → https://arbor.kailash.ai/signup?token=abc123
+   → https://arbor.terrene.foundation/signup?token=abc123
 
 2. Signup page detects token parameter
    → Calls GET /employees/invite/{token}

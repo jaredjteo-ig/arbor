@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# ship.sh — Deploy to production via git pull + docker rebuild
+# ship.sh — Deploy Arbor to GCP (arbor.terrene.foundation)
 #
 # Usage: ./deploy/ship.sh [--backend-only] [--frontend-only]
 #
 # Workflow:
 #   1. Push local commits to GitHub
-#   2. SSH to server, git pull
+#   2. SSH to GCE VM, git pull
 #   3. Rebuild and restart Docker containers
 #   4. Verify health
 
 set -euo pipefail
 
-SERVER="ec2-user@52.220.50.167"
-SSH_KEY="${HOME}/.ssh/ai-coach.pem"
+PROJECT="terrene-care"
+ZONE="asia-southeast1-b"
+INSTANCE="arbor-prod"
 REMOTE_DIR="/opt/arbor"
-SSH="ssh -i ${SSH_KEY} ${SERVER}"
+DOMAIN="arbor.terrene.foundation"
+SSH="gcloud compute ssh ${INSTANCE} --project=${PROJECT} --zone=${ZONE} --command"
 
 BUILD_BACKEND=true
 BUILD_FRONTEND=true
@@ -26,7 +28,7 @@ elif [[ "${1:-}" == "--frontend-only" ]]; then
 fi
 
 echo "=== Step 1: Push to GitHub ==="
-git push origin main
+git push terrene main
 
 echo ""
 echo "=== Step 2: Pull on server ==="
@@ -44,7 +46,7 @@ ${SSH} "cd ${REMOTE_DIR}/deploy && docker compose -f docker-compose.prod.yml --e
 echo ""
 echo "=== Step 4: Verify health ==="
 sleep 20
-${SSH} "docker ps --format 'table {{.Names}}\t{{.Status}}' && echo '---' && curl -sf https://arbor.kailash.ai/api/health | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"status\",\"?\"))'"
+${SSH} "docker ps --format 'table {{.Names}}\t{{.Status}}' && echo '---' && curl -sf https://${DOMAIN}/api/health | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"status\",\"?\"))'"
 
 echo ""
-echo "=== Deployed ==="
+echo "=== Deployed to https://${DOMAIN} ==="

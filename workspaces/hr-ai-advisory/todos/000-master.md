@@ -23,7 +23,7 @@ T001-T140 across 15 milestones. Covers:
 - Full advisory platform with 14-step safety chain, 6 regulatory domains, 7 calculators
 - Shadow agent (command surface, margin, inline annotations, observation layer)
 - Enterprise model (admin + employee roles, invitation system, tenant isolation)
-- Production deployment at arbor.kailash.ai
+- Production deployment at arbor.terrene.foundation
 - 8 red team rounds
 
 ---

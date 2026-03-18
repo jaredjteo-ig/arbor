@@ -4,11 +4,11 @@
 
 | Decision       | Choice                                   | Rationale                                                    |
 | -------------- | ---------------------------------------- | ------------------------------------------------------------ |
-| Cloud provider | AWS (ap-southeast-1)                     | Existing Integrum account with unused reserved instances     |
-| Instance type  | t2.medium                                | Utilizing pre-paid reserved instance capacity                |
+| Cloud provider | GCP (asia-southeast1)                    | Terrene Foundation GCP account (terrene-care project)        |
+| Instance type  | e2-medium                                | Cost-effective for current scale                             |
 | Orchestration  | Docker Compose                           | Single-server deployment, simpler than K8s for current scale |
 | Reverse proxy  | Caddy                                    | Zero-config automatic HTTPS with Let's Encrypt               |
-| Domain         | arbor.kailash.ai                         | Route53 A record to Elastic IP                               |
+| Domain         | arbor.terrene.foundation                 | DNS A record to GCE static IP                                |
 | Database       | PostgreSQL 16 + pgvector (containerized) | Vector search for KB embeddings                              |
 | Cache          | Redis 7 (containerized)                  | Session management                                           |
 
@@ -19,8 +19,8 @@ Internet
   │
   ▼
 ┌──────────────────────────────────────────────────────────┐
-│  EC2 t2.medium (i-0632bfeef01ee415b)                     │
-│  Amazon Linux 2023 │ Elastic IP: 52.220.50.167           │
+│  GCE e2-medium (arbor-prod)                              │
+│  Container-Optimized OS │ Static IP: 34.87.60.241        │
 │                                                          │
 │  ┌─────────────────────────────────────────────┐         │
 │  │ Caddy (arbor-caddy)         ports 80, 443    │         │
@@ -44,23 +44,20 @@ Internet
 └──────────────────────────────────────────────────────────┘
 ```
 
-## AWS Infrastructure
+## GCP Infrastructure
 
-| Resource       | ID / Value                                      |
-| -------------- | ----------------------------------------------- |
-| EC2 Instance   | `i-0632bfeef01ee415b`                           |
-| Instance Type  | `t2.medium` (reserved)                          |
-| AMI            | Amazon Linux 2023                               |
-| Elastic IP     | `52.220.50.167`                                 |
-| Security Group | `sg-08193a91dc92c2bfc` (arbor-kailash)           |
-| VPC            | `vpc-22408344`                                  |
-| Subnet         | `subnet-b8ca7dde` (ap-southeast-1a)             |
-| Key Pair       | `ai-coach` (~/.ssh/ai-coach.pem)                |
-| Route53 Zone   | `Z0197289202NLLMMA8HP0` (kailash.ai)            |
-| DNS Record     | `arbor.kailash.ai` → `52.220.50.167` (A record) |
-| AWS Account    | `884647653201` (integrumglobal)                 |
-| AWS Profile    | `esperie`                                       |
-| Region         | `ap-southeast-1` (Singapore)                    |
+| Resource     | ID / Value                                             |
+| ------------ | ------------------------------------------------------ |
+| GCE Instance | `arbor-prod`                                           |
+| Machine Type | `e2-medium`                                            |
+| OS           | Container-Optimized OS (cos-stable)                    |
+| Zone         | `asia-southeast1-b`                                    |
+| Static IP    | `34.87.60.241`                                         |
+| Firewall     | `allow-http-https` (tcp:80,443)                        |
+| GCP Project  | `terrene-care`                                         |
+| GCP Account  | `jack@terrene.foundation`                              |
+| DNS Record   | `arbor.terrene.foundation` → `34.87.60.241` (A record) |
+| Region       | `asia-southeast1` (Singapore)                          |
 
 ### Security Group Rules
 
@@ -105,13 +102,13 @@ Internet
 
 ### Optional
 
-| Variable            | Default                    | Description          |
-| ------------------- | -------------------------- | -------------------- |
-| `ANTHROPIC_API_KEY` | —                          | Anthropic API key    |
-| `DEFAULT_LLM_MODEL` | `gpt-4o`                   | Default LLM model    |
-| `LOG_LEVEL`         | `INFO`                     | Logging level        |
-| `APP_ENV`           | `production`               | Environment name     |
-| `CORS_ORIGINS`      | `https://arbor.kailash.ai` | Allowed CORS origins |
+| Variable            | Default                            | Description          |
+| ------------------- | ---------------------------------- | -------------------- |
+| `ANTHROPIC_API_KEY` | —                                  | Anthropic API key    |
+| `DEFAULT_LLM_MODEL` | `gpt-4o`                           | Default LLM model    |
+| `LOG_LEVEL`         | `INFO`                             | Logging level        |
+| `APP_ENV`           | `production`                       | Environment name     |
+| `CORS_ORIGINS`      | `https://arbor.terrene.foundation` | Allowed CORS origins |
 
 ### Integration Layer (MCP Servers — all optional, enable as needed)
 
@@ -143,7 +140,7 @@ Internet
 ## SSL/TLS
 
 - Provider: Let's Encrypt (automated via Caddy)
-- Certificate CN: `arbor.kailash.ai`
+- Certificate CN: `arbor.terrene.foundation`
 - Renewal: Automatic (Caddy handles renewal before expiry)
 - HSTS: Enabled (`max-age=31536000; includeSubDomains`)
 - Security headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
@@ -173,7 +170,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 # 4. Verify
 docker ps  # all 5 containers healthy
-curl -f https://arbor.kailash.ai/health  # 200 OK
+curl -f https://arbor.terrene.foundation/health  # 200 OK
 ```
 
 ### Rollback
@@ -191,7 +188,7 @@ cd deploy
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 # Verify
-curl -f https://arbor.kailash.ai/health
+curl -f https://arbor.terrene.foundation/health
 ```
 
 ### Server Setup (fresh instance)
