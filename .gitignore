@@ -66,6 +66,9 @@ secrets/
 **/scripts/outputs/
 **/scripts/*.log
 
+# Data folder
+data/
+
 # ── React (apps/web/) ────────────────────────────────────────
 apps/web/node_modules/
 apps/web/.next/
@@ -94,3 +97,5 @@ apps/mobile/pubspec.lock
 
 # ── Red team screenshots ───────────────────────────────────────
 redteam-*.png
+*.png
+.playwright-mcp/

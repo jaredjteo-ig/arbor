@@ -50,7 +50,7 @@ export default function OnboardingPage() {
   );
 
   const handleSkip = useCallback(() => {
-    router.push("/");
+    router.push("/my-dashboard");
   }, [router]);
 
   return (

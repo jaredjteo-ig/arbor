@@ -50,7 +50,7 @@ export function ProtectedRoute({
 
     if (requiredRoles && user && !requiredRoles.includes(user.role)) {
       /* User is authenticated but lacks the required role */
-      router.replace("/");
+      router.replace("/dashboard");
     }
   }, [isAuthenticated, isLoading, user, requiredRoles, router]);
 

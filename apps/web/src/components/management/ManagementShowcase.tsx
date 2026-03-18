@@ -205,7 +205,7 @@ const VALUE_PROPS = [
     icon: Zap,
     title: "100% Free",
     description:
-      "Full HRIS suite at zero cost. Backed by ASME for Singapore SMEs.",
+      "Full HRIS suite at zero cost. Backed by Terrene Foundation for Singapore SMEs.",
   },
   {
     icon: Sparkles,

@@ -53,7 +53,7 @@ const adminCoreNavItems: NavItem[] = [
   {
     labelKey: "nav.dashboard",
     label: "Dashboard",
-    href: "/",
+    href: "/dashboard",
     icon: LayoutDashboard,
   },
   {

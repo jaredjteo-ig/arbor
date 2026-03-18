@@ -135,7 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: true,
         isLoading: false,
       });
-      router.push("/");
+      router.push("/dashboard");
     },
     [router],
   );

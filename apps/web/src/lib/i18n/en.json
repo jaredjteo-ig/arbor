@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "AITE",
+    "name": "Arbor",
     "tagline": "AI-powered HR Advisory for Singapore SMEs"
   },
   "nav": {
@@ -18,10 +18,10 @@
   "auth": {
     "login": "Log in",
     "login_heading": "Welcome back",
-    "login_subheading": "Sign in to your AITE account",
+    "login_subheading": "Sign in to your Arbor account",
     "signup": "Sign up",
     "signup_heading": "Create your account",
-    "signup_subheading": "Get started with AITE HR Advisory",
+    "signup_subheading": "Get started with Arbor HR Advisory",
     "email": "Email address",
     "password": "Password",
     "confirm_password": "Confirm password",

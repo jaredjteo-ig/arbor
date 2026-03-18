@@ -132,8 +132,8 @@ function mapBalanceToDisplay(balance: LeaveBalance): LeaveDisplay {
   const iconInfo = ICON_MAP[balance.name] ?? DEFAULT_LEAVE_ICON;
   return {
     name: balance.name,
-    used: balance.used + balance.pending,
-    total: balance.entitlement,
+    used: (balance.used ?? 0) + (balance.pending ?? 0),
+    total: balance.entitlement ?? 0,
     icon: iconInfo.icon,
     color: iconInfo.color,
   };
