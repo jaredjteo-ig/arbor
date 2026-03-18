@@ -1459,6 +1459,7 @@ async def list_invitations(
                 "role": inv.get("role"),
                 "status": status,
                 "sent_date": inv.get("created_at"),
+                "created_at": inv.get("created_at"),
                 "expires_at": inv.get("expires_at"),
                 "accepted_at": inv.get("accepted_at"),
             }
