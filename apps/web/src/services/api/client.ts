@@ -42,6 +42,40 @@ function clearTokensAndRedirect(): void {
   window.location.href = "/login";
 }
 
+/**
+ * Get a valid access token, refreshing proactively if it will expire soon.
+ *
+ * Decodes the JWT exp claim and refreshes if less than 5 minutes remain.
+ * All raw fetch() callers (useShadowContext, SSE, etc.) should use this
+ * instead of reading localStorage directly.
+ */
+export async function getValidAccessToken(): Promise<string | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  // Check if token expires within 5 minutes
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    const expiresAt = (payload.exp ?? 0) * 1000;
+    const fiveMinutes = 5 * 60 * 1000;
+
+    if (Date.now() > expiresAt - fiveMinutes) {
+      // Token expired or expiring soon — refresh
+      try {
+        const newToken = await refreshAccessToken();
+        return newToken;
+      } catch {
+        // Refresh failed — return existing token (will 401, triggering redirect)
+        return token;
+      }
+    }
+  } catch {
+    // Can't decode — return as-is
+  }
+
+  return token;
+}
+
 /* ── Token refresh ───────────────────────────────────────── */
 
 /**

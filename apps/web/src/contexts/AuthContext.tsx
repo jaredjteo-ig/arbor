@@ -64,6 +64,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading: true,
   });
 
+  /* Proactive token refresh — refresh 5 minutes before expiry.
+     This prevents the "silent 401" problem where background requests
+     fail because the token expired between user interactions. */
+  useEffect(() => {
+    function scheduleRefresh() {
+      const accessToken = getStoredToken("access_token");
+      const refreshToken = getStoredToken("refresh_token");
+      if (!accessToken || !refreshToken) return undefined;
+
+      try {
+        const payload = JSON.parse(atob(accessToken.split(".")[1]));
+        const expiresAt = (payload.exp ?? 0) * 1000;
+        const refreshAt = expiresAt - 5 * 60 * 1000; // 5 min before expiry
+        const delay = refreshAt - Date.now();
+
+        if (delay <= 0) {
+          // Already expired or expiring now — refresh immediately
+          authApi
+            .refresh(refreshToken)
+            .then((tokens) => {
+              storeTokens(
+                tokens.access_token,
+                tokens.refresh_token || refreshToken,
+              );
+            })
+            .catch(() => {
+              clearTokens();
+              setState({
+                user: null,
+                isAuthenticated: false,
+                isLoading: false,
+              });
+            });
+          return undefined;
+        }
+
+        // Schedule refresh before expiry
+        return setTimeout(async () => {
+          try {
+            const tokens = await authApi.refresh(refreshToken);
+            storeTokens(
+              tokens.access_token,
+              tokens.refresh_token || refreshToken,
+            );
+            // Re-schedule for the new token
+            scheduleRefresh();
+          } catch {
+            clearTokens();
+            setState({ user: null, isAuthenticated: false, isLoading: false });
+          }
+        }, delay);
+      } catch {
+        return undefined;
+      }
+    }
+
+    const timer = scheduleRefresh();
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [state.isAuthenticated]);
+
   /* Validate the existing session on mount */
   useEffect(() => {
     let cancelled = false;

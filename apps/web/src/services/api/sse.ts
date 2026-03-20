@@ -3,7 +3,7 @@
 /* over POST requests with auth headers (EventSource only     */
 /* supports GET without custom headers).                      */
 
-import { refreshAccessToken } from "./client";
+import { refreshAccessToken, getValidAccessToken } from "./client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -76,19 +76,18 @@ export function createSSEStream<TStart = unknown, TComplete = unknown>(
 ): AbortController {
   const controller = new AbortController();
 
-  const accessToken =
-    typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Accept: "text/event-stream",
-  };
-  if (accessToken) {
-    headers["Authorization"] = `Bearer ${accessToken}`;
-  }
-
   (async () => {
     try {
+      const accessToken = await getValidAccessToken();
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      };
+      if (accessToken) {
+        headers["Authorization"] = `Bearer ${accessToken}`;
+      }
+
       let response = await fetch(`${API_BASE}${path}`, {
         method: "POST",
         headers,

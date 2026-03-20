@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { usePathname } from "next/navigation";
-import { unwrapNexusResponse } from "@/services/api/client";
+import {
+  unwrapNexusResponse,
+  getValidAccessToken,
+} from "@/services/api/client";
 import type { ShadowInsight } from "./ShadowMargin";
 import type { AnnotationData } from "./InlineAnnotation";
 
@@ -55,10 +58,7 @@ export function useShadowContext(): UseShadowContextReturn {
   const [pollEnabled, setPollEnabled] = useState(true);
 
   const fetchContext = useCallback(async () => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("access_token")
-        : null;
+    const token = await getValidAccessToken();
 
     if (!token) {
       setIsLoading(false);
