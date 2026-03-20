@@ -56,4 +56,6 @@ Stubs and TODOs accumulate silently. Each one is a potential failure point:
 
 ## Exceptions
 
-Test files (`test_*`, `*_test.*`, `*.test.*`, `*.spec.*`, `__tests__/`) are excluded.
+Test files (`test_*`, `*_test.*`, `*.test.*`, `*.spec.*`, `__tests__/`) are excluded from stub detection.
+
+**There are NO exceptions for production code.** If you cannot implement something, ask the user, then implement it. If they say remove it, delete the function — do NOT leave a stub. See also: `rules/zero-tolerance.md`
