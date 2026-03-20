@@ -21,6 +21,8 @@ from hr_advisory.shadow.tool_registry import ToolDefinition, ToolRegistry
 from hr_advisory.shadow.executor import ExecutionResult, ExecutionStep, ShadowExecutor
 from hr_advisory.shadow.pace import PaceManager, PaceSession, PaceStep
 from hr_advisory.shadow.formatter import ArborFormatter
+from hr_advisory.shadow.briefing import generate_briefing
+from hr_advisory.shadow.nudges import get_nudges
 
 __all__ = [
     "ArborFormatter",
@@ -34,4 +36,6 @@ __all__ = [
     "ShadowIntentClassifier",
     "ToolDefinition",
     "ToolRegistry",
+    "generate_briefing",
+    "get_nudges",
 ]

@@ -1016,3 +1016,87 @@ async def shadow_history(
         "showing": len(actions),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# Shadow Agent Ambient Layer — briefing & nudges
+# ══════════════════════════════════════════════════════════════
+#
+# Deterministic (no LLM) endpoints that power the proactive
+# dashboard briefing and contextual page nudges.
+
+
+@router.get("/briefing")
+async def shadow_briefing(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Return a morning briefing for the current user's dashboard.
+
+    The briefing aggregates pending actions, upcoming deadlines,
+    attention items, and quick stats from across all HRIS modules.
+    All data is deterministic — no LLM calls.
+
+    Returns a categorized briefing dict with:
+        pending_actions, upcoming_deadlines, attention_needed, quick_stats
+    """
+    from hr_advisory.shadow.briefing import generate_briefing
+
+    company_id = get_current_company_id(current_user)
+    user_role = current_user.get("role", "employee")
+
+    briefing = generate_briefing(company_id, user_role)
+
+    logger.info(
+        "Briefing generated for company_id=%s: %d actions, %d deadlines, %d attention items",
+        company_id,
+        len(briefing.get("pending_actions", [])),
+        len(briefing.get("upcoming_deadlines", [])),
+        len(briefing.get("attention_needed", [])),
+    )
+
+    return {
+        **briefing,
+        "company_id": company_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/nudges")
+async def shadow_nudges(
+    page: str = "dashboard",
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Return contextual nudges for the current page.
+
+    Nudges are page-aware proactive suggestions based on company data
+    and regulatory calendar. Maximum 3 nudges per request, sorted by
+    urgency.
+
+    Query Parameters:
+        page: The current frontend page name (e.g. "dashboard",
+              "employees", "payroll", "leave", "claims").
+
+    Returns a list of nudge dicts, each with: id, type, message,
+    action_type, route, dismissible, priority.
+    """
+    from hr_advisory.shadow.nudges import get_nudges
+
+    company_id = get_current_company_id(current_user)
+    user_id = str(current_user.get("sub", "anonymous"))
+    user_role = current_user.get("role", "employee")
+
+    nudges = get_nudges(company_id, user_id, page, user_role)
+
+    logger.info(
+        "Nudges for page=%s, company_id=%s: %d nudges",
+        page,
+        company_id,
+        len(nudges),
+    )
+
+    return {
+        "nudges": nudges,
+        "page": page,
+        "company_id": company_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
