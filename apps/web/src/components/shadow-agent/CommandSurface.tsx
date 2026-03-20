@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   X,
   ArrowRight,
@@ -23,6 +24,8 @@ import {
 } from "@/components/design-system/SourceCitation";
 import type { CalculatorDisplayResult } from "./ShadowAgentContext";
 import { useShadowAgent } from "./ShadowAgentContext";
+import { PaceCard } from "./PaceCard";
+import { shadowApi, type ShadowResponse } from "@/services/api/shadow";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -239,8 +242,12 @@ export function CommandSurface({
 }: CommandSurfaceProps) {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<CommandResult | null>(null);
+  const [shadowResponse, setShadowResponse] = useState<ShadowResponse | null>(
+    null,
+  );
   const [isStreaming, setIsStreaming] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
   const { userRole } = useShadowAgent();
   const suggestedCommands =
     userRole === "employee"
@@ -258,6 +265,7 @@ export function CommandSurface({
     if (!isOpen) {
       setQuery("");
       setResult(null);
+      setShadowResponse(null);
       setIsStreaming(false);
     }
   }, [isOpen]);
@@ -280,8 +288,94 @@ export function CommandSurface({
       if (!input.trim() || isProcessing) return;
 
       setResult(null);
+      setShadowResponse(null);
       setIsStreaming(true);
 
+      try {
+        // Try the shadow execution API first for HRIS actions
+        const pageContext =
+          typeof window !== "undefined"
+            ? window.location.pathname.split("/").filter(Boolean)[0] ||
+              "dashboard"
+            : "dashboard";
+
+        const response = await shadowApi.execute(input.trim(), pageContext);
+
+        // Route based on shadow response type
+        switch (response.type) {
+          case "preview": {
+            // PACE confirmation required — show PaceCard
+            setShadowResponse(response);
+            setIsStreaming(false);
+            return;
+          }
+
+          case "navigation": {
+            // Navigate to the specified route
+            const route = response.route || "/";
+            router.push(route);
+            setResult({
+              type: "navigation",
+              content:
+                response.message?.replace(/^Arbor:\s*/i, "") || "Navigating...",
+              navigateTo: route,
+            });
+            setTimeout(() => onClose(), 800);
+            setIsStreaming(false);
+            return;
+          }
+
+          case "advisory": {
+            // Route to advisory pipeline — fall through to existing onSubmit
+            // which handles the advisory/query endpoint with citations
+            break;
+          }
+
+          case "result": {
+            // Immediate result (autonomous trust level)
+            const msg = response.message?.replace(/^Arbor:\s*/i, "") || "Done.";
+            setResult({
+              type: "text",
+              content: msg,
+            });
+            setIsStreaming(false);
+            return;
+          }
+
+          case "out_of_scope":
+          case "blocked": {
+            const msg =
+              response.message?.replace(/^Arbor:\s*/i, "") ||
+              "I can only help with Singapore HR and employment matters.";
+            setResult({
+              type: "text",
+              content: msg,
+            });
+            setIsStreaming(false);
+            return;
+          }
+
+          case "attachment_required": {
+            const msg =
+              response.message?.replace(/^Arbor:\s*/i, "") ||
+              "Please attach a file to continue.";
+            setResult({
+              type: "text",
+              content: msg,
+            });
+            setIsStreaming(false);
+            return;
+          }
+
+          default:
+            // Fall through to legacy onSubmit for advisory and other types
+            break;
+        }
+      } catch {
+        // Shadow API failed — fall through to legacy handler
+      }
+
+      // Legacy fallback: use the original onSubmit (intent classification + advisory)
       try {
         const commandResult = await onSubmit(input.trim());
         if (commandResult) {
@@ -300,7 +394,23 @@ export function CommandSurface({
         setIsStreaming(false);
       }
     },
-    [isProcessing, onSubmit, onClose],
+    [isProcessing, onSubmit, onClose, router],
+  );
+
+  // ── PACE handlers ──────────────────────────────────────
+  const handlePaceConfirm = useCallback(
+    async (sessionId: string): Promise<ShadowResponse> => {
+      return shadowApi.confirm(sessionId);
+    },
+    [],
+  );
+
+  const handlePaceCancel = useCallback(
+    async (sessionId: string): Promise<void> => {
+      await shadowApi.cancel(sessionId);
+      setShadowResponse(null);
+    },
+    [],
   );
 
   if (!isOpen) return null;
@@ -402,8 +512,19 @@ export function CommandSurface({
               </div>
             )}
 
+            {/* T470: PACE Confirmation Card — shown when shadow API returns preview */}
+            {shadowResponse?.type === "preview" && !isStreaming && (
+              <div className="px-4 py-3">
+                <PaceCard
+                  response={shadowResponse}
+                  onConfirm={handlePaceConfirm}
+                  onCancel={handlePaceCancel}
+                />
+              </div>
+            )}
+
             {/* Result display */}
-            {result && !isStreaming && (
+            {result && !isStreaming && !shadowResponse && (
               <div className="px-4 py-3">
                 {result.type === "error" ? (
                   <div className="flex items-start gap-2 text-sm text-[var(--color-risk-red)]">
@@ -430,7 +551,7 @@ export function CommandSurface({
             )}
 
             {/* Suggestions -- shown when no result and no streaming */}
-            {!result && !isStreaming && (
+            {!result && !shadowResponse && !isStreaming && (
               <div className="px-4 py-3 space-y-3">
                 {/* Recent commands */}
                 {recentCommands.length > 0 && (

@@ -30,3 +30,13 @@ export { projectsApi } from "./projects";
 export { inventoryApi } from "./inventory";
 export { recruitmentApi } from "./recruitment";
 export { reportsApi } from "./reports";
+export { shadowApi } from "./shadow";
+export type {
+  ShadowResponse,
+  ShadowAction,
+  BriefingResponse,
+  BriefingItem,
+  Nudge,
+  NudgesResponse,
+  PaceStep,
+} from "./shadow";

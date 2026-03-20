@@ -9,6 +9,7 @@ export type { ShadowInsight } from "./ShadowMargin";
 export { InlineAnnotation } from "./InlineAnnotation";
 export type { AnnotationData } from "./InlineAnnotation";
 export { ShadowBriefingCard } from "./ShadowBriefingCard";
+export { PaceCard } from "./PaceCard";
 export { useShadowContext } from "./useShadowContext";
 export { useObservation } from "./useObservation";
 export type { PageVisit, ObservationInsight } from "./useObservation";
