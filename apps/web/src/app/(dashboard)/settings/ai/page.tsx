@@ -12,19 +12,14 @@ import {
   Trash2,
   ExternalLink,
 } from "lucide-react";
-import {
-  AppCard,
-  AppButton,
-  AlertBanner,
-  toast,
-} from "@/components/design-system";
+import { AppCard, AppButton, toast } from "@/components/design-system";
 import {
   llmConfigApi,
   type LLMConfig,
   type LLMUsage,
   type LLMProvider,
 } from "@/services/api/llm-config";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 
 /* ── Provider options ────────────────────────────────────── */
 
