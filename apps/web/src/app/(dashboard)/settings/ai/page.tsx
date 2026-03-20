@@ -366,7 +366,7 @@ export default function AIConfigPage() {
               <StatusBadge status={config.status} />
             </div>
             <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem" }}>
-              <AppButton variant="outline" size="sm" onClick={handleDelete}>
+              <AppButton variant="outlined" size="sm" onClick={handleDelete}>
                 <Trash2 size={14} /> Remove
               </AppButton>
             </div>
@@ -435,7 +435,7 @@ export default function AIConfigPage() {
                   Use Ollama or a shared GPU server. Unlimited queries, no cost.
                 </p>
                 <AppButton
-                  variant="outline"
+                  variant="outlined"
                   size="sm"
                   onClick={() => {
                     setProvider("ollama");
@@ -578,7 +578,7 @@ export default function AIConfigPage() {
               )}
             </AppButton>
             <AppButton
-              variant="outline"
+              variant="outlined"
               onClick={() => {
                 setShowByokForm(false);
                 setApiKey("");
@@ -675,7 +675,7 @@ export default function AIConfigPage() {
               )}
             </AppButton>
             <AppButton
-              variant="outline"
+              variant="outlined"
               onClick={() => {
                 setShowOllamaForm(false);
                 setBaseUrl("");
