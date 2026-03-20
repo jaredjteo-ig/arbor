@@ -1,9 +1,20 @@
-commit: 691a853cc266af29fdac018e6748c5632187023e
-timestamp: 2026-03-19T18:44:34Z
-baseline_pass: 156
+commit: 3647369 (pre-changes baseline)
+timestamp: 2026-03-20T18:30:00+08:00
+baseline_pass: 28
 baseline_fail: 0
-final_pass: 156
+final_pass: 465
 final_fail: 0
-new_tests: 156
+new_tests: 437
 regressions: 0
-command: pytest tests/unit/test_llm_*.py tests/unit/test_key_rotation.py tests/unit/test_ollama_health.py --tb=short -q
+command: pytest tests/unit/test_shadow_*.py --tb=short -q
+files:
+  test_shadow_engine.py: 43 (original + SSE + upload)
+  test_shadow_intent.py: 139 (T478 — intent classification)
+  test_shadow_pace.py: 68 (T479 — PACE safety)
+  test_shadow_permissions.py: 50 (T480 — permission boundaries)
+  test_shadow_adversarial.py: 60 (T481 — adversarial inputs)
+  test_shadow_workflows.py: 27 (T482 — multi-step workflows)
+  test_shadow_observation.py: 27 (T475 — observation service)
+  test_shadow_memory.py: 20 (T477 — memory distillation)
+  test_shadow_entity_resolver.py: 28 (entity resolution)
+  test_shadow_workflow_composer.py: 10 (workflow composer)

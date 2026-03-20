@@ -115,7 +115,7 @@ class TestToolRegistry:
 
     def test_trust_levels_valid(self) -> None:
         reg = get_tool_registry()
-        valid = {"autonomous", "propose", "always_propose"}
+        valid = {"autonomous", "propose", "always_propose", "double_confirm"}
         for tools in reg._tools.values():
             for tool in tools:
                 assert tool.trust_level in valid, f"Invalid trust: {tool.trust_level}"
@@ -168,28 +168,33 @@ class TestIntentClassifier:
         classifier = ShadowIntentClassifier()
         assert hasattr(classifier, "classify")
 
-    def test_classify_produces_valid_intent(self) -> None:
+    @pytest.mark.asyncio
+    async def test_classify_produces_valid_intent(self) -> None:
         """Classifier always produces a valid ShadowIntent (even via fallback)."""
         classifier = ShadowIntentClassifier()
         with patch.dict("os.environ", {"OPENAI_API_KEY": ""}):
-            intent = classifier.classify("how much leave does Sarah have?", page_context="/leave")
+            intent = await classifier.classify(
+                "how much leave does Sarah have?", page_context="/leave"
+            )
         assert intent.module is not None
         assert intent.action is not None
         assert isinstance(intent.entities, dict)
 
-    def test_classify_navigation_via_fallback(self) -> None:
+    @pytest.mark.asyncio
+    async def test_classify_navigation_via_fallback(self) -> None:
         """Fallback classifier handles navigation keywords."""
         classifier = ShadowIntentClassifier()
         with patch.dict("os.environ", {"OPENAI_API_KEY": ""}):
-            intent = classifier.classify("take me to payroll", page_context="/dashboard")
+            intent = await classifier.classify("take me to payroll", page_context="/dashboard")
         # Fallback should detect navigation keyword
         assert intent.module in ("navigation", "advisory")  # fallback may route to advisory
 
-    def test_fallback_classifier_on_no_key(self) -> None:
+    @pytest.mark.asyncio
+    async def test_fallback_classifier_on_no_key(self) -> None:
         """Without API key, classifier should fall back to rule-based."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": ""}):
             classifier = ShadowIntentClassifier()
-            intent = classifier.classify("take me to payroll", page_context="/dashboard")
+            intent = await classifier.classify("take me to payroll", page_context="/dashboard")
             # Should still produce a valid intent (rule-based fallback)
             assert intent.module is not None
 
@@ -203,7 +208,7 @@ class TestPaceManager:
     """PACE loop must enforce trust levels."""
 
     def setup_method(self) -> None:
-        self.mgr = PaceManager()
+        self.mgr = PaceManager(cooldown_seconds=0)
 
     def test_create_session(self) -> None:
         steps = [
@@ -299,8 +304,8 @@ class TestPermissionBoundaries:
         gov_tools = reg.get_tools("government")
         for tool in gov_tools:
             assert (
-                tool.trust_level == "always_propose"
-            ), f"Government {tool.action} must be always_propose"
+                tool.trust_level == "double_confirm"
+            ), f"Government {tool.action} must be double_confirm"
 
     def test_delete_actions_are_always_propose(self) -> None:
         reg = get_tool_registry()
@@ -376,3 +381,350 @@ class TestExecutionResult:
         )
         assert result.success is False
         assert result.error == "Forbidden"
+
+
+# =========================================================================
+# SSE Streaming Tests (Task 3 — confirm/stream endpoint)
+# =========================================================================
+
+
+class TestSSEStreamGenerator:
+    """SSE streaming for PACE session execution progress."""
+
+    def setup_method(self) -> None:
+        self.mgr = PaceManager(cooldown_seconds=0)
+
+    @pytest.mark.asyncio
+    async def test_stream_events_for_single_step_session(self) -> None:
+        """Streaming a single-step session should yield step + complete events."""
+        from hr_advisory.api.routers.shadow import _generate_sse_events
+
+        step = PaceStep(
+            description="List employees",
+            tool_module="employees",
+            tool_action="list",
+            method="GET",
+            path="/employees",
+            params={},
+        )
+        session = self.mgr.create_session(
+            user_id="user1",
+            intent_module="employees",
+            intent_action="list",
+            confirmation_message="List employees",
+            steps=[step],
+        )
+        # Mark session as confirmed so execution can proceed
+        self.mgr.confirm_session(session.id)
+
+        events: list[str] = []
+        async for event in _generate_sse_events(session.id, "fake-jwt", self.mgr):
+            events.append(event)
+
+        assert (
+            len(events) >= 2
+        ), f"Expected at least 2 SSE events (step + complete), got {len(events)}"
+
+        # All events must be SSE-formatted: start with "data: " and end with "\n\n"
+        for event in events:
+            assert event.startswith(
+                "data: "
+            ), f"SSE event must start with 'data: ', got: {event[:40]}"
+            assert event.endswith("\n\n"), f"SSE event must end with '\\n\\n'"
+
+        # Parse events to verify structure
+        import json
+
+        parsed_events = [json.loads(e.removeprefix("data: ").strip()) for e in events]
+
+        # First event should be a step event
+        assert parsed_events[0]["event"] == "step"
+        assert parsed_events[0]["data"]["step_index"] == 0
+
+        # Last event should be complete
+        assert parsed_events[-1]["event"] == "complete"
+
+    @pytest.mark.asyncio
+    async def test_stream_events_for_multi_step_session(self) -> None:
+        """Multi-step sessions should yield one step event per step plus complete."""
+        from hr_advisory.api.routers.shadow import _generate_sse_events
+
+        steps = [
+            PaceStep(
+                description=f"Step {i}",
+                tool_module="employees",
+                tool_action="list",
+                method="GET",
+                path="/employees",
+                params={},
+            )
+            for i in range(3)
+        ]
+        session = self.mgr.create_session(
+            user_id="user1",
+            intent_module="employees",
+            intent_action="list",
+            confirmation_message="Multi-step test",
+            steps=steps,
+        )
+        self.mgr.confirm_session(session.id)
+
+        events: list[str] = []
+        async for event in _generate_sse_events(session.id, "fake-jwt", self.mgr):
+            events.append(event)
+
+        import json
+
+        parsed = [json.loads(e.removeprefix("data: ").strip()) for e in events]
+
+        # Should have at least 3 step events + 1 complete
+        step_events = [e for e in parsed if e["event"] == "step"]
+        assert len(step_events) == 3, f"Expected 3 step events, got {len(step_events)}"
+
+        complete_events = [e for e in parsed if e["event"] == "complete"]
+        assert len(complete_events) == 1
+
+    @pytest.mark.asyncio
+    async def test_stream_returns_error_for_missing_session(self) -> None:
+        """Non-existent session should yield an error event."""
+        from hr_advisory.api.routers.shadow import _generate_sse_events
+
+        events: list[str] = []
+        async for event in _generate_sse_events("nonexistent-id", "fake-jwt", self.mgr):
+            events.append(event)
+
+        import json
+
+        assert len(events) >= 1
+        parsed = json.loads(events[0].removeprefix("data: ").strip())
+        assert parsed["event"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_stream_step_events_contain_status(self) -> None:
+        """Each step event must contain the step's execution status."""
+        from hr_advisory.api.routers.shadow import _generate_sse_events
+
+        step = PaceStep(
+            description="Create record",
+            tool_module="employees",
+            tool_action="create",
+            method="POST",
+            path="/employees",
+            params={"name": "Test"},
+        )
+        session = self.mgr.create_session(
+            user_id="user1",
+            intent_module="employees",
+            intent_action="create",
+            confirmation_message="Create employee",
+            steps=[step],
+        )
+        self.mgr.confirm_session(session.id)
+
+        events: list[str] = []
+        async for event in _generate_sse_events(session.id, "fake-jwt", self.mgr):
+            events.append(event)
+
+        import json
+
+        step_event = json.loads(events[0].removeprefix("data: ").strip())
+        assert step_event["event"] == "step"
+        assert "status" in step_event["data"]
+        assert step_event["data"]["status"] in ("executing", "done", "failed")
+
+    @pytest.mark.asyncio
+    async def test_stream_complete_event_has_session_data(self) -> None:
+        """The complete event must include session result data."""
+        from hr_advisory.api.routers.shadow import _generate_sse_events
+
+        step = PaceStep(
+            description="Read employees",
+            tool_module="employees",
+            tool_action="list",
+            method="GET",
+            path="/employees",
+            params={},
+        )
+        session = self.mgr.create_session(
+            user_id="user1",
+            intent_module="employees",
+            intent_action="list",
+            confirmation_message="List employees",
+            steps=[step],
+        )
+        self.mgr.confirm_session(session.id)
+
+        events: list[str] = []
+        async for event in _generate_sse_events(session.id, "fake-jwt", self.mgr):
+            events.append(event)
+
+        import json
+
+        complete_event = json.loads(events[-1].removeprefix("data: ").strip())
+        assert complete_event["event"] == "complete"
+        assert "session_id" in complete_event["data"]
+        assert "status" in complete_event["data"]
+
+
+# =========================================================================
+# File Upload Tests (Task 4 — shadow/upload endpoint)
+# =========================================================================
+
+
+class TestUploadRouting:
+    """File upload routing for attachment intents."""
+
+    def test_valid_attachment_intents(self) -> None:
+        """All supported attachment intents must be recognized."""
+        from hr_advisory.api.routers.shadow import _SUPPORTED_ATTACHMENT_INTENTS
+
+        expected = {"bulk_import", "document_upload", "receipt_upload", "payroll_import"}
+        assert expected == _SUPPORTED_ATTACHMENT_INTENTS
+
+    @pytest.mark.asyncio
+    async def test_bulk_import_intent_detection(self) -> None:
+        """Intent classifier must detect bulk_import from CSV keywords."""
+        classifier = ShadowIntentClassifier()
+        with patch.dict("os.environ", {"OPENAI_API_KEY": ""}):
+            intent = await classifier.classify(
+                "I want to upload a CSV of new employees",
+                page_context="employees",
+            )
+        assert intent.has_attachment is True
+        assert intent.attachment_intent == "bulk_import"
+
+    @pytest.mark.asyncio
+    async def test_receipt_upload_intent_detection(self) -> None:
+        """Intent classifier must detect receipt_upload from receipt keywords."""
+        classifier = ShadowIntentClassifier()
+        with patch.dict("os.environ", {"OPENAI_API_KEY": ""}):
+            intent = await classifier.classify(
+                "upload receipt for my taxi claim",
+                page_context="claims",
+            )
+        assert intent.has_attachment is True
+        assert intent.attachment_intent == "receipt_upload"
+
+    @pytest.mark.asyncio
+    async def test_document_upload_intent_detection(self) -> None:
+        """Intent classifier must detect document_upload from doc keywords."""
+        classifier = ShadowIntentClassifier()
+        with patch.dict("os.environ", {"OPENAI_API_KEY": ""}):
+            intent = await classifier.classify(
+                "upload a contract document for new hire",
+                page_context="documents",
+            )
+        assert intent.has_attachment is True
+        assert intent.attachment_intent == "document_upload"
+
+    @pytest.mark.asyncio
+    async def test_upload_handler_rejects_unsupported_intent(self) -> None:
+        """Upload handler must raise ValueError for unknown attachment intents."""
+        from hr_advisory.api.routers.shadow import _route_upload
+
+        with pytest.raises(ValueError, match="Unsupported attachment intent"):
+            await _route_upload(
+                attachment_intent="nonexistent_intent",
+                file_content=b"test",
+                file_name="test.csv",
+                content_type="text/csv",
+                company_id=1,
+                user_id=1,
+            )
+
+    @pytest.mark.asyncio
+    async def test_upload_handler_bulk_import_csv_preview(self) -> None:
+        """bulk_import intent with CSV content must return a preview dict."""
+        from hr_advisory.api.routers.shadow import _route_upload
+
+        csv_content = b"name,email,designation,department\nJohn Doe,john@example.com,Engineer,Engineering\nJane Smith,jane@example.com,Designer,Design"
+
+        result = await _route_upload(
+            attachment_intent="bulk_import",
+            file_content=csv_content,
+            file_name="employees.csv",
+            content_type="text/csv",
+            company_id=1,
+            user_id=1,
+        )
+
+        assert "records" in result
+        assert "total" in result
+        assert "valid" in result
+        assert result["total"] == 2
+        assert result["valid"] == 2
+
+    @pytest.mark.asyncio
+    async def test_upload_handler_bulk_import_validates_rows(self) -> None:
+        """bulk_import must validate rows and flag errors."""
+        from hr_advisory.api.routers.shadow import _route_upload
+
+        # Missing email in second row
+        csv_content = b"name,email\nAlice,alice@test.com\nBob,"
+
+        result = await _route_upload(
+            attachment_intent="bulk_import",
+            file_content=csv_content,
+            file_name="employees.csv",
+            content_type="text/csv",
+            company_id=1,
+            user_id=1,
+        )
+
+        assert result["total"] == 2
+        assert result["valid"] == 1
+        assert result["invalid"] == 1
+
+    @pytest.mark.asyncio
+    async def test_upload_handler_document_upload(self) -> None:
+        """document_upload intent must return a confirmation preview."""
+        from hr_advisory.api.routers.shadow import _route_upload
+
+        result = await _route_upload(
+            attachment_intent="document_upload",
+            file_content=b"%PDF-1.4 fake pdf content",
+            file_name="contract.pdf",
+            content_type="application/pdf",
+            company_id=1,
+            user_id=1,
+        )
+
+        assert result["action"] == "document_upload"
+        assert result["file_name"] == "contract.pdf"
+        assert result["file_size"] > 0
+
+    @pytest.mark.asyncio
+    async def test_upload_handler_receipt_upload(self) -> None:
+        """receipt_upload intent must return a confirmation preview."""
+        from hr_advisory.api.routers.shadow import _route_upload
+
+        result = await _route_upload(
+            attachment_intent="receipt_upload",
+            file_content=b"\x89PNG fake image",
+            file_name="receipt.png",
+            content_type="image/png",
+            company_id=1,
+            user_id=1,
+        )
+
+        assert result["action"] == "receipt_upload"
+        assert result["file_name"] == "receipt.png"
+
+    @pytest.mark.asyncio
+    async def test_upload_handler_payroll_import(self) -> None:
+        """payroll_import intent must return a preview similar to bulk_import."""
+        from hr_advisory.api.routers.shadow import _route_upload
+
+        csv_content = b"employee_id,basic_salary,allowance\n1,5000,500\n2,6000,600"
+
+        result = await _route_upload(
+            attachment_intent="payroll_import",
+            file_content=csv_content,
+            file_name="payroll.csv",
+            content_type="text/csv",
+            company_id=1,
+            user_id=1,
+        )
+
+        assert result["action"] == "payroll_import"
+        assert result["total"] == 2
