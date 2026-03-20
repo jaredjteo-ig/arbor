@@ -424,75 +424,113 @@ _SYSTEM_PROMPT_LEAK_MARKERS: list[str] = [
 # ── Screening functions ──────────────────────────────────────
 
 
+_SCOPE_BLOCK_RESPONSE = ScreeningOutput(
+    result=ScreeningResult.BLOCK,
+    reason=(
+        "I can only help with HR and employment matters in Singapore — "
+        "things like payroll, leave, hiring, termination, CPF, and workplace policies. "
+        "Could you rephrase your question as a workplace or employment query?"
+    ),
+    matched_patterns=["llm_scope_classifier"],
+    alternative_guidance=(
+        "Try asking about topics like: employee leave entitlements, "
+        "CPF contributions, notice periods, overtime rules, work permits, "
+        "or any other Singapore employment matter."
+    ),
+)
+
+_SCOPE_CLASSIFICATION_PROMPT = (
+    "You are a scope classifier for a Singapore HR advisory platform.\n"
+    "Determine if the following user query is about HR, employment, payroll, "
+    "leave, workplace, hiring, termination, CPF, work passes, labour law, "
+    "or any other workplace/employment topic — even indirectly.\n\n"
+    "Answer ONLY 'YES' or 'NO'. Nothing else.\n\n"
+    "Examples:\n"
+    "- 'How many days of annual leave?' → YES\n"
+    "- 'Write me a poem' → NO\n"
+    "- 'Can I fire someone during MC?' → YES\n"
+    "- 'What is the weather?' → NO\n"
+    "- 'boss never pay OT how?' → YES\n"
+    "- 'Help me debug Python code' → NO\n"
+    "- 'What benefits do I get?' → YES\n"
+    "- 'Tell me a joke' → NO\n"
+    "- 'How to calculate CPF?' → YES\n"
+    "- 'Recommend a restaurant' → NO\n\n"
+    "Query: {query}\n"
+    "Answer:"
+)
+
+
 def screen_scope(query: str) -> ScreeningOutput:
     """Check if a query is within the HR/employment advisory scope.
 
-    Uses a two-stage approach:
-    1. Fast keyword whitelist — if any HR keyword matches, PASS immediately
-    2. Off-topic blacklist — if a strong off-topic pattern matches, BLOCK
+    Uses an LLM classifier (gpt-5-mini, max_tokens=3, temperature=0)
+    to determine intent. Cost: ~$0.0001 per call. Saves ~$0.01+ per
+    blocked off-topic query that would otherwise enter the full pipeline.
 
-    Returns PASS for in-scope queries, BLOCK for clearly off-topic ones.
-    Ambiguous queries (no keyword match, no off-topic match) are PASSED
-    with a note — the specialist agents will handle them.
+    Falls back to PASS if the LLM is unavailable (fail-open for availability).
     """
-    import unicodedata
-
-    # Normalize Unicode (NFKC) and strip zero-width characters for bypass prevention
-    query_clean = unicodedata.normalize("NFKC", query)
-    query_clean = re.sub(r"[\u200b\u200c\u200d\ufeff\u00ad]", "", query_clean)
-    query_lower = query_clean.lower()
-
-    # Stage 1: Check if any HR keyword appears as a whole word in the query
-    for keyword in _HR_SCOPE_KEYWORDS:
-        # Use word boundary for short keywords to avoid false matches
-        if len(keyword) <= 3:
-            if re.search(r"\b" + re.escape(keyword) + r"\b", query_lower):
-                return ScreeningOutput(
-                    result=ScreeningResult.PASS,
-                    reason=f"In-scope: matched keyword '{keyword}'",
-                    matched_patterns=[keyword],
-                )
-        elif keyword in query_lower:
-            return ScreeningOutput(
-                result=ScreeningResult.PASS,
-                reason=f"In-scope: matched keyword '{keyword}'",
-                matched_patterns=[keyword],
-            )
-
-    # Stage 2: Check off-topic blacklist patterns
-    for pattern, _ in _OFF_TOPIC_PATTERNS:
-        if re.search(pattern, query):
-            return ScreeningOutput(
-                result=ScreeningResult.BLOCK,
-                reason=(
-                    "I can only help with HR and employment matters in Singapore — "
-                    "things like payroll, leave, hiring, termination, CPF, and workplace policies. "
-                    "Could you rephrase your question as a workplace or employment query?"
-                ),
-                matched_patterns=[pattern],
-                alternative_guidance=(
-                    "Try asking about topics like: employee leave entitlements, "
-                    "CPF contributions, notice periods, overtime rules, work permits, "
-                    "or any other Singapore employment matter."
-                ),
-            )
-
-    # Stage 3: Ambiguous — no HR keyword and no off-topic pattern
-    # For short queries, be more lenient (might be conversational)
-    if len(query.split()) <= 3:
+    # Skip scope check for very short greetings (1-2 words)
+    stripped = query.strip()
+    if len(stripped.split()) <= 2 and len(stripped) < 20:
         return ScreeningOutput(
             result=ScreeningResult.PASS,
-            reason="Short query — allowing through for context-based handling.",
+            reason="Short query — allowing through.",
             matched_patterns=[],
         )
 
-    # For longer queries with no HR keywords, warn but allow
-    # (the specialist agents have their own domain constraints)
-    return ScreeningOutput(
-        result=ScreeningResult.WARN,
-        reason="No HR keywords detected — query may be off-topic.",
-        matched_patterns=[],
-    )
+    try:
+        import os
+
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            # No API key — can't classify, fail open
+            return ScreeningOutput(
+                result=ScreeningResult.PASS,
+                reason="Scope classifier unavailable (no API key) — allowing through.",
+                matched_patterns=[],
+            )
+
+        import openai
+
+        client = openai.OpenAI(api_key=api_key)
+        model = os.environ.get(
+            "OPENAI_DEV_MODEL", os.environ.get("OPENAI_PROD_MODEL", "gpt-5-mini-2025-08-07")
+        )
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": _SCOPE_CLASSIFICATION_PROMPT.format(query=query)},
+            ],
+            max_tokens=3,
+            temperature=0,
+        )
+
+        raw_content = response.choices[0].message.content or ""
+        answer = raw_content.strip().upper()
+
+        if answer.startswith("NO"):
+            return _SCOPE_BLOCK_RESPONSE
+
+        # YES or ambiguous → allow through
+        return ScreeningOutput(
+            result=ScreeningResult.PASS,
+            reason=f"LLM scope classifier: {answer}",
+            matched_patterns=["llm_scope_classifier"],
+        )
+
+    except Exception as e:
+        # LLM call failed — fail open (allow the query through)
+        # The specialist agents have their own domain constraints as backstop
+        import logging
+
+        logging.getLogger(__name__).warning("Scope classifier failed: %s — allowing through", e)
+        return ScreeningOutput(
+            result=ScreeningResult.PASS,
+            reason=f"Scope classifier error — allowing through: {type(e).__name__}",
+            matched_patterns=[],
+        )
 
 
 def screen_injection(query: str, user_id: Optional[str] = None) -> ScreeningOutput:
