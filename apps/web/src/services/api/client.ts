@@ -58,9 +58,13 @@ export async function getValidAccessToken(): Promise<string | null> {
     const payload = JSON.parse(atob(token.split(".")[1]));
     const expiresAt = (payload.exp ?? 0) * 1000;
     const fiveMinutes = 5 * 60 * 1000;
+    const maxLifetime = 24 * 60 * 60 * 1000; // 24h sanity bound
 
-    if (Date.now() > expiresAt - fiveMinutes) {
-      // Token expired or expiring soon — refresh
+    const needsRefresh =
+      Date.now() > expiresAt - fiveMinutes || // expiring soon
+      expiresAt - Date.now() > maxLifetime; // suspiciously long-lived
+
+    if (needsRefresh) {
       try {
         const newToken = await refreshAccessToken();
         return newToken;

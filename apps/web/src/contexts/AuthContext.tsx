@@ -66,62 +66,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /* Proactive token refresh — refresh 5 minutes before expiry.
      This prevents the "silent 401" problem where background requests
-     fail because the token expired between user interactions. */
+     fail because the token expired between user interactions.
+
+     Uses refreshAccessToken() singleton from client.ts to avoid
+     concurrent refresh collisions with apiClient/SSE retry paths. */
   useEffect(() => {
-    function scheduleRefresh() {
+    let cancelled = false;
+
+    function scheduleRefresh(): ReturnType<typeof setTimeout> | undefined {
       const accessToken = getStoredToken("access_token");
-      const refreshToken = getStoredToken("refresh_token");
-      if (!accessToken || !refreshToken) return undefined;
+      if (!accessToken || !getStoredToken("refresh_token")) return undefined;
 
       try {
         const payload = JSON.parse(atob(accessToken.split(".")[1]));
         const expiresAt = (payload.exp ?? 0) * 1000;
+        const maxLifetime = 24 * 60 * 60 * 1000; // 24h sanity bound
+        if (expiresAt - Date.now() > maxLifetime) {
+          // Suspiciously long-lived token — force refresh
+          doRefresh();
+          return undefined;
+        }
+
         const refreshAt = expiresAt - 5 * 60 * 1000; // 5 min before expiry
         const delay = refreshAt - Date.now();
 
         if (delay <= 0) {
-          // Already expired or expiring now — refresh immediately
-          authApi
-            .refresh(refreshToken)
-            .then((tokens) => {
-              storeTokens(
-                tokens.access_token,
-                tokens.refresh_token || refreshToken,
-              );
-            })
-            .catch(() => {
-              clearTokens();
-              setState({
-                user: null,
-                isAuthenticated: false,
-                isLoading: false,
-              });
-            });
+          doRefresh();
           return undefined;
         }
 
-        // Schedule refresh before expiry
-        return setTimeout(async () => {
-          try {
-            const tokens = await authApi.refresh(refreshToken);
-            storeTokens(
-              tokens.access_token,
-              tokens.refresh_token || refreshToken,
-            );
-            // Re-schedule for the new token
-            scheduleRefresh();
-          } catch {
-            clearTokens();
-            setState({ user: null, isAuthenticated: false, isLoading: false });
-          }
-        }, delay);
+        return setTimeout(() => doRefresh(), delay);
       } catch {
         return undefined;
       }
     }
 
+    async function doRefresh() {
+      if (cancelled) return;
+      try {
+        // Read fresh refresh token inside callback, not from closure
+        const { refreshAccessToken } = await import("@/services/api/client");
+        const newToken = await refreshAccessToken();
+        if (cancelled) return;
+        // Re-schedule for the new token
+        if (newToken) scheduleRefresh();
+      } catch {
+        if (cancelled) return;
+        clearTokens();
+        setState({ user: null, isAuthenticated: false, isLoading: false });
+      }
+    }
+
     const timer = scheduleRefresh();
     return () => {
+      cancelled = true;
       if (timer) clearTimeout(timer);
     };
   }, [state.isAuthenticated]);
