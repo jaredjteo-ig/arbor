@@ -648,10 +648,17 @@ async def advisory_query(
         llm_context=llm_context,
     )
     if llm_result is not None:
-        response_text = llm_result["response_text"]
-        confidence = llm_result.get("confidence", UNCERTAINTY_DEFAULTS["confidence"])
-        risk_tier = llm_result.get("risk_tier", _classify_risk_tier(domains, confidence))
-        response_degraded = llm_result.get("degraded", False)
+        # Guard against non-dict returns (e.g., timeout fallback returning string)
+        if isinstance(llm_result, str):
+            response_text = llm_result
+            confidence = 0.6
+            risk_tier = _classify_risk_tier(domains, confidence)
+            response_degraded = True
+        else:
+            response_text = llm_result.get("response_text", "")
+            confidence = llm_result.get("confidence", UNCERTAINTY_DEFAULTS["confidence"])
+            risk_tier = llm_result.get("risk_tier", _classify_risk_tier(domains, confidence))
+            response_degraded = llm_result.get("degraded", False)
         logger.info(
             "Advisory response generated via LLM pipeline (confidence=%.2f, degraded=%s)",
             confidence,
@@ -1651,7 +1658,14 @@ async def _async_run_llm_advisory(
         )
     except asyncio.TimeoutError:
         logger.warning("LLM advisory pipeline timed out after 60s for query: %.100s", query)
-        return _generate_grounded_response(query, domains, provisions)
+        fallback_text = _generate_grounded_response(query, domains, provisions)
+        return {
+            "response_text": fallback_text,
+            "risk_tier": "amber",
+            "confidence": 0.6,
+            "citations": [],
+            "degraded": True,
+        }
 
 
 def _generate_grounded_response(
