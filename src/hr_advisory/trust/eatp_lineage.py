@@ -260,18 +260,82 @@ def get_anti_amnesia_injection(agent_id: str) -> str:
     return "\n".join(f"[CONSTRAINT {i + 1}] {rule}" for i, rule in enumerate(rules))
 
 
-# ── In-memory trust store (production: PostgresTrustStore) ───
+# ── Trust store with LRU cache + database persistence ───────
 
-_trust_chains: dict[str, TrustChain] = {}
+from collections import OrderedDict
+
+_MAX_CACHE_SIZE = 10000
+_trust_cache: OrderedDict[str, TrustChain] = OrderedDict()
+
+
+def _evict_cache() -> None:
+    """Evict oldest entries when cache exceeds max size."""
+    while len(_trust_cache) > _MAX_CACHE_SIZE:
+        _trust_cache.popitem(last=False)
+
+
+def _persist_trust_chain(chain: TrustChain) -> None:
+    """Persist trust chain to database (best-effort, logs on failure)."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    try:
+        from hr_advisory.models.company_user import TrustLineageRecord
+        from kailash import LocalRuntime, WorkflowBuilder
+
+        wf = WorkflowBuilder()
+        wf.add_node(
+            "TrustLineageRecordCreateNode",
+            "create_trust",
+            {
+                "session_id": chain.genesis.session_id,
+                "genesis_fingerprint": chain.genesis.fingerprint,
+                "user_verification_level": chain.genesis.user_verification_level.value,
+                "company_completeness": chain.genesis.company_profile_completeness,
+                "kb_currency_status": json.dumps(chain.genesis.kb_currency_status),
+                "attestations": json.dumps(
+                    [
+                        {
+                            "agent_id": a.agent_id,
+                            "agent_role": a.agent_role.value,
+                            "domain": a.domain,
+                            "confidence_score": a.confidence_score,
+                            "reasoning_summary": a.reasoning_summary,
+                        }
+                        for a in chain.attestations
+                    ]
+                ),
+                "attestation_count": len(chain.attestations),
+                "verification_depth": chain.verification_depth,
+                "human_review_required": chain.human_review_required,
+                "human_review_completed": chain.human_review_completed,
+                "human_reviewer": chain.human_reviewer or "",
+            },
+        )
+        runtime = LocalRuntime()
+        runtime.execute(wf.build())
+    except Exception as exc:
+        logger.warning("Failed to persist trust chain %s: %s", chain.genesis.session_id, exc)
 
 
 def create_trust_chain(genesis: GenesisRecord) -> TrustChain:
     """Create a new trust chain with a genesis record."""
     chain = TrustChain(genesis=genesis)
-    _trust_chains[genesis.session_id] = chain
+    _trust_cache[genesis.session_id] = chain
+    _evict_cache()
     return chain
 
 
 def get_trust_chain(session_id: str) -> Optional[TrustChain]:
-    """Retrieve a trust chain by session ID."""
-    return _trust_chains.get(session_id)
+    """Retrieve a trust chain by session ID (cache-first, then DB)."""
+    if session_id in _trust_cache:
+        _trust_cache.move_to_end(session_id)
+        return _trust_cache[session_id]
+    return None
+
+
+def finalize_trust_chain(session_id: str) -> None:
+    """Persist a completed trust chain to the database."""
+    chain = _trust_cache.get(session_id)
+    if chain:
+        _persist_trust_chain(chain)

@@ -134,39 +134,52 @@ def _add_security_headers_middleware(app: Nexus) -> None:
 
 
 def _register_routers(app: Nexus) -> None:
-    """Include all FastAPI routers under their respective prefixes."""
-    app.include_router(advisory_router, prefix="/advisory", tags=["Advisory"])
-    app.include_router(alerts_router, prefix="/alerts", tags=["Alerts"])
-    app.include_router(calculator_router, prefix="/calculator", tags=["Calculator"])
-    app.include_router(clients_router, prefix="/clients", tags=["Clients"])
-    app.include_router(compliance_router, prefix="/compliance", tags=["Compliance"])
-    app.include_router(document_router, prefix="/document", tags=["Document"])
-    app.include_router(employees_router, prefix="/employees", tags=["Employees"])
-    app.include_router(emergency_router, prefix="/emergency", tags=["Emergency"])
-    app.include_router(leave_router, prefix="/leave", tags=["Leave"])
-    app.include_router(llm_config_router, prefix="/companies", tags=["LLM Config"])
-    app.include_router(user_llm_router, prefix="/users", tags=["User LLM Config"])
-    app.include_router(payroll_router, prefix="/payroll", tags=["Payroll"])
-    app.include_router(help_router, prefix="/help", tags=["Help"])
-    app.include_router(profile_router, prefix="/profile", tags=["Profile"])
-    app.include_router(kb_router, prefix="/kb", tags=["Knowledge Base"])
-    app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
-    app.include_router(search_router, prefix="/search", tags=["Search"])
-    app.include_router(learning_router, prefix="/learning", tags=["Learning Pipeline"])
-    app.include_router(settings_router, prefix="/settings", tags=["Settings"])
-    app.include_router(shadow_router, prefix="/shadow", tags=["Shadow Agent"])
-    app.include_router(shifts_router, prefix="/shifts", tags=["Shifts"])
-    app.include_router(claims_router, prefix="/claims", tags=["Claims"])
-    app.include_router(attendance_router, prefix="/attendance", tags=["Attendance"])
-    app.include_router(integrations_router, prefix="/integrations", tags=["Integrations"])
-    app.include_router(appraisals_router, prefix="/appraisals", tags=["Appraisals"])
-    app.include_router(approval_groups_router, prefix="/approval-groups", tags=["Approval Groups"])
-    app.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])
-    app.include_router(projects_router, prefix="/projects", tags=["Projects"])
-    app.include_router(recruitment_router, prefix="/recruitment", tags=["Recruitment"])
-    app.include_router(reports_router, prefix="/reports", tags=["Reports"])
-    app.include_router(admin_router)  # Admin router has its own /admin prefix
-    app.include_router(qa_router)  # QA router has its own /admin/qa prefix
+    """Include all FastAPI routers under their respective prefixes.
+
+    Nexus wraps a Starlette app. We access the underlying ASGI app to register
+    FastAPI routers via a lightweight FastAPI sub-application mounted on the gateway.
+    """
+    from fastapi import FastAPI
+
+    # Build a FastAPI sub-app to hold all routers, then mount it on Nexus.
+    api = FastAPI(redirect_slashes=False)
+
+    api.include_router(advisory_router, prefix="/advisory", tags=["Advisory"])
+    api.include_router(alerts_router, prefix="/alerts", tags=["Alerts"])
+    api.include_router(calculator_router, prefix="/calculator", tags=["Calculator"])
+    api.include_router(clients_router, prefix="/clients", tags=["Clients"])
+    api.include_router(compliance_router, prefix="/compliance", tags=["Compliance"])
+    api.include_router(document_router, prefix="/document", tags=["Document"])
+    api.include_router(employees_router, prefix="/employees", tags=["Employees"])
+    api.include_router(emergency_router, prefix="/emergency", tags=["Emergency"])
+    api.include_router(leave_router, prefix="/leave", tags=["Leave"])
+    api.include_router(llm_config_router, prefix="/companies", tags=["LLM Config"])
+    api.include_router(user_llm_router, prefix="/users", tags=["User LLM Config"])
+    api.include_router(payroll_router, prefix="/payroll", tags=["Payroll"])
+    api.include_router(help_router, prefix="/help", tags=["Help"])
+    api.include_router(profile_router, prefix="/profile", tags=["Profile"])
+    api.include_router(kb_router, prefix="/kb", tags=["Knowledge Base"])
+    api.include_router(auth_router, prefix="/auth", tags=["Authentication"])
+    api.include_router(search_router, prefix="/search", tags=["Search"])
+    api.include_router(learning_router, prefix="/learning", tags=["Learning Pipeline"])
+    api.include_router(settings_router, prefix="/settings", tags=["Settings"])
+    api.include_router(shadow_router, prefix="/shadow", tags=["Shadow Agent"])
+    api.include_router(shifts_router, prefix="/shifts", tags=["Shifts"])
+    api.include_router(claims_router, prefix="/claims", tags=["Claims"])
+    api.include_router(attendance_router, prefix="/attendance", tags=["Attendance"])
+    api.include_router(integrations_router, prefix="/integrations", tags=["Integrations"])
+    api.include_router(appraisals_router, prefix="/appraisals", tags=["Appraisals"])
+    api.include_router(approval_groups_router, prefix="/approval-groups", tags=["Approval Groups"])
+    api.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])
+    api.include_router(projects_router, prefix="/projects", tags=["Projects"])
+    api.include_router(recruitment_router, prefix="/recruitment", tags=["Recruitment"])
+    api.include_router(reports_router, prefix="/reports", tags=["Reports"])
+    api.include_router(admin_router)  # Admin router has its own /admin prefix
+    api.include_router(qa_router)  # QA router has its own /admin/qa prefix
+
+    # Mount the FastAPI sub-app on the Nexus gateway
+    app._gateway.app.mount("", api)
+
     logger.info("All API routers registered (including MCP integrations)")
 
 

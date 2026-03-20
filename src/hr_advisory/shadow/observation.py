@@ -108,7 +108,41 @@ class ObservationStore:
             action_type,
         )
 
+        # Persist to database (best-effort)
+        self._persist_observation(user_id, page, action_type, details, session_id)
+
         return entry
+
+    def _persist_observation(
+        self,
+        user_id: str,
+        page: str,
+        action_type: str,
+        details: dict[str, Any] | None,
+        session_id: str,
+    ) -> None:
+        """Persist observation to database (best-effort, logs on failure)."""
+        try:
+            import json
+
+            from kailash import LocalRuntime, WorkflowBuilder
+
+            wf = WorkflowBuilder()
+            wf.add_node(
+                "UserObservationCreateNode",
+                "create_obs",
+                {
+                    "user_id": int(user_id) if user_id.isdigit() else 0,
+                    "session_id": session_id,
+                    "page": page,
+                    "action_type": action_type,
+                    "details": json.dumps(details or {}),
+                },
+            )
+            runtime = LocalRuntime()
+            runtime.execute(wf.build())
+        except Exception as exc:
+            logger.warning("Failed to persist observation: %s", exc)
 
     def get_user_observations(
         self,

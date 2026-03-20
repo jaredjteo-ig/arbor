@@ -5,7 +5,7 @@ to define models or build workflows.
 """
 
 import os
-from dataflow import DataFlow
+from dataflow import DataFlow, DataFlowConfig
 
 
 def get_database_url() -> str:
@@ -16,12 +16,16 @@ def get_database_url() -> str:
     )
 
 
+_url = get_database_url()
+
 db = DataFlow(
-    database_url=get_database_url(),
-    auto_migrate=True,
-    pool_size=20,
-    pool_max_overflow=30,
-    pool_recycle=3600,
-    echo=False,
-    monitoring=True,
+    database_url=_url,
+    config=DataFlowConfig(
+        database_url=_url,
+        max_connections=20,
+        min_connections=1,
+        connect_timeout_secs=30,
+        max_lifetime_secs=3600,
+        auto_migrate=True,
+    ),
 )

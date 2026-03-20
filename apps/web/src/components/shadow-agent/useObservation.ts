@@ -159,6 +159,41 @@ function generateInsights(visits: PageVisit[]): ObservationInsight[] {
   return insights;
 }
 
+/* -- Backend reporting --------------------------------------------- */
+
+import { getValidAccessToken } from "@/services/api/client";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+/**
+ * Report a page observation to the backend (fire-and-forget).
+ * Uses the shadow/observe endpoint to persist navigation data.
+ */
+async function reportObservation(page: string): Promise<void> {
+  try {
+    const token = await getValidAccessToken();
+    if (!token) return;
+
+    fetch(`${API_BASE}/shadow/observe`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        page,
+        action_type: "page_visit",
+        details: { label: getPageLabel(page) },
+        timestamp: new Date().toISOString(),
+      }),
+    }).catch(() => {
+      // Silently ignore — observation is best-effort
+    });
+  } catch {
+    // No token or network error — ignore
+  }
+}
+
 /* -- Hook ---------------------------------------------------------- */
 
 /**
@@ -168,7 +203,8 @@ function generateInsights(visits: PageVisit[]): ObservationInsight[] {
  * insights when patterns are detected (e.g., visiting the same page
  * repeatedly).
  *
- * Session-scoped only -- no persistence across sessions.
+ * Persists observations to backend via /shadow/observe for cross-session
+ * learning and shadow agent memory distillation.
  */
 export function useObservation(): UseObservationReturn {
   const pathname = usePathname();
@@ -182,7 +218,7 @@ export function useObservation(): UseObservationReturn {
     setIsEnabledState(getEnabledState());
   }, []);
 
-  // Record page visit on navigation
+  // Record page visit on navigation and report to backend
   useEffect(() => {
     if (!isEnabled) return;
 
@@ -202,6 +238,9 @@ export function useObservation(): UseObservationReturn {
 
       return updated;
     });
+
+    // Report observation to backend (fire-and-forget)
+    reportObservation(pathname);
   }, [pathname, isEnabled]);
 
   const setEnabled = useCallback((value: boolean) => {

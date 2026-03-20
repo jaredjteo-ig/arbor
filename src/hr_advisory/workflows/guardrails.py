@@ -383,11 +383,12 @@ _CONTENT_FILTER_PATTERNS: list[tuple[str, str]] = [
     ),
 ]
 
-# ── In-memory store for flagged queries ──────────────────────
+# ── Flagged queries store (LRU cache + database persistence) ─
 
-from collections import deque
+from collections import OrderedDict, deque
 
-_flagged_queries: deque[FlaggedQuery] = deque(maxlen=10000)
+_MAX_FLAGGED_CACHE = 10000
+_flagged_queries: deque[FlaggedQuery] = deque(maxlen=_MAX_FLAGGED_CACHE)
 
 
 # ── System prompt security footer ─────────────────────────────
@@ -677,9 +678,12 @@ def _log_flagged_query(
     output: ScreeningOutput,
     user_id: Optional[str],
 ) -> None:
-    """Log a flagged query for admin review."""
+    """Log a flagged query for admin review (in-memory + database)."""
     import hashlib
+    import json
+    import logging
 
+    logger = logging.getLogger(__name__)
     query_hash = hashlib.sha256(query.encode()).hexdigest()[:12]
     _flagged_queries.append(
         FlaggedQuery(
@@ -691,6 +695,27 @@ def _log_flagged_query(
             timestamp=datetime.now(),
         )
     )
+    # Persist to database (best-effort)
+    try:
+        from kailash import LocalRuntime, WorkflowBuilder
+
+        wf = WorkflowBuilder()
+        wf.add_node(
+            "FlaggedQueryRecordCreateNode",
+            "create_flagged",
+            {
+                "query_hash": query_hash,
+                "user_id": int(user_id) if user_id and user_id.isdigit() else 0,
+                "query_text": query[:2000],
+                "screening_result": output.result.value,
+                "reason": output.reason[:1000],
+                "matched_patterns": json.dumps(output.matched_patterns),
+            },
+        )
+        runtime = LocalRuntime()
+        runtime.execute(wf.build())
+    except Exception as exc:
+        logger.warning("Failed to persist flagged query: %s", exc)
 
 
 def get_flagged_queries(reviewed: Optional[bool] = None) -> list[FlaggedQuery]:

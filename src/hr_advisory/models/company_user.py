@@ -2266,3 +2266,171 @@ class UserLLMConfig:
             {"name": "idx_userllm_active", "fields": ["is_active"]},
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Production persistence models (replacing in-memory stores)
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class ConversationThread:
+    """Persistent advisory conversation thread."""
+
+    user_id: int
+    company_id: int
+    session_id: str = ""
+    subject: str = ""
+    started_at: datetime = datetime.utcnow
+    ended_at: Optional[datetime] = None
+    turn_count: int = 0
+    is_active: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_convthread_user", "fields": ["user_id"]},
+            {"name": "idx_convthread_session", "fields": ["session_id"]},
+            {"name": "idx_convthread_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class ConversationMessage:
+    """Individual message within a conversation thread."""
+
+    thread_id: int
+    sender: str = "user"  # "user" or "agent"
+    text: str = ""
+    entities: str = ""  # JSON
+    domains: str = ""  # JSON list
+    risk_tier: str = "green"
+    confidence_score: Optional[float] = None
+    provisions_cited: str = ""  # JSON list
+    timestamp: datetime = datetime.utcnow
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_convmsg_thread", "fields": ["thread_id"]},
+            {"name": "idx_convmsg_timestamp", "fields": ["timestamp"]},
+        ],
+    }
+
+
+@db.model
+class TrustLineageRecord:
+    """Persistent trust chain record for advisory sessions."""
+
+    session_id: str = ""
+    company_id: int = 0
+    user_id: int = 0
+    genesis_fingerprint: str = ""
+    user_verification_level: str = "standard"
+    company_completeness: float = 0.0
+    kb_currency_status: str = ""  # JSON
+    attestations: str = ""  # JSON list of agent attestations
+    attestation_count: int = 0
+    verification_depth: str = "green"
+    human_review_required: bool = False
+    human_review_completed: bool = False
+    human_reviewer: Optional[str] = None
+    created_at: datetime = datetime.utcnow
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_trustlineage_session", "fields": ["session_id"]},
+            {"name": "idx_trustlineage_company", "fields": ["company_id"]},
+            {"name": "idx_trustlineage_created", "fields": ["created_at"]},
+        ],
+    }
+
+
+@db.model
+class FlaggedQueryRecord:
+    """Persistent record of flagged advisory queries for compliance review."""
+
+    query_hash: str = ""
+    user_id: Optional[int] = None
+    company_id: int = 0
+    query_text: str = ""
+    screening_result: str = ""  # ScreeningResult value
+    reason: str = ""
+    matched_patterns: str = ""  # JSON list
+    reviewed: bool = False
+    reviewer_notes: str = ""
+    reviewed_by: Optional[int] = None
+    reviewed_at: Optional[datetime] = None
+    flagged_at: datetime = datetime.utcnow
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_flaggedquery_hash", "fields": ["query_hash"]},
+            {"name": "idx_flaggedquery_reviewed", "fields": ["reviewed"]},
+            {"name": "idx_flaggedquery_company", "fields": ["company_id"]},
+            {"name": "idx_flaggedquery_flagged", "fields": ["flagged_at"]},
+        ],
+    }
+
+
+@db.model
+class UserObservation:
+    """Shadow agent observation of user behavior."""
+
+    user_id: int
+    company_id: int = 0
+    session_id: str = ""
+    page: str = ""
+    action_type: str = ""  # "page_visit", "click", "form_submit", etc.
+    details: str = ""  # JSON
+    timestamp: datetime = datetime.utcnow
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_obs_user", "fields": ["user_id"]},
+            {"name": "idx_obs_session", "fields": ["session_id"]},
+            {"name": "idx_obs_timestamp", "fields": ["timestamp"]},
+        ],
+    }
+
+
+@db.model
+class UserMemory:
+    """Distilled shadow agent memory per user (themes, patterns, preferences)."""
+
+    user_id: int
+    company_id: int = 0
+    themes: str = ""  # JSON list
+    patterns: str = ""  # JSON list
+    preferences: str = ""  # JSON dict
+    observation_count: int = 0
+    last_distilled: datetime = datetime.utcnow
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_usermem_user", "fields": ["user_id"]},
+            {"name": "idx_usermem_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class ActionHistoryRecord:
+    """Shadow agent action execution history."""
+
+    user_id: int
+    company_id: int = 0
+    session_id: str = ""
+    module: str = ""
+    action: str = ""
+    parameters: str = ""  # JSON
+    success: bool = True
+    error_message: str = ""
+    timestamp: datetime = datetime.utcnow
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_actionhist_user", "fields": ["user_id"]},
+            {"name": "idx_actionhist_module", "fields": ["module"]},
+            {"name": "idx_actionhist_timestamp", "fields": ["timestamp"]},
+        ],
+    }

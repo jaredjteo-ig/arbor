@@ -4,7 +4,8 @@ Stores recent queries, responses, and extracted entities so the
 orchestration pipeline can maintain context across turns within a
 single advisory session.
 
-Backed by Kaizen BufferMemory with a configurable turn window.
+Backed by Kaizen BufferMemory for hot context, with database persistence
+via ConversationThread/ConversationMessage DataFlow models.
 """
 
 import json
@@ -49,8 +50,10 @@ class ShortTermMemory:
         risk_tier: str = "green",
         provisions_cited: Optional[List[Dict[str, Any]]] = None,
         confidence_score: Optional[float] = None,
+        user_id: Optional[int] = None,
+        company_id: Optional[int] = None,
     ) -> None:
-        """Persist one query-response turn."""
+        """Persist one query-response turn (in-memory + database)."""
         turn: Dict[str, Any] = {
             "user": query,
             "agent": response,
@@ -64,6 +67,125 @@ class ShortTermMemory:
         if confidence_score is not None:
             turn["confidence_score"] = confidence_score
         self._buffer.save_turn(session_id, turn)
+
+        # Persist to database (best-effort)
+        self._persist_turn(
+            session_id=session_id,
+            query=query,
+            response=response,
+            entities=entities,
+            domains=domains,
+            risk_tier=risk_tier,
+            provisions_cited=provisions_cited,
+            confidence_score=confidence_score,
+            user_id=user_id,
+            company_id=company_id,
+        )
+
+    def _persist_turn(
+        self,
+        session_id: str,
+        query: str,
+        response: str,
+        entities: Optional[Dict[str, Any]],
+        domains: Optional[List[str]],
+        risk_tier: str,
+        provisions_cited: Optional[List[Dict[str, Any]]],
+        confidence_score: Optional[float],
+        user_id: Optional[int],
+        company_id: Optional[int],
+    ) -> None:
+        """Persist conversation turn to database (best-effort)."""
+        try:
+            from kailash import LocalRuntime, WorkflowBuilder
+
+            # Ensure thread exists (upsert by session_id)
+            thread_id = self._ensure_thread(session_id, user_id or 0, company_id or 0)
+            if not thread_id:
+                return
+
+            # Save user message
+            wf = WorkflowBuilder()
+            wf.add_node(
+                "ConversationMessageCreateNode",
+                "save_user_msg",
+                {
+                    "thread_id": thread_id,
+                    "sender": "user",
+                    "text": query[:4000],
+                    "entities": json.dumps(entities or {}),
+                    "domains": json.dumps(domains or []),
+                    "risk_tier": risk_tier,
+                },
+            )
+            runtime = LocalRuntime()
+            runtime.execute(wf.build())
+
+            # Save agent message
+            wf2 = WorkflowBuilder()
+            wf2.add_node(
+                "ConversationMessageCreateNode",
+                "save_agent_msg",
+                {
+                    "thread_id": thread_id,
+                    "sender": "agent",
+                    "text": response[:8000],
+                    "entities": json.dumps(entities or {}),
+                    "domains": json.dumps(domains or []),
+                    "risk_tier": risk_tier,
+                    "confidence_score": confidence_score,
+                    "provisions_cited": json.dumps(provisions_cited or []),
+                },
+            )
+            runtime.execute(wf2.build())
+        except Exception as exc:
+            logger.warning("Failed to persist conversation turn: %s", exc)
+
+    def _ensure_thread(self, session_id: str, user_id: int, company_id: int) -> Optional[int]:
+        """Get or create a conversation thread for the session_id."""
+        try:
+            from kailash import LocalRuntime, WorkflowBuilder
+
+            # Try to find existing thread
+            wf = WorkflowBuilder()
+            wf.add_node(
+                "ConversationThreadListNode",
+                "find_thread",
+                {
+                    "filter": {"session_id": session_id},
+                    "limit": 1,
+                    "enable_cache": False,
+                },
+            )
+            runtime = LocalRuntime()
+            results, _ = runtime.execute(wf.build())
+            records = results.get("find_thread", {})
+            if isinstance(records, dict):
+                items = records.get("records", [])
+            else:
+                items = records if isinstance(records, list) else []
+
+            if items:
+                return items[0].get("id")
+
+            # Create new thread
+            wf2 = WorkflowBuilder()
+            wf2.add_node(
+                "ConversationThreadCreateNode",
+                "create_thread",
+                {
+                    "user_id": user_id,
+                    "company_id": company_id,
+                    "session_id": session_id,
+                    "subject": "",
+                },
+            )
+            results2, _ = runtime.execute(wf2.build())
+            created = results2.get("create_thread", {})
+            return created.get("id")
+        except Exception as exc:
+            logger.warning("Failed to ensure conversation thread: %s", exc)
+            return None
 
     def load_context(self, session_id: str) -> Dict[str, Any]:
         """Load conversation context for the session.
