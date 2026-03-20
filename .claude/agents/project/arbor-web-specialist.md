@@ -43,6 +43,16 @@ apps/web/src/
     design-system/        Base design system components
       ChatInput.tsx       Auto-expanding textarea with keyboard hints
     onboarding/           Company onboarding wizard
+    shadow-agent/         Shadow agent intelligence layer
+      ShadowAgentContext.tsx React context + useShadowAgent() hook
+      CommandSurface.tsx  Command bar (Cmd+K), suggested commands, file upload
+      PaceCard.tsx        PACE confirmation flow (cooldown, double confirm, progress)
+      ArborOverlay.tsx    Floating widget, execution dim + progress
+      ArborResult.tsx     Result display with undo toast
+      ArborHistory.tsx    Action history panel
+      ShadowMargin.tsx    Inline compliance annotations
+      ShadowBriefingCard.tsx Morning briefing card
+      InlineAnnotation.tsx Regulatory badge overlays
     shell/                App shell (nav, sidebar, layout)
       SearchResults.tsx   Global search with keyboard navigation
     Providers.tsx         Root providers (React Query, auth, theme)
@@ -50,6 +60,7 @@ apps/web/src/
     client.ts             Base ApiClient with auto 401 retry + token refresh
     sse.ts                SSE streaming client with 401 retry
     advisory.ts           Advisory API service
+    shadow.ts             Shadow agent API service (execute, confirm, undo, history, briefing, nudges)
     kb.ts                 Knowledge base API service
     errors.ts             Error humanisation utility
   hooks/                  Custom React hooks
@@ -134,13 +145,14 @@ const controller = createSSEStream("/advisory/stream", body, {
 
 1. Adding or modifying web UI components
 2. Working on the advisory chat interface or SSE streaming
-3. Modifying the onboarding flow
-4. Updating the design system, tokens, or typography
-5. Adding new pages or routes
-6. Modifying API service layer, SSE client, or hooks
-7. Auth flow changes on the frontend
-8. Accessibility or WCAG compliance work
-9. CSV export or data sanitisation
+3. Working on shadow agent frontend components (CommandSurface, PaceCard, ArborOverlay, etc.)
+4. Modifying the onboarding flow
+5. Updating the design system, tokens, or typography
+6. Adding new pages or routes
+7. Modifying API service layer, SSE client, or hooks
+8. Auth flow changes on the frontend
+9. Accessibility or WCAG compliance work
+10. CSV export or data sanitisation
 
 ## Safety
 

@@ -22,10 +22,10 @@ Arbor is an AI-powered HR advisory platform for Singapore SMEs. It provides sour
 ```
 src/hr_advisory/
   api/              Nexus platform, 23+ FastAPI routers, middleware (auth, rate limiting)
-  api/routers/      auth, advisory, payroll, leave, claims, attendance, shifts, employees,
-                    appraisals, projects, inventory, recruitment, reports, approval_groups,
-                    calculator, compliance, document, kb, profile, search, learning, admin,
-                    integrations
+  api/routers/      auth, advisory, shadow, payroll, leave, claims, attendance, shifts,
+                    employees, appraisals, projects, inventory, recruitment, reports,
+                    approval_groups, calculator, compliance, document, kb, profile, search,
+                    learning, admin, integrations
   agents/           Kaizen agents (orchestrator, specialists, memory, llm_context for BYOK)
   models/           63+ DataFlow models (company, user, KB, payroll, leave, claims, attendance,
                     shifts, appraisals, projects, inventory, recruitment, approval groups,
@@ -91,6 +91,37 @@ The platform includes a comprehensive HRIS engine with 120+ API endpoints across
 | Recruitment | Job listings, candidate pipeline, interviews, feedback, hire-to-employee conversion     |
 | Reports     | 11 report types (payroll, CPF, banks, YTD, variance, leave, claims, attendance, etc.)   |
 | Approvals   | Approval groups, timesheet approval queue, inventory request approval queue             |
+
+## Shadow Agent (Intelligence Layer)
+
+The shadow agent is Arbor's intelligence layer — NOT a chatbot. It understands user intent and executes HR actions through a trust-based confirmation loop (PACE).
+
+### Architecture
+
+- 12 backend modules in `src/hr_advisory/shadow/` (intent classifier, tool registry, executor, PACE manager, entity resolver, workflow composer, observation, memory, briefing, nudges, formatter, scope guard)
+- 13 API endpoints under `/shadow/` prefix (execute, confirm, confirm/stream, cancel, undo, history, context, briefing, nudges, observe, memory, distill, upload)
+- 9 React components in `apps/web/src/components/shadow-agent/`
+- 100+ registered tools across 21 modules (API + MCP)
+- 4 trust tiers: autonomous (reads) < propose (writes) < always_propose (deletes, 5s cooldown) < double_confirm (government/financial, 2-step gate)
+- 465 tests across 10 test files
+
+### Key Modules
+
+- `src/hr_advisory/shadow/intent_classifier.py` — LLM-based (gpt-5-mini) + rule-based fallback
+- `src/hr_advisory/shadow/tool_registry.py` — (module, action) -> API/MCP endpoint mapping
+- `src/hr_advisory/shadow/executor.py` — Async HTTP client, JWT forwarding, error translation
+- `src/hr_advisory/shadow/pace.py` — PACE session lifecycle, double confirm, cooldown, undo
+- `src/hr_advisory/api/routers/shadow.py` — API router (13 endpoints)
+
+### Critical Rules
+
+- ALL write operations MUST go through PACE (preview + confirm)
+- Government/financial actions MUST use double_confirm trust level
+- Executor MUST forward user's JWT as-is (never escalate privileges)
+- Path parameters MUST be validated with regex before substitution
+- All in-memory stores MUST have bounded capacity (maxlen=10,000)
+
+See `docs/00-authority/08-shadow-agent.md` for full architecture reference.
 
 ## MCP Integration Layer
 

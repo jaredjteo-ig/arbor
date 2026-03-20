@@ -52,6 +52,7 @@ export function useShadowContext(): UseShadowContextReturn {
   const [annotations, setAnnotations] = useState<AnnotationData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pollEnabled, setPollEnabled] = useState(true);
 
   const fetchContext = useCallback(async () => {
     const token =
@@ -77,7 +78,11 @@ export function useShadowContext(): UseShadowContextReturn {
       );
 
       if (!response.ok) {
-        // Shadow context is non-critical — fail silently
+        // Shadow context is non-critical — fail silently.
+        // Stop polling on 403/404 (endpoint not deployed or not authorized).
+        if (response.status === 403 || response.status === 404) {
+          setPollEnabled(false);
+        }
         setIsLoading(false);
         return;
       }
@@ -120,11 +125,12 @@ export function useShadowContext(): UseShadowContextReturn {
     fetchContext();
   }, [fetchContext]);
 
-  // Auto-refresh every 5 minutes
+  // Auto-refresh every 5 minutes (disabled after 403/404)
   useEffect(() => {
+    if (!pollEnabled) return;
     const interval = setInterval(fetchContext, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [fetchContext]);
+  }, [fetchContext, pollEnabled]);
 
   return {
     insights,

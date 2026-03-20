@@ -34,6 +34,7 @@ You are the platform architecture specialist for the Arbor HR Advisory Platform.
 
 | Router          | Prefix             | Purpose                                               | Auth Required |
 | --------------- | ------------------ | ----------------------------------------------------- | ------------- |
+| shadow          | `/shadow`          | Shadow agent intelligence layer (13 endpoints)        | Yes           |
 | auth            | `/auth`            | Register, login, tokens, password reset               | Mixed         |
 | advisory        | `/advisory`        | HR advisory queries, streaming, conversations         | Yes           |
 | emergency       | `/advisory`        | Emergency escalation (thread-safe ticket IDs)         | Yes           |
@@ -130,6 +131,8 @@ Handlers share logic with REST routers but use transport-level auth (not FastAPI
 ## Key Files
 
 - `src/hr_advisory/api/platform.py` — Platform creation and configuration
+- `src/hr_advisory/api/routers/shadow.py` — Shadow agent router (13 endpoints, PACE, SSE)
+- `src/hr_advisory/shadow/` — Shadow agent backend modules (12 modules)
 - `src/hr_advisory/api/routers/` — All REST API routers
 - `src/hr_advisory/api/middleware/` — Auth middleware, token blocklist
 - `src/hr_advisory/config/settings.py` — Settings from environment
