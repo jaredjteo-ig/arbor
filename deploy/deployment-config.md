@@ -153,20 +153,20 @@ Internet
 
 ### Prerequisites
 
-- AWS CLI configured with SSO profile `esperie`
-- SSH key `~/.ssh/ai-coach.pem`
+- `gcloud` CLI authenticated with `jack@terrene.foundation`
+- SSH access to `arbor-prod` instance via `gcloud compute ssh`
 
 ### Deploy New Version
 
 ```bash
-# 1. SSH into server
-ssh -i ~/.ssh/ai-coach.pem ec2-user@52.220.50.167
-
-# 2. Sync code (from local machine)
+# 1. Sync code to server (from local machine)
 rsync -avz --exclude='.git' --exclude='node_modules' --exclude='.venv' \
   --exclude='__pycache__' --exclude='.next' --exclude='*.pyc' \
-  -e "ssh -i ~/.ssh/ai-coach.pem" \
-  . ec2-user@52.220.50.167:/opt/arbor/
+  -e "gcloud compute ssh arbor-prod --zone=asia-southeast1-b --project=terrene-care --" \
+  . :/opt/arbor/
+
+# 2. SSH into server
+gcloud compute ssh arbor-prod --zone=asia-southeast1-b --project=terrene-care
 
 # 3. On server: rebuild and restart
 cd /opt/arbor/deploy
@@ -181,7 +181,7 @@ curl -f https://arbor.terrene.foundation/health  # 200 OK
 
 ```bash
 # SSH into server
-ssh -i ~/.ssh/ai-coach.pem ec2-user@52.220.50.167
+gcloud compute ssh arbor-prod --zone=asia-southeast1-b --project=terrene-care
 
 # Roll back to previous code
 cd /opt/arbor
@@ -198,8 +198,9 @@ curl -f https://arbor.terrene.foundation/health
 ### Server Setup (fresh instance)
 
 ```bash
-# From local machine — provision a fresh Amazon Linux 2023 instance
-ssh ec2-user@<IP> 'bash -s' < deploy/setup-server.sh
+# From local machine — provision a fresh Container-Optimized OS instance
+gcloud compute ssh arbor-prod --zone=asia-southeast1-b --project=terrene-care \
+  -- 'bash -s' < deploy/setup-server.sh
 ```
 
 ## Health Check Endpoints
@@ -233,13 +234,13 @@ ssh ec2-user@<IP> 'bash -s' < deploy/setup-server.sh
 Not yet configured. When ready:
 
 - Health check: `GET /health` (Caddy handles basic uptime)
-- Consider: AWS CloudWatch, Uptime Robot, or similar
+- Consider: GCP Cloud Monitoring, Uptime Robot, or similar
 - Alert on: container restarts, 5xx errors, disk usage > 80%
 
 ## Cost
 
-- EC2 t2.medium: **$0** (using pre-paid reserved instance)
-- EIP: $0 (attached to running instance)
-- Route53: ~$0.50/month (hosted zone)
+- GCE e2-medium: ~$25/month (on-demand, asia-southeast1)
+- Static IP: $0 (attached to running instance)
+- DNS: Managed externally (terrene.foundation)
 - Data transfer: Variable (~$0.12/GB outbound)
-- **Estimated monthly: < $5**
+- **Estimated monthly: ~$30**
