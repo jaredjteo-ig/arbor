@@ -1,14 +1,9 @@
-commit: pending (uncommitted changes)
-timestamp: 2026-03-18T14:00:00Z
-baseline_pass: 826
-baseline_fail: 115
-final_pass: 826
-final_fail: 115
-new_tests: 0
+commit: 691a853cc266af29fdac018e6748c5632187023e
+timestamp: 2026-03-19T18:44:34Z
+baseline_pass: 156
+baseline_fail: 0
+final_pass: 156
+final_fail: 0
+new_tests: 156
 regressions: 0
-notes: |
-  Red team round 7 complete. All critical/high security fixes applied.
-  826 unit tests pass, 115 pre-existing failures unchanged.
-  16 collection errors pre-existing (Kailash SDK 2.0.0 import).
-  TypeScript frontend compiles clean.
-  Scope: T317-T398 implementation + AITE->Arbor rename + competitor ref cleanup + red team fixes.
+command: pytest tests/unit/test_llm_*.py tests/unit/test_key_rotation.py tests/unit/test_ollama_health.py --tb=short -q
