@@ -13,6 +13,7 @@ All API keys come from environment variables — never hardcoded.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -75,13 +76,13 @@ _AUTONOMOUS_ACTIONS = frozenset(
         "dashboard",
         "status",
         "count",
-        "download",
-        "export",
         "my_payslips",
         "my_leave",
         "my_schedule",
     }
 )
+
+# download/export are propose-level — they can exfiltrate sensitive data
 
 _ALWAYS_PROPOSE_ACTIONS = frozenset(
     {
@@ -98,13 +99,44 @@ _ALWAYS_PROPOSE_ACTIONS = frozenset(
     }
 )
 
+# Double-confirm actions: government submissions and financial actions.
+# These require a two-step approval gate (confirm → re-confirm).
+_DOUBLE_CONFIRM_ACTIONS = frozenset(
+    {
+        "cpf_submit",
+        "ir8a_submit",
+        "ir21_generate",
+        "post_payroll_journal",
+        "post_claims_journal",
+        "giro_submit",
+        "giro_process",
+    }
+)
 
-def _classify_trust_level(action: str) -> tuple[str, bool]:
+# Modules that always require double confirmation regardless of action
+_DOUBLE_CONFIRM_MODULES = frozenset(
+    {
+        "government",
+    }
+)
+
+
+def _classify_trust_level(action: str, module: str = "") -> tuple[str, bool]:
     """Determine trust level and confirmation requirement from the action.
+
+    Trust levels (escalating):
+        - autonomous: read-only, execute immediately
+        - propose: standard writes, single confirmation
+        - always_propose: dangerous operations, 5-second cooldown
+        - double_confirm: government/financial, two-step approval gate
 
     Returns:
         (trust_level, requires_confirmation) tuple.
     """
+    # Double-confirm takes highest priority — government/financial actions
+    # always require two-step approval regardless of action type
+    if action in _DOUBLE_CONFIRM_ACTIONS or module in _DOUBLE_CONFIRM_MODULES:
+        return "double_confirm", True
     if action in _AUTONOMOUS_ACTIONS:
         return "autonomous", False
     if action in _ALWAYS_PROPOSE_ACTIONS:
@@ -188,9 +220,10 @@ If the user mentions uploading, attaching, importing from CSV/Excel/file, or ref
 
 ## Trust Level Rules
 
-- "autonomous": Read-only operations (list, get, search, view, navigate, check, balance, summary, history, calendar, dashboard, status, download, export)
-- "propose": Standard write operations (create, update, approve, reject, apply, submit, generate)
+- "autonomous": Read-only operations (list, get, search, view, navigate, check, balance, summary, history, calendar, dashboard, status)
+- "propose": Standard write operations (create, update, approve, reject, apply, submit, generate, download, export)
 - "always_propose": Dangerous operations (delete, terminate, cancel, mark_paid, bulk_delete, reset, revoke, deactivate)
+- "double_confirm": Government submissions and financial actions (cpf_submit, ir8a_submit, post_payroll_journal, giro_submit) — requires two-step approval
 
 ## Output Format
 
@@ -251,12 +284,15 @@ class ShadowIntentClassifier:
     Falls back to a rule-based classifier when the LLM is unavailable.
     """
 
-    def classify(
+    async def classify(
         self,
         message: str,
         page_context: str = "dashboard",
     ) -> ShadowIntent:
         """Classify a user message into a structured ShadowIntent.
+
+        Uses asyncio.to_thread() to wrap the synchronous OpenAI call
+        so the event loop is not blocked during LLM classification.
 
         Args:
             message: The raw user message.
@@ -266,8 +302,8 @@ class ShadowIntentClassifier:
         Returns:
             A ShadowIntent with module, action, entities, and trust level.
         """
-        # Try LLM classification first
-        llm_result = self._classify_with_llm(message, page_context)
+        # Try LLM classification first — run in thread to avoid blocking
+        llm_result = await asyncio.to_thread(self._classify_with_llm, message, page_context)
         if llm_result is not None:
             return llm_result
 
@@ -325,8 +361,8 @@ class ShadowIntentClassifier:
             entities = parsed.get("entities", {})
             confirmation_message = parsed.get("confirmation_message", "")
 
-            # Determine trust level based on action
-            trust_level, requires_confirmation = _classify_trust_level(action)
+            # Determine trust level based on action and module
+            trust_level, requires_confirmation = _classify_trust_level(action, module)
 
             # Detect attachment references
             has_attachment, attachment_intent = self._detect_attachment(message)
@@ -358,25 +394,19 @@ class ShadowIntentClassifier:
         """
         msg_lower = message.lower()
 
-        # Bulk import patterns
-        import_keywords = [
-            "csv",
-            "excel",
-            "xlsx",
-            "spreadsheet",
-            "bulk import",
-            "import file",
-            "upload employees",
-        ]
-        if any(kw in msg_lower for kw in import_keywords):
-            return True, "bulk_import"
+        # More specific patterns first (payroll, receipt, document) then generic
+
+        # Payroll import patterns (check before generic CSV/import)
+        payroll_keywords = ["upload payroll", "import payroll", "payroll file", "payroll csv"]
+        if any(kw in msg_lower for kw in payroll_keywords):
+            return True, "payroll_import"
 
         # Receipt upload patterns
-        receipt_keywords = ["receipt", "upload receipt", "attach receipt", "claim receipt"]
+        receipt_keywords = ["upload receipt", "attach receipt", "claim receipt", "submit receipt"]
         if any(kw in msg_lower for kw in receipt_keywords):
             return True, "receipt_upload"
 
-        # Document upload patterns
+        # Document upload patterns — exact substring matches
         doc_keywords = [
             "upload document",
             "attach document",
@@ -390,10 +420,25 @@ class ShadowIntentClassifier:
         if any(kw in msg_lower for kw in doc_keywords):
             return True, "document_upload"
 
-        # Payroll import patterns
-        payroll_keywords = ["upload payroll", "import payroll", "payroll file", "payroll csv"]
-        if any(kw in msg_lower for kw in payroll_keywords):
-            return True, "payroll_import"
+        # Document upload patterns — word co-occurrence (handles "upload a contract document")
+        doc_action_words = {"upload", "attach"}
+        doc_type_words = {"document", "contract", "letter", "certificate", "pdf"}
+        msg_words = set(msg_lower.split())
+        if msg_words & doc_action_words and msg_words & doc_type_words:
+            return True, "document_upload"
+
+        # Bulk import patterns (generic CSV/Excel — after more specific checks)
+        import_keywords = [
+            "csv",
+            "excel",
+            "xlsx",
+            "spreadsheet",
+            "bulk import",
+            "import file",
+            "upload employees",
+        ]
+        if any(kw in msg_lower for kw in import_keywords):
+            return True, "bulk_import"
 
         # Generic file references
         generic_keywords = ["upload", "attach", "file", ".csv", ".xlsx", ".pdf", ".doc"]
@@ -436,7 +481,8 @@ class ShadowIntentClassifier:
             "leave calendar": "/leave/calendar",
             "org chart": "/employees/org-chart",
         }
-        for keyword, route in nav_routes.items():
+        # Sort by keyword length (longest first) so "leave calendar" matches before "leave"
+        for keyword, route in sorted(nav_routes.items(), key=lambda x: len(x[0]), reverse=True):
             if msg_lower.startswith("go to") and keyword in msg_lower:
                 return ShadowIntent(
                     module="navigation",

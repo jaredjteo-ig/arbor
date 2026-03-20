@@ -22,7 +22,8 @@ from collections import OrderedDict, deque
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
@@ -532,9 +533,9 @@ async def shadow_context(
 # PACE loop: Preview → Approve → Confirm → Exit
 # Trust levels: autonomous (reads), propose (writes), always_propose (dangerous)
 
-# In-memory action history per user (bounded, for undo/history)
+# In-memory action history per user (bounded OrderedDict for LRU eviction)
 _MAX_HISTORY_PER_USER = 100
-_action_history: dict[str, deque] = {}  # user_id → deque of action dicts
+_action_history: OrderedDict[str, deque] = OrderedDict()
 _MAX_HISTORY_USERS = 10000
 
 
@@ -551,14 +552,13 @@ def _get_jwt_token(request: Request) -> str:
 
 
 def _record_action(user_id: str, action: dict) -> None:
-    """Record a completed action in the user's history (bounded deque)."""
-    if len(_action_history) >= _MAX_HISTORY_USERS and user_id not in _action_history:
-        # Evict oldest user
-        try:
-            oldest_key = next(iter(_action_history))
-            _action_history.pop(oldest_key, None)
-        except StopIteration:
-            pass
+    """Record a completed action in the user's history (bounded, LRU eviction)."""
+    if user_id in _action_history:
+        # Move to end for LRU ordering
+        _action_history.move_to_end(user_id)
+    elif len(_action_history) >= _MAX_HISTORY_USERS:
+        # Evict least-recently-used user
+        _action_history.popitem(last=False)
 
     if user_id not in _action_history:
         _action_history[user_id] = deque(maxlen=_MAX_HISTORY_PER_USER)
@@ -604,6 +604,49 @@ async def shadow_execute(
     if not message:
         raise HTTPException(status_code=400, detail="Message must not be empty.")
 
+    if len(message) > 2000:
+        raise HTTPException(
+            status_code=400, detail="Message exceeds maximum length (2000 characters)."
+        )
+
+    # Validate page_context against known pages
+    _KNOWN_PAGES = {
+        "dashboard",
+        "employees",
+        "payroll",
+        "leave",
+        "attendance",
+        "claims",
+        "shifts",
+        "appraisals",
+        "projects",
+        "inventory",
+        "recruitment",
+        "reports",
+        "documents",
+        "compliance",
+        "settings",
+        "calculator",
+        "advisory",
+        "my-dashboard",
+        "my-leave",
+        "my-payslips",
+        "my-timesheets",
+        "my-inventory",
+        "my-profile",
+        "admin",
+        "alerts",
+        "emergency",
+        "help",
+        "analytics",
+        "learning",
+        "approvals",
+        "policies",
+        "profile",
+    }
+    if page_context not in _KNOWN_PAGES:
+        page_context = "dashboard"
+
     # ── Step 1: Guardrails — scope check and injection detection ──
     scope_result = screen_scope(message)
     if scope_result.result == ScreeningResult.BLOCK:
@@ -626,7 +669,7 @@ async def shadow_execute(
 
     # ── Step 2: Intent classification ─────────────────────────────
     classifier = ShadowIntentClassifier()
-    intent = classifier.classify(message, page_context)
+    intent = await classifier.classify(message, page_context)
 
     logger.info(
         "Shadow intent: module=%s, action=%s, trust=%s, user=%s",
@@ -637,6 +680,52 @@ async def shadow_execute(
     )
 
     formatter = ArborFormatter()
+
+    # ── Step 2b: Entity validation defense ────────────────────────
+    # Validate intent.module and intent.action against the tool registry
+    # before routing, and filter entities to only known parameter keys.
+    registry = get_tool_registry()
+    known_modules = set(registry.get_all_modules())
+
+    if intent.module not in known_modules and intent.module not in ("advisory", "navigation"):
+        logger.warning(
+            "Intent module '%s' not in registry — falling back to advisory. user=%s",
+            intent.module,
+            user_id,
+        )
+        intent = type(intent)(
+            module="advisory",
+            action="query",
+            entities={"query": message},
+            trust_level="autonomous",
+            requires_confirmation=False,
+            confirmation_message="Ask the HR advisory about your question",
+            has_attachment=intent.has_attachment,
+            attachment_intent=intent.attachment_intent,
+            raw_query=message,
+        )
+    elif intent.module not in ("advisory", "navigation"):
+        # Validate action is known for this module
+        resolved_tool = registry.resolve_tool(intent.module, intent.action)
+        if resolved_tool is not None:
+            # Filter entities to only keys that match the tool's params list
+            allowed_keys = set(resolved_tool.params)
+            # Also allow any key that looks like a valid entity (not empty)
+            # but log rejected keys for debugging
+            filtered_entities: dict = {}
+            for key, value in intent.entities.items():
+                if key in allowed_keys or not allowed_keys:
+                    filtered_entities[key] = value
+                else:
+                    logger.info(
+                        "Entity key '%s' rejected — not in tool params for %s.%s. " "Allowed: %s",
+                        key,
+                        intent.module,
+                        intent.action,
+                        ", ".join(sorted(allowed_keys)) if allowed_keys else "any",
+                    )
+            intent.entities.clear()
+            intent.entities.update(filtered_entities)
 
     # ── Step 3: Route by module ───────────────────────────────────
 
@@ -654,6 +743,9 @@ async def shadow_execute(
     # 3b. Navigation — return route for frontend to navigate to
     if intent.module == "navigation":
         route = intent.entities.get("route", "/my-dashboard")
+        # Validate route is a relative path — prevent external URL injection
+        if not route.startswith("/") or "://" in route:
+            route = "/my-dashboard"
         description = intent.confirmation_message or route
         nav = formatter.format_navigation(route, description)
         return {
@@ -675,7 +767,7 @@ async def shadow_execute(
         }
 
     # ── Step 4: Resolve tool from registry ────────────────────────
-    registry = get_tool_registry()
+    # Registry was already fetched in step 2b for validation
     tool = registry.resolve_tool(intent.module, intent.action)
 
     if tool is None:
@@ -693,6 +785,16 @@ async def shadow_execute(
             "query": message,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+
+    # ── Step 4b: Check for multi-step workflow expansion ──────────
+    from hr_advisory.shadow.workflow_composer import compose_workflow
+
+    workflow_steps = compose_workflow(
+        module=intent.module,
+        action=intent.action,
+        entities=intent.entities,
+        registry=registry,
+    )
 
     # ── Step 5: Trust level enforcement ───────────────────────────
 
@@ -732,24 +834,37 @@ async def shadow_execute(
         }
 
     else:
-        # propose or always_propose — create PACE session for confirmation
+        # propose, always_propose, or double_confirm — create PACE session
         pace_manager = get_pace_manager()
 
-        step = PaceStep(
-            description=tool.description,
-            tool_module=tool.module,
-            tool_action=tool.action,
-            method=tool.method,
-            path=tool.path,
-            params=dict(intent.entities),
-        )
+        # Use multi-step workflow if composer expanded it, otherwise single-step
+        if workflow_steps is not None:
+            steps = workflow_steps
+            logger.info(
+                "Workflow composer expanded %s.%s into %d steps",
+                intent.module,
+                intent.action,
+                len(steps),
+            )
+        else:
+            steps = [
+                PaceStep(
+                    description=tool.description,
+                    tool_module=tool.module,
+                    tool_action=tool.action,
+                    method=tool.method,
+                    path=tool.path,
+                    params=dict(intent.entities),
+                ),
+            ]
 
         session = pace_manager.create_session(
             user_id=user_id,
             intent_module=intent.module,
             intent_action=intent.action,
             confirmation_message=intent.confirmation_message,
-            steps=[step],
+            steps=steps,
+            trust_level=intent.trust_level,
         )
 
         preview_message = formatter.format_preview(session.to_dict())
@@ -761,6 +876,7 @@ async def shadow_execute(
             "session": session.to_dict(),
             "intent": intent.to_dict(),
             "requires_confirmation": True,
+            "requires_double_confirm": session.requires_double_confirm,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -799,11 +915,35 @@ async def shadow_confirm(
     if session.user_id != user_id:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    if session.status != "preview":
+    if session.status not in ("preview", "awaiting_double_confirm"):
         raise HTTPException(
             status_code=409,
             detail=f"Session cannot be confirmed — current status is '{session.status}'.",
         )
+
+    # Two-step confirmation gate for double_confirm sessions
+    confirmed_session, ready_to_execute = pace_manager.confirm_session(session_id)
+    if confirmed_session is None:
+        raise HTTPException(status_code=500, detail="Session confirmation failed.")
+
+    if not ready_to_execute:
+        # First confirmation received — need second confirmation
+        from hr_advisory.shadow.formatter import ArborFormatter as _AF
+
+        _fmt = _AF()
+        return {
+            "type": "double_confirm_required",
+            "message": _fmt.PREFIX
+            + (
+                "This is a government/financial action that requires double confirmation. "
+                f"Please confirm again: {session.confirmation_message}"
+            ),
+            "session_id": session_id,
+            "session": confirmed_session.to_dict(),
+            "confirmed_count": confirmed_session.confirmed_count,
+            "requires_double_confirm": True,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
     # Execute the session
     executed = await pace_manager.execute_session(session_id, jwt_token)
@@ -933,6 +1073,11 @@ async def shadow_undo(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
+    # Check undo window on PACE sessions (8-second limit)
+    from hr_advisory.shadow.pace import get_pace_manager as _get_pm
+
+    _pm = _get_pm()
+
     # Find the target action
     target_action = None
     if target_session_id:
@@ -940,12 +1085,29 @@ async def shadow_undo(
             if action.get("session_id") == target_session_id:
                 target_action = action
                 break
+        # Check undo window if the session exists
+        if target_action and target_session_id:
+            session = _pm.get_session(target_session_id)
+            if session and not session.is_undoable():
+                return {
+                    "type": "undo_expired",
+                    "message": formatter.PREFIX
+                    + "The undo window (8 seconds) has expired for this action.",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
     else:
-        # Find the most recent successful write action
+        # Find the most recent successful write action within undo window
         for action in history:
             if action.get("success") and action.get("trust_level") != "autonomous":
-                target_action = action
-                break
+                sid = action.get("session_id")
+                if sid:
+                    session = _pm.get_session(sid)
+                    if session and session.is_undoable():
+                        target_action = action
+                        break
+                else:
+                    target_action = action
+                    break
 
     if target_action is None:
         return {
@@ -1014,6 +1176,489 @@ async def shadow_history(
         "actions": actions,
         "total": len(history),
         "showing": len(actions),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# SSE Streaming for PACE Execution Progress (Task 3)
+# ══════════════════════════════════════════════════════════════
+#
+# Streams real-time step-by-step progress events during PACE
+# session execution via Server-Sent Events (SSE).
+
+
+async def _generate_sse_events(
+    session_id: str,
+    jwt_token: str,
+    pace_manager: Any | None = None,
+) -> Any:
+    """Async generator that yields SSE-formatted events during PACE execution.
+
+    Yields events of three types:
+    - step: emitted for each step as it begins execution, with step_index and status
+    - complete: emitted once after all steps finish, with full session result
+    - error: emitted if the session is not found or cannot be executed
+
+    Each event is formatted as ``data: {json}\\n\\n`` per the SSE specification.
+
+    Args:
+        session_id: The PACE session ID to execute and stream.
+        jwt_token: The user's JWT for authorization forwarding.
+        pace_manager: Optional PaceManager instance (uses singleton if None).
+
+    Yields:
+        SSE-formatted strings ready for StreamingResponse.
+    """
+    import json as _json
+    from hr_advisory.shadow.executor import ShadowExecutor
+    from hr_advisory.shadow.tool_registry import ToolDefinition
+
+    if pace_manager is None:
+        from hr_advisory.shadow.pace import get_pace_manager
+
+        pace_manager = get_pace_manager()
+
+    session = pace_manager.get_session(session_id)
+    if session is None:
+        yield f"data: {_json.dumps({'event': 'error', 'data': {'message': 'Session not found or expired.'}})}\n\n"
+        return
+
+    if session.status not in ("preview", "awaiting_double_confirm"):
+        yield f"data: {_json.dumps({'event': 'error', 'data': {'message': f'Session cannot be executed — current status is {session.status!r}.'}})}\n\n"
+        return
+
+    # Double-confirm guard
+    if session.requires_double_confirm and session.confirmed_count < 2:
+        yield f"data: {_json.dumps({'event': 'error', 'data': {'message': 'Session requires double confirmation before execution.'}})}\n\n"
+        return
+
+    import time
+
+    executor = ShadowExecutor()
+    session.status = "executing"
+    all_succeeded = True
+
+    for step_index, step in enumerate(session.steps):
+        step.status = "executing"
+
+        tool = ToolDefinition(
+            module=step.tool_module,
+            action=step.tool_action,
+            method=step.method,
+            path=step.path,
+            params=[],
+            trust_level=session.trust_level,
+            description=step.description,
+            is_mcp=step.method.upper() == "MCP",
+        )
+
+        result = await executor.execute(tool, step.params, jwt_token)
+        session.results.append(result.to_dict())
+
+        if result.success:
+            step.status = "done"
+        else:
+            step.status = "failed"
+            all_succeeded = False
+
+        # Emit step event with execution outcome
+        yield f"data: {_json.dumps({'event': 'step', 'data': {'step_index': step_index, 'status': step.status, 'description': step.description, 'tool_module': step.tool_module, 'tool_action': step.tool_action, 'success': result.success, 'error': result.error if not result.success else ''}})}\n\n"
+
+        # Stop on write failure
+        if not result.success and step.method.upper() != "GET":
+            idx = session.steps.index(step)
+            for remaining_step in session.steps[idx + 1 :]:
+                remaining_step.status = "cancelled"
+            break
+
+    session.status = "done" if all_succeeded else "failed"
+    session.completed_at = datetime.now(timezone.utc).isoformat()
+    session._completed_ts = time.monotonic()
+
+    # Emit complete event
+    yield f"data: {_json.dumps({'event': 'complete', 'data': {'session_id': session_id, 'status': session.status, 'results': session.results, 'completed_at': session.completed_at}})}\n\n"
+
+
+@router.post("/confirm/stream")
+async def shadow_confirm_stream(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> StreamingResponse:
+    """Confirm and execute a PACE session with real-time SSE progress streaming.
+
+    Streams step-by-step execution progress as Server-Sent Events so the
+    frontend can show real-time updates instead of waiting for the full
+    batch result.
+
+    Request body:
+        session_id: str -- the PACE session ID to confirm and stream
+
+    Returns a StreamingResponse with content type text/event-stream.
+    Each event is formatted as ``data: {json}\\n\\n`` with event types:
+    - step: progress update for each execution step
+    - complete: final result with full session data
+    - error: if the session cannot be executed
+    """
+    from hr_advisory.shadow.pace import get_pace_manager
+
+    body = await request.json()
+    session_id = body.get("session_id", "")
+    user_id = str(current_user.get("sub", "anonymous"))
+    jwt_token = _get_jwt_token(request)
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required.")
+
+    pace_manager = get_pace_manager()
+    session = pace_manager.get_session(session_id)
+
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found or expired. Please try again.",
+        )
+
+    # Tenant isolation: verify the session belongs to this user
+    if session.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    if session.status not in ("preview", "awaiting_double_confirm"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Session cannot be confirmed — current status is '{session.status}'.",
+        )
+
+    # Two-step confirmation gate for double_confirm sessions
+    confirmed_session, ready_to_execute = pace_manager.confirm_session(session_id)
+    if confirmed_session is None:
+        raise HTTPException(status_code=500, detail="Session confirmation failed.")
+
+    if not ready_to_execute:
+        raise HTTPException(
+            status_code=409,
+            detail="This session requires double confirmation. Please confirm again.",
+        )
+
+    logger.info(
+        "SSE streaming PACE execution: session=%s, user=%s, steps=%d",
+        session_id,
+        user_id,
+        len(session.steps),
+    )
+
+    return StreamingResponse(
+        _generate_sse_events(session_id, jwt_token, pace_manager),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ══════════════════════════════════════════════════════════════
+# File Upload / Attachment Execution Path (Task 4)
+# ══════════════════════════════════════════════════════════════
+#
+# Handles file uploads for attachment intents detected by the
+# intent classifier (bulk_import, document_upload, receipt_upload,
+# payroll_import). Routes each file to the appropriate handler.
+
+_SUPPORTED_ATTACHMENT_INTENTS = {
+    "bulk_import",
+    "document_upload",
+    "receipt_upload",
+    "payroll_import",
+}
+
+
+async def _route_upload(
+    attachment_intent: str,
+    file_content: bytes,
+    file_name: str,
+    content_type: str,
+    company_id: int,
+    user_id: int,
+) -> dict[str, Any]:
+    """Route an uploaded file to the appropriate handler based on attachment intent.
+
+    This function contains the core routing logic separated from the endpoint
+    so it can be tested independently.
+
+    Args:
+        attachment_intent: One of the supported attachment intents.
+        file_content: The raw bytes of the uploaded file.
+        file_name: The original filename.
+        content_type: The MIME type of the file.
+        company_id: The authenticated user's company ID.
+        user_id: The authenticated user's ID.
+
+    Returns:
+        A dict with preview/confirmation data appropriate to the intent.
+
+    Raises:
+        ValueError: If the attachment_intent is not supported.
+    """
+    if attachment_intent not in _SUPPORTED_ATTACHMENT_INTENTS:
+        raise ValueError(
+            f"Unsupported attachment intent: {attachment_intent!r}. "
+            f"Must be one of: {', '.join(sorted(_SUPPORTED_ATTACHMENT_INTENTS))}"
+        )
+
+    if attachment_intent == "bulk_import":
+        return await _handle_bulk_import(file_content, file_name, company_id)
+    elif attachment_intent == "document_upload":
+        return _handle_document_upload(file_content, file_name, content_type, company_id, user_id)
+    elif attachment_intent == "receipt_upload":
+        return _handle_receipt_upload(file_content, file_name, content_type, company_id, user_id)
+    elif attachment_intent == "payroll_import":
+        return await _handle_payroll_import(file_content, file_name, company_id)
+
+    # Unreachable due to the guard above, but explicit for clarity
+    raise ValueError(f"Unsupported attachment intent: {attachment_intent!r}")
+
+
+async def _handle_bulk_import(
+    file_content: bytes,
+    file_name: str,
+    company_id: int,
+) -> dict[str, Any]:
+    """Parse and validate a CSV file for bulk employee import.
+
+    Reuses the same parsing logic as the /employees/import/preview endpoint
+    but operates on raw bytes instead of a form upload.
+
+    Returns a preview dict with records, totals, and validation errors.
+    """
+    import csv
+    import io
+
+    try:
+        text = file_content.decode("utf-8-sig")  # Handle BOM
+    except UnicodeDecodeError:
+        raise ValueError("File must be UTF-8 encoded.")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if reader.fieldnames:
+        reader.fieldnames = [f.strip().lower().replace(" ", "_") for f in reader.fieldnames]
+
+    records: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    max_rows = 500
+
+    for i, row in enumerate(reader, start=2):
+        if i > max_rows + 1:
+            errors.append({"row": i, "error": f"CSV exceeds maximum of {max_rows} rows."})
+            break
+
+        record: dict[str, Any] = {
+            "row": i,
+            "name": row.get("name", "").strip(),
+            "email": row.get("email", "").strip().lower(),
+            "designation": row.get("designation", "").strip(),
+            "department": row.get("department", "").strip(),
+            "employment_type": row.get("employment_type", "full_time").strip(),
+        }
+
+        row_errors: list[str] = []
+        if not record["name"]:
+            row_errors.append("Name is required.")
+        if not record["email"]:
+            row_errors.append("Email is required.")
+        elif "@" not in record["email"]:
+            row_errors.append("Invalid email format.")
+
+        record["errors"] = row_errors
+        record["valid"] = len(row_errors) == 0
+        records.append(record)
+        errors.extend([{"row": i, "error": e} for e in row_errors])
+
+    valid_count = sum(1 for r in records if r["valid"])
+    return {
+        "action": "bulk_import",
+        "records": records,
+        "total": len(records),
+        "valid": valid_count,
+        "invalid": len(records) - valid_count,
+        "errors": errors,
+        "file_name": file_name,
+        "company_id": company_id,
+    }
+
+
+def _handle_document_upload(
+    file_content: bytes,
+    file_name: str,
+    content_type: str,
+    company_id: int,
+    user_id: int,
+) -> dict[str, Any]:
+    """Prepare a document upload preview.
+
+    Does NOT save the file yet — returns a confirmation preview so the
+    user can approve via the PACE loop before the document is persisted.
+
+    Returns a dict describing what will be uploaded.
+    """
+    return {
+        "action": "document_upload",
+        "file_name": file_name,
+        "file_size": len(file_content),
+        "content_type": content_type,
+        "company_id": company_id,
+        "uploaded_by": user_id,
+        "confirmation_message": f"Upload document '{file_name}' ({len(file_content)} bytes) to company documents?",
+    }
+
+
+def _handle_receipt_upload(
+    file_content: bytes,
+    file_name: str,
+    content_type: str,
+    company_id: int,
+    user_id: int,
+) -> dict[str, Any]:
+    """Prepare a receipt upload preview.
+
+    Returns a confirmation preview for attaching a receipt to a claim.
+    The actual persistence happens after PACE approval.
+    """
+    return {
+        "action": "receipt_upload",
+        "file_name": file_name,
+        "file_size": len(file_content),
+        "content_type": content_type,
+        "company_id": company_id,
+        "uploaded_by": user_id,
+        "confirmation_message": f"Attach receipt '{file_name}' to your claim?",
+    }
+
+
+async def _handle_payroll_import(
+    file_content: bytes,
+    file_name: str,
+    company_id: int,
+) -> dict[str, Any]:
+    """Parse and preview a payroll data import file.
+
+    Returns a summary of the rows found in the CSV for user confirmation.
+    """
+    import csv
+    import io
+
+    try:
+        text = file_content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise ValueError("File must be UTF-8 encoded.")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if reader.fieldnames:
+        reader.fieldnames = [f.strip().lower().replace(" ", "_") for f in reader.fieldnames]
+
+    max_rows = 500
+    rows: list[dict[str, Any]] = []
+    for i, row in enumerate(reader, start=2):
+        if i - 1 > max_rows:
+            break
+        rows.append({"row": i, **{k: v.strip() for k, v in row.items() if v}})
+
+    return {
+        "action": "payroll_import",
+        "total": len(rows),
+        "rows_preview": rows[:10],  # Show first 10 rows as preview
+        "file_name": file_name,
+        "company_id": company_id,
+        "confirmation_message": f"Import payroll data from '{file_name}' ({len(rows)} rows)?",
+    }
+
+
+@router.post("/upload")
+async def shadow_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    attachment_intent: str = Form(...),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Handle file uploads for attachment intents detected by the Shadow Agent.
+
+    Accepts multipart/form-data with a file and an attachment_intent field.
+    Routes the file to the appropriate handler based on the intent:
+    - bulk_import: CSV/Excel employee import preview
+    - document_upload: Company document upload preview
+    - receipt_upload: Claim receipt attachment preview
+    - payroll_import: Payroll data import preview
+
+    Returns a PACE-style preview of what the import/upload will do,
+    so the user can approve before the action is executed.
+
+    Form fields:
+        file: The uploaded file (required)
+        attachment_intent: One of the supported intent types (required)
+    """
+    from hr_advisory.shadow.formatter import ArborFormatter
+
+    company_id = get_current_company_id(current_user)
+    user_id = int(current_user.get("sub", 0))
+
+    if attachment_intent not in _SUPPORTED_ATTACHMENT_INTENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported attachment_intent: {attachment_intent!r}. "
+                f"Must be one of: {', '.join(sorted(_SUPPORTED_ATTACHMENT_INTENTS))}"
+            ),
+        )
+
+    # Read file content
+    file_content = await file.read()
+    if not file_content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    max_file_size = 10 * 1024 * 1024  # 10MB
+    if len(file_content) > max_file_size:
+        raise HTTPException(status_code=400, detail="File exceeds 10MB size limit.")
+
+    file_name = file.filename or "unknown"
+    content_type = file.content_type or "application/octet-stream"
+
+    try:
+        result = await _route_upload(
+            attachment_intent=attachment_intent,
+            file_content=file_content,
+            file_name=file_name,
+            content_type=content_type,
+            company_id=company_id,
+            user_id=user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    formatter = ArborFormatter()
+    confirmation_msg = result.get("confirmation_message", "")
+    if not confirmation_msg:
+        if attachment_intent == "bulk_import":
+            valid = result.get("valid", 0)
+            total = result.get("total", 0)
+            confirmation_msg = f"Import {valid} of {total} employees from CSV?"
+        else:
+            confirmation_msg = f"Process uploaded file '{file_name}'?"
+
+    logger.info(
+        "Shadow upload: intent=%s, file=%s, size=%d, company=%s, user=%s",
+        attachment_intent,
+        file_name,
+        len(file_content),
+        company_id,
+        user_id,
+    )
+
+    return {
+        "type": "upload_preview",
+        "message": formatter.PREFIX + confirmation_msg,
+        "attachment_intent": attachment_intent,
+        "preview": result,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -1098,5 +1743,148 @@ async def shadow_nudges(
         "nudges": nudges,
         "page": page,
         "company_id": company_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# Shadow Agent Observation & Memory Layer
+# ══════════════════════════════════════════════════════════════
+#
+# Tracks user session behavior (page views, clicks) and distills
+# observations into persistent preferences and patterns.
+
+
+@router.post("/observe")
+async def shadow_observe(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Record a user session observation and return inferred nudges.
+
+    The frontend calls this endpoint on page transitions and significant
+    interactions. The observation is stored and immediately analyzed for
+    patterns that trigger proactive suggestions.
+
+    Request body:
+        page: str -- the current page name (required)
+        action_type: str -- the type of action (required, e.g. "page_view", "click")
+        details: dict -- optional additional details about the interaction
+
+    Returns:
+        recorded: bool -- whether the observation was successfully recorded
+        nudges: list[str] -- inferred suggestions based on recent patterns
+    """
+    from hr_advisory.shadow.observation import get_observation_store
+
+    body = await request.json()
+    page = body.get("page", "").strip()
+    action_type = body.get("action_type", "").strip()
+    details = body.get("details", {})
+    user_id = str(current_user.get("sub", "anonymous"))
+
+    if not page:
+        raise HTTPException(status_code=400, detail="page is required.")
+    if not action_type:
+        raise HTTPException(status_code=400, detail="action_type is required.")
+
+    store = get_observation_store()
+    store.record_observation(
+        user_id=user_id,
+        page=page,
+        action_type=action_type,
+        details=details if isinstance(details, dict) else {},
+    )
+
+    # Infer suggestions from the observation pattern
+    nudges = store.infer_intent(user_id)
+
+    logger.info(
+        "Observation recorded: user=%s, page=%s, action=%s, nudges=%d",
+        user_id,
+        page,
+        action_type,
+        len(nudges),
+    )
+
+    return {
+        "recorded": True,
+        "nudges": nudges,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/memory")
+async def shadow_memory(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Return the user's distilled memory (themes, patterns, preferences).
+
+    The memory is built from accumulated observations and represents
+    the user's behavioral profile. If no memory has been distilled yet,
+    returns empty defaults.
+
+    Returns:
+        themes: list[str] -- high-level behavioral themes
+        patterns: list[str] -- detected action sequences
+        preferences: dict -- key-value user preferences (top pages, actions)
+        last_distilled: str -- ISO 8601 timestamp of last distillation
+    """
+    from hr_advisory.shadow.memory import get_memory_store
+
+    user_id = str(current_user.get("sub", "anonymous"))
+    store = get_memory_store()
+    memory = store.get_memory(user_id)
+
+    logger.info(
+        "Memory retrieved for user=%s: %d themes, %d patterns",
+        user_id,
+        len(memory.themes),
+        len(memory.patterns),
+    )
+
+    return {
+        **memory.to_dict(),
+        "user_id": user_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post("/distill")
+async def shadow_distill(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Trigger memory distillation for the current user.
+
+    Reads all recent observations for this user and distills them
+    into persistent themes, patterns, and preferences. Call this
+    at session end or periodically.
+
+    Returns:
+        The distilled UserMemory dict with themes, patterns, preferences.
+    """
+    from hr_advisory.shadow.observation import get_observation_store
+    from hr_advisory.shadow.memory import get_memory_store
+
+    user_id = str(current_user.get("sub", "anonymous"))
+
+    obs_store = get_observation_store()
+    observations = obs_store.get_user_observations(user_id, since_hours=168)  # 1 week
+
+    mem_store = get_memory_store()
+    memory = mem_store.distill(user_id, observations)
+
+    logger.info(
+        "Memory distilled for user=%s: %d themes, %d patterns, %d prefs",
+        user_id,
+        len(memory.themes),
+        len(memory.patterns),
+        len(memory.preferences),
+    )
+
+    return {
+        **memory.to_dict(),
+        "user_id": user_id,
+        "observations_processed": len(observations),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

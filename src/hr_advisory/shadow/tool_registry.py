@@ -1107,14 +1107,14 @@ class ToolRegistry:
                 )
             )
 
-        # Government (MCP tools — these call MCP server endpoints)
+        # Government (MCP tools — double_confirm required for all)
         for action, method, path, params, trust, desc in [
             (
                 "cpf_generate",
                 "POST",
                 "/integrations/government/cpf/generate",
                 ["month"],
-                "always_propose",
+                "double_confirm",
                 "Generate CPF submission file",
             ),
             (
@@ -1122,7 +1122,7 @@ class ToolRegistry:
                 "POST",
                 "/integrations/government/cpf/submit",
                 ["month"],
-                "always_propose",
+                "double_confirm",
                 "Submit CPF to CPF Board",
             ),
             (
@@ -1130,7 +1130,7 @@ class ToolRegistry:
                 "POST",
                 "/integrations/government/iras/ir8a/generate",
                 ["year"],
-                "always_propose",
+                "double_confirm",
                 "Generate IR8A tax filing",
             ),
             (
@@ -1138,7 +1138,7 @@ class ToolRegistry:
                 "POST",
                 "/integrations/government/iras/ir8a/submit",
                 ["year"],
-                "always_propose",
+                "double_confirm",
                 "Submit IR8A to IRAS",
             ),
             (
@@ -1146,7 +1146,7 @@ class ToolRegistry:
                 "POST",
                 "/integrations/government/iras/ir21/generate",
                 ["employee_id"],
-                "always_propose",
+                "double_confirm",
                 "Generate IR21 for departing foreign employee",
             ),
         ]:
@@ -1163,14 +1163,14 @@ class ToolRegistry:
                 )
             )
 
-        # Accounting (MCP tools)
+        # Accounting (MCP tools — financial actions use double_confirm)
         for action, method, path, params, trust, desc in [
             (
                 "post_payroll_journal",
                 "POST",
                 "/integrations/accounting/xero/payroll-journal",
                 ["month"],
-                "always_propose",
+                "double_confirm",
                 "Post payroll journal to Xero",
             ),
             (
@@ -1178,7 +1178,7 @@ class ToolRegistry:
                 "POST",
                 "/integrations/accounting/xero/claims-journal",
                 ["month"],
-                "always_propose",
+                "double_confirm",
                 "Post claims journal to Xero",
             ),
             (

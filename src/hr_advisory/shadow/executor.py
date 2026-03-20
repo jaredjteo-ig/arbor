@@ -29,6 +29,15 @@ __all__ = [
     "ShadowExecutor",
 ]
 
+# MCP server name mapping from tool module names
+_MODULE_TO_MCP_SERVER: dict[str, str] = {
+    "government": "arbor-government",
+    "accounting": "arbor-accounting",
+    "banking": "arbor-banking",
+    "communications": "arbor-communications",
+    "regulatory": "arbor-regulatory",
+}
+
 
 @dataclass
 class ExecutionResult:
@@ -90,8 +99,14 @@ def _get_base_url() -> str:
     return url.rstrip("/")
 
 
+_SAFE_PATH_PARAM_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
+
+
 def _substitute_path_params(path: str, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """Substitute path parameters like {employee_id} into the URL path.
+
+    Path parameter values are validated to prevent directory traversal
+    and SSRF attacks — only alphanumeric, hyphen, and underscore allowed.
 
     Returns:
         (resolved_path, remaining_params) — the path with substitutions
@@ -101,8 +116,12 @@ def _substitute_path_params(path: str, params: dict[str, Any]) -> tuple[str, dic
     placeholders = re.findall(r"\{(\w+)\}", path)
     for placeholder in placeholders:
         if placeholder in remaining:
-            value = remaining.pop(placeholder)
-            path = path.replace(f"{{{placeholder}}}", str(value))
+            value = str(remaining.pop(placeholder))
+            # Validate: prevent path traversal (.., /, protocol injection)
+            if not _SAFE_PATH_PARAM_RE.match(value):
+                logger.warning("Rejected unsafe path param %s=%r", placeholder, value)
+                continue  # Skip substitution — leave placeholder
+            path = path.replace(f"{{{placeholder}}}", value)
     return path, remaining
 
 
@@ -165,10 +184,48 @@ class ShadowExecutor:
 
     All calls forward the user's JWT token — the executor never has
     more permissions than the user themselves.
+
+    Maintains a shared httpx.AsyncClient for connection pooling across
+    multiple execute() calls. The client is created lazily on first use.
+    Call close() to release the connection pool when done.
     """
 
     def __init__(self, base_url: str | None = None) -> None:
         self._base_url = base_url or _get_base_url()
+        self._client: Any = None  # httpx.AsyncClient, lazy init
+
+    def _get_client(self) -> Any:
+        """Get or create the shared httpx.AsyncClient.
+
+        The client is created lazily on first use with connection pooling
+        settings and a 30-second timeout.
+
+        Returns:
+            The shared httpx.AsyncClient instance.
+        """
+        if self._client is None:
+            import httpx
+
+            self._client = httpx.AsyncClient(
+                timeout=30.0,
+                limits=httpx.Limits(
+                    max_connections=100,
+                    max_keepalive_connections=20,
+                    keepalive_expiry=30,
+                ),
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """Close the shared HTTP client and release connection pool resources.
+
+        Safe to call multiple times. After closing, the next execute() call
+        will create a fresh client.
+        """
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+            logger.debug("ShadowExecutor HTTP client closed")
 
     async def execute(
         self,
@@ -176,7 +233,10 @@ class ShadowExecutor:
         params: dict[str, Any],
         jwt_token: str,
     ) -> ExecutionResult:
-        """Execute a single API call.
+        """Execute a single API call or MCP tool invocation.
+
+        Routes MCP tools (is_mcp=True) to the MCP server registry.
+        Routes REST tools to the standard HTTP client.
 
         Args:
             tool: The ToolDefinition describing which API to call.
@@ -187,7 +247,10 @@ class ShadowExecutor:
         Returns:
             An ExecutionResult with the response data or error.
         """
-        import httpx
+        # Route MCP tools to the MCP server registry
+        if getattr(tool, "is_mcp", False):
+            return await self.execute_mcp(tool, params, jwt_token)
+
         import time
 
         method = tool.method.upper()
@@ -202,49 +265,49 @@ class ShadowExecutor:
         start_time = time.monotonic()
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                if method == "GET":
-                    response = await client.get(
-                        url,
-                        headers=headers,
-                        params=remaining_params if remaining_params else None,
-                    )
-                elif method == "POST":
-                    response = await client.post(
-                        url,
-                        headers=headers,
-                        json=remaining_params if remaining_params else {},
-                    )
-                elif method == "PATCH":
-                    response = await client.patch(
-                        url,
-                        headers=headers,
-                        json=remaining_params if remaining_params else {},
-                    )
-                elif method == "PUT":
-                    response = await client.put(
-                        url,
-                        headers=headers,
-                        json=remaining_params if remaining_params else {},
-                    )
-                elif method == "DELETE":
-                    response = await client.delete(
-                        url,
-                        headers=headers,
-                        params=remaining_params if remaining_params else None,
-                    )
-                else:
-                    elapsed = (time.monotonic() - start_time) * 1000
-                    return ExecutionResult(
-                        success=False,
-                        status_code=0,
-                        data={},
-                        error=f"Unsupported HTTP method: {method}",
-                        duration_ms=elapsed,
-                        tool_module=tool.module,
-                        tool_action=tool.action,
-                        timestamp=datetime.now(timezone.utc).isoformat(),
-                    )
+            client = self._get_client()
+            if method == "GET":
+                response = await client.get(
+                    url,
+                    headers=headers,
+                    params=remaining_params if remaining_params else None,
+                )
+            elif method == "POST":
+                response = await client.post(
+                    url,
+                    headers=headers,
+                    json=remaining_params if remaining_params else {},
+                )
+            elif method == "PATCH":
+                response = await client.patch(
+                    url,
+                    headers=headers,
+                    json=remaining_params if remaining_params else {},
+                )
+            elif method == "PUT":
+                response = await client.put(
+                    url,
+                    headers=headers,
+                    json=remaining_params if remaining_params else {},
+                )
+            elif method == "DELETE":
+                response = await client.delete(
+                    url,
+                    headers=headers,
+                    params=remaining_params if remaining_params else None,
+                )
+            else:
+                elapsed = (time.monotonic() - start_time) * 1000
+                return ExecutionResult(
+                    success=False,
+                    status_code=0,
+                    data={},
+                    error=f"Unsupported HTTP method: {method}",
+                    duration_ms=elapsed,
+                    tool_module=tool.module,
+                    tool_action=tool.action,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
 
             elapsed = (time.monotonic() - start_time) * 1000
 
@@ -310,6 +373,112 @@ class ShadowExecutor:
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
+    async def execute_mcp(
+        self,
+        tool: Any,  # ToolDefinition
+        params: dict[str, Any],
+        jwt_token: str,
+    ) -> ExecutionResult:
+        """Execute an MCP tool call via the MCP server registry.
+
+        Routes the call to the appropriate MCP server (government, accounting,
+        banking, communications, regulatory) based on the tool's module.
+
+        Args:
+            tool: The ToolDefinition describing which MCP tool to call.
+            params: Parameters to pass to the MCP tool.
+            jwt_token: The user's JWT for authorization context.
+
+        Returns:
+            An ExecutionResult with the MCP tool response or error.
+        """
+        import time
+
+        start_time = time.monotonic()
+
+        # Resolve the MCP server name from the tool's module
+        server_name = _MODULE_TO_MCP_SERVER.get(tool.module)
+        if not server_name:
+            elapsed = (time.monotonic() - start_time) * 1000
+            return ExecutionResult(
+                success=False,
+                status_code=0,
+                data={},
+                error=f"No MCP server mapped for module '{tool.module}'.",
+                duration_ms=round(elapsed, 2),
+                tool_module=tool.module,
+                tool_action=tool.action,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        # Derive the MCP tool name from the path
+        # e.g. "/integrations/government/cpf/submit" → "cpf_submit"
+        tool_name = tool.action
+
+        try:
+            from hr_advisory.mcp_servers.registry import call_tool
+
+            # Extract tenant context from JWT — never pass raw token to MCP tools
+            import jwt as pyjwt
+
+            try:
+                # Decode without verification (already verified by auth middleware)
+                claims = pyjwt.decode(jwt_token, options={"verify_signature": False})
+                company_id = str(claims.get("company_id", ""))
+                user_id = str(claims.get("sub", ""))
+            except Exception:
+                company_id = ""
+                user_id = ""
+
+            mcp_params = dict(params)
+            mcp_params["company_id"] = company_id
+            mcp_params["user_id"] = user_id
+
+            result = await call_tool(tool_name, **mcp_params)
+
+            elapsed = (time.monotonic() - start_time) * 1000
+
+            # MCP tools return dicts with "status" key
+            is_success = result.get("status") != "error"
+
+            return ExecutionResult(
+                success=is_success,
+                status_code=200 if is_success else 500,
+                data=result if isinstance(result, dict) else {"result": result},
+                error=result.get("message", "") if not is_success else "",
+                duration_ms=round(elapsed, 2),
+                tool_module=tool.module,
+                tool_action=tool.action,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        except Exception as exc:
+            elapsed = (time.monotonic() - start_time) * 1000
+            exc_type = type(exc).__name__
+
+            logger.error(
+                "Shadow executor MCP error: %s.%s — %s: %s",
+                tool.module,
+                tool.action,
+                exc_type,
+                exc,
+            )
+
+            error_msg = "The integration service is temporarily unavailable. Please try again."
+            if "not found" in str(exc).lower():
+                error_msg = f"Integration tool '{tool_name}' is not available."
+
+            return ExecutionResult(
+                success=False,
+                status_code=0,
+                data={},
+                error=error_msg,
+                duration_ms=round(elapsed, 2),
+                tool_module=tool.module,
+                tool_action=tool.action,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
     async def execute_multi_step(
         self,
         steps: list[ExecutionStep],
@@ -359,3 +528,19 @@ class ShadowExecutor:
                 break
 
         return results
+
+
+# Module-level shared executor singleton
+_shared_executor: ShadowExecutor | None = None
+
+
+def _get_shared_executor() -> ShadowExecutor:
+    """Get or create the shared ShadowExecutor singleton.
+
+    Reuses a single connection pool across all PACE sessions
+    and shadow execution calls.
+    """
+    global _shared_executor
+    if _shared_executor is None:
+        _shared_executor = ShadowExecutor()
+    return _shared_executor

@@ -35,6 +35,8 @@ __all__ = [
 # Maximum sessions in memory and TTL
 _MAX_SESSIONS = 10000
 _SESSION_TTL_SECONDS = 600  # 10 minutes — pending sessions expire after this
+_UNDO_WINDOW_SECONDS = 8  # seconds after completion where undo is allowed
+_COOLDOWN_SECONDS = 5  # server-side cooldown for always_propose/double_confirm
 
 
 @dataclass
@@ -72,11 +74,14 @@ class PaceSession:
     intent_action: str
     confirmation_message: str
     steps: list[PaceStep]
-    status: str = "preview"  # preview, executing, done, failed, cancelled
+    trust_level: str = "propose"  # propose, always_propose, double_confirm
+    status: str = "preview"  # preview, awaiting_double_confirm, executing, done, failed, cancelled
     created_at: str = ""
     completed_at: str | None = None
     results: list[dict[str, Any]] = field(default_factory=list)
+    confirmed_count: int = 0  # how many times user has confirmed (double_confirm needs 2)
     _created_ts: float = 0.0  # monotonic time for TTL tracking
+    _completed_ts: float = 0.0  # monotonic time for undo window tracking
 
     def __post_init__(self) -> None:
         if not self.created_at:
@@ -90,6 +95,17 @@ class PaceSession:
             return False  # Completed sessions don't expire (they're cleaned up differently)
         return (time.monotonic() - self._created_ts) > _SESSION_TTL_SECONDS
 
+    def is_undoable(self) -> bool:
+        """Check if this session is within the undo window (8 seconds after completion)."""
+        if self.status != "done" or self._completed_ts == 0.0:
+            return False
+        return (time.monotonic() - self._completed_ts) <= _UNDO_WINDOW_SECONDS
+
+    @property
+    def requires_double_confirm(self) -> bool:
+        """Whether this session requires a two-step approval gate."""
+        return self.trust_level == "double_confirm"
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict for JSON responses."""
         return {
@@ -99,10 +115,14 @@ class PaceSession:
             "intent_action": self.intent_action,
             "confirmation_message": self.confirmation_message,
             "steps": [s.to_dict() for s in self.steps],
+            "trust_level": self.trust_level,
             "status": self.status,
             "created_at": self.created_at,
             "completed_at": self.completed_at,
             "results": self.results,
+            "confirmed_count": self.confirmed_count,
+            "requires_double_confirm": self.requires_double_confirm,
+            "is_undoable": self.is_undoable(),
         }
 
 
@@ -113,9 +133,14 @@ class PaceManager:
     Production: swap to Redis-backed store.
     """
 
-    def __init__(self, max_sessions: int = _MAX_SESSIONS) -> None:
+    def __init__(
+        self,
+        max_sessions: int = _MAX_SESSIONS,
+        cooldown_seconds: float = _COOLDOWN_SECONDS,
+    ) -> None:
         self._sessions: OrderedDict[str, PaceSession] = OrderedDict()
         self._max_sessions = max_sessions
+        self._cooldown_seconds = cooldown_seconds
 
     def create_session(
         self,
@@ -124,6 +149,7 @@ class PaceManager:
         intent_action: str,
         confirmation_message: str,
         steps: list[PaceStep],
+        trust_level: str = "propose",
     ) -> PaceSession:
         """Create a new PACE session in preview state.
 
@@ -133,6 +159,8 @@ class PaceManager:
             intent_action: The classified action (e.g. "apply").
             confirmation_message: Human-readable description of what will happen.
             steps: The execution steps that will be performed on confirmation.
+            trust_level: Trust classification — "propose", "always_propose",
+                or "double_confirm". Double-confirm requires two approvals.
 
         Returns:
             The newly created PaceSession.
@@ -153,15 +181,17 @@ class PaceManager:
             intent_action=intent_action,
             confirmation_message=confirmation_message,
             steps=steps,
+            trust_level=trust_level,
         )
         self._sessions[session_id] = session
 
         logger.info(
-            "PACE session created: %s (%s.%s, %d steps)",
+            "PACE session created: %s (%s.%s, %d steps, trust=%s)",
             session_id,
             intent_module,
             intent_action,
             len(steps),
+            trust_level,
         )
         return session
 
@@ -199,15 +229,72 @@ class PaceManager:
             sessions.append(session)
         return sessions
 
+    def confirm_session(self, session_id: str) -> tuple[PaceSession | None, bool]:
+        """Record a confirmation for a PACE session.
+
+        For double_confirm sessions, the first confirmation transitions
+        from 'preview' to 'awaiting_double_confirm'. The second confirmation
+        transitions to execution.
+
+        For single-confirm sessions (propose, always_propose), one
+        confirmation is sufficient.
+
+        Args:
+            session_id: The session to confirm.
+
+        Returns:
+            (session, ready_to_execute) — the session and whether it's
+            ready for execution (True) or still awaiting more confirmations.
+        """
+        session = self.get_session(session_id)
+        if session is None:
+            return None, False
+
+        # Server-side cooldown for dangerous actions
+        if session.trust_level in ("always_propose", "double_confirm"):
+            elapsed = time.monotonic() - session._created_ts
+            if elapsed < self._cooldown_seconds:
+                logger.warning(
+                    "PACE session %s cooldown not met: %.1fs < %ds",
+                    session_id,
+                    elapsed,
+                    _COOLDOWN_SECONDS,
+                )
+                return session, False
+
+        if session.status not in ("preview", "awaiting_double_confirm"):
+            logger.warning(
+                "Cannot confirm PACE session %s — status is '%s'",
+                session_id,
+                session.status,
+            )
+            return session, False
+
+        session.confirmed_count += 1
+
+        if session.requires_double_confirm and session.confirmed_count < 2:
+            session.status = "awaiting_double_confirm"
+            logger.info(
+                "PACE session %s: first confirmation received (double-confirm required)",
+                session_id,
+            )
+            return session, False
+
+        # Ready to execute
+        return session, True
+
     async def execute_session(
         self,
         session_id: str,
         jwt_token: str,
     ) -> PaceSession | None:
-        """Execute a pending PACE session.
+        """Execute a confirmed PACE session.
 
         Runs all steps sequentially. Stops on first failure for write
         operations. Updates step and session statuses as it goes.
+
+        For double_confirm sessions, call confirm_session() first to
+        verify both confirmations have been received.
 
         Args:
             session_id: The session to execute.
@@ -220,18 +307,27 @@ class PaceManager:
         if session is None:
             return None
 
-        if session.status != "preview":
+        if session.status not in ("preview", "awaiting_double_confirm"):
             logger.warning(
-                "Cannot execute PACE session %s — status is '%s', expected 'preview'",
+                "Cannot execute PACE session %s — status is '%s'",
                 session_id,
                 session.status,
             )
             return session
 
-        from hr_advisory.shadow.executor import ShadowExecutor
+        # Double-confirm guard: must have 2 confirmations
+        if session.requires_double_confirm and session.confirmed_count < 2:
+            logger.warning(
+                "Cannot execute double-confirm PACE session %s — only %d/2 confirmations",
+                session_id,
+                session.confirmed_count,
+            )
+            return session
+
+        from hr_advisory.shadow.executor import ShadowExecutor, _get_shared_executor
         from hr_advisory.shadow.tool_registry import ToolDefinition
 
-        executor = ShadowExecutor()
+        executor = _get_shared_executor()
         session.status = "executing"
 
         all_succeeded = True
@@ -244,8 +340,9 @@ class PaceManager:
                 method=step.method,
                 path=step.path,
                 params=[],
-                trust_level="propose",
+                trust_level=session.trust_level,
                 description=step.description,
+                is_mcp=step.method.upper() == "MCP",
             )
 
             result = await executor.execute(tool, step.params, jwt_token)
@@ -266,6 +363,7 @@ class PaceManager:
 
         session.status = "done" if all_succeeded else "failed"
         session.completed_at = datetime.now(timezone.utc).isoformat()
+        session._completed_ts = time.monotonic()
 
         logger.info(
             "PACE session %s completed: status=%s, %d/%d steps succeeded",
@@ -289,7 +387,7 @@ class PaceManager:
         if session is None:
             return False
 
-        if session.status != "preview":
+        if session.status not in ("preview", "awaiting_double_confirm"):
             logger.warning(
                 "Cannot cancel PACE session %s — status is '%s'",
                 session_id,

@@ -12,6 +12,10 @@ Components:
     - executor: Async HTTP client that executes API calls with user's JWT
     - pace: PACE session manager for write-operation confirmation flow
     - formatter: Response formatter with Arbor identity
+    - entity_resolver: Maps LLM-extracted entities to API parameter names
+    - workflow_composer: Expands intents into multi-step PACE workflows
+    - observation: User session behavior tracking and intent inference
+    - memory: Observation distillation into persistent preferences
 """
 
 from __future__ import annotations
@@ -21,13 +25,19 @@ from hr_advisory.shadow.tool_registry import ToolDefinition, ToolRegistry
 from hr_advisory.shadow.executor import ExecutionResult, ExecutionStep, ShadowExecutor
 from hr_advisory.shadow.pace import PaceManager, PaceSession, PaceStep
 from hr_advisory.shadow.formatter import ArborFormatter
+from hr_advisory.shadow.entity_resolver import detect_missing_required, resolve_entities
+from hr_advisory.shadow.workflow_composer import compose_workflow
 from hr_advisory.shadow.briefing import generate_briefing
 from hr_advisory.shadow.nudges import get_nudges
+from hr_advisory.shadow.observation import ObservationStore, get_observation_store
+from hr_advisory.shadow.memory import MemoryStore, UserMemory, get_memory_store
 
 __all__ = [
     "ArborFormatter",
     "ExecutionResult",
     "ExecutionStep",
+    "MemoryStore",
+    "ObservationStore",
     "PaceManager",
     "PaceSession",
     "PaceStep",
@@ -36,6 +46,12 @@ __all__ = [
     "ShadowIntentClassifier",
     "ToolDefinition",
     "ToolRegistry",
+    "UserMemory",
+    "compose_workflow",
+    "detect_missing_required",
     "generate_briefing",
+    "get_memory_store",
     "get_nudges",
+    "get_observation_store",
+    "resolve_entities",
 ]
