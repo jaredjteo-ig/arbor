@@ -127,16 +127,21 @@ class ObservationStore:
 
             from kailash import LocalRuntime, WorkflowBuilder
 
+            # Truncate inputs to prevent oversized DB rows (H1/H2 fix)
+            details_json = json.dumps(details or {})
+            if len(details_json) > 4000:
+                details_json = json.dumps({"truncated": True})
+
             wf = WorkflowBuilder()
             wf.add_node(
                 "UserObservationCreateNode",
                 "create_obs",
                 {
                     "user_id": int(user_id) if user_id.isdigit() else 0,
-                    "session_id": session_id,
-                    "page": page,
-                    "action_type": action_type,
-                    "details": json.dumps(details or {}),
+                    "session_id": session_id[:200],
+                    "page": page[:200],
+                    "action_type": action_type[:100],
+                    "details": details_json,
                 },
             )
             runtime = LocalRuntime()

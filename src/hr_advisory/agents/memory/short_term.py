@@ -65,6 +65,10 @@ class ShortTermMemory:
         if provisions_cited:
             turn["provisions_cited"] = provisions_cited
         if confidence_score is not None:
+            import math
+
+            if not math.isfinite(confidence_score):
+                confidence_score = 0.0
             turn["confidence_score"] = confidence_score
         self._buffer.save_turn(session_id, turn)
 

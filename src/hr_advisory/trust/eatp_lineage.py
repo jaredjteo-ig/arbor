@@ -274,14 +274,39 @@ def _evict_cache() -> None:
         _trust_cache.popitem(last=False)
 
 
-def _persist_trust_chain(chain: TrustChain) -> None:
+def _persist_trust_chain(
+    chain: TrustChain,
+    user_id: int = 0,
+    company_id: int = 0,
+) -> None:
     """Persist trust chain to database (best-effort, logs on failure)."""
     import logging
+    import math
 
     logger = logging.getLogger(__name__)
     try:
-        from hr_advisory.models.company_user import TrustLineageRecord
         from kailash import LocalRuntime, WorkflowBuilder
+
+        # Validate floats before persistence (C2 fix)
+        completeness = chain.genesis.company_profile_completeness
+        if not math.isfinite(completeness):
+            completeness = 0.0
+
+        # Scrub reasoning summaries of potential PII — truncate to domain-level (H4 fix)
+        attestations_data = []
+        for a in chain.attestations:
+            conf = a.confidence_score
+            if not math.isfinite(conf):
+                conf = 0.0
+            attestations_data.append(
+                {
+                    "agent_id": a.agent_id,
+                    "agent_role": a.agent_role.value,
+                    "domain": a.domain,
+                    "confidence_score": conf,
+                    "reasoning_summary": a.reasoning_summary[:200] if a.reasoning_summary else "",
+                }
+            )
 
         wf = WorkflowBuilder()
         wf.add_node(
@@ -289,22 +314,13 @@ def _persist_trust_chain(chain: TrustChain) -> None:
             "create_trust",
             {
                 "session_id": chain.genesis.session_id,
+                "user_id": user_id,
+                "company_id": company_id,
                 "genesis_fingerprint": chain.genesis.fingerprint,
                 "user_verification_level": chain.genesis.user_verification_level.value,
-                "company_completeness": chain.genesis.company_profile_completeness,
+                "company_completeness": completeness,
                 "kb_currency_status": json.dumps(chain.genesis.kb_currency_status),
-                "attestations": json.dumps(
-                    [
-                        {
-                            "agent_id": a.agent_id,
-                            "agent_role": a.agent_role.value,
-                            "domain": a.domain,
-                            "confidence_score": a.confidence_score,
-                            "reasoning_summary": a.reasoning_summary,
-                        }
-                        for a in chain.attestations
-                    ]
-                ),
+                "attestations": json.dumps(attestations_data),
                 "attestation_count": len(chain.attestations),
                 "verification_depth": chain.verification_depth,
                 "human_review_required": chain.human_review_required,
@@ -334,8 +350,12 @@ def get_trust_chain(session_id: str) -> Optional[TrustChain]:
     return None
 
 
-def finalize_trust_chain(session_id: str) -> None:
+def finalize_trust_chain(
+    session_id: str,
+    user_id: int = 0,
+    company_id: int = 0,
+) -> None:
     """Persist a completed trust chain to the database."""
     chain = _trust_cache.get(session_id)
     if chain:
-        _persist_trust_chain(chain)
+        _persist_trust_chain(chain, user_id=user_id, company_id=company_id)
