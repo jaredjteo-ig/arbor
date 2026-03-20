@@ -43,8 +43,10 @@ from hr_advisory.workflows.guardrails import (
     ScreeningResult,
     check_confidence_escalation,
     check_rate_limit,
+    screen_injection,
     screen_query,
     screen_response,
+    screen_scope,
 )
 
 from hr_advisory.agents.config import (
@@ -444,7 +446,38 @@ async def advisory_query(
             detail="You've sent too many requests. Please wait a moment and try again.",
         )
 
-    # ── Step 3: Query screening (guardrails) ────────────────────
+    # ── Step 2b: Scope check (is this an HR question?) ──────────
+    scope_result = screen_scope(query)
+    if scope_result.result == ScreeningResult.BLOCK:
+        return {
+            "query": query,
+            "response": scope_result.reason,
+            "alternative_guidance": scope_result.alternative_guidance,
+            "risk_tier": "green",
+            "confidence_score": 1.0,
+            "out_of_scope": True,
+            "provisions_cited": [],
+            "company_id": company_id,
+            "conversation_id": conversation_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ── Step 2c: Prompt injection detection ───────────────────
+    injection_result = screen_injection(query, user_id=user_id)
+    if injection_result.result == ScreeningResult.BLOCK:
+        return {
+            "query": query,
+            "response": injection_result.reason,
+            "risk_tier": "red",
+            "confidence_score": 1.0,
+            "blocked": True,
+            "provisions_cited": [],
+            "company_id": company_id,
+            "conversation_id": conversation_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ── Step 3: Query screening (circumvention + escalation) ──
     screening = screen_query(query, user_id=user_id)
 
     if screening.result == ScreeningResult.BLOCK:
@@ -1687,7 +1720,17 @@ async def advisory_stream(
     if not check_rate_limit(user_id):
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please wait.")
 
-    # ── Step 3: Query screening (guardrails) ────────────────────
+    # ── Step 2b: Scope check ─────────────────────────────────────
+    scope_result = screen_scope(query)
+    if scope_result.result == ScreeningResult.BLOCK:
+        raise HTTPException(status_code=422, detail=scope_result.reason)
+
+    # ── Step 2c: Prompt injection detection ───────────────────
+    injection_result = screen_injection(query, user_id=user_id)
+    if injection_result.result == ScreeningResult.BLOCK:
+        raise HTTPException(status_code=422, detail=injection_result.reason)
+
+    # ── Step 3: Query screening (circumvention + escalation) ──
     screening = screen_query(query, user_id=user_id)
     if screening.result in (ScreeningResult.BLOCK, ScreeningResult.ESCALATE):
         raise HTTPException(status_code=422, detail=screening.reason)

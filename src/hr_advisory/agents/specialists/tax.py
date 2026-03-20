@@ -46,7 +46,7 @@ class TaxAgent(BaseDomainSpecialist):
     def _default_signature(self):
         return TaxSignature()
 
-    def _generate_system_prompt(self) -> str:
+    def _domain_system_prompt(self) -> str:
         return (
             "You are a Singapore employer tax obligations specialist.\n\n"
             "DOMAIN CONSTRAINT: You may ONLY advise on employer tax obligations "

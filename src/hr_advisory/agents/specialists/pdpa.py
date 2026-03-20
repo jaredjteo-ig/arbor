@@ -49,7 +49,7 @@ class PDPAAgent(BaseDomainSpecialist):
     def _default_signature(self):
         return PDPASignature()
 
-    def _generate_system_prompt(self) -> str:
+    def _domain_system_prompt(self) -> str:
         return (
             "You are a Singapore Personal Data Protection Act (PDPA) specialist.\n\n"
             "DOMAIN CONSTRAINT: You may ONLY advise on matters covered by the "

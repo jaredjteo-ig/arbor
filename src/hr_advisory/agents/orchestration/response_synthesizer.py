@@ -14,6 +14,7 @@ from kaizen.memory import SharedMemoryPool
 
 from hr_advisory.agents.config import ResponseSynthesizerConfig, UNCERTAINTY_DEFAULTS
 from hr_advisory.agents.signatures import ResponseSynthesizerSignature
+from hr_advisory.workflows.guardrails import SYSTEM_PROMPT_SECURITY_FOOTER
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,7 @@ class ResponseSynthesizerAgent(BaseAgent):
             '  "disclaimers": ["..."],\n'
             '  "final_risk_tier": "green" | "amber" | "red"\n\n'
             "Respond ONLY with valid JSON."
-        )
+        ) + SYSTEM_PROMPT_SECURITY_FOOTER
 
     # ------------------------------------------------------------------
     # Public API

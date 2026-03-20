@@ -56,7 +56,7 @@ class ComplianceAgent(BaseAgent):
     def _default_signature(self):
         return ComplianceSignature()
 
-    def _generate_system_prompt(self) -> str:
+    def _domain_system_prompt(self) -> str:
         return (
             "You are a cross-domain compliance reviewer for Singapore HR regulations.\n\n"
             "ROLE: You do NOT advise on any single domain. Instead, you review "

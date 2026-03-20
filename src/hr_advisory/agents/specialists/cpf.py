@@ -46,7 +46,7 @@ class CPFAgent(BaseDomainSpecialist):
     def _default_signature(self):
         return CPFSignature()
 
-    def _generate_system_prompt(self) -> str:
+    def _domain_system_prompt(self) -> str:
         return (
             "You are a Singapore CPF (Central Provident Fund) specialist.\n\n"
             "DOMAIN CONSTRAINT: You may ONLY advise on matters covered by the "

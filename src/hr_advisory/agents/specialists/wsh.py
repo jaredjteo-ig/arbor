@@ -46,7 +46,7 @@ class WSHAgent(BaseDomainSpecialist):
     def _default_signature(self):
         return WSHSignature()
 
-    def _generate_system_prompt(self) -> str:
+    def _domain_system_prompt(self) -> str:
         return (
             "You are a Singapore Workplace Safety and Health specialist.\n\n"
             "DOMAIN CONSTRAINT: You may ONLY advise on matters covered by the "

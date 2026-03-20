@@ -19,6 +19,7 @@ from kaizen.memory import SharedMemoryPool
 
 from hr_advisory.agents.config import QueryAnalyzerConfig, UNCERTAINTY_DEFAULTS
 from hr_advisory.agents.signatures import QueryAnalyzerSignature
+from hr_advisory.workflows.guardrails import SYSTEM_PROMPT_SECURITY_FOOTER
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,7 @@ class QueryAnalyzerAgent(BaseAgent):
             "Respond ONLY with valid JSON. No explanation outside the JSON."
         )
 
-        return f"{base_prompt}\n\n{SINGLISH_SYSTEM_PROMPT}"
+        return f"{base_prompt}\n\n{SINGLISH_SYSTEM_PROMPT}" + SYSTEM_PROMPT_SECURITY_FOOTER
 
     # ------------------------------------------------------------------
     # Public API

@@ -17,6 +17,7 @@ from kaizen.core.base_agent import BaseAgent
 from kaizen.memory import SharedMemoryPool
 
 from hr_advisory.agents.config import SpecialistConfig, UNCERTAINTY_DEFAULTS
+from hr_advisory.workflows.guardrails import SYSTEM_PROMPT_SECURITY_FOOTER
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class BaseDomainSpecialist(BaseAgent):
     """Abstract specialist that advises on a single HR regulatory domain.
 
     Subclasses MUST set ``domain`` and override ``_generate_system_prompt``.
+    The security footer is automatically appended to all system prompts.
     """
 
     # Subclasses override these class-level attributes.
@@ -49,6 +51,15 @@ class BaseDomainSpecialist(BaseAgent):
             mcp_servers=[],
             **kwargs,
         )
+
+    def _generate_system_prompt(self) -> str:
+        """Override to append security footer to all specialist prompts."""
+        base_prompt = self._domain_system_prompt()
+        return base_prompt + SYSTEM_PROMPT_SECURITY_FOOTER
+
+    def _domain_system_prompt(self) -> str:
+        """Subclasses override this instead of _generate_system_prompt."""
+        return f"You are a {self.domain_label} specialist for Singapore employment matters."
 
     # ------------------------------------------------------------------
     # Public API

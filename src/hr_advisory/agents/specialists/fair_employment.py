@@ -46,7 +46,7 @@ class FairEmploymentAgent(BaseDomainSpecialist):
     def _default_signature(self):
         return FairEmploymentSignature()
 
-    def _generate_system_prompt(self) -> str:
+    def _domain_system_prompt(self) -> str:
         return (
             "You are a Singapore fair employment and workplace fairness specialist.\n\n"
             "DOMAIN CONSTRAINT: You may ONLY advise on fair employment and "
