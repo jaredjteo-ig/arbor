@@ -173,65 +173,67 @@ export function ArborHistory({
 
         {!loading &&
           !error &&
-          Array.from(groups.entries()).map(([day, actions]) => (
-            <div key={day}>
-              {/* Day header */}
-              <div className="sticky top-0 bg-[var(--color-gray-50)] px-4 py-1.5 border-b border-[var(--color-gray-100)]">
-                <span className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
-                  {formatDayLabel(day)}
-                </span>
-              </div>
-
-              {/* Actions for this day */}
-              {actions.map((action, i) => (
-                <div
-                  key={`${day}-${i}`}
-                  className="px-4 py-2.5 border-b border-[var(--color-gray-100)] hover:bg-[var(--color-gray-50)] transition-colors"
-                >
-                  <div className="flex items-start gap-2.5">
-                    {/* Status icon */}
-                    <div className="mt-0.5">
-                      {action.success ? (
-                        <div className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary)]/20">
-                          <Check className="h-2.5 w-2.5 text-[var(--color-primary)]" />
-                        </div>
-                      ) : (
-                        <div className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-risk-red)]/20">
-                          <X className="h-2.5 w-2.5 text-[var(--color-risk-red)]" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Action details */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-[var(--foreground)] truncate">
-                        {actionLabel(action)}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-[var(--color-gray-500)]">
-                          {formatTime(action.timestamp)}
-                        </span>
-                        <span
-                          className={clsx(
-                            "text-xs px-1.5 py-0.5 rounded-full",
-                            action.trust_level === "autonomous"
-                              ? "bg-[var(--color-gray-100)] text-[var(--color-gray-500)]"
-                              : action.trust_level === "double_confirm"
-                                ? "bg-amber-100 text-amber-700"
-                                : "bg-[var(--color-primary)]/10 text-[var(--color-primary)]",
-                          )}
-                        >
-                          {action.trust_level.replace(/_/g, " ")}
-                        </span>
-                      </div>
-                    </div>
-
-                    <ChevronRight className="h-4 w-4 text-[var(--color-gray-300)] shrink-0 mt-0.5" />
-                  </div>
+          Array.from(groups.entries()).map(
+            ([day, actions]: [string, ShadowAction[]]) => (
+              <div key={day}>
+                {/* Day header */}
+                <div className="sticky top-0 bg-[var(--color-gray-50)] px-4 py-1.5 border-b border-[var(--color-gray-100)]">
+                  <span className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+                    {formatDayLabel(day)}
+                  </span>
                 </div>
-              ))}
-            </div>
-          ))}
+
+                {/* Actions for this day */}
+                {actions.map((action, i) => (
+                  <div
+                    key={`${day}-${i}`}
+                    className="px-4 py-2.5 border-b border-[var(--color-gray-100)] hover:bg-[var(--color-gray-50)] transition-colors"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      {/* Status icon */}
+                      <div className="mt-0.5">
+                        {action.success ? (
+                          <div className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary)]/20">
+                            <Check className="h-2.5 w-2.5 text-[var(--color-primary)]" />
+                          </div>
+                        ) : (
+                          <div className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-risk-red)]/20">
+                            <X className="h-2.5 w-2.5 text-[var(--color-risk-red)]" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action details */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-[var(--foreground)] truncate">
+                          {actionLabel(action)}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs text-[var(--color-gray-500)]">
+                            {formatTime(action.timestamp)}
+                          </span>
+                          <span
+                            className={clsx(
+                              "text-xs px-1.5 py-0.5 rounded-full",
+                              action.trust_level === "autonomous"
+                                ? "bg-[var(--color-gray-100)] text-[var(--color-gray-500)]"
+                                : action.trust_level === "double_confirm"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-[var(--color-primary)]/10 text-[var(--color-primary)]",
+                            )}
+                          >
+                            {action.trust_level.replace(/_/g, " ")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <ChevronRight className="h-4 w-4 text-[var(--color-gray-300)] shrink-0 mt-0.5" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ),
+          )}
       </div>
 
       {/* Footer with total count */}
