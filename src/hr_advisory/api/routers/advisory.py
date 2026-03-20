@@ -18,6 +18,7 @@ import contextvars
 import json
 import logging
 import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -68,14 +69,31 @@ router = APIRouter()
 # Safe to call multiple times (idempotent).
 install_kaizen_provider_patch()
 
-# Session-scoped pipeline cache keyed by conversation_id
-_conversation_memory: dict[str, ShortTermMemory] = {}
+# Session-scoped pipeline cache keyed by conversation_id.
+# Bounded with LRU eviction to prevent OOM in long-running processes.
+_MAX_CONVERSATIONS = 10000
+_conversation_memory: OrderedDict[str, ShortTermMemory] = OrderedDict()
 
 # Custom titles set via PATCH /conversations/{id} (overrides auto-generated titles)
-_conversation_titles: dict[str, str] = {}
+_conversation_titles: OrderedDict[str, str] = OrderedDict()
 
 # Tenant isolation: maps conversation_id → user_id who created it
-_conversation_owners: dict[str, str] = {}
+_conversation_owners: OrderedDict[str, str] = OrderedDict()
+
+
+def _touch_conversation(conv_key: str) -> None:
+    """Move a conversation to the end of LRU order and evict oldest if at capacity."""
+    for store in (_conversation_memory, _conversation_titles, _conversation_owners):
+        if conv_key in store:
+            store.move_to_end(conv_key)
+
+    # Evict oldest conversations when at capacity
+    while len(_conversation_memory) > _MAX_CONVERSATIONS:
+        _conversation_memory.popitem(last=False)
+    while len(_conversation_titles) > _MAX_CONVERSATIONS:
+        _conversation_titles.popitem(last=False)
+    while len(_conversation_owners) > _MAX_CONVERSATIONS:
+        _conversation_owners.popitem(last=False)
 
 
 _RISK_TIER_SEVERITY = {"green": 0, "amber": 1, "red": 2}
@@ -513,6 +531,7 @@ async def advisory_query(
     # ── Step 3b: Load conversation memory ───────────────────────
     conv_key = str(conversation_id)
     memory = _conversation_memory.setdefault(conv_key, ShortTermMemory())
+    _touch_conversation(conv_key)
     context = memory.load_context(conv_key)
     conversation_history = _format_conversation_history(context.get("turns", []))
 
@@ -1625,7 +1644,14 @@ async def _async_run_llm_advisory(
     # Capture the current context (with LLMKeyContext set) and run in that
     # context on the thread pool worker — prevents cross-tenant leakage.
     ctx = contextvars.copy_context()
-    return await loop.run_in_executor(_llm_executor, ctx.run, func)
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(_llm_executor, ctx.run, func),
+            timeout=60.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("LLM advisory pipeline timed out after 60s for query: %.100s", query)
+        return _generate_grounded_response(query, domains, provisions)
 
 
 def _generate_grounded_response(
@@ -1738,6 +1764,7 @@ async def advisory_stream(
     # ── Step 3b: Load conversation memory ───────────────────────
     conv_key = str(conversation_id)
     memory = _conversation_memory.setdefault(conv_key, ShortTermMemory())
+    _touch_conversation(conv_key)
     context = memory.load_context(conv_key)
     conversation_history = _format_conversation_history(context.get("turns", []))
 
