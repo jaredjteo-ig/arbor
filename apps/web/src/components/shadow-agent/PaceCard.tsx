@@ -25,7 +25,13 @@ interface PaceCardProps {
   onRetry?: (sessionId: string) => void;
 }
 
-type CardState = "preview" | "cooldown" | "executing" | "done" | "failed";
+type CardState =
+  | "preview"
+  | "cooldown"
+  | "double_confirm"
+  | "executing"
+  | "done"
+  | "failed";
 
 /* ── Cooldown duration for dangerous actions ──────────────── */
 
@@ -53,6 +59,7 @@ export function PaceCard({
   const session = response.session;
   const trustLevel = response.intent?.trust_level ?? "propose";
   const isDangerous = trustLevel === "always_propose";
+  const isDoubleConfirm = trustLevel === "double_confirm";
 
   const [state, setState] = useState<CardState>("preview");
   const [steps, setSteps] = useState<PaceStep[]>(session?.steps ?? []);
@@ -96,6 +103,13 @@ export function PaceCard({
 
     try {
       const result = await onConfirm(sessionId);
+
+      // Handle double_confirm_required — need second confirmation
+      if (result.type === "double_confirm_required") {
+        setState("double_confirm");
+        setResultMessage(result.message ?? "Please confirm again.");
+        return;
+      }
 
       // Update steps from result
       if (result.session?.steps) {
@@ -297,19 +311,10 @@ export function PaceCard({
           </a>
         )}
 
-        {state === "failed" && (
+        {state === "failed" && onRetry && (
           <button
             type="button"
-            onClick={() => {
-              if (onRetry) {
-                onRetry(sessionId);
-              } else {
-                // Reset to preview for re-confirmation
-                setState("preview");
-                setSteps(session?.steps ?? []);
-                setErrorMessage("");
-              }
-            }}
+            onClick={() => onRetry(sessionId)}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium text-[var(--color-gray-600)] bg-[var(--color-gray-100)] hover:bg-[var(--color-gray-200)] transition-colors"
           >
             <RotateCcw className="h-3.5 w-3.5" />
@@ -318,12 +323,49 @@ export function PaceCard({
         )}
       </div>
 
-      {/* ── Danger warning for always_propose actions ──── */}
-      {isDangerous && (state === "preview" || state === "cooldown") && (
-        <p className="text-[10px] text-[var(--color-risk-amber)] mt-1">
-          This action modifies data and cannot be easily undone.
-        </p>
+      {/* ── Double confirm state ────────────────────────── */}
+      {state === "double_confirm" && (
+        <div className="space-y-2">
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 border border-amber-200">
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">
+                Second confirmation required
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                This is a government or financial action. Please confirm again
+                to proceed.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleConfirm}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+            >
+              Confirm Again
+            </button>
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium text-[var(--color-gray-600)] bg-[var(--color-gray-100)] hover:bg-[var(--color-gray-200)] transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
+
+      {/* ── Danger warning for always_propose actions ──── */}
+      {(isDangerous || isDoubleConfirm) &&
+        (state === "preview" || state === "cooldown") && (
+          <p className="text-[10px] text-[var(--color-risk-amber)] mt-1">
+            {isDoubleConfirm
+              ? "This is a government/financial action requiring double confirmation."
+              : "This action modifies data and cannot be easily undone."}
+          </p>
+        )}
     </div>
   );
 }

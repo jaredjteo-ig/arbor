@@ -25,6 +25,8 @@ interface ShadowMarginProps {
   isLoading?: boolean;
   /** T140: Proactive observation insights from the observation layer */
   observationInsights?: ObservationInsight[];
+  /** Opens the action history panel */
+  onOpenHistory?: () => void;
 }
 
 /* ── Severity colors ──────────────────────────────────────── */
@@ -57,6 +59,7 @@ export function ShadowMargin({
   insights,
   isLoading = false,
   observationInsights = [],
+  onOpenHistory,
 }: ShadowMarginProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());

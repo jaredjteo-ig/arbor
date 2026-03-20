@@ -3,11 +3,13 @@
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/shell";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { useState } from "react";
 import {
   ShadowAgentProvider,
   ShadowWidget,
   ShadowMargin,
   CommandSurface,
+  ArborHistory,
   useShadowAgent,
   useShadowContext,
   useObservation,
@@ -78,12 +80,20 @@ function ShadowAgentUI() {
 function ShadowMarginWrapper() {
   const { insights, isLoading } = useShadowContext();
   const { insights: observationInsights } = useObservation();
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
-    <ShadowMargin
-      insights={insights}
-      isLoading={isLoading}
-      observationInsights={observationInsights}
-    />
+    <>
+      <ShadowMargin
+        insights={insights}
+        isLoading={isLoading}
+        observationInsights={observationInsights}
+        onOpenHistory={() => setHistoryOpen(true)}
+      />
+      <ArborHistory
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
+    </>
   );
 }

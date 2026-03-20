@@ -25,6 +25,8 @@ import {
 import type { CalculatorDisplayResult } from "./ShadowAgentContext";
 import { useShadowAgent } from "./ShadowAgentContext";
 import { PaceCard } from "./PaceCard";
+import { ArborOverlay } from "./ArborOverlay";
+import { ArborResult } from "./ArborResult";
 import { shadowApi, type ShadowResponse } from "@/services/api/shadow";
 
 /* ── Types ────────────────────────────────────────────────── */
@@ -245,6 +247,11 @@ export function CommandSurface({
   const [shadowResponse, setShadowResponse] = useState<ShadowResponse | null>(
     null,
   );
+  const [confirmResult, setConfirmResult] = useState<ShadowResponse | null>(
+    null,
+  );
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionStep, setExecutionStep] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -266,6 +273,9 @@ export function CommandSurface({
       setQuery("");
       setResult(null);
       setShadowResponse(null);
+      setConfirmResult(null);
+      setIsExecuting(false);
+      setExecutionStep(0);
       setIsStreaming(false);
     }
   }, [isOpen]);
@@ -400,9 +410,33 @@ export function CommandSurface({
   // ── PACE handlers ──────────────────────────────────────
   const handlePaceConfirm = useCallback(
     async (sessionId: string): Promise<ShadowResponse> => {
-      return shadowApi.confirm(sessionId);
+      const steps = shadowResponse?.session?.steps ?? [];
+      const isMultiStep = steps.length > 1;
+
+      if (isMultiStep) {
+        setIsExecuting(true);
+        setExecutionStep(0);
+      }
+
+      const response = await shadowApi.confirm(sessionId);
+
+      if (isMultiStep) {
+        // Update step progress from response
+        const completedSteps =
+          response.session?.steps?.filter((s) => s.status === "done").length ??
+          steps.length;
+        setExecutionStep(completedSteps);
+      }
+
+      // Store the confirm result for ArborResult display
+      if (response.type === "result") {
+        setConfirmResult(response);
+      }
+
+      setIsExecuting(false);
+      return response;
     },
-    [],
+    [shadowResponse],
   );
 
   const handlePaceCancel = useCallback(
@@ -513,18 +547,32 @@ export function CommandSurface({
             )}
 
             {/* T470: PACE Confirmation Card — shown when shadow API returns preview */}
-            {shadowResponse?.type === "preview" && !isStreaming && (
+            {shadowResponse?.type === "preview" &&
+              !isStreaming &&
+              !confirmResult && (
+                <div className="px-4 py-3">
+                  <PaceCard
+                    response={shadowResponse}
+                    onConfirm={handlePaceConfirm}
+                    onCancel={handlePaceCancel}
+                    onRetry={(sid) => {
+                      setShadowResponse(null);
+                      setConfirmResult(null);
+                      handleSubmit(query);
+                    }}
+                  />
+                </div>
+              )}
+
+            {/* T472: ArborResult — shown after PACE execution completes */}
+            {confirmResult && !isStreaming && (
               <div className="px-4 py-3">
-                <PaceCard
-                  response={shadowResponse}
-                  onConfirm={handlePaceConfirm}
-                  onCancel={handlePaceCancel}
-                />
+                <ArborResult response={confirmResult} showUndo />
               </div>
             )}
 
             {/* Result display */}
-            {result && !isStreaming && !shadowResponse && (
+            {result && !isStreaming && !shadowResponse && !confirmResult && (
               <div className="px-4 py-3">
                 {result.type === "error" ? (
                   <div className="flex items-start gap-2 text-sm text-[var(--color-risk-red)]">
@@ -610,6 +658,31 @@ export function CommandSurface({
           </div>
         </div>
       </div>
+
+      {/* T471: ArborOverlay — dims UI during multi-step execution */}
+      <ArborOverlay
+        isActive={isExecuting}
+        currentStep={executionStep}
+        totalSteps={shadowResponse?.session?.steps?.length ?? 0}
+        steps={shadowResponse?.session?.steps ?? []}
+        onInterrupt={() => {
+          if (shadowResponse?.session_id) {
+            shadowApi.cancel(shadowResponse.session_id);
+          }
+          setIsExecuting(false);
+        }}
+        onDismiss={() => setIsExecuting(false)}
+        isComplete={
+          !isExecuting &&
+          confirmResult !== null &&
+          confirmResult.success !== false
+        }
+        isFailed={
+          !isExecuting &&
+          confirmResult !== null &&
+          confirmResult.success === false
+        }
+      />
     </>
   );
 }

@@ -8,7 +8,7 @@ import { apiClient } from "./client";
 
 export interface PaceStep {
   description: string;
-  status: "pending" | "executing" | "done" | "failed";
+  status: "pending" | "executing" | "done" | "failed" | "cancelled";
   result?: Record<string, unknown>;
 }
 
@@ -23,6 +23,8 @@ export interface ShadowResponse {
     | "out_of_scope"
     | "blocked"
     | "cancelled"
+    | "double_confirm_required"
+    | "undo_expired"
     | "info"
     | "undo_guidance"
     | "undo_not_supported"
@@ -38,11 +40,19 @@ export interface ShadowResponse {
     id: string;
     status: string;
     confirmation_message: string;
+    trust_level: string;
     steps: PaceStep[];
     results?: Array<Record<string, unknown>>;
+    confirmed_count?: number;
+    requires_double_confirm?: boolean;
+    is_undoable?: boolean;
   };
   /** Whether this response requires user confirmation before execution. */
   requires_confirmation?: boolean;
+  /** Whether this action requires two-step confirmation (government/financial). */
+  requires_double_confirm?: boolean;
+  /** Number of confirmations received so far (for double_confirm flow). */
+  confirmed_count?: number;
   /** Whether the action succeeded (present for result type). */
   success?: boolean;
   /** Error message (present when success is false). */
