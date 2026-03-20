@@ -21,6 +21,8 @@ from hr_advisory.api.routers.inventory import router as inventory_router
 from hr_advisory.api.routers.kb import router as kb_router
 from hr_advisory.api.routers.learning import router as learning_router
 from hr_advisory.api.routers.leave import router as leave_router
+from hr_advisory.api.routers.llm_config import router as llm_config_router
+from hr_advisory.api.routers.llm_config import user_llm_router
 from hr_advisory.api.routers.payroll import router as payroll_router
 from hr_advisory.api.routers.profile import router as profile_router
 from hr_advisory.api.routers.projects import router as projects_router
@@ -55,6 +57,8 @@ __all__ = [
     "kb_router",
     "learning_router",
     "leave_router",
+    "llm_config_router",
+    "user_llm_router",
     "payroll_router",
     "profile_router",
     "projects_router",

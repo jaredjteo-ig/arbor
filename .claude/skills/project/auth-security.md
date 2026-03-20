@@ -123,7 +123,37 @@ Every response includes: X-Content-Type-Options, X-Frame-Options, HSTS, CSP, Ref
 - `src/hr_advisory/api/middleware/tenant_isolation.py` — Company access
 - `src/hr_advisory/security/validation.py` — Input sanitisation
 - `src/hr_advisory/security/pdpa.py` — PDPA compliance
+- `src/hr_advisory/security/llm_encryption.py` — BYOK API key encryption (dedicated Fernet key)
+- `src/hr_advisory/services/audit_log.py` — PDPA audit events for key lifecycle
 - `docs/03-security.md` — Full security documentation
+- `docs/00-authority/07-byok-api-keys.md` — BYOK security architecture
+
+## BYOK API Key Security
+
+### Encryption Separation
+
+LLM API keys use a **dedicated** `LLM_KEY_ENCRYPTION_KEY` (Fernet), separate from `SALARY_ENCRYPTION_KEY`. No plaintext fallback in production. Dev mode derives from JWT_SECRET_KEY with warning.
+
+### Key Lifecycle Audit Events
+
+Every key operation is logged via `log_audit_event()` with `AuditAction` constants:
+
+- `LLM_KEY_CREATED`, `LLM_KEY_VIEWED`, `LLM_KEY_DELETED`, `LLM_KEY_VALIDATED`
+- `LLM_KEY_STATUS_CHANGED`, `LLM_KEY_DECRYPTED`, `LLM_KEY_ROTATED`
+- `LLM_BUDGET_CHANGED`, `LLM_BUDGET_EXCEEDED`
+
+### Context Variable Safety
+
+Per-request LLM context uses `contextvars.ContextVar` (not `threading.local`) + `copy_context().run()` for thread pool dispatch. This prevents cross-tenant key leakage when Kaizen agents spawn child threads.
+
+### SSRF Protection
+
+Ollama base_url validation blocks cloud metadata endpoints (169.254.169.254, metadata.google.internal, 100.100.100.200). Private IPs are intentionally allowed for DGX/institutional use.
+
+### Key Rotation
+
+CLI tool: `OLD_LLM_KEY=... NEW_LLM_KEY=... python -m hr_advisory.cli.rotate_llm_keys`
+Process restart required after rotation (lru_cache on Fernet instance).
 
 ## Consult Agent
 

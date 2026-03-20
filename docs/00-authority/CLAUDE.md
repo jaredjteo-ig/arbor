@@ -14,7 +14,7 @@ Arbor is an AI-powered HR advisory platform for Singapore SMEs. It provides sour
 - **Database**: PostgreSQL via DataFlow (auto-generated CRUD nodes)
 - **Cache/Sessions**: Redis
 - **Auth**: JWT with JTI + server-side blocklist (PyJWT + passlib[bcrypt])
-- **LLM**: Auto-detects OpenAI or Ollama (qwen2.5 instruct models)
+- **LLM**: BYOK multi-provider (OpenAI, Anthropic, Gemini, DeepSeek, Mistral, Ollama/DGX) with budget-capped default (gpt-5-mini)
 - **Vector Search**: pgvector (with keyword-density fallback)
 
 ## Key Directories
@@ -26,9 +26,10 @@ src/hr_advisory/
                     appraisals, projects, inventory, recruitment, reports, approval_groups,
                     calculator, compliance, document, kb, profile, search, learning, admin,
                     integrations
-  agents/           Kaizen agents (orchestrator, specialists, memory)
-  models/           60+ DataFlow models (company, user, KB, payroll, leave, claims, attendance,
-                    shifts, appraisals, projects, inventory, recruitment, approval groups)
+  agents/           Kaizen agents (orchestrator, specialists, memory, llm_context for BYOK)
+  models/           63+ DataFlow models (company, user, KB, payroll, leave, claims, attendance,
+                    shifts, appraisals, projects, inventory, recruitment, approval groups,
+                    CompanyLLMConfig, CompanyLLMUsage, UserLLMConfig)
   services/         Payroll calculator, statutory files, PII encryption, demo seed data
   workflows/        Kailash Core SDK workflows (calculators, guardrails, classification)
   trust/            EATP lineage, CARE governance, citation validation
@@ -85,11 +86,11 @@ The platform includes a comprehensive HRIS engine with 120+ API endpoints across
 | Shifts      | Hourly rates, multipliers, break types, publish workflow                                |
 | Employees   | 30+ fields, self-service, PII encryption, PDPA audit logging                            |
 | Appraisals  | Template builder, periods, launch, employee/reviewer workflows, sign-off                |
-| Projects    | Role-based hourly rates, timesheets, allocations, overhead, budget variance              |
-| Inventory   | Location/category/item hierarchy, lifecycle state machine, requests, movement audit      |
-| Recruitment | Job listings, candidate pipeline, interviews, feedback, hire-to-employee conversion      |
+| Projects    | Role-based hourly rates, timesheets, allocations, overhead, budget variance             |
+| Inventory   | Location/category/item hierarchy, lifecycle state machine, requests, movement audit     |
+| Recruitment | Job listings, candidate pipeline, interviews, feedback, hire-to-employee conversion     |
 | Reports     | 11 report types (payroll, CPF, banks, YTD, variance, leave, claims, attendance, etc.)   |
-| Approvals   | Approval groups, timesheet approval queue, inventory request approval queue              |
+| Approvals   | Approval groups, timesheet approval queue, inventory request approval queue             |
 
 ## MCP Integration Layer
 

@@ -9,19 +9,19 @@ Project-specific knowledge for the AI-powered HR advisory platform serving Singa
 
 ## Skill Files
 
-| File                         | Domain                    | When to Use                                                                                             |
-| ---------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `sg-employment-law.md`       | Singapore employment law  | KB content, provision accuracy, regulatory domains                                                      |
-| `advisory-safety-chain.md`   | 13-step safety chain      | Advisory query pipeline, guardrails, response generation                                                |
-| `platform-architecture.md`   | Platform structure        | Router setup, middleware, auth, Nexus integration                                                       |
-| `trust-governance.md`        | EATP/CARE/learning        | Trust chains, citation validation, expert review                                                        |
-| `calculators.md`             | HR calculators            | CPF, leave, salary, quota, overtime calculations                                                        |
-| `kb-management.md`           | Knowledge base pipeline   | Content loading, search, regulatory updates                                                             |
-| `auth-security.md`           | Authentication & security | JWT tokens, tenant isolation, rate limiting, PDPA                                                       |
-| `document-generation.md`     | Document templates        | Template CRUD, generation, preview, download, history                                                   |
-| `company-user-management.md` | Company & user profiles   | Company onboarding, user CRUD, roles, workforce data                                                    |
+| File                         | Domain                    | When to Use                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sg-employment-law.md`       | Singapore employment law  | KB content, provision accuracy, regulatory domains                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `advisory-safety-chain.md`   | 13-step safety chain      | Advisory query pipeline, guardrails, response generation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `platform-architecture.md`   | Platform structure        | Router setup, middleware, auth, Nexus integration                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `trust-governance.md`        | EATP/CARE/learning        | Trust chains, citation validation, expert review                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `calculators.md`             | HR calculators            | CPF, leave, salary, quota, overtime calculations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `kb-management.md`           | Knowledge base pipeline   | Content loading, search, regulatory updates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `auth-security.md`           | Authentication & security | JWT tokens, tenant isolation, rate limiting, PDPA                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `document-generation.md`     | Document templates        | Template CRUD, generation, preview, download, history                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `company-user-management.md` | Company & user profiles   | Company onboarding, user CRUD, roles, workforce data                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `hris-engine.md`             | Full HRIS engine          | Payroll (pay items, schemes, adhoc, simulation, variance), leave (encashment, off-in-lieu, hourly), claims (groups, co-payment, BIK), attendance (lateness brackets, today dashboard), shifts (hourly rates, multipliers, publish), appraisals (templates, periods, reviews, sign-off), projects (assignments, timesheets, allocations, costs), inventory (locations, categories, items, lifecycle state machine, requests), recruitment (job listings, candidates, interviews, hiring), reports (11 types with charts), approval workflows, rate limiting, demo seed data |
-| `mcp-integrations.md`        | MCP integration layer     | 5 MCP servers, 38 connectors, circuit breakers, idempotency, sagas, PII filter, webhooks, tool selector |
+| `mcp-integrations.md`        | MCP integration layer     | 5 MCP servers, 38 connectors, circuit breakers, idempotency, sagas, PII filter, webhooks, tool selector                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## Quick Reference
 
@@ -29,12 +29,15 @@ Project-specific knowledge for the AI-powered HR advisory platform serving Singa
 
 ```
 src/hr_advisory/
-  api/routers/      23+ FastAPI routers (advisory, payroll, leave, claims, attendance, shifts, employees,
-                    appraisals, projects, inventory, recruitment, reports, approval_groups, integrations...)
-  agents/           Kaizen agents (orchestrator, specialists)
-  models/           60+ DataFlow models (company, user, KB, payroll, leave, claims, attendance, shifts,
-                    appraisals, projects, inventory, recruitment, approval groups)
-  services/         Payroll calculator, statutory files, encryption, demo seed data
+  api/routers/      25+ FastAPI routers (advisory, payroll, leave, claims, attendance, shifts, employees,
+                    appraisals, projects, inventory, recruitment, reports, approval_groups, integrations,
+                    llm_config, user_llm...)
+  agents/           Kaizen agents (orchestrator, specialists, llm_context for BYOK)
+  models/           63+ DataFlow models (company, user, KB, payroll, leave, claims, attendance, shifts,
+                    appraisals, projects, inventory, recruitment, approval groups, CompanyLLMConfig,
+                    CompanyLLMUsage, UserLLMConfig)
+  services/         Payroll calculator, statutory files, encryption, demo seed data, LLM budget/config/metrics
+  cli/              Key rotation CLI
   workflows/        Core SDK workflows (calculators, guardrails)
   trust/            EATP lineage, CARE governance, citations
   kb/               Knowledge base content and pipeline
@@ -78,6 +81,7 @@ require_role(current_user, "owner", "hr_manager")
 - `docs/04-trust-governance.md` — Trust and governance framework
 - `docs/05-testing.md` — Test strategy and coverage
 - `docs/00-authority/CLAUDE.md` — Agent preloaded instructions
+- `docs/00-authority/07-byok-api-keys.md` — BYOK architecture, endpoints, security
 
 ## Related Agents
 

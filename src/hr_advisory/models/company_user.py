@@ -266,6 +266,7 @@ class Company:
     headcount_wp: int = 0
     salary_ranges: Optional[dict] = None
     profile_completeness_score: float = 0.0
+    monthly_llm_budget_usd: float = 5.00
     is_active: bool = True
 
     __dataflow__ = {
@@ -2166,5 +2167,102 @@ class InterviewFeedback:
         "indexes": [
             {"name": "idx_feedback_interview", "fields": ["interview_id"]},
             {"name": "idx_feedback_candidate", "fields": ["candidate_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# BYOK / LLM Configuration Models (T405-T406)
+# ---------------------------------------------------------------------------
+
+
+class LLMConfigStatus:
+    ACTIVE = "active"
+    INVALID = "invalid"
+    REVOKED = "revoked"
+
+
+class LLMProvider:
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    GEMINI = "gemini"
+    DEEPSEEK = "deepseek"
+    MISTRAL = "mistral"
+    OLLAMA = "ollama"
+    CUSTOM = "custom"
+
+
+@db.model
+class CompanyLLMConfig:
+    """Company-level LLM provider configuration (BYOK / Ollama).
+
+    Stores an encrypted API key, model preference, and optional base URL
+    for companies that bring their own key or run a local Ollama instance.
+    """
+
+    company_id: int
+    provider: str = LLMProvider.OPENAI
+    encrypted_key: Optional[str] = None
+    model_pref: Optional[str] = None
+    base_url: Optional[str] = None
+    status: str = LLMConfigStatus.ACTIVE
+    updated_by: Optional[int] = None
+    is_active: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_companyllm_company", "fields": ["company_id"]},
+            {"name": "idx_companyllm_provider", "fields": ["provider"]},
+            {"name": "idx_companyllm_active", "fields": ["is_active"]},
+        ],
+    }
+
+
+@db.model
+class CompanyLLMUsage:
+    """Per-company monthly LLM usage tracking for budget enforcement.
+
+    One record per company per month. Accumulates token counts and
+    estimated cost throughout the billing period.
+    """
+
+    company_id: int
+    month: str = ""  # YYYY-MM-01 format
+    query_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost: float = 0.0  # USD
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_llmusage_company", "fields": ["company_id"]},
+            {"name": "idx_llmusage_month", "fields": ["month"]},
+            {"name": "idx_llmusage_company_month", "fields": ["company_id", "month"]},
+        ],
+    }
+
+
+@db.model
+class UserLLMConfig:
+    """Per-user LLM provider configuration (optional personal key override).
+
+    Allows individual users to override their company's LLM config with
+    a personal API key.  User config takes priority over company config.
+    """
+
+    user_id: int
+    company_id: int
+    provider: str = LLMProvider.OPENAI
+    encrypted_key: Optional[str] = None
+    model_pref: Optional[str] = None
+    base_url: Optional[str] = None
+    status: str = LLMConfigStatus.ACTIVE
+    is_active: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_userllm_user", "fields": ["user_id"]},
+            {"name": "idx_userllm_company", "fields": ["company_id"]},
+            {"name": "idx_userllm_active", "fields": ["is_active"]},
         ],
     }

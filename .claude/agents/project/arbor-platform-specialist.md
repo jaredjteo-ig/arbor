@@ -13,7 +13,7 @@ You are the platform architecture specialist for the Arbor HR Advisory Platform.
 `src/hr_advisory/api/platform.py` — `create_platform()` creates the Nexus instance with:
 
 - FastAPI app with CORS, security headers, rate limiting middleware
-- 23+ routers: auth, advisory, emergency, calculator, compliance, document, kb, profile, search, learning, admin, payroll, leave, claims, attendance, shifts, employees, appraisals, projects, inventory, recruitment, reports, approval_groups, integrations
+- 25+ routers: auth, advisory, emergency, calculator, compliance, document, kb, profile, search, learning, admin, payroll, leave, claims, attendance, shifts, employees, appraisals, projects, inventory, recruitment, reports, approval_groups, integrations, llm_config (company BYOK), user_llm (personal keys)
 - 3 multi-channel handlers: advisory_query, compliance_check, search_kb
 - Session store attachment
 - Health check endpoint
@@ -32,32 +32,34 @@ You are the platform architecture specialist for the Arbor HR Advisory Platform.
 
 ### Router Map
 
-| Router          | Prefix             | Purpose                                              | Auth Required |
-| --------------- | ------------------ | ---------------------------------------------------- | ------------- |
-| auth            | `/auth`            | Register, login, tokens, password reset              | Mixed         |
-| advisory        | `/advisory`        | HR advisory queries, streaming, conversations        | Yes           |
-| emergency       | `/advisory`        | Emergency escalation (thread-safe ticket IDs)        | Yes           |
-| calculator      | `/calculator`      | CPF, leave, salary calculators                       | Yes           |
-| compliance      | `/compliance`      | Compliance checks and gap analysis                   | Yes           |
-| document        | `/document`        | Templates, generation, download                      | Yes           |
-| kb              | `/kb`              | Knowledge base acts, domains, provisions             | Yes           |
-| profile         | `/profile`         | Company profiles and workforce                       | Yes           |
-| search          | `/search`          | Semantic and full-text search                        | Yes           |
-| learning        | `/learning`        | Feedback, gaps, recommendations                      | Yes           |
-| admin           | `/admin`           | Regulatory updates, staleness, metrics               | Yes (role)    |
-| payroll         | `/payroll`         | Payroll runs, payslips, pay items, schemes, sim      | Yes (role)    |
-| leave           | `/leave`           | Leave types, applications, encashment, off-in-lieu   | Yes           |
-| claims          | `/claims`          | Claim categories, groups, submissions, approval      | Yes           |
-| attendance      | `/attendance`      | Clock in/out, lateness, today dashboard, summary     | Yes           |
-| shifts          | `/shifts`          | Templates, assignments, hourly rates, publish        | Yes           |
-| employees       | `/employees`       | Employee CRUD, self-service, documents, PII          | Yes           |
-| appraisals      | `/appraisals`      | Templates, periods, reviews, sign-off                | Yes           |
-| projects        | `/projects`        | Projects, assignments, timesheets, allocations, costs| Yes           |
-| inventory       | `/inventory`       | Locations, categories, items, requests, movements    | Yes           |
-| recruitment     | `/recruitment`     | Job listings, candidates, interviews, hiring         | Yes (role)    |
-| reports         | `/reports`         | 11 report types with charts                         | Yes (role)    |
-| approval_groups | `/approval-groups` | Approval routing configuration                       | Yes (role)    |
-| integrations    | `/integrations`    | MCP server endpoints (13 groups)                     | Yes           |
+| Router          | Prefix             | Purpose                                               | Auth Required |
+| --------------- | ------------------ | ----------------------------------------------------- | ------------- |
+| auth            | `/auth`            | Register, login, tokens, password reset               | Mixed         |
+| advisory        | `/advisory`        | HR advisory queries, streaming, conversations         | Yes           |
+| emergency       | `/advisory`        | Emergency escalation (thread-safe ticket IDs)         | Yes           |
+| calculator      | `/calculator`      | CPF, leave, salary calculators                        | Yes           |
+| compliance      | `/compliance`      | Compliance checks and gap analysis                    | Yes           |
+| document        | `/document`        | Templates, generation, download                       | Yes           |
+| kb              | `/kb`              | Knowledge base acts, domains, provisions              | Yes           |
+| profile         | `/profile`         | Company profiles and workforce                        | Yes           |
+| search          | `/search`          | Semantic and full-text search                         | Yes           |
+| learning        | `/learning`        | Feedback, gaps, recommendations                       | Yes           |
+| admin           | `/admin`           | Regulatory updates, staleness, metrics                | Yes (role)    |
+| payroll         | `/payroll`         | Payroll runs, payslips, pay items, schemes, sim       | Yes (role)    |
+| leave           | `/leave`           | Leave types, applications, encashment, off-in-lieu    | Yes           |
+| claims          | `/claims`          | Claim categories, groups, submissions, approval       | Yes           |
+| attendance      | `/attendance`      | Clock in/out, lateness, today dashboard, summary      | Yes           |
+| shifts          | `/shifts`          | Templates, assignments, hourly rates, publish         | Yes           |
+| employees       | `/employees`       | Employee CRUD, self-service, documents, PII           | Yes           |
+| appraisals      | `/appraisals`      | Templates, periods, reviews, sign-off                 | Yes           |
+| projects        | `/projects`        | Projects, assignments, timesheets, allocations, costs | Yes           |
+| inventory       | `/inventory`       | Locations, categories, items, requests, movements     | Yes           |
+| recruitment     | `/recruitment`     | Job listings, candidates, interviews, hiring          | Yes (role)    |
+| reports         | `/reports`         | 11 report types with charts                           | Yes (role)    |
+| approval_groups | `/approval-groups` | Approval routing configuration                        | Yes (role)    |
+| integrations    | `/integrations`    | MCP server endpoints (13 groups)                      | Yes           |
+| llm_config      | `/companies`       | BYOK key CRUD, validation, usage, budget              | Yes (role)    |
+| user_llm        | `/users`           | Per-user personal API key CRUD                        | Yes           |
 
 ### Middleware Stack (applied in order)
 
@@ -72,30 +74,33 @@ You are the platform architecture specialist for the Arbor HR Advisory Platform.
 
 Models in `src/hr_advisory/models/` auto-generate CRUD nodes. Key models:
 
-| Model               | Generated Nodes                                      | Purpose                    |
-| ------------------- | ---------------------------------------------------- | -------------------------- |
-| Company             | CompanyCreateNode, CompanyReadNode, etc.             | Company profiles           |
-| User                | UserCreateNode, UserReadNode, etc.                   | User accounts              |
-| Act                 | ActCreateNode, ActListNode, etc.                     | Legislative acts           |
-| Domain              | DomainCreateNode, DomainListNode, etc.               | HR knowledge domains       |
-| Provision           | ProvisionCreateNode, ProvisionListNode, etc.         | Legal provisions           |
-| CrossReference      | CrossReferenceCreateNode, etc.                       | Provision links            |
-| Employee            | EmployeeCreateNode, EmployeeListNode, etc.           | Employee records (30+ fields) |
-| PayrollRun          | PayrollRunCreateNode, etc.                           | Payroll periods            |
-| PayItem             | PayItemCreateNode, PayItemListNode, etc.             | Structured earnings/deductions |
-| PayScheme           | PaySchemeCreateNode, etc.                            | Pay item groupings         |
-| LeaveTypeConfig     | LeaveTypeConfigCreateNode, etc.                      | Leave type definitions     |
-| LeaveEncashment     | LeaveEncashmentCreateNode, etc.                      | Leave-to-cash conversion   |
-| ClaimGroup          | ClaimGroupCreateNode, etc.                           | Claim category groups      |
-| AppraisalTemplate   | AppraisalTemplateCreateNode, etc.                    | Review structures          |
-| AppraisalReview     | AppraisalReviewCreateNode, etc.                      | Individual reviews         |
-| Project             | ProjectCreateNode, ProjectListNode, etc.             | Project tracking           |
-| ProjectTimesheet    | ProjectTimesheetCreateNode, etc.                     | Time logging               |
-| InventoryItem       | InventoryItemCreateNode, etc.                        | Asset tracking             |
-| InventoryRequest    | InventoryRequestCreateNode, etc.                     | Item requests              |
-| JobListing          | JobListingCreateNode, etc.                           | Open positions             |
-| Candidate           | CandidateCreateNode, etc.                            | Recruitment pipeline       |
-| ApprovalGroup       | ApprovalGroupCreateNode, etc.                        | Approval routing           |
+| Model             | Generated Nodes                              | Purpose                        |
+| ----------------- | -------------------------------------------- | ------------------------------ |
+| Company           | CompanyCreateNode, CompanyReadNode, etc.     | Company profiles               |
+| User              | UserCreateNode, UserReadNode, etc.           | User accounts                  |
+| Act               | ActCreateNode, ActListNode, etc.             | Legislative acts               |
+| Domain            | DomainCreateNode, DomainListNode, etc.       | HR knowledge domains           |
+| Provision         | ProvisionCreateNode, ProvisionListNode, etc. | Legal provisions               |
+| CrossReference    | CrossReferenceCreateNode, etc.               | Provision links                |
+| Employee          | EmployeeCreateNode, EmployeeListNode, etc.   | Employee records (30+ fields)  |
+| PayrollRun        | PayrollRunCreateNode, etc.                   | Payroll periods                |
+| PayItem           | PayItemCreateNode, PayItemListNode, etc.     | Structured earnings/deductions |
+| PayScheme         | PaySchemeCreateNode, etc.                    | Pay item groupings             |
+| LeaveTypeConfig   | LeaveTypeConfigCreateNode, etc.              | Leave type definitions         |
+| LeaveEncashment   | LeaveEncashmentCreateNode, etc.              | Leave-to-cash conversion       |
+| ClaimGroup        | ClaimGroupCreateNode, etc.                   | Claim category groups          |
+| AppraisalTemplate | AppraisalTemplateCreateNode, etc.            | Review structures              |
+| AppraisalReview   | AppraisalReviewCreateNode, etc.              | Individual reviews             |
+| Project           | ProjectCreateNode, ProjectListNode, etc.     | Project tracking               |
+| ProjectTimesheet  | ProjectTimesheetCreateNode, etc.             | Time logging                   |
+| InventoryItem     | InventoryItemCreateNode, etc.                | Asset tracking                 |
+| InventoryRequest  | InventoryRequestCreateNode, etc.             | Item requests                  |
+| JobListing        | JobListingCreateNode, etc.                   | Open positions                 |
+| Candidate         | CandidateCreateNode, etc.                    | Recruitment pipeline           |
+| ApprovalGroup     | ApprovalGroupCreateNode, etc.                | Approval routing               |
+| CompanyLLMConfig  | CompanyLLMConfigCreateNode, etc.             | BYOK API key storage           |
+| CompanyLLMUsage   | CompanyLLMUsageCreateNode, etc.              | Monthly LLM usage tracking     |
+| UserLLMConfig     | UserLLMConfigCreateNode, etc.                | Per-user API key storage       |
 
 ### Execution Pattern (CRITICAL)
 

@@ -530,6 +530,31 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* AI Configuration */}
+      <a
+        href="/settings/ai"
+        className="block no-underline"
+        style={{ textDecoration: "none", color: "inherit" }}
+      >
+        <AppCard variant="standard">
+          <div className="flex items-center gap-3 py-1">
+            <Brain
+              className="h-5 w-5 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <div className="flex-1">
+              <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+                AI Configuration
+              </h2>
+              <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                Manage your AI provider, API key, and usage budget.
+              </p>
+            </div>
+            <span className="text-xs text-[var(--color-gray-400)]">→</span>
+          </div>
+        </AppCard>
+      </a>
+
       {/* Display Section */}
       <AppCard
         variant="standard"

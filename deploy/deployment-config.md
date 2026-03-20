@@ -89,23 +89,27 @@ Internet
 
 ### Required (set in deploy/.env.prod)
 
-| Variable            | Description                     |
-| ------------------- | ------------------------------- |
-| `DATABASE_URL`      | PostgreSQL connection string    |
-| `POSTGRES_USER`     | PostgreSQL username             |
-| `POSTGRES_PASSWORD` | PostgreSQL password             |
-| `POSTGRES_DB`       | PostgreSQL database name        |
-| `REDIS_URL`         | Redis connection string         |
-| `REDIS_PASSWORD`    | Redis password                  |
-| `JWT_SECRET_KEY`    | JWT signing key                 |
-| `OPENAI_API_KEY`    | OpenAI API key (for LLM agents) |
+| Variable                 | Description                                        |
+| ------------------------ | -------------------------------------------------- |
+| `DATABASE_URL`           | PostgreSQL connection string                       |
+| `POSTGRES_USER`          | PostgreSQL username                                |
+| `POSTGRES_PASSWORD`      | PostgreSQL password                                |
+| `POSTGRES_DB`            | PostgreSQL database name                           |
+| `REDIS_URL`              | Redis connection string                            |
+| `REDIS_PASSWORD`         | Redis password                                     |
+| `JWT_SECRET_KEY`         | JWT signing key                                    |
+| `OPENAI_API_KEY`         | Server default OpenAI key (optional with BYOK)     |
+| `LLM_KEY_ENCRYPTION_KEY` | Fernet key for encrypting user API keys (REQUIRED) |
 
 ### Optional
 
 | Variable            | Default                            | Description          |
 | ------------------- | ---------------------------------- | -------------------- |
 | `ANTHROPIC_API_KEY` | —                                  | Anthropic API key    |
-| `DEFAULT_LLM_MODEL` | `gpt-4o`                           | Default LLM model    |
+| `DEFAULT_LLM_MODEL` | `gpt-5-mini-2025-08-07`            | Default LLM model    |
+| `OPENAI_PROD_MODEL` | `gpt-5-mini-2025-08-07`            | Production model     |
+| `OLLAMA_BASE_URL`   | `http://localhost:11434`           | Ollama endpoint      |
+| `OLLAMA_MODEL`      | —                                  | Ollama model name    |
 | `LOG_LEVEL`         | `INFO`                             | Logging level        |
 | `APP_ENV`           | `production`                       | Environment name     |
 | `CORS_ORIGINS`      | `https://arbor.terrene.foundation` | Allowed CORS origins |

@@ -35,6 +35,8 @@ from hr_advisory.api.routers import (
     kb_router,
     learning_router,
     leave_router,
+    llm_config_router,
+    user_llm_router,
     payroll_router,
     profile_router,
     projects_router,
@@ -142,6 +144,8 @@ def _register_routers(app: Nexus) -> None:
     app.include_router(employees_router, prefix="/employees", tags=["Employees"])
     app.include_router(emergency_router, prefix="/emergency", tags=["Emergency"])
     app.include_router(leave_router, prefix="/leave", tags=["Leave"])
+    app.include_router(llm_config_router, prefix="/companies", tags=["LLM Config"])
+    app.include_router(user_llm_router, prefix="/users", tags=["User LLM Config"])
     app.include_router(payroll_router, prefix="/payroll", tags=["Payroll"])
     app.include_router(help_router, prefix="/help", tags=["Help"])
     app.include_router(profile_router, prefix="/profile", tags=["Profile"])

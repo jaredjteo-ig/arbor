@@ -58,6 +58,9 @@ from hr_advisory.models.company_user import (
     EmployeeSkill,
     CustomFieldDefinition,
     CustomFieldValue,
+    CompanyLLMConfig,
+    CompanyLLMUsage,
+    UserLLMConfig,
     UserRole,
     ContentUpdateStatus,
     ContentUrgency,
@@ -84,6 +87,8 @@ from hr_advisory.models.company_user import (
     ClaimStatus,
     AttendanceStatus,
     TimesheetStatus,
+    LLMConfigStatus,
+    LLMProvider,
 )
 from hr_advisory.models.qa import (
     QASession,
@@ -163,6 +168,12 @@ __all__ = [
     "EmployeeSkill",
     "CustomFieldDefinition",
     "CustomFieldValue",
+    # BYOK / LLM Config Models (T405-T406)
+    "CompanyLLMConfig",
+    "CompanyLLMUsage",
+    "UserLLMConfig",
+    "LLMConfigStatus",
+    "LLMProvider",
     "EmploymentType",
     "LeaveTypeCode",
     "LeaveApplicationStatus",

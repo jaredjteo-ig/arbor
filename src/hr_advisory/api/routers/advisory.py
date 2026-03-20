@@ -14,6 +14,7 @@ Handles HR advisory queries with the full safety chain:
 
 import asyncio
 import concurrent.futures
+import contextvars
 import json
 import logging
 import uuid
@@ -46,12 +47,24 @@ from hr_advisory.workflows.guardrails import (
     screen_response,
 )
 
-from hr_advisory.agents.config import UNCERTAINTY_DEFAULTS
+from hr_advisory.agents.config import (
+    UNCERTAINTY_DEFAULTS,
+    set_request_llm_context,
+    clear_request_llm_context,
+    install_kaizen_provider_patch,
+)
 from hr_advisory.agents.memory.short_term import ShortTermMemory
+from hr_advisory.services.llm_config import build_llm_context
+from hr_advisory.services.llm_budget import check_budget, record_usage
+from hr_advisory.services.llm_metrics import log_llm_call, log_budget_warning, log_budget_exceeded
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Install Kaizen provider monkey-patch for BYOK support.
+# Safe to call multiple times (idempotent).
+install_kaizen_provider_patch()
 
 # Session-scoped pipeline cache keyed by conversation_id
 _conversation_memory: dict[str, ShortTermMemory] = {}
@@ -83,6 +96,40 @@ def _classify_risk_tier(domains: list[str], confidence: float) -> str:
     if confidence < 0.7:
         return "amber"
     return "green"
+
+
+def _get_company_budget_limit(company_id: int) -> float | None:
+    """Fetch the company's custom monthly LLM budget, or None for default."""
+    try:
+        from kailash.runtime import LocalRuntime
+        from kailash.workflow.builder import WorkflowBuilder
+        import hr_advisory.models  # noqa: F401
+
+        wf = WorkflowBuilder()
+        wf.add_node(
+            "CompanyListNode",
+            "co",
+            {
+                "filter": {"id": company_id},
+                "limit": 1,
+                "enable_cache": False,
+            },
+        )
+        runtime = LocalRuntime()
+        results, _ = runtime.execute(wf.build())
+        raw = results.get("co", {})
+        records = raw.get("records", []) if isinstance(raw, dict) else []
+        if records:
+            val = records[0].get("monthly_llm_budget_usd")
+            if val is not None:
+                import math
+
+                fval = float(val)
+                if math.isfinite(fval) and fval > 0:
+                    return fval
+    except Exception:
+        pass
+    return None
 
 
 def _detect_domains(query: str) -> list[str]:
@@ -355,7 +402,7 @@ def _lookup_provisions(domains: list[str], query: str = "") -> list[str]:
 async def advisory_query(
     request: Request,
     current_user: dict = Depends(get_current_user),
-) -> dict:
+):
     """Submit an HR advisory question and receive a structured response.
 
     Full safety chain:
@@ -446,6 +493,64 @@ async def advisory_query(
         except (TypeError, ValueError):
             logger.debug("Invalid company_id for profile fetch: %s", effective_company_id)
 
+    # ── Step 3d: Resolve LLM context (BYOK / Ollama / server default) ─
+    llm_context = None
+    budget_result = None
+    try:
+        _user_id_int = None
+        try:
+            _user_id_int = int(user_id) if user_id != "anonymous" else None
+        except (TypeError, ValueError):
+            pass
+        if effective_company_id is not None:
+            llm_context = build_llm_context(
+                company_id=int(effective_company_id),
+                user_id=_user_id_int,
+            )
+        else:
+            from hr_advisory.agents.llm_context import LLMKeyContext
+
+            llm_context = LLMKeyContext.from_server_env()
+    except Exception:
+        logger.warning("Failed to resolve LLM context — using server defaults", exc_info=True)
+
+    # ── Step 3e: Budget check (server-key users only) ────────────
+    budget_result = None
+    if (
+        llm_context is not None
+        and not llm_context.is_byok
+        and llm_context.provider != "ollama"
+        and effective_company_id is not None
+    ):
+        try:
+            # Fetch company's custom budget limit (defaults to $5.00)
+            company_budget_limit = _get_company_budget_limit(int(effective_company_id))
+            budget_result = check_budget(
+                int(effective_company_id), budget_limit_usd=company_budget_limit
+            )
+            if budget_result.warning:
+                log_budget_warning(
+                    int(effective_company_id), budget_result.used_usd, budget_result.limit_usd
+                )
+            if not budget_result.allowed:
+                log_budget_exceeded(int(effective_company_id))
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "budget_exceeded",
+                        "message": (
+                            "Your company's free AI advisory allowance has been used this month. "
+                            "You can add your own API key in Settings to continue, or wait until "
+                            "next month when the allowance resets."
+                        ),
+                        "budget_info": budget_result.to_dict(),
+                    },
+                )
+        except Exception:
+            logger.warning("Budget check failed — allowing query", exc_info=True)
+
     # ── Step 4: EATP genesis record ─────────────────────────────
     session_id = str(uuid.uuid4())
     domains = _detect_domains(query)
@@ -488,6 +593,7 @@ async def advisory_query(
         provisions_cited,
         company_context=company_profile,
         conversation_history=conversation_history,
+        llm_context=llm_context,
     )
     if llm_result is not None:
         response_text = llm_result["response_text"]
@@ -568,6 +674,40 @@ async def advisory_query(
         confidence_score=confidence,
     )
 
+    # ── Step 14b: Record token usage for budget tracking ────────
+    if llm_context and not llm_context.is_byok and effective_company_id is not None:
+        try:
+            # Token estimation: The advisory pipeline runs 4-6 Kaizen agent calls.
+            # Actual token counts require upstream Kaizen changes (issue #12).
+            # For now, estimate based on text length. English averages ~1.3 tokens
+            # per word, plus system prompts (~8K per specialist) and KB context.
+            # Use a multiplier that overstimates slightly for fail-safe budgeting.
+            _query_words = len(query.split())
+            _response_words = len(response_text.split())
+            _num_domains = len(domains) if domains else 1
+            # Base: query tokens + system prompts + KB provisions per domain
+            _est_input_tokens = int(_query_words * 1.5) + (8000 * _num_domains) + 4000
+            # Output: response + specialist outputs (internal, not user-visible)
+            _est_output_tokens = int(_response_words * 1.5) + (1500 * _num_domains)
+            _cost = record_usage(
+                company_id=int(effective_company_id),
+                input_tokens=_est_input_tokens,
+                output_tokens=_est_output_tokens,
+                model=llm_context.model or "unknown",
+            )
+            log_llm_call(
+                company_id=int(effective_company_id),
+                provider=llm_context.provider,
+                model=llm_context.model or "unknown",
+                input_tokens=_est_input_tokens,
+                output_tokens=_est_output_tokens,
+                cost_usd=_cost.get("estimated_cost", 0.0) if isinstance(_cost, dict) else 0.0,
+                duration_ms=0.0,
+                is_byok=llm_context.is_byok,
+            )
+        except Exception:
+            logger.warning("Failed to record LLM usage", exc_info=True)
+
     advisory_response = {
         "query": query,
         "response": response_text,
@@ -589,6 +729,23 @@ async def advisory_query(
 
     if response_degraded:
         advisory_response["degraded"] = True
+
+    # Include budget info for server-key users
+    if budget_result and llm_context and not llm_context.is_byok:
+        advisory_response["budget_info"] = {
+            "used_usd": budget_result.used_usd,
+            "limit_usd": budget_result.limit_usd,
+            "queries_this_month": budget_result.query_count,
+            "warning": budget_result.warning,
+        }
+
+    # Include LLM provider info (masked key)
+    if llm_context:
+        advisory_response["llm_info"] = {
+            "provider": llm_context.provider,
+            "model": llm_context.model,
+            "is_byok": llm_context.is_byok,
+        }
 
     return advisory_response
 
@@ -964,6 +1121,7 @@ def _run_llm_advisory(
     provisions: list[dict],
     company_context: dict | None = None,
     conversation_history: str = "",
+    llm_context=None,
 ) -> dict | None:
     """Run the full Kaizen agent pipeline to generate an LLM-powered response.
 
@@ -980,21 +1138,31 @@ def _run_llm_advisory(
       - T067: ComplianceAgent.check_compliance() with all specialist outputs
       - T069: EATP trust chain, anti-amnesia injection, constraint validation
 
+    T402/T403: LLMKeyContext threading for BYOK support.  When *llm_context*
+    is provided, it is set as the thread-local context so the Kaizen
+    monkey-patch picks up the per-request API key / model / base_url.
+
     Args:
         query: The user's HR question.
         domains: Detected regulatory domains.
         provisions: Validated provision dicts from the citation validator.
         company_context: Optional company profile dict for personalisation.
         conversation_history: Formatted prior turns for multi-turn context.
+        llm_context: Optional per-request LLMKeyContext for BYOK/Ollama.
 
     Returns a dict with keys: response_text, risk_tier, confidence, citations,
     trust_metadata. Returns None if LLM is unavailable or the pipeline fails.
     """
+    # Set thread-local LLM context so Kaizen's monkey-patched providers use it
+    if llm_context is not None:
+        set_request_llm_context(llm_context)
     try:
-        from hr_advisory.agents.config import has_llm_available
+        # If we have a per-request LLM context, the pipeline is usable
+        if llm_context is None:
+            from hr_advisory.agents.config import has_llm_available
 
-        if not has_llm_available():
-            return None
+            if not has_llm_available():
+                return None
 
         from kaizen.memory import SharedMemoryPool
         from hr_advisory.agents.orchestration.query_analyzer import QueryAnalyzerAgent
@@ -1341,8 +1509,38 @@ def _run_llm_advisory(
 
     except Exception as e:
         logger.error("LLM advisory pipeline failed: %s", e, exc_info=True)
-        # Return a degraded error response instead of silently falling back
-        # to a template that pretends everything is fine
+
+        # Normalize the error for safe user-facing display
+        try:
+            from hr_advisory.services.llm_errors import normalize_llm_error
+            from hr_advisory.services.llm_metrics import log_key_invalid
+
+            provider = llm_context.provider if llm_context else "unknown"
+            normalized = normalize_llm_error(e, provider)
+
+            # If the key is invalid, mark it in DB for stale detection
+            if normalized.category == "key_invalid" and llm_context and llm_context.is_byok:
+                try:
+                    from hr_advisory.services.llm_config import _execute_node
+
+                    if llm_context.company_id:
+                        _execute_node(
+                            "CompanyLLMConfigUpdateNode",
+                            "mark_invalid",
+                            {
+                                "conditions": {
+                                    "company_id": llm_context.company_id,
+                                    "is_active": True,
+                                },
+                                "updates": {"status": "invalid"},
+                            },
+                        )
+                        log_key_invalid(llm_context.company_id, provider)
+                except Exception:
+                    logger.warning("Failed to mark BYOK key as invalid", exc_info=True)
+        except Exception:
+            pass  # Error normalization itself failed — use defaults below
+
         return {
             "response_text": UNCERTAINTY_DEFAULTS["critical_fallback_message"],
             "risk_tier": "red",
@@ -1351,6 +1549,14 @@ def _run_llm_advisory(
             "disclaimers": ["This response may be incomplete — please verify with a professional."],
             "degraded": True,
         }
+    finally:
+        # Always clear the thread-local context to prevent leakage between requests
+        clear_request_llm_context()
+        if llm_context is not None:
+            try:
+                llm_context.clear_key()
+            except Exception:
+                pass
 
 
 # Thread pool for running sync Kaizen agents from async context
@@ -1363,8 +1569,14 @@ async def _async_run_llm_advisory(
     provisions: list[dict],
     company_context: dict | None = None,
     conversation_history: str = "",
+    llm_context=None,
 ) -> dict | None:
-    """Async wrapper for the synchronous Kaizen agent pipeline."""
+    """Async wrapper for the synchronous Kaizen agent pipeline.
+
+    Uses copy_context().run() to propagate contextvars (including the
+    per-request LLMKeyContext) into the thread pool worker, preventing
+    key leakage between tenants.
+    """
     import functools
 
     loop = asyncio.get_event_loop()
@@ -1375,8 +1587,12 @@ async def _async_run_llm_advisory(
         provisions,
         company_context=company_context,
         conversation_history=conversation_history,
+        llm_context=llm_context,
     )
-    return await loop.run_in_executor(_llm_executor, func)
+    # Capture the current context (with LLMKeyContext set) and run in that
+    # context on the thread pool worker — prevents cross-tenant leakage.
+    ctx = contextvars.copy_context()
+    return await loop.run_in_executor(_llm_executor, ctx.run, func)
 
 
 def _generate_grounded_response(
@@ -1492,6 +1708,55 @@ async def advisory_stream(
         except (TypeError, ValueError):
             logger.debug("Invalid company_id for profile fetch: %s", effective_company_id)
 
+    # ── Step 3d: Resolve LLM context (BYOK / Ollama / server default) ─
+    llm_context = None
+    budget_result = None
+    try:
+        _user_id_int = None
+        try:
+            _user_id_int = int(user_id) if user_id != "anonymous" else None
+        except (TypeError, ValueError):
+            pass
+        if effective_company_id is not None:
+            llm_context = build_llm_context(
+                company_id=int(effective_company_id),
+                user_id=_user_id_int,
+            )
+        else:
+            from hr_advisory.agents.llm_context import LLMKeyContext
+
+            llm_context = LLMKeyContext.from_server_env()
+    except Exception:
+        logger.warning(
+            "Stream: failed to resolve LLM context — using server defaults", exc_info=True
+        )
+
+    # ── Step 3e: Budget check (server-key users only) ────────────
+    if (
+        llm_context is not None
+        and not llm_context.is_byok
+        and llm_context.provider != "ollama"
+        and effective_company_id is not None
+    ):
+        try:
+            stream_budget_limit = _get_company_budget_limit(int(effective_company_id))
+            budget_result = check_budget(
+                int(effective_company_id), budget_limit_usd=stream_budget_limit
+            )
+            if not budget_result.allowed:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        "Your company's free AI advisory allowance has been used this month. "
+                        "You can add your own API key in Settings to continue, or wait until "
+                        "next month when the allowance resets."
+                    ),
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            logger.warning("Stream: budget check failed — allowing query", exc_info=True)
+
     # ── Step 4: EATP genesis record ─────────────────────────────
     session_id = str(uuid.uuid4())
     domains = _detect_domains(query)
@@ -1532,6 +1797,7 @@ async def advisory_stream(
         provisions_cited,
         company_context=company_profile,
         conversation_history=conversation_history,
+        llm_context=llm_context,
     )
     if llm_result is not None:
         response_text = llm_result["response_text"]
@@ -1609,6 +1875,43 @@ async def advisory_stream(
         confidence_score=confidence,
     )
 
+    # ── Step 14b: Record token usage for budget tracking ────────
+    if llm_context and not llm_context.is_byok and effective_company_id is not None:
+        try:
+            # Same domain-aware estimation as /query endpoint
+            _query_words = len(query.split())
+            _response_words = len(response_text.split())
+            _num_domains = len(domains) if domains else 1
+            _est_input_tokens = int(_query_words * 1.5) + (8000 * _num_domains) + 4000
+            _est_output_tokens = int(_response_words * 1.5) + (1500 * _num_domains)
+            record_usage(
+                company_id=int(effective_company_id),
+                input_tokens=_est_input_tokens,
+                output_tokens=_est_output_tokens,
+                model=llm_context.model or "unknown",
+            )
+        except Exception:
+            logger.warning("Stream: failed to record LLM usage", exc_info=True)
+
+    # Build budget_info dict for the complete event (if applicable)
+    _stream_budget_info = None
+    if budget_result and llm_context and not llm_context.is_byok:
+        _stream_budget_info = {
+            "used_usd": budget_result.used_usd,
+            "limit_usd": budget_result.limit_usd,
+            "queries_this_month": budget_result.query_count,
+            "warning": budget_result.warning,
+        }
+
+    # Build llm_info for the complete event
+    _stream_llm_info = None
+    if llm_context:
+        _stream_llm_info = {
+            "provider": llm_context.provider,
+            "model": llm_context.model,
+            "is_byok": llm_context.is_byok,
+        }
+
     async def event_generator():
         """Generate SSE events with word-by-word streaming."""
         # Start event
@@ -1656,6 +1959,10 @@ async def advisory_stream(
         }
         if stream_degraded:
             complete_event["degraded"] = True
+        if _stream_budget_info:
+            complete_event["budget_info"] = _stream_budget_info
+        if _stream_llm_info:
+            complete_event["llm_info"] = _stream_llm_info
         yield f"event: complete\ndata: {json.dumps(complete_event)}\n\n"
 
     return StreamingResponse(
