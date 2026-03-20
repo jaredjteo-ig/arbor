@@ -385,7 +385,9 @@ _CONTENT_FILTER_PATTERNS: list[tuple[str, str]] = [
 
 # ── In-memory store for flagged queries ──────────────────────
 
-_flagged_queries: list[FlaggedQuery] = []
+from collections import deque
+
+_flagged_queries: deque[FlaggedQuery] = deque(maxlen=10000)
 
 
 # ── System prompt security footer ─────────────────────────────
@@ -433,11 +435,24 @@ def screen_scope(query: str) -> ScreeningOutput:
     Ambiguous queries (no keyword match, no off-topic match) are PASSED
     with a note — the specialist agents will handle them.
     """
-    query_lower = query.lower()
+    import unicodedata
 
-    # Stage 1: Check if any HR keyword appears in the query
+    # Normalize Unicode (NFKC) and strip zero-width characters for bypass prevention
+    query_clean = unicodedata.normalize("NFKC", query)
+    query_clean = re.sub(r"[\u200b\u200c\u200d\ufeff\u00ad]", "", query_clean)
+    query_lower = query_clean.lower()
+
+    # Stage 1: Check if any HR keyword appears as a whole word in the query
     for keyword in _HR_SCOPE_KEYWORDS:
-        if keyword in query_lower:
+        # Use word boundary for short keywords to avoid false matches
+        if len(keyword) <= 3:
+            if re.search(r"\b" + re.escape(keyword) + r"\b", query_lower):
+                return ScreeningOutput(
+                    result=ScreeningResult.PASS,
+                    reason=f"In-scope: matched keyword '{keyword}'",
+                    matched_patterns=[keyword],
+                )
+        elif keyword in query_lower:
             return ScreeningOutput(
                 result=ScreeningResult.PASS,
                 reason=f"In-scope: matched keyword '{keyword}'",
@@ -483,10 +498,32 @@ def screen_scope(query: str) -> ScreeningOutput:
 def screen_injection(query: str, user_id: Optional[str] = None) -> ScreeningOutput:
     """Detect prompt injection, jailbreak, and system prompt extraction attempts.
 
+    Normalizes Unicode (NFKC) and strips zero-width characters before matching
+    to prevent homoglyph and invisible-character bypasses.
+
     Returns BLOCK if an injection pattern is detected, PASS otherwise.
     """
+    import unicodedata
+
+    # Normalize to prevent Unicode bypass attacks (homoglyphs, zero-width chars)
+    normalized = unicodedata.normalize("NFKC", query)
+    normalized = re.sub(r"[\u200b\u200c\u200d\ufeff\u00ad]", "", normalized)
+
+    # Also check for encoding-instruction attacks (base64/rot13 + follow)
+    if re.search(
+        r"(?i)(decode|deobfuscate|rot13|base64|unhex|unescape).{0,30}(follow|execute|do\s+what|obey|comply)",
+        normalized,
+    ):
+        output = ScreeningOutput(
+            result=ScreeningResult.BLOCK,
+            reason="I can only help with HR and employment matters directly. What question do you have?",
+            matched_patterns=["encoding_attack"],
+        )
+        _log_flagged_query(query, output, user_id)
+        return output
+
     for pattern, response_msg in _INJECTION_PATTERNS:
-        if re.search(pattern, query):
+        if re.search(pattern, normalized):
             output = ScreeningOutput(
                 result=ScreeningResult.BLOCK,
                 reason=response_msg,
@@ -579,7 +616,9 @@ def screen_response(response_text: str) -> ScreeningOutput:
 
 def check_confidence_escalation(confidence_score: float) -> Optional[ScreeningOutput]:
     """Check if low confidence requires mandatory escalation."""
-    if confidence_score < 0.5:
+    import math
+
+    if not math.isfinite(confidence_score) or confidence_score < 0.5:
         return ScreeningOutput(
             result=ScreeningResult.ESCALATE,
             reason=(
@@ -636,7 +675,9 @@ def review_flagged_query(query_id: str, notes: str = "") -> Optional[FlaggedQuer
 # ── Rate limiting helpers ────────────────────────────────────
 
 # Simple in-memory rate limiter (production: Redis)
+# Bounded to 10,000 users max to prevent memory exhaustion
 _request_counts: dict[str, list[datetime]] = {}
+_MAX_RATE_LIMIT_USERS = 10000
 _WINDOW_SECONDS = 60
 _MAX_REQUESTS_PER_WINDOW = 30
 
@@ -647,6 +688,15 @@ def check_rate_limit(user_id: str) -> bool:
     Returns True if the request should be ALLOWED, False if rate-limited.
     """
     now = datetime.now()
+
+    # Evict oldest users if at capacity
+    if len(_request_counts) >= _MAX_RATE_LIMIT_USERS and user_id not in _request_counts:
+        # Remove a random user to make space
+        try:
+            _request_counts.pop(next(iter(_request_counts)))
+        except (StopIteration, RuntimeError):
+            pass
+
     if user_id not in _request_counts:
         _request_counts[user_id] = []
 
