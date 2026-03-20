@@ -92,11 +92,21 @@ class ExecutionStep:
 def _get_base_url() -> str:
     """Get the API base URL from environment or default.
 
+    Validates that the URL uses http:// or https:// scheme to prevent
+    SSRF via environment variable manipulation.
+
     Returns:
         The base URL for API calls (no trailing slash).
+
+    Raises:
+        ValueError: If the URL uses an unsupported scheme.
     """
     url = os.environ.get("ARBOR_API_BASE_URL", "http://localhost:8000")
-    return url.rstrip("/")
+    url = url.rstrip("/")
+    if not url.startswith(("http://", "https://")):
+        logger.error("Invalid ARBOR_API_BASE_URL scheme: %s — must be http:// or https://", url)
+        raise ValueError(f"ARBOR_API_BASE_URL must use http:// or https:// scheme, got: {url[:20]}")
+    return url
 
 
 _SAFE_PATH_PARAM_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
@@ -232,6 +242,7 @@ class ShadowExecutor:
         tool: Any,  # ToolDefinition — using Any to avoid circular import at module level
         params: dict[str, Any],
         jwt_token: str,
+        current_user: dict[str, Any] | None = None,
     ) -> ExecutionResult:
         """Execute a single API call or MCP tool invocation.
 
@@ -243,13 +254,15 @@ class ShadowExecutor:
             params: Parameters to send (path params are substituted,
                 remaining become query params or JSON body).
             jwt_token: The user's JWT for authorization.
+            current_user: The decoded JWT claims (from auth middleware).
+                Required for MCP tools to avoid re-decoding the token.
 
         Returns:
             An ExecutionResult with the response data or error.
         """
         # Route MCP tools to the MCP server registry
         if getattr(tool, "is_mcp", False):
-            return await self.execute_mcp(tool, params, jwt_token)
+            return await self.execute_mcp(tool, params, jwt_token, current_user=current_user)
 
         import time
 
@@ -378,6 +391,7 @@ class ShadowExecutor:
         tool: Any,  # ToolDefinition
         params: dict[str, Any],
         jwt_token: str,
+        current_user: dict[str, Any] | None = None,
     ) -> ExecutionResult:
         """Execute an MCP tool call via the MCP server registry.
 
@@ -388,6 +402,8 @@ class ShadowExecutor:
             tool: The ToolDefinition describing which MCP tool to call.
             params: Parameters to pass to the MCP tool.
             jwt_token: The user's JWT for authorization context.
+            current_user: The decoded JWT claims (from auth middleware).
+                Used to extract company_id/user_id without re-decoding.
 
         Returns:
             An ExecutionResult with the MCP tool response or error.
@@ -418,15 +434,15 @@ class ShadowExecutor:
         try:
             from hr_advisory.mcp_servers.registry import call_tool
 
-            # Extract tenant context from JWT — never pass raw token to MCP tools
-            import jwt as pyjwt
-
-            try:
-                # Decode without verification (already verified by auth middleware)
-                claims = pyjwt.decode(jwt_token, options={"verify_signature": False})
-                company_id = str(claims.get("company_id", ""))
-                user_id = str(claims.get("sub", ""))
-            except Exception:
+            # Extract tenant context from already-verified claims —
+            # never re-decode the JWT or pass raw token to MCP tools
+            if current_user:
+                company_id = str(current_user.get("company_id", ""))
+                user_id = str(current_user.get("sub", ""))
+            else:
+                logger.warning(
+                    "execute_mcp called without current_user claims — MCP call will lack tenant context"
+                )
                 company_id = ""
                 user_id = ""
 

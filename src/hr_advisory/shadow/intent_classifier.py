@@ -271,10 +271,13 @@ Page: attendance
 
 ---
 
-User message: {message}
-Current page: {page_context}
+Respond with JSON only."""
 
-Respond with JSON only:"""
+# User message template — kept separate to prevent prompt injection.
+# The system prompt contains all instructions; the user message contains
+# only the user's actual input and page context.
+_USER_MESSAGE_TEMPLATE = """User message: {message}
+Current page: {page_context}"""
 
 
 class ShadowIntentClassifier:
@@ -333,14 +336,17 @@ class ShadowIntentClassifier:
                 os.environ.get("OPENAI_PROD_MODEL", "gpt-5-mini-2025-08-07"),
             )
 
-            prompt = _CLASSIFICATION_PROMPT.format(
+            user_msg = _USER_MESSAGE_TEMPLATE.format(
                 message=message,
                 page_context=page_context,
             )
 
             response = client.chat.completions.create(
                 model=model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": _CLASSIFICATION_PROMPT},
+                    {"role": "user", "content": user_msg},
+                ],
                 max_tokens=512,
                 temperature=0,
             )

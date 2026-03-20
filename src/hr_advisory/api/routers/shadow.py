@@ -18,6 +18,7 @@ engine (intent classifier, tool registry, executor, PACE manager).
 from __future__ import annotations
 
 import logging
+import re
 from collections import OrderedDict, deque
 from datetime import date, datetime, timezone
 from typing import Any
@@ -27,6 +28,7 @@ from fastapi.responses import StreamingResponse
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.workflows.guardrails import check_rate_limit
 from hr_advisory.workflows.compliance_checker import (
     ComplianceCheckInput,
     ComplianceFinding,
@@ -601,6 +603,10 @@ async def shadow_execute(
     user_id = str(current_user.get("sub", "anonymous"))
     jwt_token = _get_jwt_token(request)
 
+    # Rate limit — /execute triggers LLM calls
+    if not check_rate_limit(user_id):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
+
     if not message:
         raise HTTPException(status_code=400, detail="Message must not be empty.")
 
@@ -801,7 +807,7 @@ async def shadow_execute(
     if intent.trust_level == "autonomous":
         # Read-only — execute immediately
         executor = ShadowExecutor()
-        result = await executor.execute(tool, intent.entities, jwt_token)
+        result = await executor.execute(tool, intent.entities, jwt_token, current_user=current_user)
 
         if result.success:
             display_message = formatter.format_read(result.data, intent.module, intent.action)
@@ -898,6 +904,9 @@ async def shadow_confirm(
     session_id = body.get("session_id", "")
     user_id = str(current_user.get("sub", "anonymous"))
     jwt_token = _get_jwt_token(request)
+
+    if not check_rate_limit(user_id):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required.")
@@ -1192,6 +1201,7 @@ async def _generate_sse_events(
     session_id: str,
     jwt_token: str,
     pace_manager: Any | None = None,
+    current_user: dict | None = None,
 ) -> Any:
     """Async generator that yields SSE-formatted events during PACE execution.
 
@@ -1206,6 +1216,7 @@ async def _generate_sse_events(
         session_id: The PACE session ID to execute and stream.
         jwt_token: The user's JWT for authorization forwarding.
         pace_manager: Optional PaceManager instance (uses singleton if None).
+        current_user: The decoded JWT claims for MCP tenant context.
 
     Yields:
         SSE-formatted strings ready for StreamingResponse.
@@ -1253,7 +1264,7 @@ async def _generate_sse_events(
             is_mcp=step.method.upper() == "MCP",
         )
 
-        result = await executor.execute(tool, step.params, jwt_token)
+        result = await executor.execute(tool, step.params, jwt_token, current_user=current_user)
         session.results.append(result.to_dict())
 
         if result.success:
@@ -1307,6 +1318,9 @@ async def shadow_confirm_stream(
     user_id = str(current_user.get("sub", "anonymous"))
     jwt_token = _get_jwt_token(request)
 
+    if not check_rate_limit(user_id):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
+
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required.")
 
@@ -1348,7 +1362,7 @@ async def shadow_confirm_stream(
     )
 
     return StreamingResponse(
-        _generate_sse_events(session_id, jwt_token, pace_manager),
+        _generate_sse_events(session_id, jwt_token, pace_manager, current_user=current_user),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1602,6 +1616,9 @@ async def shadow_upload(
     company_id = get_current_company_id(current_user)
     user_id = int(current_user.get("sub", 0))
 
+    if not check_rate_limit(str(user_id)):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
+
     if attachment_intent not in _SUPPORTED_ATTACHMENT_INTENTS:
         raise HTTPException(
             status_code=400,
@@ -1620,8 +1637,45 @@ async def shadow_upload(
     if len(file_content) > max_file_size:
         raise HTTPException(status_code=400, detail="File exceeds 10MB size limit.")
 
-    file_name = file.filename or "unknown"
+    file_name = re.sub(r"[^\w.\-]", "_", file.filename or "unknown")
     content_type = file.content_type or "application/octet-stream"
+
+    # Content-type validation per attachment intent
+    _ALLOWED_CONTENT_TYPES: dict[str, set[str]] = {
+        "bulk_import": {
+            "text/csv",
+            "application/csv",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+        "payroll_import": {
+            "text/csv",
+            "application/csv",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+        "document_upload": {
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+            "image/png",
+            "image/jpeg",
+            "image/jpg",
+            "text/plain",
+        },
+        "receipt_upload": {
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/jpg",
+        },
+    }
+    allowed = _ALLOWED_CONTENT_TYPES.get(attachment_intent)
+    if allowed and content_type not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type not supported for {attachment_intent}. Accepted: {', '.join(sorted(allowed))}",
+        )
 
     try:
         result = await _route_upload(
@@ -1633,7 +1687,8 @@ async def shadow_upload(
             user_id=user_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        logger.warning("Upload processing failed: %s", exc)
+        raise HTTPException(status_code=400, detail="The uploaded file could not be processed.")
 
     formatter = ArborFormatter()
     confirmation_msg = result.get("confirmation_message", "")
