@@ -1,20 +1,28 @@
-"""Shadow Agent context API — contextual intelligence for the shadow margin.
+"""Shadow Agent API — contextual intelligence and command execution.
 
-Provides page-aware compliance insights, regulatory alerts, deadline
-reminders, and inline annotations that the shadow agent UI renders
-as margin notes and inline risk labels.
+Provides two layers of functionality:
 
-All data is deterministic (no LLM calls) — sourced from the compliance
-checker, regulatory update pipeline, and KB provision content.
+1. **Context API** (deterministic, no LLM) — page-aware compliance insights,
+   regulatory alerts, deadline reminders, and inline annotations that the
+   shadow agent UI renders as margin notes and inline risk labels.
+
+2. **Execution API** (LLM-powered) — the intelligence layer that understands
+   user intent and executes actions on their behalf through the PACE loop
+   (Preview, Approve, Confirm, Exit).
+
+Context data is sourced from the compliance checker, regulatory update
+pipeline, and KB provision content. Execution uses the Shadow Agent
+engine (intent classifier, tool registry, executor, PACE manager).
 """
 
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict, deque
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
@@ -309,25 +317,25 @@ def _build_regulatory_alerts(page_domains: list[str]) -> list[dict[str, Any]]:
         update_domains_lower = [d.lower() for d in update.domains_affected]
         page_domains_lower = [d.lower() for d in page_domains]
         has_overlap = any(
-            ud in pd or pd in ud
-            for ud in update_domains_lower
-            for pd in page_domains_lower
+            ud in pd or pd in ud for ud in update_domains_lower for pd in page_domains_lower
         )
 
         if not has_overlap and page_domains:
             continue
 
         days_since = (today - update.effective_date).days
-        alerts.append({
-            "id": f"update-{update.id}",
-            "type": "regulatory_update",
-            "title": update.title,
-            "description": update.description,
-            "source": update.source,
-            "urgency": update.urgency.value,
-            "effective_date": update.effective_date.isoformat(),
-            "days_since_effective": max(0, days_since),
-        })
+        alerts.append(
+            {
+                "id": f"update-{update.id}",
+                "type": "regulatory_update",
+                "title": update.title,
+                "description": update.description,
+                "source": update.source,
+                "urgency": update.urgency.value,
+                "effective_date": update.effective_date.isoformat(),
+                "days_since_effective": max(0, days_since),
+            }
+        )
 
     # Add seed alerts from the alerts router for broader coverage
     from hr_advisory.api.routers.alerts import _get_seed_alerts
@@ -343,9 +351,7 @@ def _build_regulatory_alerts(page_domains: list[str]) -> list[dict[str, Any]]:
         alert_domains_lower = [d.lower() for d in alert_domains]
         page_domains_lower = [d.lower() for d in page_domains]
         has_overlap = any(
-            ad in pd or pd in ad
-            for ad in alert_domains_lower
-            for pd in page_domains_lower
+            ad in pd or pd in ad for ad in alert_domains_lower for pd in page_domains_lower
         )
         if not has_overlap and page_domains:
             continue
@@ -355,15 +361,17 @@ def _build_regulatory_alerts(page_domains: list[str]) -> list[dict[str, Any]]:
         if urgency not in ("critical", "high"):
             continue
 
-        alerts.append({
-            "id": alert["id"],
-            "type": "regulatory_update",
-            "title": alert["title"],
-            "description": alert.get("impact_summary", alert["description"]),
-            "source": alert.get("source", ""),
-            "urgency": urgency,
-            "effective_date": alert.get("effective_date", ""),
-        })
+        alerts.append(
+            {
+                "id": alert["id"],
+                "type": "regulatory_update",
+                "title": alert["title"],
+                "description": alert.get("impact_summary", alert["description"]),
+                "source": alert.get("source", ""),
+                "urgency": urgency,
+                "effective_date": alert.get("effective_date", ""),
+            }
+        )
 
     # Add recurring deadline reminders
     for deadline in _RECURRING_DEADLINES:
@@ -383,22 +391,22 @@ def _build_regulatory_alerts(page_domains: list[str]) -> list[dict[str, Any]]:
                     relevant = True
                 elif "ir8a" in deadline_id:
                     relevant = True  # Tax is broadly relevant
-                elif "levy" in deadline_id and any(
-                    "foreign" in d for d in page_lower
-                ):
+                elif "levy" in deadline_id and any("foreign" in d for d in page_lower):
                     relevant = True
                 # On dashboard, show all deadlines
                 elif any("employment" in d for d in page_lower):
                     relevant = True
 
             if relevant:
-                alerts.append({
-                    "id": deadline["id"],
-                    "type": "deadline",
-                    "title": deadline["title"],
-                    "description": deadline["description"],
-                    "days_remaining": days_remaining,
-                })
+                alerts.append(
+                    {
+                        "id": deadline["id"],
+                        "type": "deadline",
+                        "title": deadline["title"],
+                        "description": deadline["description"],
+                        "days_remaining": days_remaining,
+                    }
+                )
 
     return alerts
 
@@ -419,20 +427,24 @@ def _build_annotations(
         if not annotation_data:
             continue
 
-        compliance_annotations.append({
-            "element_id": annotation_data["element_id"],
-            "text": annotation_data["text"],
-            "severity": annotation_data["severity"],
-        })
+        compliance_annotations.append(
+            {
+                "element_id": annotation_data["element_id"],
+                "text": annotation_data["text"],
+                "severity": annotation_data["severity"],
+            }
+        )
 
     # Calculator annotations — only on relevant pages
     calculator_annotations: list[dict[str, str]] = []
     if page in ("calculator", "payroll", "dashboard"):
         for ann in _CALCULATOR_ANNOTATIONS:
-            calculator_annotations.append({
-                "context": ann["context"],
-                "text": ann["text"],
-            })
+            calculator_annotations.append(
+                {
+                    "context": ann["context"],
+                    "text": ann["text"],
+                }
+            )
 
     result: dict[str, list[dict[str, str]]] = {}
     if compliance_annotations:
@@ -507,4 +519,500 @@ async def shadow_context(
         "alerts": alerts,
         "annotations": annotations,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# Shadow Agent Execution Engine — the intelligence layer
+# ══════════════════════════════════════════════════════════════
+#
+# These endpoints power the command bar. Arbor understands intent
+# and EXECUTES — it is NOT a chatbot.
+#
+# PACE loop: Preview → Approve → Confirm → Exit
+# Trust levels: autonomous (reads), propose (writes), always_propose (dangerous)
+
+# In-memory action history per user (bounded, for undo/history)
+_MAX_HISTORY_PER_USER = 100
+_action_history: dict[str, deque] = {}  # user_id → deque of action dicts
+_MAX_HISTORY_USERS = 10000
+
+
+def _get_jwt_token(request: Request) -> str:
+    """Extract the raw JWT token from the Authorization header.
+
+    The Shadow Agent executor forwards this exact token to API calls,
+    ensuring it operates with the same permissions as the user.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    return ""
+
+
+def _record_action(user_id: str, action: dict) -> None:
+    """Record a completed action in the user's history (bounded deque)."""
+    if len(_action_history) >= _MAX_HISTORY_USERS and user_id not in _action_history:
+        # Evict oldest user
+        try:
+            oldest_key = next(iter(_action_history))
+            _action_history.pop(oldest_key, None)
+        except StopIteration:
+            pass
+
+    if user_id not in _action_history:
+        _action_history[user_id] = deque(maxlen=_MAX_HISTORY_PER_USER)
+    _action_history[user_id].appendleft(action)
+
+
+@router.post("/execute")
+async def shadow_execute(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Main command entry point for the Shadow Agent.
+
+    Classifies the user's intent from their message, then either:
+    - Executes immediately (autonomous trust level — reads)
+    - Returns a PACE preview for confirmation (propose/always_propose — writes)
+    - Routes to the advisory pipeline (advisory module)
+    - Returns a navigation instruction (navigation module)
+
+    Request body:
+        message: str — the user's command/question
+        page_context: str — current frontend page (default: "dashboard")
+
+    Returns a structured response with Arbor identity.
+    """
+    from hr_advisory.shadow.intent_classifier import ShadowIntentClassifier
+    from hr_advisory.shadow.tool_registry import get_tool_registry
+    from hr_advisory.shadow.executor import ShadowExecutor
+    from hr_advisory.shadow.pace import PaceStep, get_pace_manager
+    from hr_advisory.shadow.formatter import ArborFormatter
+    from hr_advisory.workflows.guardrails import (
+        ScreeningResult,
+        screen_injection,
+        screen_scope,
+    )
+
+    body = await request.json()
+    message = body.get("message", "").strip()
+    page_context = body.get("page_context", "dashboard")
+    user_id = str(current_user.get("sub", "anonymous"))
+    jwt_token = _get_jwt_token(request)
+
+    if not message:
+        raise HTTPException(status_code=400, detail="Message must not be empty.")
+
+    # ── Step 1: Guardrails — scope check and injection detection ──
+    scope_result = screen_scope(message)
+    if scope_result.result == ScreeningResult.BLOCK:
+        formatter = ArborFormatter()
+        return {
+            "type": "out_of_scope",
+            "message": formatter.format_error(scope_result.reason),
+            "alternative_guidance": scope_result.alternative_guidance,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    injection_result = screen_injection(message, user_id=user_id)
+    if injection_result.result == ScreeningResult.BLOCK:
+        formatter = ArborFormatter()
+        return {
+            "type": "blocked",
+            "message": formatter.format_error(injection_result.reason),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ── Step 2: Intent classification ─────────────────────────────
+    classifier = ShadowIntentClassifier()
+    intent = classifier.classify(message, page_context)
+
+    logger.info(
+        "Shadow intent: module=%s, action=%s, trust=%s, user=%s",
+        intent.module,
+        intent.action,
+        intent.trust_level,
+        user_id,
+    )
+
+    formatter = ArborFormatter()
+
+    # ── Step 3: Route by module ───────────────────────────────────
+
+    # 3a. Advisory — route to the existing advisory pipeline
+    if intent.module == "advisory":
+        return {
+            "type": "advisory",
+            "message": formatter.format_advisory_routing(message),
+            "intent": intent.to_dict(),
+            "route_to": "/advisory/query",
+            "query": message,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # 3b. Navigation — return route for frontend to navigate to
+    if intent.module == "navigation":
+        route = intent.entities.get("route", "/my-dashboard")
+        description = intent.confirmation_message or route
+        nav = formatter.format_navigation(route, description)
+        return {
+            "type": "navigation",
+            "message": nav["message"],
+            "route": nav["route"],
+            "intent": intent.to_dict(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # 3c. Attachment detected — prompt for file upload
+    if intent.has_attachment and intent.attachment_intent:
+        return {
+            "type": "attachment_required",
+            "message": formatter.format_attachment_prompt(intent.attachment_intent),
+            "intent": intent.to_dict(),
+            "attachment_intent": intent.attachment_intent,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ── Step 4: Resolve tool from registry ────────────────────────
+    registry = get_tool_registry()
+    tool = registry.resolve_tool(intent.module, intent.action)
+
+    if tool is None:
+        # No registered tool — suggest advisory or navigation fallback
+        logger.warning(
+            "No tool found for %s.%s — falling back to advisory",
+            intent.module,
+            intent.action,
+        )
+        return {
+            "type": "advisory",
+            "message": formatter.format_advisory_routing(message),
+            "intent": intent.to_dict(),
+            "route_to": "/advisory/query",
+            "query": message,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ── Step 5: Trust level enforcement ───────────────────────────
+
+    if intent.trust_level == "autonomous":
+        # Read-only — execute immediately
+        executor = ShadowExecutor()
+        result = await executor.execute(tool, intent.entities, jwt_token)
+
+        if result.success:
+            display_message = formatter.format_read(result.data, intent.module, intent.action)
+        else:
+            display_message = formatter.format_error(result.error)
+
+        # Record in history
+        _record_action(
+            user_id,
+            {
+                "session_id": None,
+                "module": intent.module,
+                "action": intent.action,
+                "trust_level": "autonomous",
+                "success": result.success,
+                "timestamp": result.timestamp,
+                "message": message,
+            },
+        )
+
+        return {
+            "type": "result",
+            "message": display_message,
+            "data": result.data if result.success else None,
+            "success": result.success,
+            "error": result.error if not result.success else None,
+            "intent": intent.to_dict(),
+            "execution": result.to_dict(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    else:
+        # propose or always_propose — create PACE session for confirmation
+        pace_manager = get_pace_manager()
+
+        step = PaceStep(
+            description=tool.description,
+            tool_module=tool.module,
+            tool_action=tool.action,
+            method=tool.method,
+            path=tool.path,
+            params=dict(intent.entities),
+        )
+
+        session = pace_manager.create_session(
+            user_id=user_id,
+            intent_module=intent.module,
+            intent_action=intent.action,
+            confirmation_message=intent.confirmation_message,
+            steps=[step],
+        )
+
+        preview_message = formatter.format_preview(session.to_dict())
+
+        return {
+            "type": "preview",
+            "message": preview_message,
+            "session_id": session.id,
+            "session": session.to_dict(),
+            "intent": intent.to_dict(),
+            "requires_confirmation": True,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+
+@router.post("/confirm")
+async def shadow_confirm(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Confirm and execute a pending PACE session.
+
+    Request body:
+        session_id: str — the PACE session ID to confirm
+    """
+    from hr_advisory.shadow.pace import get_pace_manager
+    from hr_advisory.shadow.formatter import ArborFormatter
+
+    body = await request.json()
+    session_id = body.get("session_id", "")
+    user_id = str(current_user.get("sub", "anonymous"))
+    jwt_token = _get_jwt_token(request)
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required.")
+
+    pace_manager = get_pace_manager()
+    session = pace_manager.get_session(session_id)
+
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found or expired. Please try again.",
+        )
+
+    # Tenant isolation: verify the session belongs to this user
+    if session.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    if session.status != "preview":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Session cannot be confirmed — current status is '{session.status}'.",
+        )
+
+    # Execute the session
+    executed = await pace_manager.execute_session(session_id, jwt_token)
+    if executed is None:
+        raise HTTPException(status_code=500, detail="Session execution failed.")
+
+    formatter = ArborFormatter()
+
+    if executed.status == "done":
+        # Format based on the primary step's result
+        if executed.results:
+            first_result = executed.results[0]
+            if first_result.get("success"):
+                display_message = formatter.format_write(
+                    first_result.get("data", {}),
+                    executed.intent_module,
+                    executed.intent_action,
+                )
+            else:
+                display_message = formatter.format_error(first_result.get("error", "Unknown error"))
+        else:
+            display_message = formatter.format_multi_step(executed.to_dict())
+    else:
+        display_message = formatter.format_multi_step(executed.to_dict())
+
+    # Record in history
+    _record_action(
+        user_id,
+        {
+            "session_id": session_id,
+            "module": executed.intent_module,
+            "action": executed.intent_action,
+            "trust_level": "propose",
+            "success": executed.status == "done",
+            "timestamp": executed.completed_at or datetime.now(timezone.utc).isoformat(),
+            "message": executed.confirmation_message,
+        },
+    )
+
+    return {
+        "type": "result",
+        "message": display_message,
+        "session_id": session_id,
+        "session": executed.to_dict(),
+        "success": executed.status == "done",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post("/cancel")
+async def shadow_cancel(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Cancel a pending PACE session.
+
+    Request body:
+        session_id: str — the PACE session ID to cancel
+    """
+    from hr_advisory.shadow.pace import get_pace_manager
+    from hr_advisory.shadow.formatter import ArborFormatter
+
+    body = await request.json()
+    session_id = body.get("session_id", "")
+    user_id = str(current_user.get("sub", "anonymous"))
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required.")
+
+    pace_manager = get_pace_manager()
+    session = pace_manager.get_session(session_id)
+
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found or expired.",
+        )
+
+    # Tenant isolation
+    if session.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    cancelled = pace_manager.cancel_session(session_id)
+    if not cancelled:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Session cannot be cancelled — current status is '{session.status}'.",
+        )
+
+    formatter = ArborFormatter()
+    return {
+        "type": "cancelled",
+        "message": formatter.PREFIX + "Action cancelled.",
+        "session_id": session_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post("/undo")
+async def shadow_undo(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Undo a recently completed action.
+
+    Undo support is limited to actions that have a logical inverse.
+    Currently supported: leave applications (withdraw), claims (withdraw).
+    Other actions return an informational message about manual reversal.
+
+    Request body:
+        session_id: str — (optional) specific session to undo. If not
+            provided, undoes the most recent undoable action.
+    """
+    from hr_advisory.shadow.formatter import ArborFormatter
+
+    body = await request.json()
+    target_session_id = body.get("session_id", "")
+    user_id = str(current_user.get("sub", "anonymous"))
+
+    formatter = ArborFormatter()
+
+    history = _action_history.get(user_id, deque())
+    if not history:
+        return {
+            "type": "info",
+            "message": formatter.PREFIX + "No recent actions to undo.",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # Find the target action
+    target_action = None
+    if target_session_id:
+        for action in history:
+            if action.get("session_id") == target_session_id:
+                target_action = action
+                break
+    else:
+        # Find the most recent successful write action
+        for action in history:
+            if action.get("success") and action.get("trust_level") != "autonomous":
+                target_action = action
+                break
+
+    if target_action is None:
+        return {
+            "type": "info",
+            "message": formatter.PREFIX + "No undoable actions found in your recent history.",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # Check if the action type supports undo
+    module = target_action.get("module", "")
+    action = target_action.get("action", "")
+    undoable_actions = {
+        ("leave", "apply"): "You can withdraw this leave application from the Leave page.",
+        (
+            "claims",
+            "create",
+        ): "You can delete this claim from the Claims page before submitting it.",
+        (
+            "claims",
+            "submit",
+        ): "You can ask your manager to reject this claim, or contact HR to reverse it.",
+        ("attendance", "clock_in"): "Clock-in records can be corrected by your HR administrator.",
+        ("attendance", "clock_out"): "Clock-out records can be corrected by your HR administrator.",
+    }
+
+    guidance = undoable_actions.get((module, action))
+    if guidance:
+        return {
+            "type": "undo_guidance",
+            "message": formatter.PREFIX + guidance,
+            "original_action": target_action,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    return {
+        "type": "undo_not_supported",
+        "message": formatter.PREFIX
+        + (
+            f"The '{action}' action on '{module}' cannot be automatically undone. "
+            "Please contact your HR administrator for assistance."
+        ),
+        "original_action": target_action,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/history")
+async def shadow_history(
+    current_user: dict = Depends(get_current_user),
+    limit: int = 20,
+) -> dict:
+    """List recent Arbor actions for the current user.
+
+    Query parameters:
+        limit: int — maximum number of actions to return (default: 20, max: 100)
+
+    Returns the user's action history in reverse chronological order.
+    """
+    user_id = str(current_user.get("sub", "anonymous"))
+    max_limit = min(limit, 100)
+
+    history = _action_history.get(user_id, deque())
+    actions = list(history)[:max_limit]
+
+    return {
+        "actions": actions,
+        "total": len(history),
+        "showing": len(actions),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
