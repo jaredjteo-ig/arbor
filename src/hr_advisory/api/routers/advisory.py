@@ -1884,10 +1884,17 @@ async def advisory_stream(
         llm_context=llm_context,
     )
     if llm_result is not None:
-        response_text = llm_result["response_text"]
-        confidence = llm_result.get("confidence", UNCERTAINTY_DEFAULTS["confidence"])
-        risk_tier = llm_result.get("risk_tier", _classify_risk_tier(domains, confidence))
-        stream_degraded = llm_result.get("degraded", False)
+        # Guard against non-dict returns (e.g., timeout fallback returning string)
+        if isinstance(llm_result, str):
+            response_text = llm_result
+            confidence = 0.6
+            risk_tier = _classify_risk_tier(domains, confidence)
+            stream_degraded = True
+        else:
+            response_text = llm_result.get("response_text", "")
+            confidence = llm_result.get("confidence", UNCERTAINTY_DEFAULTS["confidence"])
+            risk_tier = llm_result.get("risk_tier", _classify_risk_tier(domains, confidence))
+            stream_degraded = llm_result.get("degraded", False)
         logger.info(
             "Stream response via LLM pipeline (confidence=%.2f, degraded=%s)",
             confidence,
