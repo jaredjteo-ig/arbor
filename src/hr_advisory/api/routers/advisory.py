@@ -2128,8 +2128,66 @@ async def list_conversations(
             }
         )
 
+    # If in-memory is empty, try loading from database (survives restarts)
+    if not conversations:
+        try:
+            from kailash import LocalRuntime, WorkflowBuilder
+
+            wf = WorkflowBuilder()
+            wf.add_node(
+                "ConversationThreadListNode",
+                "list_threads",
+                {
+                    "filter": {"user_id": int(user_id) if user_id.isdigit() else 0},
+                    "limit": 50,
+                    "enable_cache": False,
+                },
+            )
+            runtime = LocalRuntime()
+            results, _ = runtime.execute(wf.build())
+            records = results.get("list_threads", {})
+            items = records.get("records", []) if isinstance(records, dict) else []
+
+            for thread in items:
+                # Load last message for preview
+                last_msg = ""
+                try:
+                    wf2 = WorkflowBuilder()
+                    wf2.add_node(
+                        "ConversationMessageListNode",
+                        "msgs",
+                        {
+                            "filter": {"thread_id": thread["id"]},
+                            "limit": 1,
+                            "enable_cache": False,
+                        },
+                    )
+                    msg_results, _ = runtime.execute(wf2.build())
+                    msg_records = msg_results.get("msgs", {})
+                    msg_items = (
+                        msg_records.get("records", []) if isinstance(msg_records, dict) else []
+                    )
+                    if msg_items:
+                        last_msg = msg_items[-1].get("text", "")[:100]
+                except Exception:
+                    pass
+
+                title = thread.get("subject", "") or "New conversation"
+                conversations.append(
+                    {
+                        "id": thread["id"],
+                        "title": title[:60],
+                        "last_message": last_msg,
+                        "timestamp": thread.get("started_at", ""),
+                        "risk_tier": "green",
+                        "message_count": thread.get("turn_count", 0),
+                    }
+                )
+        except Exception as exc:
+            logger.warning("Failed to load conversations from DB: %s", exc)
+
     # Sort by timestamp descending (newest first)
-    conversations.sort(key=lambda c: c["timestamp"], reverse=True)
+    conversations.sort(key=lambda c: str(c.get("timestamp", "")), reverse=True)
 
     return {
         "conversations": conversations,

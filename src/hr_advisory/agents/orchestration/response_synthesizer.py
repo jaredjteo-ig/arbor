@@ -216,6 +216,14 @@ class ResponseSynthesizerAgent(BaseAgent):
                 compliance_results=compliance_str,
             )
 
+            # Detect Kaizen error dicts — these are NOT usable responses
+            if isinstance(result, dict) and result.get("success") is False:
+                logger.warning(
+                    "ResponseSynthesizer returned error: %s",
+                    result.get("error", "unknown"),
+                )
+                raise ValueError(result.get("error", "Synthesis failed"))
+
             # Extract structured fields, falling back to raw text if parsing fails
             try:
                 response_text = self.extract_str(result, "response_text", default="")
@@ -225,7 +233,8 @@ class ResponseSynthesizerAgent(BaseAgent):
             # If structured extraction failed but we have raw text, use it
             if not response_text and result is not None:
                 raw = str(result) if not isinstance(result, str) else result
-                if raw and len(raw) > 20:
+                # Only use raw text if it looks like actual content (not error dicts)
+                if raw and len(raw) > 50 and "error" not in raw[:50].lower():
                     response_text = raw
                     logger.info(
                         "Using raw LLM output as response_text (structured extraction failed)"
