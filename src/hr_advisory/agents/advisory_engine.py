@@ -672,6 +672,22 @@ class AdvisoryEngine:
                             }
                         )
 
+                    # Steering: if we've done 5+ search_kb calls, nudge the model
+                    # to synthesize. gpt-5-mini tends to keep searching indefinitely
+                    # on multi-domain queries without this.
+                    kb_call_count = sum(1 for t in tools_called if t == "search_kb")
+                    if kb_call_count >= 5 and round_num >= 3:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    "You have retrieved enough provisions. "
+                                    "Please synthesize your answer now based on "
+                                    "what you have found. Do not search further."
+                                ),
+                            }
+                        )
+
                     continue  # Next round — let LLM process tool results
 
                 # Model is done — extract the response
