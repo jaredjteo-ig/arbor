@@ -1968,17 +1968,57 @@ async def advisory_stream(
     # ── Step 2b: Scope check ─────────────────────────────────────
     scope_result = screen_scope(query)
     if scope_result.result == ScreeningResult.BLOCK:
-        raise HTTPException(status_code=422, detail=scope_result.reason)
+        # Return as SSE event so the frontend can display the message
+        async def _scope_decline():
+            decline_data = json.dumps(
+                {
+                    "response": scope_result.reason,
+                    "out_of_scope": True,
+                    "risk_tier": "green",
+                    "confidence_score": 1.0,
+                    "conversation_id": conversation_id,
+                }
+            )
+            yield f"data: {decline_data}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(_scope_decline(), media_type="text/event-stream")
 
     # ── Step 2c: Prompt injection detection ───────────────────
     injection_result = screen_injection(query, user_id=user_id)
     if injection_result.result == ScreeningResult.BLOCK:
-        raise HTTPException(status_code=422, detail=injection_result.reason)
+
+        async def _injection_decline():
+            decline_data = json.dumps(
+                {
+                    "response": injection_result.reason,
+                    "risk_tier": "red",
+                    "confidence_score": 1.0,
+                    "conversation_id": conversation_id,
+                }
+            )
+            yield f"data: {decline_data}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(_injection_decline(), media_type="text/event-stream")
 
     # ── Step 3: Query screening (circumvention + escalation) ──
     screening = screen_query(query, user_id=user_id)
     if screening.result in (ScreeningResult.BLOCK, ScreeningResult.ESCALATE):
-        raise HTTPException(status_code=422, detail=screening.reason)
+
+        async def _screening_decline():
+            decline_data = json.dumps(
+                {
+                    "response": screening.reason,
+                    "risk_tier": "red",
+                    "confidence_score": 1.0,
+                    "conversation_id": conversation_id,
+                }
+            )
+            yield f"data: {decline_data}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(_screening_decline(), media_type="text/event-stream")
 
     # ── Step 3b: Load conversation memory ───────────────────────
     conv_key = str(conversation_id)
