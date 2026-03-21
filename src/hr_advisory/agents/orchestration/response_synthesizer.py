@@ -216,10 +216,35 @@ class ResponseSynthesizerAgent(BaseAgent):
                 compliance_results=compliance_str,
             )
 
-            response_text = self.extract_str(result, "response_text", default="")
-            citations = self.extract_list(result, "citations", default=[])
-            disclaimers = self.extract_list(result, "disclaimers", default=[])
-            final_risk_tier = self.extract_str(result, "final_risk_tier", default=floor_risk_tier)
+            # Extract structured fields, falling back to raw text if parsing fails
+            try:
+                response_text = self.extract_str(result, "response_text", default="")
+            except Exception:
+                response_text = ""
+
+            # If structured extraction failed but we have raw text, use it
+            if not response_text and result is not None:
+                raw = str(result) if not isinstance(result, str) else result
+                if raw and len(raw) > 20:
+                    response_text = raw
+                    logger.info(
+                        "Using raw LLM output as response_text (structured extraction failed)"
+                    )
+
+            try:
+                citations = self.extract_list(result, "citations", default=[])
+            except Exception:
+                citations = []
+            try:
+                disclaimers = self.extract_list(result, "disclaimers", default=[])
+            except Exception:
+                disclaimers = []
+            try:
+                final_risk_tier = self.extract_str(
+                    result, "final_risk_tier", default=floor_risk_tier
+                )
+            except Exception:
+                final_risk_tier = floor_risk_tier
 
             # Validate risk tier
             if final_risk_tier not in ("green", "amber", "red"):
