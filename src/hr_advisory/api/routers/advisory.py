@@ -1968,8 +1968,11 @@ async def advisory_stream(
     # ── Step 2b: Scope check ─────────────────────────────────────
     scope_result = screen_scope(query)
     if scope_result.result == ScreeningResult.BLOCK:
-        # Return as SSE event so the frontend can display the message
+        # Return as proper SSE events (event: type prefix required
+        # for the frontend parseSSEChunk/processEvent dispatcher).
         async def _scope_decline():
+            start_data = json.dumps({"conversation_id": conversation_id})
+            yield f"event: start\ndata: {start_data}\n\n"
             decline_data = json.dumps(
                 {
                     "response": scope_result.reason,
@@ -1979,8 +1982,7 @@ async def advisory_stream(
                     "conversation_id": conversation_id,
                 }
             )
-            yield f"data: {decline_data}\n\n"
-            yield "data: [DONE]\n\n"
+            yield f"event: complete\ndata: {decline_data}\n\n"
 
         return StreamingResponse(_scope_decline(), media_type="text/event-stream")
 
@@ -1989,6 +1991,8 @@ async def advisory_stream(
     if injection_result.result == ScreeningResult.BLOCK:
 
         async def _injection_decline():
+            start_data = json.dumps({"conversation_id": conversation_id})
+            yield f"event: start\ndata: {start_data}\n\n"
             decline_data = json.dumps(
                 {
                     "response": injection_result.reason,
@@ -1997,8 +2001,7 @@ async def advisory_stream(
                     "conversation_id": conversation_id,
                 }
             )
-            yield f"data: {decline_data}\n\n"
-            yield "data: [DONE]\n\n"
+            yield f"event: complete\ndata: {decline_data}\n\n"
 
         return StreamingResponse(_injection_decline(), media_type="text/event-stream")
 
@@ -2007,6 +2010,8 @@ async def advisory_stream(
     if screening.result in (ScreeningResult.BLOCK, ScreeningResult.ESCALATE):
 
         async def _screening_decline():
+            start_data = json.dumps({"conversation_id": conversation_id})
+            yield f"event: start\ndata: {start_data}\n\n"
             decline_data = json.dumps(
                 {
                     "response": screening.reason,
@@ -2015,8 +2020,7 @@ async def advisory_stream(
                     "conversation_id": conversation_id,
                 }
             )
-            yield f"data: {decline_data}\n\n"
-            yield "data: [DONE]\n\n"
+            yield f"event: complete\ndata: {decline_data}\n\n"
 
         return StreamingResponse(_screening_decline(), media_type="text/event-stream")
 
