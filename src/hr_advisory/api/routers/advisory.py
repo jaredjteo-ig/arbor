@@ -28,7 +28,7 @@ from hr_advisory.api.middleware.auth_middleware import get_current_user
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
 from hr_advisory.security.validation import sanitise_input, validate_query_length
 from hr_advisory.kb.admin import search_provisions
-from hr_advisory.trust.citation_validator import validate_citations
+from hr_advisory.trust.citation_validator import CitationValidationResult, validate_citations
 from hr_advisory.trust.disclaimers import get_disclaimer
 from hr_advisory.trust.eatp_lineage import (
     AgentAttestation,
@@ -687,6 +687,16 @@ async def advisory_query(
         risk_tier = "red"
         confidence = 0.0
 
+    # ── Step 9b: Citation validation ──────────────────────────
+    _cited_ids = [p.get("provision_id", "") for p in provisions_cited] if provisions_cited else []
+    citation_result = (
+        validate_citations(_cited_ids)
+        if _cited_ids
+        else CitationValidationResult(
+            is_valid=True, validated_citations=[], invalid_citations=[], warnings=[]
+        )
+    )
+
     # ── Step 10: Disclaimer ─────────────────────────────────────
     disclaimer = get_disclaimer(risk_tier, confidence, domains)
 
@@ -694,7 +704,6 @@ async def advisory_query(
     violations = validate_constraint_envelope("orchestrator", domains)
 
     # ── Step 12: Record attestation in trust chain ──────────────
-    _cited_ids = [p.get("provision_id", "") for p in provisions_cited] if provisions_cited else []
     attestation = AgentAttestation(
         agent_id="advisory_engine",
         agent_role=AgentRole.ORCHESTRATOR,
@@ -760,8 +769,8 @@ async def advisory_query(
                 company_id=int(effective_company_id),
                 provider=llm_context.provider,
                 model=llm_context.model or "unknown",
-                input_tokens=_est_input_tokens,
-                output_tokens=_est_output_tokens,
+                input_tokens=_real_input_tokens,
+                output_tokens=_real_output_tokens,
                 cost_usd=_cost.get("estimated_cost", 0.0) if isinstance(_cost, dict) else 0.0,
                 duration_ms=0.0,
                 is_byok=llm_context.is_byok,
@@ -2094,6 +2103,16 @@ async def advisory_stream(
         risk_tier = "red"
         confidence = 0.0
 
+    # ── Step 9b: Citation validation ──────────────────────────
+    _cited_ids_s = [p.get("provision_id", "") for p in provisions_cited] if provisions_cited else []
+    citation_result = (
+        validate_citations(_cited_ids_s)
+        if _cited_ids_s
+        else CitationValidationResult(
+            is_valid=True, validated_citations=[], invalid_citations=[], warnings=[]
+        )
+    )
+
     # ── Step 10: Disclaimer ─────────────────────────────────────
     disclaimer = get_disclaimer(risk_tier, confidence, domains)
 
@@ -2101,7 +2120,6 @@ async def advisory_stream(
     violations = validate_constraint_envelope("orchestrator", domains)
 
     # ── Step 12: Record attestation in trust chain ──────────────
-    _cited_ids_s = [p.get("provision_id", "") for p in provisions_cited] if provisions_cited else []
     attestation = AgentAttestation(
         agent_id="advisory_engine",
         agent_role=AgentRole.ORCHESTRATOR,
