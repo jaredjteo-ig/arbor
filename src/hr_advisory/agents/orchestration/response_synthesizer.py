@@ -147,6 +147,62 @@ class ResponseSynthesizerAgent(BaseAgent):
         ) + SYSTEM_PROMPT_SECURITY_FOOTER
 
     # ------------------------------------------------------------------
+    # Direct LLM fallback (bypasses Kaizen signature parsing)
+    # ------------------------------------------------------------------
+
+    def _direct_llm_synthesis(
+        self,
+        outputs_json: str,
+        risk_tier: str,
+        company_context: str,
+        conversation_history: str,
+        compliance_results: str,
+    ) -> str:
+        """Call the LLM directly when Kaizen signature extraction fails.
+
+        Returns the raw LLM text as a string (not a dict). The caller
+        treats string results as the response_text directly.
+        """
+        import os
+
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+            model = os.environ.get("DEFAULT_LLM_MODEL", "gpt-4o-mini")
+
+            system_prompt = self._generate_system_prompt()
+            user_prompt = (
+                f"Specialist outputs:\n{outputs_json}\n\n"
+                f"Risk tier: {risk_tier}\n"
+                f"Company context: {company_context}\n"
+            )
+            if conversation_history:
+                user_prompt += f"\nConversation history:\n{conversation_history}\n"
+            if compliance_results and compliance_results != "{}":
+                user_prompt += f"\nCompliance results:\n{compliance_results}\n"
+            user_prompt += (
+                "\nWrite the advisory response following the mandatory template. "
+                "Return ONLY the response text, no JSON wrapping."
+            )
+
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.3,
+                max_tokens=2000,
+            )
+            text = response.choices[0].message.content or ""
+            logger.info("Direct LLM synthesis succeeded (%d chars)", len(text))
+            return text
+        except Exception as exc:
+            logger.error("Direct LLM synthesis failed: %s", exc)
+            raise
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -219,10 +275,13 @@ class ResponseSynthesizerAgent(BaseAgent):
             # Detect Kaizen error dicts — these are NOT usable responses
             if isinstance(result, dict) and result.get("success") is False:
                 logger.warning(
-                    "ResponseSynthesizer returned error: %s",
+                    "ResponseSynthesizer Kaizen extraction failed: %s — trying direct LLM call",
                     result.get("error", "unknown"),
                 )
-                raise ValueError(result.get("error", "Synthesis failed"))
+                # Bypass Kaizen signature parsing — call LLM directly
+                result = self._direct_llm_synthesis(
+                    outputs_json, floor_risk_tier, ctx_str, history_str, compliance_str
+                )
 
             # Extract structured fields, falling back to raw text if parsing fails
             try:
