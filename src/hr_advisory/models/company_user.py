@@ -2281,7 +2281,7 @@ class ConversationThread:
     company_id: int
     session_id: str = ""
     subject: str = ""
-    started_at: datetime = datetime.utcnow
+    started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
     turn_count: int = 0
     is_active: bool = True
@@ -2307,7 +2307,7 @@ class ConversationMessage:
     risk_tier: str = "green"
     confidence_score: Optional[float] = None
     provisions_cited: str = ""  # JSON list
-    timestamp: datetime = datetime.utcnow
+    timestamp: Optional[datetime] = None
 
     __dataflow__ = {
         "indexes": [
@@ -2334,7 +2334,7 @@ class TrustLineageRecord:
     human_review_required: bool = False
     human_review_completed: bool = False
     human_reviewer: Optional[str] = None
-    created_at: datetime = datetime.utcnow
+    created_at: Optional[datetime] = None
 
     __dataflow__ = {
         "indexes": [
@@ -2360,7 +2360,7 @@ class FlaggedQueryRecord:
     reviewer_notes: str = ""
     reviewed_by: Optional[int] = None
     reviewed_at: Optional[datetime] = None
-    flagged_at: datetime = datetime.utcnow
+    flagged_at: Optional[datetime] = None
 
     __dataflow__ = {
         "indexes": [
@@ -2382,7 +2382,7 @@ class UserObservation:
     page: str = ""
     action_type: str = ""  # "page_visit", "click", "form_submit", etc.
     details: str = ""  # JSON
-    timestamp: datetime = datetime.utcnow
+    timestamp: Optional[datetime] = None
 
     __dataflow__ = {
         "indexes": [
@@ -2403,7 +2403,7 @@ class UserMemory:
     patterns: str = ""  # JSON list
     preferences: str = ""  # JSON dict
     observation_count: int = 0
-    last_distilled: datetime = datetime.utcnow
+    last_distilled: Optional[datetime] = None
 
     __dataflow__ = {
         "indexes": [
@@ -2425,7 +2425,7 @@ class ActionHistoryRecord:
     parameters: str = ""  # JSON
     success: bool = True
     error_message: str = ""
-    timestamp: datetime = datetime.utcnow
+    timestamp: Optional[datetime] = None
 
     __dataflow__ = {
         "indexes": [

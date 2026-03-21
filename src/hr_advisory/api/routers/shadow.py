@@ -476,7 +476,10 @@ async def shadow_context(
         page: The current page name (e.g. "dashboard", "compliance",
               "employees", "payroll", "calculator", "documents", "leave").
     """
-    company_id = get_current_company_id(current_user)
+    try:
+        company_id = get_current_company_id(current_user)
+    except Exception:
+        company_id = None
     page_domains = _PAGE_DOMAINS.get(page, _PAGE_DOMAINS["dashboard"])
 
     # Run compliance check with a default input profile.
