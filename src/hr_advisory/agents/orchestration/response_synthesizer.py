@@ -169,7 +169,7 @@ class ResponseSynthesizerAgent(BaseAgent):
             from openai import OpenAI
 
             client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
-            model = os.environ.get("DEFAULT_LLM_MODEL", "gpt-4o-mini")
+            model = os.environ.get("DEFAULT_LLM_MODEL", "gpt-5-chat-latest")
 
             system_prompt = self._generate_system_prompt()
             user_prompt = (

@@ -1,0 +1,692 @@
+# Copyright 2026 Terrene Foundation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Autonomous advisory engine using LLM function calling.
+
+Replaces the rigid 13-step Kaizen agent pipeline with a single LLM
+that decides what tools to call, in what order, and when it has enough
+information to answer. The safety chain (input/output guardrails,
+trust lineage) wraps this engine — it does not replace the LLM's
+reasoning.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["AdvisoryEngine"]
+
+# Hard cap on tool-calling rounds to prevent runaway loops
+MAX_TOOL_ROUNDS = 10
+
+
+# -- Tool definitions (OpenAI function calling schema) -----------------------
+
+TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_kb",
+            "description": (
+                "Search the Singapore employment law knowledge base for legal "
+                "provisions. Returns matching provisions with section numbers, "
+                "formal text, and plain-language summaries. Call this BEFORE "
+                "answering any legal question — never rely on memory alone."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Search query — use specific legal terms like "
+                            "'maternity leave entitlement', 'EP salary threshold', "
+                            "'CPF contribution rates', 'notice period termination'"
+                        ),
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Optional domain filter to narrow results",
+                        "enum": [
+                            "Employment Act",
+                            "CPF",
+                            "Foreign Manpower",
+                            "Fair Employment",
+                            "Workplace Safety and Health",
+                            "Tax",
+                        ],
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate_cpf",
+            "description": (
+                "Calculate CPF (Central Provident Fund) contributions for an "
+                "employee. Returns employer/employee contribution amounts and "
+                "breakdown by ordinary wages and additional wages (bonus)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "monthly_wage": {
+                        "type": "number",
+                        "description": "Gross monthly ordinary wages in SGD",
+                    },
+                    "age_band": {
+                        "type": "string",
+                        "description": "Employee age band for CPF rate lookup",
+                        "enum": [
+                            "55_and_below",
+                            "above_55_to_60",
+                            "above_60_to_65",
+                            "above_65_to_70",
+                            "above_70",
+                        ],
+                    },
+                    "bonus": {
+                        "type": "number",
+                        "description": "Additional wages (bonus) in SGD, if any",
+                    },
+                },
+                "required": ["monthly_wage"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate_leave",
+            "description": (
+                "Calculate statutory leave entitlements under the Employment Act. "
+                "Returns annual leave days and/or sick leave (outpatient + "
+                "hospitalisation) based on years of service."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "years_of_service": {
+                        "type": "number",
+                        "description": "Completed years of service with employer",
+                    },
+                    "leave_type": {
+                        "type": "string",
+                        "description": "Type of leave to calculate",
+                        "enum": ["annual", "sick", "all"],
+                    },
+                },
+                "required": ["years_of_service"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate_salary",
+            "description": (
+                "Calculate salary proration for partial months or overtime pay "
+                "under the Employment Act. For overtime, uses the statutory "
+                "1.5x rate for Part IV employees."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "monthly_salary": {
+                        "type": "number",
+                        "description": "Gross monthly salary in SGD",
+                    },
+                    "calculation_type": {
+                        "type": "string",
+                        "description": "Type of salary calculation",
+                        "enum": ["proration", "overtime"],
+                    },
+                    "days_worked": {
+                        "type": "integer",
+                        "description": "Days worked in partial month (for proration)",
+                    },
+                    "total_working_days": {
+                        "type": "integer",
+                        "description": "Total working days in the month (for proration)",
+                    },
+                    "overtime_hours": {
+                        "type": "number",
+                        "description": "Overtime hours in the month (for overtime calc)",
+                    },
+                },
+                "required": ["monthly_salary", "calculation_type"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate_quota_levy",
+            "description": (
+                "Calculate foreign worker quota utilisation and levy costs under "
+                "EFMA. Shows current DRC usage, headroom for hiring, and monthly "
+                "levy amounts. Can also project the impact of proposed hires."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sector": {
+                        "type": "string",
+                        "description": "Industry sector for DRC limits",
+                        "enum": [
+                            "services",
+                            "manufacturing",
+                            "construction",
+                            "process",
+                            "marine",
+                        ],
+                    },
+                    "headcount_local": {
+                        "type": "integer",
+                        "description": "Number of local employees (SC + PR)",
+                    },
+                    "headcount_ep": {
+                        "type": "integer",
+                        "description": "Number of Employment Pass holders",
+                    },
+                    "headcount_sp": {
+                        "type": "integer",
+                        "description": "Number of S Pass holders",
+                    },
+                    "headcount_wp": {
+                        "type": "integer",
+                        "description": "Number of Work Permit holders",
+                    },
+                    "scenario_hire_sp": {
+                        "type": "integer",
+                        "description": "Proposed additional S Pass hires (for projection)",
+                    },
+                    "scenario_hire_wp": {
+                        "type": "integer",
+                        "description": "Proposed additional WP hires (for projection)",
+                    },
+                },
+                "required": ["sector", "headcount_local"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_company_context",
+            "description": (
+                "Retrieve the company profile including sector, headcount "
+                "breakdown, and compliance status. Use this when the user's "
+                "question depends on their company's specific situation."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "company_id": {
+                        "type": "integer",
+                        "description": "The company ID to look up",
+                    },
+                },
+                "required": ["company_id"],
+            },
+        },
+    },
+]
+
+
+# -- System prompt -----------------------------------------------------------
+
+
+def _build_system_prompt(company_context: dict | None = None) -> str:
+    """Build the system prompt for the advisory engine."""
+    # Load anti-amnesia constraints
+    try:
+        from hr_advisory.trust.eatp_lineage import get_anti_amnesia_injection
+
+        anti_amnesia = get_anti_amnesia_injection("orchestrator")
+    except Exception:
+        anti_amnesia = ""
+
+    # Load security footer
+    try:
+        from hr_advisory.workflows.guardrails import SYSTEM_PROMPT_SECURITY_FOOTER
+
+        security_footer = SYSTEM_PROMPT_SECURITY_FOOTER
+    except Exception:
+        security_footer = ""
+
+    base = (
+        "You are a Singapore HR and employment law advisory assistant for Arbor, "
+        "an AI-powered HRIS platform for Singapore SMEs.\n\n"
+        "YOUR ROLE:\n"
+        "- Answer questions about Singapore employment law, payroll, leave, CPF, "
+        "work passes, workplace safety, fair employment, and PDPA.\n"
+        "- ALWAYS use the search_kb tool to find relevant legal provisions before "
+        "answering any legal question. Never rely on your training data alone — "
+        "the KB contains the authoritative provisions.\n"
+        "- Use calculator tools when the user needs a specific number (CPF amount, "
+        "leave days, overtime pay, quota/levy). These are deterministic and exact.\n"
+        "- When the user asks about foreign workers, Employment Passes, S Passes, "
+        "Work Permits, COMPASS, quotas, or levies — search the 'Foreign Manpower' "
+        "domain.\n"
+        "- Always cite specific provisions (e.g., 'Employment Act s.89', "
+        "'EFMA s.22') in your answers.\n\n"
+        "HOW TO USE TOOLS:\n"
+        "- You may call multiple tools in parallel if they are independent.\n"
+        "- If a search returns no results, try a more specific or broader query.\n"
+        "- If you are uncertain, search the KB with different keywords rather than "
+        "guessing.\n"
+        "- For calculation queries, extract the numbers from the user's question "
+        "and pass them to the appropriate calculator.\n\n"
+        "RESPONSE GUIDELINES:\n"
+        "- Be specific and actionable. Cite section numbers.\n"
+        "- If multiple provisions apply, explain each.\n"
+        "- For edge cases or ambiguous situations, explain the nuance and "
+        "recommend consulting a lawyer.\n"
+        "- Respond naturally in conversational English. If the user writes in "
+        "Singlish, you may use Singlish terms but keep legal references formal.\n\n"
+        "CONFIDENCE AND RISK:\n"
+        "- At the end of your response, add on a NEW LINE:\n"
+        "  [CONFIDENCE: X.XX] [RISK: green|amber|red]\n"
+        "- Confidence: 0.0-1.0 reflecting how well-supported your answer is by "
+        "KB provisions and calculations.\n"
+        "- Risk: green = straightforward, amber = thresholds/edge cases/multiple "
+        "acts, red = potential litigation/penalties/contradictions.\n"
+    )
+
+    # Add company context if available
+    company_section = ""
+    if company_context:
+        company_section = (
+            "\nCOMPANY CONTEXT (use this to personalise your advice):\n"
+            f"{json.dumps(company_context, indent=2, default=str)}\n"
+        )
+
+    return base + company_section + "\n" + anti_amnesia + security_footer
+
+
+# -- Tool execution ----------------------------------------------------------
+
+
+def _execute_tool_call(name: str, arguments: dict) -> str:
+    """Execute a tool call and return the result as a JSON string."""
+    try:
+        if name == "search_kb":
+            from hr_advisory.kb.admin import search_provisions
+
+            results = search_provisions(
+                query=arguments.get("query", ""),
+                domain=arguments.get("domain"),
+                limit=5,
+            )
+            # Slim down results for the LLM — only include what it needs to cite
+            slim = []
+            for r in results:
+                slim.append(
+                    {
+                        "section": r.get("section", ""),
+                        "title": r.get("title", ""),
+                        "plain_summary": r.get("plain_summary", ""),
+                        "authority_level": r.get("authority_level", ""),
+                    }
+                )
+            return json.dumps(slim, default=str)
+
+        elif name == "calculate_cpf":
+            from hr_advisory.agents.actions.calculator import CalculatorAgent
+
+            calc = CalculatorAgent()
+            result = calc.calculate("cpf", arguments)
+            return json.dumps(result, default=str)
+
+        elif name == "calculate_leave":
+            from hr_advisory.agents.actions.calculator import CalculatorAgent
+
+            calc = CalculatorAgent()
+            result = calc.calculate("leave", arguments)
+            return json.dumps(result, default=str)
+
+        elif name == "calculate_salary":
+            from hr_advisory.agents.actions.calculator import CalculatorAgent
+
+            calc = CalculatorAgent()
+            result = calc.calculate("salary", arguments)
+            return json.dumps(result, default=str)
+
+        elif name == "calculate_quota_levy":
+            from hr_advisory.agents.actions.calculator import CalculatorAgent
+
+            calc = CalculatorAgent()
+            result = calc.calculate("quota_levy", arguments)
+            return json.dumps(result, default=str)
+
+        elif name == "get_company_context":
+            company_id = arguments.get("company_id")
+            if company_id is not None:
+                try:
+                    from kailash import LocalRuntime, WorkflowBuilder
+
+                    wf = WorkflowBuilder()
+                    wf.add_node(
+                        "CompanyListNode",
+                        "find",
+                        {"filter": {"id": int(company_id)}, "limit": 1, "enable_cache": False},
+                    )
+                    runtime = LocalRuntime()
+                    results, _ = runtime.execute(wf.build())
+                    records = results.get("find", {})
+                    items = records.get("records", []) if isinstance(records, dict) else []
+                    if items:
+                        return json.dumps(items[0], default=str)
+                    return json.dumps({"error": "Company not found"})
+                except Exception as fetch_exc:
+                    return json.dumps({"error": f"Failed to fetch company: {fetch_exc}"})
+            return json.dumps({"error": "company_id is required"})
+
+        else:
+            return json.dumps({"error": f"Unknown tool: {name}"})
+
+    except Exception as exc:
+        logger.warning("Tool call %s failed: %s", name, exc)
+        return json.dumps({"error": str(exc)})
+
+
+# -- Confidence/risk extraction -----------------------------------------------
+
+
+def _parse_confidence_and_risk(
+    response_text: str,
+) -> tuple[str, float, str]:
+    """Extract [CONFIDENCE: X.XX] [RISK: tier] from the response tail.
+
+    Returns (cleaned_text, confidence, risk_tier).
+    """
+    import re
+
+    confidence = 0.7  # default
+    risk_tier = "amber"  # default — safer than green
+
+    # Match the confidence/risk markers
+    pattern = r"\[CONFIDENCE:\s*([\d.]+)\]\s*\[RISK:\s*(green|amber|red)\]"
+    match = re.search(pattern, response_text)
+    if match:
+        try:
+            confidence = float(match.group(1))
+            confidence = max(0.0, min(1.0, confidence))
+        except ValueError:
+            confidence = 0.7
+        risk_tier = match.group(2)
+        # Remove the markers from the response
+        cleaned = response_text[: match.start()].rstrip()
+    else:
+        cleaned = response_text
+
+    return cleaned, confidence, risk_tier
+
+
+# -- The engine ---------------------------------------------------------------
+
+
+class AdvisoryEngine:
+    """Autonomous advisory engine using LLM function calling.
+
+    The LLM decides what tools to call, in what order, and when it has
+    enough information to answer. No keyword routing. No fallback templates.
+    No hardcoded domain detection.
+    """
+
+    def __init__(self, llm_context=None):
+        """Initialize with an optional LLMKeyContext.
+
+        If no context is provided, builds one from server .env defaults.
+        """
+        if llm_context is None:
+            from hr_advisory.agents.llm_context import LLMKeyContext
+
+            llm_context = LLMKeyContext.from_server_env()
+        self._ctx = llm_context
+
+    def run(
+        self,
+        query: str,
+        conversation_history: list[dict[str, str]],
+        company_context: dict | None = None,
+        company_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Run the advisory engine.
+
+        Args:
+            query: The user's question.
+            conversation_history: Prior turns as [{role, content}, ...].
+            company_context: Company profile dict for personalisation.
+            company_id: Company ID for tool calls.
+
+        Returns:
+            Dict with keys: response_text, risk_tier, confidence, domains,
+            citations, usage, degraded.
+        """
+        from openai import OpenAI
+
+        # Build the OpenAI client
+        client = self._build_client()
+        model = self._ctx.model or os.environ.get("DEFAULT_LLM_MODEL", "gpt-5-chat-latest")
+
+        # Build messages
+        system_prompt = _build_system_prompt(company_context)
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+        ]
+        messages.extend(conversation_history)
+        messages.append({"role": "user", "content": query})
+
+        # Track usage across rounds
+        total_input_tokens = 0
+        total_output_tokens = 0
+        tools_called: list[str] = []
+        kb_results_seen: list[dict] = []
+
+        try:
+            for round_num in range(MAX_TOOL_ROUNDS):
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    tools=TOOL_DEFINITIONS,
+                    timeout=60,
+                )
+
+                # Track tokens
+                if response.usage:
+                    total_input_tokens += response.usage.prompt_tokens
+                    total_output_tokens += response.usage.completion_tokens
+
+                choice = response.choices[0]
+
+                # If the model wants to call tools, execute them
+                if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
+                    # Add the assistant message with tool calls
+                    messages.append(choice.message.model_dump())
+
+                    for tool_call in choice.message.tool_calls:
+                        fn_name = tool_call.function.name
+                        try:
+                            fn_args = json.loads(tool_call.function.arguments)
+                        except json.JSONDecodeError:
+                            fn_args = {}
+
+                        tools_called.append(fn_name)
+                        result_str = _execute_tool_call(fn_name, fn_args)
+
+                        # Track KB results for citation extraction
+                        if fn_name == "search_kb":
+                            try:
+                                kb_results_seen.extend(json.loads(result_str))
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": result_str,
+                            }
+                        )
+
+                    continue  # Next round — let LLM process tool results
+
+                # Model is done — extract the response
+                response_text = choice.message.content or ""
+                cleaned_text, confidence, risk_tier = _parse_confidence_and_risk(response_text)
+
+                # Extract domains from which search_kb calls were made
+                domains = self._extract_domains_from_tools(messages)
+
+                # Build citations from KB results
+                citations = self._extract_citations(kb_results_seen)
+
+                return {
+                    "response_text": cleaned_text,
+                    "risk_tier": risk_tier,
+                    "confidence": confidence,
+                    "domains": domains,
+                    "citations": citations,
+                    "tools_called": tools_called,
+                    "usage": {
+                        "input_tokens": total_input_tokens,
+                        "output_tokens": total_output_tokens,
+                    },
+                    "degraded": False,
+                }
+
+            # Exhausted all rounds — use whatever we have
+            logger.warning(
+                "Advisory engine hit MAX_TOOL_ROUNDS (%d) for query: %.100s",
+                MAX_TOOL_ROUNDS,
+                query,
+            )
+            last_content = ""
+            for msg in reversed(messages):
+                if isinstance(msg, dict) and msg.get("role") == "assistant":
+                    last_content = msg.get("content", "")
+                    if last_content:
+                        break
+
+            cleaned_text, confidence, risk_tier = _parse_confidence_and_risk(
+                last_content or "I was unable to fully process your query. Please try rephrasing."
+            )
+            return {
+                "response_text": cleaned_text,
+                "risk_tier": "amber",
+                "confidence": min(confidence, 0.5),
+                "domains": self._extract_domains_from_tools(messages),
+                "citations": self._extract_citations(kb_results_seen),
+                "tools_called": tools_called,
+                "usage": {
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                },
+                "degraded": True,
+            }
+
+        except Exception as exc:
+            logger.error("Advisory engine failed: %s", exc, exc_info=True)
+            return {
+                "response_text": (
+                    "I'm having trouble processing your question right now. "
+                    "Please try again in a moment."
+                ),
+                "risk_tier": "amber",
+                "confidence": 0.3,
+                "domains": [],
+                "citations": [],
+                "tools_called": tools_called,
+                "usage": {
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                },
+                "degraded": True,
+            }
+
+    def _build_client(self):
+        """Build an OpenAI client from the LLM context."""
+        from openai import OpenAI
+
+        if self._ctx.provider == "ollama":
+            base_url = (self._ctx.base_url or "http://localhost:11434").rstrip("/")
+            if not base_url.endswith("/v1"):
+                base_url += "/v1"
+            return OpenAI(api_key="ollama", base_url=base_url)
+
+        # OpenAI and OpenAI-compatible providers (DeepSeek, Mistral, etc.)
+        kwargs: dict[str, Any] = {}
+        if self._ctx.api_key:
+            kwargs["api_key"] = self._ctx.api_key
+        if self._ctx.base_url:
+            kwargs["base_url"] = self._ctx.base_url
+        return OpenAI(**kwargs)
+
+    @staticmethod
+    def _extract_domains_from_tools(messages: list[dict]) -> list[str]:
+        """Extract which KB domains were searched from tool call messages."""
+        domains = set()
+        domain_map = {
+            "Employment Act": "employment_act",
+            "CPF": "cpf",
+            "Foreign Manpower": "foreign_manpower",
+            "Fair Employment": "fair_employment",
+            "Workplace Safety and Health": "wsh",
+            "Tax": "tax",
+        }
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            # Check assistant messages for tool calls
+            tool_calls = msg.get("tool_calls")
+            if tool_calls:
+                for tc in tool_calls:
+                    fn = tc if isinstance(tc, dict) else tc
+                    fn_obj = fn.get("function", fn) if isinstance(fn, dict) else fn
+                    name = (
+                        fn_obj.get("name", "")
+                        if isinstance(fn_obj, dict)
+                        else getattr(fn_obj, "name", "")
+                    )
+                    args_str = (
+                        fn_obj.get("arguments", "{}")
+                        if isinstance(fn_obj, dict)
+                        else getattr(fn_obj, "arguments", "{}")
+                    )
+                    if name == "search_kb":
+                        try:
+                            args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                            domain = args.get("domain", "")
+                            if domain and domain in domain_map:
+                                domains.add(domain_map[domain])
+                        except (json.JSONDecodeError, AttributeError):
+                            pass
+        return sorted(domains) if domains else ["general"]
+
+    @staticmethod
+    def _extract_citations(kb_results: list[dict]) -> list[dict]:
+        """Build citation list from KB search results."""
+        seen = set()
+        citations = []
+        for r in kb_results:
+            section = r.get("section", "")
+            if section and section not in seen:
+                seen.add(section)
+                citations.append(
+                    {
+                        "provision_id": section,
+                        "title": r.get("title", ""),
+                        "authority_level": r.get("authority_level", "statute"),
+                    }
+                )
+        return citations

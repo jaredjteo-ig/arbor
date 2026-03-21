@@ -104,7 +104,9 @@ class ShortTermMemory:
             from kailash import LocalRuntime, WorkflowBuilder
 
             # Ensure thread exists (upsert by session_id)
-            thread_id = self._ensure_thread(session_id, user_id or 0, company_id or 0)
+            thread_id = self._ensure_thread(
+                session_id, user_id or 0, company_id or 0, subject=query[:60]
+            )
             if not thread_id:
                 return
 
@@ -145,7 +147,9 @@ class ShortTermMemory:
         except Exception as exc:
             logger.warning("Failed to persist conversation turn: %s", exc)
 
-    def _ensure_thread(self, session_id: str, user_id: int, company_id: int) -> Optional[int]:
+    def _ensure_thread(
+        self, session_id: str, user_id: int, company_id: int, subject: str = ""
+    ) -> Optional[int]:
         """Get or create a conversation thread for the session_id."""
         try:
             from kailash import LocalRuntime, WorkflowBuilder
@@ -181,7 +185,7 @@ class ShortTermMemory:
                     "user_id": user_id,
                     "company_id": company_id,
                     "session_id": session_id,
-                    "subject": "",
+                    "subject": subject,
                 },
             )
             results2, _ = runtime.execute(wf2.build())
@@ -239,3 +243,20 @@ class ShortTermMemory:
     def get_turn_count(self, session_id: str) -> int:
         """Return the number of stored turns."""
         return self.load_context(session_id).get("turn_count", 0)
+
+    def load_as_messages(self, session_id: str) -> List[Dict[str, str]]:
+        """Load conversation as OpenAI message-format list.
+
+        Returns:
+            [{role: "user", content: "..."}, {role: "assistant", content: "..."}, ...]
+        """
+        ctx = self.load_context(session_id)
+        messages: List[Dict[str, str]] = []
+        for turn in ctx.get("turns", []):
+            user_content = turn.get("user", "")
+            if user_content:
+                messages.append({"role": "user", "content": user_content})
+            agent_content = turn.get("agent", "")
+            if agent_content:
+                messages.append({"role": "assistant", "content": agent_content})
+        return messages

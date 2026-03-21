@@ -92,8 +92,27 @@ class QueryAnalyzerAgent(BaseAgent):
             "For example, pronouns like 'they', 'it', 'that' may refer to entities\n"
             "or topics from earlier turns.\n\n"
             "STEP 1 -- Identify domains. Choose from:\n"
-            "  employment_act, cpf, foreign_manpower, fair_employment, "
-            "tax, wsh, pdpa, compliance, general\n\n"
+            "  employment_act    — Employment Act: leave, notice period, overtime, "
+            "termination, salary, Part IV protections, rest days, public holidays, "
+            "retrenchment. For LOCAL employees.\n"
+            "  cpf              — Central Provident Fund: contribution rates, "
+            "OW/AW ceilings, voluntary contributions, employer obligations.\n"
+            "  foreign_manpower — Employment of Foreign Manpower Act (EFMA): "
+            "Employment Pass (EP), S Pass, Work Permit, Dependant's Pass, LTVP, "
+            "COMPASS framework, EP salary thresholds, foreign worker quotas (DRC), "
+            "levies, Fair Consideration Framework, MOM work pass applications, "
+            "employer obligations for foreign workers. ANY question about hiring "
+            "or managing foreign employees belongs here.\n"
+            "  fair_employment  — TAFEP/Workplace Fairness Act: discrimination, "
+            "harassment, fair hiring, protected characteristics.\n"
+            "  tax              — IRAS: IR8A, IR21, tax clearance, employer "
+            "tax obligations.\n"
+            "  wsh              — Workplace Safety and Health Act: safety incidents, "
+            "risk assessments, MOM reporting, workplace injuries.\n"
+            "  pdpa             — Personal Data Protection Act: employee data, "
+            "consent, data breach, NRIC collection.\n"
+            "  compliance       — Cross-domain compliance checks, audits.\n"
+            "  general          — Only if no specific domain applies.\n\n"
             "STEP 2 -- Extract entities. Look for:\n"
             "  company_name, employee_type, salary_amount, dates, "
             "headcount, sector, nationality, pass_type\n\n"
@@ -131,6 +150,17 @@ class QueryAnalyzerAgent(BaseAgent):
             "     (clear advisory intent despite adversarial phrasing)\n\n"
             'Query: "How much OT should I pay my packer earning $2400?"\n'
             '  -> intent: CALCULATION, domains: ["employment_act"]\n\n'
+            'Query: "Can I hire a software engineer from India on EP with $6,500/month?"\n'
+            '  -> intent: ADVISORY, domains: ["foreign_manpower"]\n'
+            "     (Employment Pass = EFMA, NOT Employment Act)\n\n"
+            'Query: "What is the S Pass quota for my manufacturing company?"\n'
+            '  -> intent: ADVISORY, domains: ["foreign_manpower"]\n\n'
+            'Query: "My foreign worker permit is expiring, what do I do?"\n'
+            '  -> intent: ADVISORY, domains: ["foreign_manpower"]\n\n'
+            'Query: "What is the COMPASS scoring framework?"\n'
+            '  -> intent: ADVISORY, domains: ["foreign_manpower"]\n\n'
+            'Query: "How much levy do I pay for Work Permit holders?"\n'
+            '  -> intent: CALCULATION, domains: ["foreign_manpower"]\n\n'
             "OUTPUT: Respond with a JSON object containing exactly:\n"
             '  "domains": [list of domain strings],\n'
             '  "entities": {extracted entity key-value pairs},\n'

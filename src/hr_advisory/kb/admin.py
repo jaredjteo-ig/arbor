@@ -235,25 +235,109 @@ def search_provisions(
             logger.warning("Domain '%s' not found, returning empty results", domain)
             return []
 
-    # Filter provisions
-    query_lower = query.lower()
+    # Filter provisions using word-level relevance scoring
+    query_lower = query.lower().strip()
+
+    # Extract meaningful keywords (skip stop words and very short tokens)
+    _stop = frozenset(
+        {
+            "a",
+            "an",
+            "the",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "may",
+            "might",
+            "shall",
+            "can",
+            "need",
+            "must",
+            "i",
+            "me",
+            "my",
+            "we",
+            "our",
+            "you",
+            "your",
+            "he",
+            "she",
+            "it",
+            "they",
+            "them",
+            "their",
+            "this",
+            "that",
+            "what",
+            "which",
+            "who",
+            "how",
+            "when",
+            "where",
+            "why",
+            "if",
+            "of",
+            "in",
+            "on",
+            "at",
+            "to",
+            "for",
+            "with",
+            "by",
+            "from",
+            "about",
+            "not",
+            "no",
+            "or",
+            "and",
+            "but",
+            "so",
+            "as",
+            "than",
+        }
+    )
+    query_words = [w for w in query_lower.split() if len(w) > 2 and w not in _stop]
+
     matched = []
+    scored: list[tuple[int, dict]] = []
     for prov in all_provisions:
         # Domain filter
         if domain_id is not None and prov.get("domain_id") != domain_id:
             continue
 
-        # Keyword search across title, section, formal_text, plain_summary
-        searchable = " ".join(
-            str(prov.get(field, ""))
-            for field in ("title", "section", "formal_text", "plain_summary")
-        ).lower()
-
-        if query_lower in searchable:
+        # If no meaningful query words, return all provisions for this domain
+        if not query_words:
             matched.append(prov)
+            if len(matched) >= limit:
+                break
+        else:
+            # Score by keyword overlap — count how many query words appear
+            searchable = " ".join(
+                str(prov.get(field, ""))
+                for field in ("title", "section", "formal_text", "plain_summary")
+            ).lower()
 
-        if len(matched) >= limit:
-            break
+            score = sum(1 for w in query_words if w in searchable)
+            if score > 0:
+                scored.append((score, prov))
+
+    # If we used scoring, sort by relevance (most keyword matches first)
+    if scored:
+        scored.sort(key=lambda x: x[0], reverse=True)
+        matched = [prov for _, prov in scored[:limit]]
 
     logger.info("Search for '%s' returned %d results", query, len(matched))
     return matched

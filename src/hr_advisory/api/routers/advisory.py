@@ -96,6 +96,31 @@ def _touch_conversation(conv_key: str) -> None:
         _conversation_owners.popitem(last=False)
 
 
+def _rehydrate_conversation(conv_key: str, messages: list, owner_id: str) -> None:
+    """Rebuild in-memory conversation state from DB messages after a restart."""
+    memory = ShortTermMemory()
+    user_msgs = [m for m in messages if m["role"] == "user"]
+    agent_msgs = [m for m in messages if m["role"] == "assistant"]
+    for i in range(min(len(user_msgs), len(agent_msgs))):
+        turn = {
+            "user": user_msgs[i].get("content", ""),
+            "agent": agent_msgs[i].get("content", ""),
+            "entities": {},
+            "domains": agent_msgs[i].get("domains", []),
+            "risk_tier": agent_msgs[i].get("risk_tier", "green"),
+            "timestamp": agent_msgs[i].get("timestamp", ""),
+        }
+        if agent_msgs[i].get("provisions_cited"):
+            turn["provisions_cited"] = agent_msgs[i]["provisions_cited"]
+        if agent_msgs[i].get("confidence_score") is not None:
+            turn["confidence_score"] = agent_msgs[i]["confidence_score"]
+        memory._buffer.save_turn(conv_key, turn)
+
+    _conversation_memory[conv_key] = memory
+    _conversation_owners[conv_key] = owner_id
+    _touch_conversation(conv_key)
+
+
 _RISK_TIER_SEVERITY = {"green": 0, "amber": 1, "red": 2}
 
 
@@ -532,8 +557,7 @@ async def advisory_query(
     conv_key = str(conversation_id)
     memory = _conversation_memory.setdefault(conv_key, ShortTermMemory())
     _touch_conversation(conv_key)
-    context = memory.load_context(conv_key)
-    conversation_history = _format_conversation_history(context.get("turns", []))
+    conversation_messages = memory.load_as_messages(conv_key)
 
     # ── Step 3c: Fetch company profile ────────────────────────
     company_profile = None
@@ -575,7 +599,6 @@ async def advisory_query(
         and effective_company_id is not None
     ):
         try:
-            # Fetch company's custom budget limit (defaults to $5.00)
             company_budget_limit = _get_company_budget_limit(int(effective_company_id))
             budget_result = check_budget(
                 int(effective_company_id), budget_limit_usd=company_budget_limit
@@ -603,76 +626,50 @@ async def advisory_query(
         except Exception:
             logger.warning("Budget check failed — allowing query", exc_info=True)
 
-    # ── Step 4: EATP genesis record ─────────────────────────────
-    session_id = str(uuid.uuid4())
-    domains = _detect_domains(query)
+    # ── Step 4: Run autonomous advisory engine ────────────────────
+    from hr_advisory.agents.advisory_engine import AdvisoryEngine
 
+    engine = AdvisoryEngine(llm_context=llm_context)
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    engine_result = await loop.run_in_executor(
+        None,
+        lambda: engine.run(
+            query=query,
+            conversation_history=conversation_messages,
+            company_context=company_profile,
+            company_id=int(effective_company_id) if effective_company_id else None,
+        ),
+    )
+
+    response_text = engine_result.get("response_text", "")
+    confidence = engine_result.get("confidence", 0.7)
+    risk_tier = engine_result.get("risk_tier", "amber")
+    response_degraded = engine_result.get("degraded", False)
+    domains = engine_result.get("domains", ["general"])
+    provisions_cited = engine_result.get("citations", [])
+    engine_usage = engine_result.get("usage", {})
+
+    # Build trust chain from engine results
+    session_id = str(uuid.uuid4())
     genesis = GenesisRecord(
         session_id=session_id,
         user_verification_level=TrustLevel.STANDARD,
         company_profile_completeness=0.8 if company_profile else (0.5 if company_id else 0.3),
         kb_currency_status={d: "2026-03-01" for d in domains},
-        agent_version_hashes={"orchestrator": "v1.0.0"},
+        agent_version_hashes={"advisory_engine": "v2.0.0"},
         query_text=query,
         query_domains=domains,
     )
     trust_chain = create_trust_chain(genesis)
 
-    # ── Step 5: Anti-amnesia injection ──────────────────────────
-    constraints = get_anti_amnesia_injection("orchestrator")
-    logger.debug("Anti-amnesia constraints injected: %d rules", constraints.count("[CONSTRAINT"))
-
-    # ── Step 6: Domain detection and KB lookup ──────────────────
-    provision_ids = _lookup_provisions(domains, query=query)
-    citation_result = validate_citations(provision_ids)
-
-    # Build cited provisions list from validated citations
-    provisions_cited = [
-        {
-            "provision_id": c.provision_id,
-            "title": c.title,
-            "authority_level": c.authority_level.value,
-            "status": c.status.value,
-        }
-        for c in citation_result.validated_citations
-    ]
-
-    # ── Step 7: Generate response (LLM first, template fallback) ─
-    response_degraded = False
-    llm_result = await _async_run_llm_advisory(
-        query,
-        domains,
-        provisions_cited,
-        company_context=company_profile,
-        conversation_history=conversation_history,
-        llm_context=llm_context,
+    logger.info(
+        "Advisory response via autonomous engine (confidence=%.2f, degraded=%s, tools=%s)",
+        confidence,
+        response_degraded,
+        engine_result.get("tools_called", []),
     )
-    if llm_result is not None:
-        # Guard against non-dict returns (e.g., timeout fallback returning string)
-        if isinstance(llm_result, str):
-            response_text = llm_result
-            confidence = 0.6
-            risk_tier = _classify_risk_tier(domains, confidence)
-            response_degraded = True
-        else:
-            response_text = llm_result.get("response_text", "")
-            confidence = llm_result.get("confidence", UNCERTAINTY_DEFAULTS["confidence"])
-            risk_tier = llm_result.get("risk_tier", _classify_risk_tier(domains, confidence))
-            response_degraded = llm_result.get("degraded", False)
-        logger.info(
-            "Advisory response generated via LLM pipeline (confidence=%.2f, degraded=%s)",
-            confidence,
-            response_degraded,
-        )
-    else:
-        # Template fallback — no LLM available. Template responses are
-        # keyword-matched, not AI-analyzed, so confidence reflects that.
-        confidence = 0.85 if citation_result.is_valid else 0.6
-        risk_tier = _classify_risk_tier(domains, confidence)
-        response_text = _generate_grounded_response(query, domains, provisions_cited)
-        logger.info(
-            "Advisory response generated via template fallback (confidence=%.2f)", confidence
-        )
 
     # ── Step 8: Confidence escalation check ─────────────────────
     escalation = check_confidence_escalation(confidence)
@@ -697,13 +694,14 @@ async def advisory_query(
     violations = validate_constraint_envelope("orchestrator", domains)
 
     # ── Step 12: Record attestation in trust chain ──────────────
+    _cited_ids = [p.get("provision_id", "") for p in provisions_cited] if provisions_cited else []
     attestation = AgentAttestation(
-        agent_id="orchestrator",
+        agent_id="advisory_engine",
         agent_role=AgentRole.ORCHESTRATOR,
-        agent_version="v1.0.0",
+        agent_version="v2.0.0",
         domain=",".join(domains),
-        provisions_retrieved=[c.provision_id for c in citation_result.validated_citations],
-        reasoning_summary=f"Detected domains: {', '.join(domains)}. Retrieved {len(provision_ids)} provisions.",
+        provisions_retrieved=_cited_ids,
+        reasoning_summary=f"Autonomous engine: domains={domains}, tools={engine_result.get('tools_called', [])}",
         conclusion=response_text[:200],
         confidence_score=confidence,
         constraint_envelope_id="orchestrator",
@@ -723,6 +721,17 @@ async def advisory_query(
     )
 
     # ── Step 14: Save turn to conversation memory ─────────────
+    # Convert user_id/company_id to int for DB persistence
+    _persist_uid = None
+    try:
+        _persist_uid = int(user_id) if str(user_id).isdigit() else None
+    except (TypeError, ValueError):
+        pass
+    _persist_cid = None
+    try:
+        _persist_cid = int(effective_company_id) if effective_company_id is not None else None
+    except (TypeError, ValueError):
+        pass
     memory.save_turn(
         session_id=conv_key,
         query=query,
@@ -731,27 +740,20 @@ async def advisory_query(
         risk_tier=risk_tier,
         provisions_cited=provisions_cited,
         confidence_score=confidence,
+        user_id=_persist_uid,
+        company_id=_persist_cid,
     )
 
     # ── Step 14b: Record token usage for budget tracking ────────
     if llm_context and not llm_context.is_byok and effective_company_id is not None:
         try:
-            # Token estimation: The advisory pipeline runs 4-6 Kaizen agent calls.
-            # Actual token counts require upstream Kaizen changes (issue #12).
-            # For now, estimate based on text length. English averages ~1.3 tokens
-            # per word, plus system prompts (~8K per specialist) and KB context.
-            # Use a multiplier that overstimates slightly for fail-safe budgeting.
-            _query_words = len(query.split())
-            _response_words = len(response_text.split())
-            _num_domains = len(domains) if domains else 1
-            # Base: query tokens + system prompts + KB provisions per domain
-            _est_input_tokens = int(_query_words * 1.5) + (8000 * _num_domains) + 4000
-            # Output: response + specialist outputs (internal, not user-visible)
-            _est_output_tokens = int(_response_words * 1.5) + (1500 * _num_domains)
+            # Use real token counts from the engine (no more estimation)
+            _real_input_tokens = engine_usage.get("input_tokens", 0)
+            _real_output_tokens = engine_usage.get("output_tokens", 0)
             _cost = record_usage(
                 company_id=int(effective_company_id),
-                input_tokens=_est_input_tokens,
-                output_tokens=_est_output_tokens,
+                input_tokens=_real_input_tokens,
+                output_tokens=_real_output_tokens,
                 model=llm_context.model or "unknown",
             )
             log_llm_call(
@@ -995,6 +997,22 @@ def _get_domain_context(query_lower: str, domains: list[str]) -> list[str]:
                 "end of the salary period. Upon termination, final salary must be paid on the "
                 "last working day (resignation) or within 3 working days (employer termination)."
             ),
+            "maternity": (
+                "Under Part IX of the Employment Act and the Child Development Co-Savings Act, "
+                "female employees are entitled to 16 weeks of Government-Paid Maternity Leave "
+                "(GPML) if they meet the eligibility criteria (child is a Singapore citizen, "
+                "employed for at least 3 months). The first 8 weeks are employer-paid."
+            ),
+            "paternity": (
+                "Under the Child Development Co-Savings Act, eligible working fathers are entitled "
+                "to 4 weeks (28 days) of Government-Paid Paternity Leave. The child must be a "
+                "Singapore citizen and the father must have been employed for at least 3 months."
+            ),
+            "childcare": (
+                "Under the Child Development Co-Savings Act, employees with children below 7 years "
+                "are entitled to 6 days of childcare leave per year per parent. For children aged "
+                "7-12, extended childcare leave of 2 days per year is provided."
+            ),
         },
         "cpf": {
             "contribution": (
@@ -1044,6 +1062,24 @@ def _get_domain_context(query_lower: str, domains: list[str]) -> list[str]:
                 "Under EFMA, employers hiring foreign workers must obtain valid work passes, "
                 "comply with work pass conditions, provide acceptable accommodation, and "
                 "purchase medical insurance coverage of at least $15,000 per year."
+            ),
+            "employment pass": (
+                "Employment Passes (EP) are for foreign professionals earning at least $5,600/month "
+                "(or $5,000/month for entry-level in the financial sector). From September 2023, "
+                "new EP applications must meet the COMPASS (Complementarity Assessment Framework) "
+                "requirements, scoring at least 40 points across salary, qualifications, diversity, "
+                "and support for local employment."
+            ),
+            "compass": (
+                "COMPASS is the points-based framework for EP applications. It evaluates four "
+                "foundational criteria: salary (benchmarked against local PMET salaries), "
+                "qualifications (institution ranking), diversity (employer nationality mix), "
+                "and support for local employment (local PMET share vs industry)."
+            ),
+            "s pass": (
+                "S Passes are for mid-level skilled staff earning at least $3,150/month. The S Pass "
+                "sub-DRC limits S Pass holders to 10% of the workforce in the services sector and "
+                "15% in other sectors."
             ),
         },
         "fair_employment": {
@@ -1137,15 +1173,164 @@ def _get_domain_context(query_lower: str, domains: list[str]) -> list[str]:
             parts.append(best_snippet)
         elif snippets:
             # Use the domain-name keyed snippet as a generic fallback
+            # Try domain name with underscores replaced, then domain name itself
             domain_key = domain.replace("_", " ")
             fallback = snippets.get(domain_key, "")
+            if not fallback:
+                # Try the domain name as-is (e.g. "cpf" key in cpf snippets)
+                fallback = snippets.get(domain, "")
             if fallback:
                 parts.append(fallback)
             else:
-                # Use the first snippet as absolute last resort
-                parts.append(next(iter(snippets.values())))
+                # No generic fallback — use the domain-level _fallback_response instead
+                # of blindly picking the first dict entry (which may be irrelevant)
+                domain_names = {
+                    "employment_act": "Employment Act",
+                    "cpf": "CPF Act",
+                    "foreign_manpower": "Employment of Foreign Manpower Act (EFMA)",
+                    "fair_employment": "fair employment practices (TGFEP/WFA)",
+                    "wsh": "Workplace Safety and Health Act",
+                    "tax": "employer tax obligations (IRAS)",
+                    "pdpa": "Personal Data Protection Act (PDPA)",
+                }
+                act_name = domain_names.get(domain, domain)
+                parts.append(
+                    f"Your query relates to the {act_name}. "
+                    "Could you provide more detail so I can identify the specific provisions?"
+                )
 
     return parts
+
+
+def _extract_calculator_params(
+    query: str, domains: list[str], entities: dict
+) -> tuple[str | None, dict]:
+    """Extract calculator type and parameters from a query and its entities.
+
+    Returns (calculator_type, params) or (None, {}) if not extractable.
+    """
+    query_lower = query.lower()
+
+    # Determine calculator type from domains and keywords
+    calc_type = None
+    if "cpf" in domains or "cpf" in query_lower:
+        calc_type = "cpf"
+    elif any(kw in query_lower for kw in ("levy", "quota", "drc", "foreign worker")):
+        calc_type = "quota_levy"
+    elif any(kw in query_lower for kw in ("leave", "annual leave", "sick leave", "maternity")):
+        calc_type = "leave"
+    elif any(kw in query_lower for kw in ("salary", "gross", "net pay", "take home")):
+        calc_type = "salary"
+
+    if calc_type is None:
+        return None, {}
+
+    import re
+
+    params: dict = {}
+
+    # Extract salary/wage from entities or query text
+    salary = entities.get("salary_amount")
+    if salary is None:
+        salary_match = re.search(r"\$?([\d,]+(?:\.\d+)?)", query)
+        if salary_match:
+            salary = float(salary_match.group(1).replace(",", ""))
+    if salary is not None:
+        params["monthly_wage"] = float(salary)
+        params["gross_salary"] = float(salary)
+
+    # Extract age
+    age = entities.get("age")
+    if age is None:
+        age_match = re.search(r"(\d{2})\s*(?:year|yr|y/?o)", query_lower)
+        if age_match:
+            age = int(age_match.group(1))
+    if age is not None:
+        params["age"] = int(age)
+
+    # Extract nationality/residency
+    nationality = entities.get("nationality", "")
+    if any(kw in query_lower for kw in ("singapore citizen", "citizen", " sc ")):
+        params["residency_status"] = "citizen"
+    elif any(kw in query_lower for kw in ("permanent resident", " pr ")):
+        params["residency_status"] = "pr"
+    elif nationality:
+        params["residency_status"] = "foreigner"
+    else:
+        params["residency_status"] = "citizen"  # Default
+
+    # Extract sector for quota/levy
+    sector = entities.get("sector", "")
+    if "manufacturing" in query_lower or "manufacturing" in sector.lower():
+        params["sector"] = "manufacturing"
+    elif "services" in query_lower or "service" in query_lower:
+        params["sector"] = "services"
+    elif "construction" in query_lower:
+        params["sector"] = "construction"
+    elif "marine" in query_lower:
+        params["sector"] = "marine"
+    elif "process" in query_lower:
+        params["sector"] = "process"
+
+    # Extract headcount
+    headcount = entities.get("headcount")
+    if headcount is not None:
+        params["total_employees"] = int(headcount)
+
+    # Extract pass type
+    pass_type = entities.get("pass_type", "")
+    if "work permit" in query_lower or "wp" in pass_type.lower():
+        params["pass_type"] = "wp"
+    elif "s pass" in query_lower or "sp" in pass_type.lower():
+        params["pass_type"] = "sp"
+
+    return calc_type, params
+
+
+def _format_calculator_response(calc_type: str, result: dict, query: str) -> str:
+    """Format a calculator result into a readable advisory response."""
+    parts: list[str] = []
+    breakdown = result.get("breakdown", result.get("result", {}))
+
+    if calc_type == "cpf":
+        parts.append("Here are the CPF contribution details:\n")
+        if isinstance(breakdown, dict):
+            for key, value in breakdown.items():
+                label = key.replace("_", " ").title()
+                if isinstance(value, (int, float)):
+                    parts.append(f"- {label}: ${value:,.2f}")
+                else:
+                    parts.append(f"- {label}: {value}")
+    elif calc_type == "quota_levy":
+        parts.append("Here are the quota and levy details:\n")
+        if isinstance(breakdown, dict):
+            for key, value in breakdown.items():
+                label = key.replace("_", " ").title()
+                if isinstance(value, (int, float)) and "rate" not in key:
+                    parts.append(f"- {label}: ${value:,.2f}")
+                else:
+                    parts.append(f"- {label}: {value}")
+    elif calc_type == "leave":
+        parts.append("Here are the leave entitlement details:\n")
+        if isinstance(breakdown, dict):
+            for key, value in breakdown.items():
+                label = key.replace("_", " ").title()
+                parts.append(f"- {label}: {value}")
+    elif calc_type == "salary":
+        parts.append("Here is the salary breakdown:\n")
+        if isinstance(breakdown, dict):
+            for key, value in breakdown.items():
+                label = key.replace("_", " ").title()
+                if isinstance(value, (int, float)):
+                    parts.append(f"- {label}: ${value:,.2f}")
+                else:
+                    parts.append(f"- {label}: {value}")
+
+    parts.append(
+        "\n*Note: These calculations are based on statutory rates and standard assumptions. "
+        "Actual amounts may vary based on your specific circumstances.*"
+    )
+    return "\n".join(parts)
 
 
 def _fallback_response(domains: list[str]) -> str:
@@ -1280,22 +1465,33 @@ def _run_llm_advisory(
         risk_tier = analysis.get("risk_tier", UNCERTAINTY_DEFAULTS["risk_tier"])
         intent = analysis.get("intent", "ADVISORY")
 
-        # Step 1b: Intent-based routing — short-circuit for action intents
+        # Step 1b: Intent-based routing — try CalculatorAgent for CALCULATION queries
         if intent == "CALCULATION":
-            return {
-                "response_text": (
-                    "This query requires a calculation. "
-                    "Routing to the CalculatorAgent for computation."
-                ),
-                "risk_tier": risk_tier,
-                "confidence": 0.9,
-                "citations": [],
-                "disclaimers": [get_disclaimer(risk_tier, 0.9, llm_domains)],
-                "intent": "CALCULATION",
-                "domains": llm_domains,
-                "action_agent": "calculator",
-                "trust_metadata": trust_chain.to_dict(),
-            }
+            try:
+                from hr_advisory.agents.actions.calculator import CalculatorAgent
+
+                calc = CalculatorAgent()
+                calc_type, calc_params = _extract_calculator_params(
+                    query, llm_domains, analysis.get("entities", {})
+                )
+                if calc_type:
+                    calc_result = calc.calculate(calc_type, calc_params)
+                    # Format the result as a readable response
+                    calc_response = _format_calculator_response(calc_type, calc_result, query)
+                    return {
+                        "response_text": calc_response,
+                        "risk_tier": risk_tier,
+                        "confidence": 0.95,
+                        "citations": [],
+                        "disclaimers": [get_disclaimer(risk_tier, 0.95, llm_domains)],
+                        "intent": "CALCULATION",
+                        "domains": llm_domains,
+                        "action_agent": "calculator",
+                        "trust_metadata": trust_chain.to_dict(),
+                    }
+            except Exception as calc_exc:
+                logger.warning("CalculatorAgent failed, falling through to LLM: %s", calc_exc)
+            # Fall through to LLM pipeline if calculator can't handle the query
 
         if intent == "DOCUMENT":
             return {
@@ -1779,8 +1975,7 @@ async def advisory_stream(
     conv_key = str(conversation_id)
     memory = _conversation_memory.setdefault(conv_key, ShortTermMemory())
     _touch_conversation(conv_key)
-    context = memory.load_context(conv_key)
-    conversation_history = _format_conversation_history(context.get("turns", []))
+    conversation_messages = memory.load_as_messages(conv_key)
 
     # ── Step 3c: Fetch company profile ────────────────────────
     company_profile = None
@@ -1841,70 +2036,47 @@ async def advisory_stream(
         except Exception:
             logger.warning("Stream: budget check failed — allowing query", exc_info=True)
 
-    # ── Step 4: EATP genesis record ─────────────────────────────
-    session_id = str(uuid.uuid4())
-    domains = _detect_domains(query)
+    # ── Step 4: Run autonomous advisory engine ────────────────────
+    from hr_advisory.agents.advisory_engine import AdvisoryEngine
 
+    engine = AdvisoryEngine(llm_context=llm_context)
+    engine_result = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: engine.run(
+            query=query,
+            conversation_history=conversation_messages,
+            company_context=company_profile,
+            company_id=int(effective_company_id) if effective_company_id else None,
+        ),
+    )
+
+    response_text = engine_result.get("response_text", "")
+    confidence = engine_result.get("confidence", 0.7)
+    risk_tier = engine_result.get("risk_tier", "amber")
+    stream_degraded = engine_result.get("degraded", False)
+    domains = engine_result.get("domains", ["general"])
+    provisions_cited = engine_result.get("citations", [])
+    engine_usage = engine_result.get("usage", {})
+
+    # Build trust chain from engine results
+    session_id = str(uuid.uuid4())
     genesis = GenesisRecord(
         session_id=session_id,
         user_verification_level=TrustLevel.STANDARD,
         company_profile_completeness=0.8 if company_profile else (0.5 if company_id else 0.3),
         kb_currency_status={d: "2026-03-01" for d in domains},
-        agent_version_hashes={"orchestrator": "v1.0.0"},
+        agent_version_hashes={"advisory_engine": "v2.0.0"},
         query_text=query,
         query_domains=domains,
     )
     trust_chain = create_trust_chain(genesis)
 
-    # ── Step 5: Anti-amnesia injection ──────────────────────────
-    constraints = get_anti_amnesia_injection("orchestrator")
-    logger.debug("Stream anti-amnesia constraints: %d rules", constraints.count("[CONSTRAINT"))
-
-    # ── Step 6: Domain detection and KB lookup ──────────────────
-    provision_ids = _lookup_provisions(domains, query=query)
-    citation_result = validate_citations(provision_ids)
-    provisions_cited = [
-        {
-            "provision_id": c.provision_id,
-            "title": c.title,
-            "authority_level": c.authority_level.value,
-            "status": c.status.value,
-        }
-        for c in citation_result.validated_citations
-    ]
-
-    # ── Step 7: Generate response (LLM first, template fallback) ─
-    stream_degraded = False
-    llm_result = await _async_run_llm_advisory(
-        query,
-        domains,
-        provisions_cited,
-        company_context=company_profile,
-        conversation_history=conversation_history,
-        llm_context=llm_context,
+    logger.info(
+        "Stream response via autonomous engine (confidence=%.2f, degraded=%s, tools=%s)",
+        confidence,
+        stream_degraded,
+        engine_result.get("tools_called", []),
     )
-    if llm_result is not None:
-        # Guard against non-dict returns (e.g., timeout fallback returning string)
-        if isinstance(llm_result, str):
-            response_text = llm_result
-            confidence = 0.6
-            risk_tier = _classify_risk_tier(domains, confidence)
-            stream_degraded = True
-        else:
-            response_text = llm_result.get("response_text", "")
-            confidence = llm_result.get("confidence", UNCERTAINTY_DEFAULTS["confidence"])
-            risk_tier = llm_result.get("risk_tier", _classify_risk_tier(domains, confidence))
-            stream_degraded = llm_result.get("degraded", False)
-        logger.info(
-            "Stream response via LLM pipeline (confidence=%.2f, degraded=%s)",
-            confidence,
-            stream_degraded,
-        )
-    else:
-        confidence = 0.85 if citation_result.is_valid else 0.6
-        risk_tier = _classify_risk_tier(domains, confidence)
-        response_text = _generate_grounded_response(query, domains, provisions_cited)
-        logger.info("Stream response via template fallback (confidence=%.2f)", confidence)
 
     # ── Step 8: Confidence escalation check ─────────────────────
     escalation = check_confidence_escalation(confidence)
@@ -1929,13 +2101,14 @@ async def advisory_stream(
     violations = validate_constraint_envelope("orchestrator", domains)
 
     # ── Step 12: Record attestation in trust chain ──────────────
+    _cited_ids_s = [p.get("provision_id", "") for p in provisions_cited] if provisions_cited else []
     attestation = AgentAttestation(
-        agent_id="orchestrator",
+        agent_id="advisory_engine",
         agent_role=AgentRole.ORCHESTRATOR,
-        agent_version="v1.0.0",
+        agent_version="v2.0.0",
         domain=",".join(domains),
-        provisions_retrieved=[c.provision_id for c in citation_result.validated_citations],
-        reasoning_summary=f"Stream: detected domains: {', '.join(domains)}. Retrieved {len(provision_ids)} provisions.",
+        provisions_retrieved=_cited_ids_s,
+        reasoning_summary=f"Stream autonomous engine: domains={domains}, tools={engine_result.get('tools_called', [])}",
         conclusion=response_text[:200],
         confidence_score=confidence,
         constraint_envelope_id="orchestrator",
@@ -1956,6 +2129,16 @@ async def advisory_stream(
     )
 
     # ── Step 14: Save turn to conversation memory ─────────────
+    _persist_uid_s = None
+    try:
+        _persist_uid_s = int(user_id) if str(user_id).isdigit() else None
+    except (TypeError, ValueError):
+        pass
+    _persist_cid_s = None
+    try:
+        _persist_cid_s = int(effective_company_id) if effective_company_id is not None else None
+    except (TypeError, ValueError):
+        pass
     memory.save_turn(
         session_id=conv_key,
         query=query,
@@ -1964,21 +2147,19 @@ async def advisory_stream(
         risk_tier=risk_tier,
         provisions_cited=provisions_cited,
         confidence_score=confidence,
+        user_id=_persist_uid_s,
+        company_id=_persist_cid_s,
     )
 
     # ── Step 14b: Record token usage for budget tracking ────────
     if llm_context and not llm_context.is_byok and effective_company_id is not None:
         try:
-            # Same domain-aware estimation as /query endpoint
-            _query_words = len(query.split())
-            _response_words = len(response_text.split())
-            _num_domains = len(domains) if domains else 1
-            _est_input_tokens = int(_query_words * 1.5) + (8000 * _num_domains) + 4000
-            _est_output_tokens = int(_response_words * 1.5) + (1500 * _num_domains)
+            _real_input_tokens_s = engine_usage.get("input_tokens", 0)
+            _real_output_tokens_s = engine_usage.get("output_tokens", 0)
             record_usage(
                 company_id=int(effective_company_id),
-                input_tokens=_est_input_tokens,
-                output_tokens=_est_output_tokens,
+                input_tokens=_real_input_tokens_s,
+                output_tokens=_real_output_tokens_s,
                 model=llm_context.model or "unknown",
             )
         except Exception:
@@ -2245,6 +2426,79 @@ async def advisory_history(
                 if turn.get("confidence_score") is not None:
                     msg["confidence_score"] = turn["confidence_score"]
                 messages.append(msg)
+
+    # If in-memory is empty, try loading from database (survives restarts)
+    if not messages:
+        try:
+            from kailash import LocalRuntime, WorkflowBuilder
+
+            # Find the thread by session_id (conversation_id)
+            wf = WorkflowBuilder()
+            wf.add_node(
+                "ConversationThreadListNode",
+                "find_thread",
+                {
+                    "filter": {"session_id": conv_key},
+                    "limit": 1,
+                    "enable_cache": False,
+                },
+            )
+            runtime = LocalRuntime()
+            results, _ = runtime.execute(wf.build())
+            records = results.get("find_thread", {})
+            items = records.get("records", []) if isinstance(records, dict) else []
+
+            if items:
+                thread = items[0]
+                thread_id = thread["id"]
+                thread_owner = str(thread.get("user_id", ""))
+
+                # Tenant isolation: verify ownership
+                if thread_owner and thread_owner != user_id and thread_owner != "0":
+                    raise HTTPException(status_code=404, detail="Conversation not found.")
+
+                # Load messages from DB
+                wf2 = WorkflowBuilder()
+                wf2.add_node(
+                    "ConversationMessageListNode",
+                    "load_msgs",
+                    {
+                        "filter": {"thread_id": thread_id},
+                        "limit": 10000,
+                        "enable_cache": False,
+                    },
+                )
+                msg_results, _ = runtime.execute(wf2.build())
+                msg_records = msg_results.get("load_msgs", {})
+                msg_items = msg_records.get("records", []) if isinstance(msg_records, dict) else []
+
+                for db_msg in msg_items:
+                    sender = db_msg.get("sender", "user")
+                    role = "assistant" if sender == "agent" else "user"
+                    entry: dict = {
+                        "role": role,
+                        "content": db_msg.get("text", ""),
+                        "timestamp": db_msg.get("created_at", ""),
+                    }
+                    if role == "assistant":
+                        entry["domains"] = (
+                            json.loads(db_msg.get("domains", "[]")) if db_msg.get("domains") else []
+                        )
+                        entry["risk_tier"] = db_msg.get("risk_tier", "green")
+                        if db_msg.get("provisions_cited"):
+                            entry["provisions_cited"] = json.loads(db_msg["provisions_cited"])
+                        if db_msg.get("confidence_score") is not None:
+                            entry["confidence_score"] = db_msg["confidence_score"]
+                    messages.append(entry)
+
+                # Rehydrate in-memory state so subsequent requests are fast
+                if messages and conv_key not in _conversation_memory:
+                    _rehydrate_conversation(conv_key, messages, thread_owner)
+
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("Failed to load conversation history from DB: %s", exc)
 
     return {
         "conversation_id": conversation_id,

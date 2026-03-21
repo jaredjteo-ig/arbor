@@ -104,6 +104,8 @@ def _extract_records(result) -> list[dict]:
 
 def _compute_completeness(company: dict) -> float:
     """Compute profile completeness score based on filled fields."""
+    import math
+
     fields_to_check = [
         "name",
         "uen",
@@ -117,9 +119,15 @@ def _compute_completeness(company: dict) -> float:
     filled = 0
     for field in fields_to_check:
         value = company.get(field)
+        # Guard against NaN/Inf in numeric fields
+        if isinstance(value, float) and not math.isfinite(value):
+            continue
         if value is not None and value != "" and value != 0:
             filled += 1
-    return round(filled / len(fields_to_check), 2)
+    result = round(filled / len(fields_to_check), 2)
+    if not math.isfinite(result):
+        return 0.0
+    return result
 
 
 def _seed_default_policies(company_id: int) -> None:
@@ -230,16 +238,28 @@ async def create_company_profile(
     if not name or not name.strip():
         raise HTTPException(status_code=400, detail="Company name is required")
 
+    def _safe_int(val, default=0):
+        """Convert to int safely, guarding against None/NaN/non-numeric."""
+        if val is None:
+            return default
+        try:
+            import math
+
+            v = float(val)
+            return int(v) if math.isfinite(v) else default
+        except (TypeError, ValueError):
+            return default
+
     create_params = {
         "name": name.strip(),
         "uen": body.get("uen"),
         "sector": body.get("sector"),
         "sub_sector": body.get("sub_sector"),
-        "headcount_local": body.get("headcount_local", 0),
-        "headcount_pr": body.get("headcount_pr", 0),
-        "headcount_ep": body.get("headcount_ep", 0),
-        "headcount_sp": body.get("headcount_sp", 0),
-        "headcount_wp": body.get("headcount_wp", 0),
+        "headcount_local": _safe_int(body.get("headcount_local")),
+        "headcount_pr": _safe_int(body.get("headcount_pr")),
+        "headcount_ep": _safe_int(body.get("headcount_ep")),
+        "headcount_sp": _safe_int(body.get("headcount_sp")),
+        "headcount_wp": _safe_int(body.get("headcount_wp")),
         "is_active": True,
     }
 
