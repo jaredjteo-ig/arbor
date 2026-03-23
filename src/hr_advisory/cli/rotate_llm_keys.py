@@ -95,8 +95,8 @@ def rotate_keys() -> None:
                 "CompanyLLMConfigUpdateNode",
                 "update",
                 {
-                    "conditions": {"id": record_id},
-                    "updates": {"encrypted_key": new_ciphertext},
+                    "filter": {"id": record_id},
+                    "fields": {"encrypted_key": new_ciphertext},
                 },
             )
             runtime.execute(wf2.build())
@@ -145,8 +145,8 @@ def rotate_keys() -> None:
                 "UserLLMConfigUpdateNode",
                 "update",
                 {
-                    "conditions": {"id": record_id},
-                    "updates": {"encrypted_key": new_ciphertext},
+                    "filter": {"id": record_id},
+                    "fields": {"encrypted_key": new_ciphertext},
                 },
             )
             runtime.execute(wf4.build())

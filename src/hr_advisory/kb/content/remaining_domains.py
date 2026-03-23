@@ -212,6 +212,95 @@ def _family_leave_provisions() -> list[dict]:
             ],
         },
         {
+            "section": "CDCSA-ML-RESIGN",
+            "title": "Maternity Leave and Resignation",
+            "formal_text": (
+                "Under the CDCSA and Employment Act, there is no statutory "
+                "requirement for employers to pay out unused flexible "
+                "maternity leave upon resignation. Flexible maternity leave "
+                "(the last 8 weeks, which can be taken within 12 months of "
+                "birth) is a leave entitlement, not a cash benefit. If the "
+                "employee resigns before taking all flexible maternity leave, "
+                "the unused portion is forfeited."
+            ),
+            "plain_summary": (
+                "If an employee resigns during or after maternity leave, "
+                "unused flexible maternity leave is forfeited — you do not "
+                "have to pay it out in cash. You only need to pay: salary "
+                "up to the last working day, unused annual leave, and any "
+                "notice period obligations."
+            ),
+            "interpretation_notes": (
+                "RESIGNATION DURING MATERNITY / FLEXIBLE MATERNITY LEAVE:\n\n"
+                "1. Flexible maternity leave (last 8 weeks within 12 months) "
+                "is TIME OFF, not a cash benefit. If not taken before "
+                "resignation, it lapses.\n\n"
+                "2. Government reimbursement only applies to leave ACTUALLY "
+                "TAKEN. If leave is not taken, no reimbursement, no obligation.\n\n"
+                "3. What you MUST pay on resignation:\n"
+                "   - Salary up to last working day\n"
+                "   - Unused annual leave encashment\n"
+                "   - Payment in lieu of notice (if applicable)\n"
+                "   - CPF contributions on final salary\n"
+                "   - Any earned commissions or bonuses\n\n"
+                "4. What you do NOT pay:\n"
+                "   - Unused flexible maternity leave (not encashable)\n"
+                "   - Future maternity leave entitlement\n\n"
+                "5. EXCEPTION — Check your contract/policy:\n"
+                "   - If your company policy explicitly states maternity "
+                "leave is encashable (rare), you may be contractually bound\n"
+                "   - If specific leave dates were already approved AND fall "
+                "before the last day of employment, she is still entitled "
+                "to take (and be paid for) those approved days\n\n"
+                "6. Notice period overlap:\n"
+                "   - Employee can take approved maternity leave during "
+                "notice period (if mutually agreed)\n"
+                "   - Do NOT cancel already-approved maternity leave just "
+                "because she resigned\n"
+                "   - Do NOT convert maternity leave to unpaid leave\n"
+                "   - Do NOT offset maternity leave against notice period "
+                "(unless mutually agreed)\n\n"
+                "PRACTICAL RECOMMENDATION:\n"
+                "To avoid ambiguity, your HR policy should state:\n"
+                "- 'Flexible maternity leave is non-encashable and forfeited "
+                "upon resignation'\n"
+                "- 'Approval of flexible maternity leave is subject to "
+                "continued employment'"
+            ),
+            "authority_level": "statute",
+            "domain_name": "Family Leave",
+            "effective_date": "2001-04-01",
+            "applicability_rules": [
+                {
+                    "rule_type": "worker_type",
+                    "criteria_type": "inclusion",
+                    "criteria_value": ["female_employees"],
+                }
+            ],
+            "practical_examples": [
+                {
+                    "scenario": (
+                        "Employee returns from 8 weeks compulsory maternity "
+                        "leave and starts taking flexible maternity leave. "
+                        "She resigns with 4 weeks of flexible maternity "
+                        "leave remaining."
+                    ),
+                    "calculation": {
+                        "flexible_ml_remaining": "4 weeks",
+                        "encashable": False,
+                        "payment_required": "Salary to last day + unused annual leave + notice",
+                        "flexible_ml_payout": "$0 (forfeited)",
+                    },
+                    "outcome": (
+                        "The 4 weeks of unused flexible maternity leave "
+                        "are forfeited. You only pay salary up to her last "
+                        "day, unused annual leave, and any notice period "
+                        "obligations."
+                    ),
+                },
+            ],
+        },
+        {
             "section": "CDCSA-PL",
             "title": "Government-Paid Paternity Leave",
             "formal_text": (

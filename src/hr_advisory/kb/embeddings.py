@@ -126,9 +126,7 @@ class EmbeddingPipeline:
         """
         # Read the provision
         try:
-            provision = self._execute(
-                "ProvisionReadNode", "read_prov", {"conditions": {"id": provision_id}}
-            )
+            provision = self._execute("ProvisionReadNode", "read_prov", {"id": provision_id})
         except Exception as exc:
             logger.error("Failed to read provision %s: %s", provision_id, exc)
             return False

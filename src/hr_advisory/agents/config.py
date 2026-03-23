@@ -107,7 +107,7 @@ def install_kaizen_provider_patch() -> None:
                     provider="openai",
                     model=model
                     or ctx.model
-                    or os.getenv("KAIZEN_OPENAI_MODEL", "gpt-5-chat-latest"),
+                    or os.getenv("KAIZEN_OPENAI_MODEL", "gpt-5-mini-2025-08-07"),
                     api_key=ctx.api_key,
                     base_url=ctx.base_url,
                     timeout=int(os.getenv("KAIZEN_TIMEOUT", "30")),
@@ -307,7 +307,7 @@ class ResponseSynthesizerConfig:
     llm_provider: str = ""
     model: str = ""
     temperature: float = 0.3
-    max_tokens: int = 2048
+    max_tokens: int = 4096
 
     def __post_init__(self):
         if not self.model or not self.llm_provider:

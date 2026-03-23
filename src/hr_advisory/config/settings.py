@@ -8,6 +8,13 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
+from dotenv import load_dotenv
+
+# Load .env file so that OPENAI_API_KEY and other secrets are available
+# even when the server is started without a shell that sources .env.
+# override=False means existing env vars take precedence over .env values.
+load_dotenv(override=False)
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -104,10 +111,10 @@ def get_settings() -> Settings:
         database_url=database_url,
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
-        openai_prod_model=os.environ.get("OPENAI_PROD_MODEL", "gpt-5-chat-latest"),
-        openai_dev_model=os.environ.get("OPENAI_DEV_MODEL", "gpt-5-chat-latest"),
+        openai_prod_model=os.environ.get("OPENAI_PROD_MODEL", "gpt-5-mini-2025-08-07"),
+        openai_dev_model=os.environ.get("OPENAI_DEV_MODEL", "gpt-5-mini-2025-08-07"),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-        default_llm_model=os.environ.get("DEFAULT_LLM_MODEL", "gpt-5-chat-latest"),
+        default_llm_model=os.environ.get("DEFAULT_LLM_MODEL", "gpt-5-mini-2025-08-07"),
         ollama_model=os.environ.get("OLLAMA_MODEL", ""),
         ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
         jwt_secret_key=jwt_secret,

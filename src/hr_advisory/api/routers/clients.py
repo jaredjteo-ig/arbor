@@ -154,7 +154,7 @@ async def create_client(
             lookup = _execute_node(
                 "CompanyListNode",
                 "find_created_client",
-                {"filter": {"uen": uen.strip()}, "limit": 1, "enable_cache": False},
+                {"filter": {"name": name.strip()}, "limit": 1, "enable_cache": False},
             )
             records = _extract_records(lookup)
             if records:
@@ -170,7 +170,7 @@ async def create_client(
                 _execute_node(
                     "UserUpdateNode",
                     "assign_company",
-                    {"conditions": {"id": int(user_id)}, "updates": {"company_id": company_id}},
+                    {"filter": {"id": int(user_id)}, "fields": {"company_id": company_id}},
                 )
                 logger.info("Assigned user %s to company %s", user_id, company_id)
             except Exception as exc:

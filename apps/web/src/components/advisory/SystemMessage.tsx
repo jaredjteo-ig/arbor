@@ -191,29 +191,64 @@ export function SystemMessage({
           </div>
         )}
 
-        {/* Main content — rendered as markdown prose */}
-        <div className="prose prose-sm max-w-none">
+        {/* Main content — rendered as styled markdown */}
+        <div className="text-sm text-[var(--color-gray-800)] leading-relaxed">
           <ReactMarkdown
             rehypePlugins={[rehypeSanitize]}
             components={{
-              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+              p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
               ul: ({ children }) => (
-                <ul className="list-disc ml-4 mb-2">{children}</ul>
+                <ul className="mb-3 space-y-1.5 pl-1">{children}</ul>
               ),
               ol: ({ children }) => (
-                <ol className="list-decimal ml-4 mb-2">{children}</ol>
+                <ol className="mb-3 space-y-1.5 pl-1 list-none counter-reset-[item]">
+                  {children}
+                </ol>
               ),
-              li: ({ children }) => <li className="mb-1">{children}</li>,
+              li: ({ children }) => (
+                <li className="flex items-start gap-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[var(--color-primary)] shrink-0" />
+                  <span className="flex-1">{children}</span>
+                </li>
+              ),
               strong: ({ children }) => (
-                <strong className="font-semibold">{children}</strong>
+                <strong className="font-semibold text-[var(--color-gray-900)]">
+                  {children}
+                </strong>
+              ),
+              h1: ({ children }) => (
+                <h2 className="text-base font-bold text-[var(--color-gray-900)] mt-5 mb-2 pb-1.5 border-b border-[var(--color-gray-200)]">
+                  {children}
+                </h2>
+              ),
+              h2: ({ children }) => (
+                <h3 className="text-[13px] font-bold text-[var(--color-gray-900)] mt-4 mb-1.5 flex items-center gap-2">
+                  <span className="w-1 h-4 rounded-full bg-[var(--color-primary)]" />
+                  {children}
+                </h3>
               ),
               h3: ({ children }) => (
-                <h3 className="font-semibold text-sm mt-3 mb-1">{children}</h3>
+                <h4 className="text-[13px] font-semibold text-[var(--color-gray-800)] mt-3 mb-1">
+                  {children}
+                </h4>
+              ),
+              blockquote: ({ children }) => (
+                <blockquote className="border-l-2 border-[var(--color-primary)] pl-3 my-3 text-[var(--color-gray-600)] italic">
+                  {children}
+                </blockquote>
+              ),
+              hr: () => (
+                <hr className="border-t border-[var(--color-gray-200)] my-4" />
+              ),
+              code: ({ children }) => (
+                <code className="bg-[var(--color-gray-100)] text-[var(--color-gray-800)] px-1.5 py-0.5 rounded text-xs font-mono">
+                  {children}
+                </code>
               ),
               a: ({ href, children }) => (
                 <a
                   href={href}
-                  className="text-[var(--color-primary)] underline"
+                  className="text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] underline underline-offset-2"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
