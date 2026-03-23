@@ -25,9 +25,9 @@ dependencies = [
     "kailash-nexus>=1.4.3",
     "kailash-dataflow>=1.2.0",
     "kailash-kaizen>=2.1.0",
-    # Terrene Foundation trust frameworks
-    "eatp>=0.2.0",
-    "trust-plane>=0.2.1",
+    # Terrene Foundation trust frameworks (bundled in src/ — not on PyPI)
+    # "eatp>=0.2.0",
+    # "trust-plane>=0.2.1",
     # CLI Framework
     "click>=8.0",
     "rich>=13.0.0",
