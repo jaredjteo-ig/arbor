@@ -668,7 +668,8 @@ export default function AppraisalsPage() {
                                     Template Details
                                   </h4>
                                   <span className="text-xs text-[var(--color-gray-500)]">
-                                    Created {formatDate(t.created_at || "")}
+                                    Created{" "}
+                                    {formatDate((t as any).created_at || "")}
                                   </span>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
