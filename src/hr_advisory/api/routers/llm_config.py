@@ -684,8 +684,8 @@ async def update_company_llm_budget(
             "CompanyUpdateNode",
             "update",
             {
-                "conditions": {"id": company_id},
-                "updates": {"monthly_llm_budget_usd": budget},
+                "filter": {"id": company_id},
+                "fields": {"monthly_llm_budget_usd": budget},
             },
         )
         runtime = LocalRuntime()

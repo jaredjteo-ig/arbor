@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   AppCard,
   AppButton,
@@ -392,6 +392,9 @@ export default function AppraisalsPage() {
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedTemplateId, setExpandedTemplateId] = useState<number | null>(
+    null,
+  );
   const [editScores, setEditScores] = useState<Record<number, string>>({});
   const [editReviewerComments, setEditReviewerComments] = useState<
     Record<number, string>
@@ -620,25 +623,108 @@ export default function AppraisalsPage() {
                   </thead>
                   <tbody>
                     {templates.map((t) => (
-                      <tr
-                        key={t.id}
-                        className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
-                      >
-                        <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                          {t.name}
-                        </td>
-                        <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
-                          {t.enable_weightage ? "Yes" : "No"}
-                        </td>
-                        <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
-                          {t.require_employee_signoff ? "Required" : "Optional"}
-                        </td>
-                        <td className="py-3 px-5 text-center">
-                          <StatusBadge
-                            status={t.is_archived ? "draft" : "active"}
-                          />
-                        </td>
-                      </tr>
+                      <React.Fragment key={t.id}>
+                        <tr
+                          className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors cursor-pointer"
+                          onClick={() =>
+                            setExpandedTemplateId(
+                              expandedTemplateId === t.id ? null : t.id,
+                            )
+                          }
+                        >
+                          <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
+                            <span className="flex items-center gap-2">
+                              {expandedTemplateId === t.id ? (
+                                <ChevronUp className="h-3.5 w-3.5 text-[var(--color-gray-400)]" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5 text-[var(--color-gray-400)]" />
+                              )}
+                              {t.name}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
+                            {t.enable_weightage ? "Yes" : "No"}
+                          </td>
+                          <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
+                            {t.require_employee_signoff
+                              ? "Required"
+                              : "Optional"}
+                          </td>
+                          <td className="py-3 px-5 text-center">
+                            <StatusBadge
+                              status={t.is_archived ? "draft" : "active"}
+                            />
+                          </td>
+                        </tr>
+                        {expandedTemplateId === t.id && (
+                          <tr>
+                            <td
+                              colSpan={4}
+                              className="px-5 py-4 bg-[var(--color-gray-50)]"
+                            >
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="text-sm font-semibold text-[var(--color-gray-900)]">
+                                    Template Details
+                                  </h4>
+                                  <span className="text-xs text-[var(--color-gray-500)]">
+                                    Created {formatDate(t.created_at || "")}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div>
+                                    <p className="text-xs text-[var(--color-gray-500)] mb-1">
+                                      Weightage
+                                    </p>
+                                    <p className="text-[var(--color-gray-800)]">
+                                      {t.enable_weightage
+                                        ? "Enabled — criteria have percentage weights"
+                                        : "Disabled — equal weight for all criteria"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-[var(--color-gray-500)] mb-1">
+                                      Employee Sign-off
+                                    </p>
+                                    <p className="text-[var(--color-gray-800)]">
+                                      {t.require_employee_signoff
+                                        ? "Required — employee must acknowledge the review"
+                                        : "Optional — review can be completed without employee sign-off"}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-[var(--color-gray-500)] mb-2">
+                                    Suggested Criteria
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {[
+                                      "Job Knowledge",
+                                      "Quality of Work",
+                                      "Productivity",
+                                      "Communication",
+                                      "Teamwork",
+                                      "Initiative",
+                                      "Reliability",
+                                    ].map((c) => (
+                                      <span
+                                        key={c}
+                                        className="px-2.5 py-1 rounded-full text-xs bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary)]/20"
+                                      >
+                                        {c}
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <p className="text-xs text-[var(--color-gray-400)] mt-2">
+                                    Criteria are assigned per appraisal period.
+                                    These are commonly used suggestions.
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>

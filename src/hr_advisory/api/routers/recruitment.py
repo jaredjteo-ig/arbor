@@ -304,7 +304,7 @@ async def list_all_interviews(
     if status:
         filters["status"] = status
 
-    interviews = _dataflow_list("InterviewListNode", filters)
+    interviews = _dataflow_list("InterviewScheduleListNode", filters)
     return {"interviews": interviews, "count": len(interviews)}
 
 
@@ -468,7 +468,7 @@ async def list_interviews(
 
     _verify_candidate_ownership(candidate_id, company_id)
 
-    interviews = _dataflow_list("InterviewListNode", {"candidate_id": candidate_id})
+    interviews = _dataflow_list("InterviewScheduleListNode", {"candidate_id": candidate_id})
     return {"interviews": interviews, "count": len(interviews)}
 
 

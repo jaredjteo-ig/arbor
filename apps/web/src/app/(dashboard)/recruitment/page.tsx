@@ -67,10 +67,11 @@ function StatusBadge({
   status: string;
   styles: Record<string, string>;
 }) {
-  const label = status.replace(/_/g, " ");
+  const safeStatus = status || "unknown";
+  const label = safeStatus.replace(/_/g, " ");
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${styles[status] || styles.new || ""}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${styles[safeStatus] || styles.new || ""}`}
     >
       {label.charAt(0).toUpperCase() + label.slice(1)}
     </span>
@@ -928,13 +929,16 @@ export default function RecruitmentPage() {
                         className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
                       >
                         <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                          {job.title}
+                          {job.title || (job as any).position_title || "-"}
                         </td>
                         <td className="py-3 px-3 text-[var(--color-gray-600)]">
                           {job.department || "-"}
                         </td>
                         <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                          {job.employment_type.replace(/_/g, " ")}
+                          {(job.employment_type || "full_time").replace(
+                            /_/g,
+                            " ",
+                          )}
                         </td>
                         <td className="py-3 px-3 text-center text-[var(--color-gray-700)]">
                           {job.candidate_count ?? 0}

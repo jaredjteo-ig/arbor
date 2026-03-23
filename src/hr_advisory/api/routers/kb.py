@@ -218,7 +218,7 @@ async def get_provision(
         provision = _execute_node(
             "ProvisionReadNode",
             "read_provision",
-            {"conditions": {"id": provision_id}},
+            {"id": provision_id},
         )
     except Exception as exc:
         logger.error("Failed to read provision id=%s: %s", provision_id, exc)

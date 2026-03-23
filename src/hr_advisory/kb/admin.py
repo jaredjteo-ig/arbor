@@ -85,7 +85,7 @@ def update_provision(provision_id: int, updates: dict, reason: str) -> dict:
 
     # Read original provision
     wf_read = WorkflowBuilder()
-    wf_read.add_node("ProvisionReadNode", "read", {"conditions": {"id": provision_id}})
+    wf_read.add_node("ProvisionReadNode", "read", {"id": provision_id})
     results, _ = runtime.execute(wf_read.build())
     original = results["read"]
 
@@ -134,8 +134,8 @@ def update_provision(provision_id: int, updates: dict, reason: str) -> dict:
         "ProvisionUpdateNode",
         "supersede",
         {
-            "conditions": {"id": provision_id},
-            "updates": {
+            "filter": {"id": provision_id},
+            "fields": {
                 "is_active": False,
                 "superseded_by_id": new_provision["id"],
                 "superseded_date": datetime.now(tz=None),

@@ -211,7 +211,9 @@ async def clock_in(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     user_id = int(current_user.get("sub", 0))
-    check_rate_limit(f"clock:{user_id}", max_requests=20, window_seconds=60, action_name="clock in/out")
+    check_rate_limit(
+        f"clock:{user_id}", max_requests=20, window_seconds=60, action_name="clock in/out"
+    )
 
     emp = _find_employee_for_user(user_id, company_id)
     if emp is None:
@@ -274,7 +276,9 @@ async def clock_out(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     user_id = int(current_user.get("sub", 0))
-    check_rate_limit(f"clock:{user_id}", max_requests=20, window_seconds=60, action_name="clock in/out")
+    check_rate_limit(
+        f"clock:{user_id}", max_requests=20, window_seconds=60, action_name="clock in/out"
+    )
 
     emp = _find_employee_for_user(user_id, company_id)
     if emp is None:
@@ -954,6 +958,27 @@ async def today_dashboard(
     }
 
 
+@router.get("/today/overview")
+async def today_overview(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Today's attendance overview — returns a list of employees with status.
+
+    This is the format expected by the frontend attendance page for admin users.
+    """
+    dashboard = await today_dashboard(current_user)
+    employees = []
+    for emp in dashboard.get("present", []):
+        employees.append({**emp, "status": "present"})
+    for emp in dashboard.get("late", []):
+        employees.append({**emp, "status": "late"})
+    for emp in dashboard.get("absent", []):
+        employees.append({**emp, "status": "absent"})
+    for emp in dashboard.get("on_leave", []):
+        employees.append({**emp, "status": "on_leave"})
+    return {"employees": employees, "counts": dashboard.get("counts", {})}
+
+
 @router.get("/summary/aggregated")
 async def aggregated_summary(
     request: Request,
@@ -984,10 +1009,7 @@ async def aggregated_summary(
     )
 
     # Filter to date range
-    range_records = [
-        r for r in all_records
-        if start_date <= r.get("date", "") <= end_date
-    ]
+    range_records = [r for r in all_records if start_date <= r.get("date", "") <= end_date]
 
     # Aggregate per employee
     from collections import defaultdict

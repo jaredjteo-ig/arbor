@@ -59,6 +59,8 @@ TOOL_DEFINITIONS = [
                             "Fair Employment",
                             "Workplace Safety and Health",
                             "Tax",
+                            "Industrial Relations",
+                            "Retrenchment",
                         ],
                     },
                 },
@@ -245,7 +247,10 @@ TOOL_DEFINITIONS = [
 # -- System prompt -----------------------------------------------------------
 
 
-def _build_system_prompt(company_context: dict | None = None) -> str:
+def _build_system_prompt(
+    company_context: dict | None = None,
+    user_context: dict | None = None,
+) -> str:
     """Build the system prompt for the advisory engine."""
     # Load anti-amnesia constraints
     try:
@@ -264,53 +269,74 @@ def _build_system_prompt(company_context: dict | None = None) -> str:
         security_footer = ""
 
     base = (
-        "You are a Singapore HR and employment law advisory assistant for Arbor, "
-        "an AI-powered HRIS platform for Singapore SMEs.\n\n"
-        "YOUR ROLE:\n"
-        "- Answer questions about Singapore employment law, payroll, leave, CPF, "
-        "work passes, workplace safety, fair employment, and PDPA.\n"
-        "- ALWAYS use the search_kb tool to find relevant legal provisions before "
-        "answering any legal question. Never rely on your training data alone — "
-        "the KB contains the authoritative provisions.\n"
-        "- Use calculator tools when the user needs a specific number (CPF amount, "
-        "leave days, overtime pay, quota/levy). These are deterministic and exact.\n"
-        "- When the user asks about foreign workers, Employment Passes, S Passes, "
-        "Work Permits, COMPASS, quotas, or levies — search the 'Foreign Manpower' "
-        "domain.\n"
-        "- Always cite specific provisions (e.g., 'Employment Act s.89', "
-        "'EFMA s.22') in your answers.\n\n"
-        "HOW TO USE TOOLS:\n"
-        "- You may call multiple tools in parallel if they are independent.\n"
-        "- If a search returns no results, try a more specific or broader query.\n"
-        "- If you are uncertain, search the KB with different keywords rather than "
-        "guessing.\n"
-        "- For calculation queries, extract the numbers from the user's question "
-        "and pass them to the appropriate calculator.\n\n"
-        "RESPONSE GUIDELINES:\n"
-        "- Be specific and actionable. Cite section numbers.\n"
-        "- If multiple provisions apply, explain each.\n"
-        "- For edge cases or ambiguous situations, explain the nuance and "
-        "recommend consulting a lawyer.\n"
-        "- Respond naturally in conversational English. If the user writes in "
-        "Singlish, you may use Singlish terms but keep legal references formal.\n\n"
-        "CONFIDENCE AND RISK:\n"
-        "- At the end of your response, add on a NEW LINE:\n"
+        "You are Arbor — a senior HR advisor for Singapore SMEs. You have deep "
+        "expertise in Singapore employment law, HR operations, payroll, and "
+        "workforce management.\n\n"
+        "You advise real business owners making real decisions. Answer like a "
+        "trusted consultant who happens to know the law — not like a legal "
+        "database.\n\n"
+        "TOOLS:\n"
+        "- search_kb: Singapore employment law provisions. Use it to ground "
+        "legal claims with specific section numbers. If it returns nothing, "
+        "you still know the law — answer anyway.\n"
+        "- Calculators (CPF, leave, salary, quota/levy): Use when the user "
+        "needs exact numbers. These are deterministic.\n"
+        "- get_company_context: The user's company profile for personalisation.\n\n"
+        "BOUNDARIES:\n"
+        "- Do not fabricate section numbers. If you cite a provision, it must "
+        "be real. If unsure of the exact section, describe the rule without "
+        "a section number.\n"
+        "- Distinguish legal requirements from practical recommendations. "
+        "'You must' = law. 'Most companies' / 'In practice' = guidance.\n"
+        "- For high-stakes matters (termination disputes, potential litigation, "
+        "union negotiations), recommend professional legal review.\n"
+        "- Singlish input is fine. Respond in clear English but don't be "
+        "stiff about it.\n\n"
+        "NEVER DO THESE:\n"
+        "- Never use flattery, filler phrases, or hollow affirmations.\n"
+        "- Never start with 'Great question!' or 'That's a really important "
+        "topic' or any preamble. Lead with the answer.\n"
+        "- Never speculate beyond what you know. When data is limited, say so "
+        "honestly.\n"
+        "- Never give a thin answer. If the question is complex, the answer "
+        "must be comprehensive — cover the law, practical steps, pitfalls, "
+        "edge cases, and strategic considerations.\n\n"
+        "CONFIDENCE LADDER:\n"
+        "Modulate your language based on how well-supported your answer is:\n"
+        "- >90% confident (KB provision + calculator): State as fact.\n"
+        "- 70-90% (KB provision, no exact match): 'Based on the Employment "
+        "Act...' / 'Under current regulations...'\n"
+        "- 50-70% (general knowledge, no KB match): 'In practice, most "
+        "companies...' / 'Generally speaking...'\n"
+        "- <50%: 'You may want to check with a lawyer on this specific point' "
+        "— never present low-confidence guidance as definitive.\n\n"
+        "Use markdown for structure when it helps readability.\n\n"
+        "At the end of your response, on a new line:\n"
         "  [CONFIDENCE: X.XX] [RISK: green|amber|red]\n"
-        "- Confidence: 0.0-1.0 reflecting how well-supported your answer is by "
-        "KB provisions and calculations.\n"
-        "- Risk: green = straightforward, amber = thresholds/edge cases/multiple "
-        "acts, red = potential litigation/penalties/contradictions.\n"
     )
 
-    # Add company context if available
-    company_section = ""
+    # Add user context if available (like Iris's dynamic prompt injection)
+    context_section = ""
+    if user_context:
+        role = user_context.get("role", "")
+        name = user_context.get("name", "")
+        role_hint = ""
+        if role == "owner":
+            role_hint = "They are the business owner — give strategic, decision-maker advice."
+        elif role == "hr_admin":
+            role_hint = "They are an HR admin — give operational, process-focused advice."
+        elif role == "employee":
+            role_hint = "They are an employee — give rights-focused, clear advice."
+        if name or role_hint:
+            context_section += f"\nUSER: {name} ({role}).{(' ' + role_hint) if role_hint else ''}\n"
+
     if company_context:
-        company_section = (
+        context_section += (
             "\nCOMPANY CONTEXT (use this to personalise your advice):\n"
             f"{json.dumps(company_context, indent=2, default=str)}\n"
         )
 
-    return base + company_section + "\n" + anti_amnesia + security_footer
+    return base + context_section + "\n" + anti_amnesia + security_footer
 
 
 # -- KB search with Python content fallback -----------------------------------
@@ -341,6 +367,7 @@ def _search_python_kb(query: str, domain: str | None = None, limit: int = 5) -> 
         tafep,
         remaining_domains,
     )
+    from hr_advisory.kb.content import industrial_relations
 
     # Map domain filter names to content modules
     domain_modules = {
@@ -350,13 +377,19 @@ def _search_python_kb(query: str, domain: str | None = None, limit: int = 5) -> 
         "Fair Employment": [tafep],
         "Workplace Safety and Health": [remaining_domains],
         "Tax": [remaining_domains],
+        "Industrial Relations": [industrial_relations],
+        "Retrenchment": [industrial_relations],
     }
 
-    modules_to_search = (
-        domain_modules.get(domain, [])
-        if domain
-        else [employment_act, cpf, foreign_manpower, tafep, remaining_domains]
-    )
+    all_modules = [
+        employment_act,
+        cpf,
+        foreign_manpower,
+        tafep,
+        remaining_domains,
+        industrial_relations,
+    ]
+    modules_to_search = domain_modules.get(domain, []) if domain else all_modules
 
     # Collect all provisions from selected modules
     all_provisions = []
@@ -460,18 +493,26 @@ def _execute_tool_call(name: str, arguments: dict) -> str:
                 domain=arguments.get("domain"),
                 limit=5,
             )
-            # Slim down results for the LLM — only include what it needs to cite
-            slim = []
+            # Include enough context for comprehensive answers — plain_summary
+            # alone is too thin for a senior advisor to give thorough guidance.
+            enriched = []
             for r in results:
-                slim.append(
-                    {
-                        "section": r.get("section", ""),
-                        "title": r.get("title", ""),
-                        "plain_summary": r.get("plain_summary", ""),
-                        "authority_level": r.get("authority_level", ""),
-                    }
-                )
-            return json.dumps(slim, default=str)
+                entry = {
+                    "section": r.get("section", ""),
+                    "title": r.get("title", ""),
+                    "plain_summary": r.get("plain_summary", ""),
+                    "authority_level": r.get("authority_level", ""),
+                }
+                # Include interpretation notes (edge cases, penalties, thresholds)
+                notes = r.get("interpretation_notes", "")
+                if notes:
+                    entry["interpretation_notes"] = notes
+                # Include practical examples (worked scenarios with numbers)
+                examples = r.get("practical_examples")
+                if examples:
+                    entry["practical_examples"] = examples
+                enriched.append(entry)
+            return json.dumps(enriched, default=str)
 
         elif name == "calculate_cpf":
             from hr_advisory.agents.actions.calculator import CalculatorAgent
@@ -593,6 +634,7 @@ class AdvisoryEngine:
         conversation_history: list[dict[str, str]],
         company_context: dict | None = None,
         company_id: int | None = None,
+        user_context: dict | None = None,
     ) -> dict[str, Any]:
         """Run the advisory engine.
 
@@ -601,6 +643,7 @@ class AdvisoryEngine:
             conversation_history: Prior turns as [{role, content}, ...].
             company_context: Company profile dict for personalisation.
             company_id: Company ID for tool calls.
+            user_context: User profile dict (role, name) for personalisation.
 
         Returns:
             Dict with keys: response_text, risk_tier, confidence, domains,
@@ -613,7 +656,7 @@ class AdvisoryEngine:
         model = self._ctx.model or os.environ.get("DEFAULT_LLM_MODEL", "gpt-5-chat-latest")
 
         # Build messages
-        system_prompt = _build_system_prompt(company_context)
+        system_prompt = _build_system_prompt(company_context, user_context)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
         ]
@@ -669,6 +712,22 @@ class AdvisoryEngine:
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
                                 "content": result_str,
+                            }
+                        )
+
+                    # Steering: if we've done 5+ search_kb calls, nudge the model
+                    # to synthesize. gpt-5-mini tends to keep searching indefinitely
+                    # on multi-domain queries without this.
+                    kb_call_count = sum(1 for t in tools_called if t == "search_kb")
+                    if kb_call_count >= 5 and round_num >= 3:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    "You have retrieved enough provisions. "
+                                    "Please synthesize your answer now based on "
+                                    "what you have found. Do not search further."
+                                ),
                             }
                         )
 

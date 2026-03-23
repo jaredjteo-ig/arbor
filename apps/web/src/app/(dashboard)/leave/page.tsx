@@ -852,6 +852,9 @@ export default function LeavePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showApplyModal, setShowApplyModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<"applications" | "policies">(
+    "applications",
+  );
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -861,7 +864,7 @@ export default function LeavePage() {
         leaveApi.listTypes(),
         leaveApi.listApplications(),
       ]);
-      setLeaveTypes(typesRes.types ?? []);
+      setLeaveTypes(typesRes.types ?? (typesRes as any).leave_types ?? []);
       setApplications(appsRes.applications ?? []);
 
       if (!isAdmin) {
@@ -955,8 +958,89 @@ export default function LeavePage() {
         )}
       </div>
 
-      {/* Admin View */}
+      {/* Tab bar (admin only) */}
       {isAdmin && (
+        <div className="flex gap-1 border-b border-[var(--color-gray-200)]">
+          {(["applications", "policies"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab
+                  ? "border-[var(--color-primary)] text-[var(--color-primary)]"
+                  : "border-transparent text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)]"
+              }`}
+            >
+              {tab === "applications" ? "Applications" : "Leave Policies"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Policies Tab (admin) */}
+      {isAdmin && activeTab === "policies" && (
+        <AppCard
+          variant="standard"
+          header={
+            <div className="flex items-center gap-2">
+              <CalendarDays
+                className="h-4 w-4 text-[var(--color-gray-500)]"
+                aria-hidden="true"
+              />
+              <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+                Leave Type Configuration
+              </h2>
+            </div>
+          }
+        >
+          {leaveTypes.length === 0 ? (
+            <p className="text-sm text-[var(--color-gray-500)]">
+              No leave types configured yet.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {leaveTypes.map((lt: any) => (
+                <div
+                  key={lt.id || lt.name || lt.leave_type_name}
+                  className="flex items-center justify-between p-3 rounded-lg border border-[var(--color-gray-200)] bg-[var(--color-surface-card)]"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                      {lt.name || lt.leave_type_name || "Unnamed"}
+                    </p>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-[var(--color-gray-500)]">
+                      <span>
+                        {lt.default_days ?? lt.entitlement_days ?? 0} days
+                      </span>
+                      <span>{lt.is_paid !== false ? "Paid" : "Unpaid"}</span>
+                      {(lt.applicable_gender || lt.gender_restriction) &&
+                        (lt.applicable_gender || lt.gender_restriction) !==
+                          "all" && (
+                          <span className="capitalize">
+                            {lt.applicable_gender || lt.gender_restriction} only
+                          </span>
+                        )}
+                    </div>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      lt.is_active !== false
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-[var(--color-gray-100)] text-[var(--color-gray-500)]"
+                    }`}
+                  >
+                    {lt.is_active !== false ? "Active" : "Inactive"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </AppCard>
+      )}
+
+      {/* Admin View — Applications tab */}
+      {isAdmin && activeTab === "applications" && (
         <>
           <AdminQuickStats applications={applications} />
           <PendingApprovals applications={applications} onAction={fetchData} />

@@ -191,6 +191,20 @@ async def create_project(
     return {"project": project}
 
 
+@router.get("/{project_id}")
+async def get_project(
+    project_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get a single project by ID."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    project = _verify_project_ownership(project_id, company_id)
+    return {"project": project}
+
+
 @router.patch("/{project_id}")
 async def update_project(
     project_id: int,
@@ -206,8 +220,13 @@ async def update_project(
 
     body = await request.json()
     allowed = {
-        "name", "description",
-        "start_date", "end_date", "budget_amount", "status", "is_archived",
+        "name",
+        "description",
+        "start_date",
+        "end_date",
+        "budget_amount",
+        "status",
+        "is_archived",
     }
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
@@ -705,9 +724,7 @@ async def create_allocation(
     percentage = body.get("percentage", 100)
 
     if not project_id or not employee_id:
-        raise HTTPException(
-            status_code=400, detail="project_id and employee_id are required."
-        )
+        raise HTTPException(status_code=400, detail="project_id and employee_id are required.")
 
     _verify_project_ownership(project_id, company_id)
 
@@ -755,9 +772,7 @@ async def calculate_project_costs(
     entries = _dataflow_list("TimesheetEntryListNode", {"project_id": project_id})
 
     # Fetch assignments for hourly rates
-    assignments = _dataflow_list(
-        "ProjectAssignmentListNode", {"project_id": project_id}
-    )
+    assignments = _dataflow_list("ProjectAssignmentListNode", {"project_id": project_id})
     rate_map: dict[int, float] = {}
     for a in assignments:
         rate_map[a.get("employee_id", 0)] = a.get("hourly_rate", 0.0)
@@ -810,9 +825,7 @@ async def project_report(
 
     project = _verify_project_ownership(project_id, company_id)
 
-    assignments = _dataflow_list(
-        "ProjectAssignmentListNode", {"project_id": project_id}
-    )
+    assignments = _dataflow_list("ProjectAssignmentListNode", {"project_id": project_id})
     entries = _dataflow_list("TimesheetEntryListNode", {"project_id": project_id})
     overheads = _dataflow_list("ProjectOverheadListNode", {"project_id": project_id})
 

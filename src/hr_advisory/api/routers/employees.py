@@ -1764,7 +1764,7 @@ async def update_my_profile(
     wf.add_node(
         "EmployeeUpdateNode",
         "update_me",
-        {"conditions": {"id": employee["id"]}, "updates": updates},
+        {"filter": {"id": employee["id"]}, "fields": updates},
     )
     runtime = LocalRuntime()
     runtime.execute(wf.build())

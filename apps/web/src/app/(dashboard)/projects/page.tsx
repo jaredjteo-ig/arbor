@@ -244,7 +244,16 @@ export default function ProjectsPage() {
     setError(null);
     try {
       const data = await projectsApi.listProjects();
-      setProjects(data.projects ?? []);
+      // Normalize backend fields to frontend type (API returns budget_amount, is_archived)
+      const normalized = (data.projects ?? []).map((p: any) => ({
+        ...p,
+        status: p.status || (p.is_archived ? "archived" : "active"),
+        code: p.code || "",
+        budget: p.budget ?? p.budget_amount ?? 0,
+        actual_cost: p.actual_cost ?? 0,
+        client_name: p.client_name || "",
+      }));
+      setProjects(normalized);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Unable to load projects.";

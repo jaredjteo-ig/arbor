@@ -21,10 +21,10 @@ classifiers = [
 ]
 dependencies = [
     # Kailash SDK (includes: fastapi, uvicorn, pydantic, sqlalchemy, pandas, numpy, requests, pyyaml)
-    "kailash>=1.0.0",
-    "kailash-nexus>=1.4.2",
-    "kailash-dataflow>=1.0.1",
-    "kailash-kaizen>=1.3.0",
+    "kailash>=2.0.0",
+    "kailash-nexus>=1.4.3",
+    "kailash-dataflow>=1.2.0",
+    "kailash-kaizen>=2.1.0",
     # Terrene Foundation trust frameworks
     "eatp>=0.2.0",
     "trust-plane>=0.2.1",
