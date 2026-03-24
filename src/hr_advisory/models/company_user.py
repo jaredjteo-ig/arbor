@@ -2075,6 +2075,7 @@ class JobListing:
     requirements: str = ""
     salary_range_min: float = 0.0
     salary_range_max: float = 0.0
+    status: str = "draft"  # draft/open/closed/on_hold
     is_published: bool = False
     unique_slug: str = ""
     application_form_config: str = ""  # JSON
