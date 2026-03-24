@@ -1747,7 +1747,11 @@ async def shadow_briefing(
     company_id = get_current_company_id(current_user)
     user_role = current_user.get("role", "employee")
 
-    briefing = generate_briefing(company_id, user_role)
+    import asyncio
+
+    _cid = company_id or 0
+    loop = asyncio.get_event_loop()
+    briefing = await loop.run_in_executor(None, generate_briefing, _cid, user_role)
 
     logger.info(
         "Briefing generated for company_id=%s: %d actions, %d deadlines, %d attention items",
@@ -1788,7 +1792,11 @@ async def shadow_nudges(
     user_id = str(current_user.get("sub", "anonymous"))
     user_role = current_user.get("role", "employee")
 
-    nudges = get_nudges(company_id, user_id, page, user_role)
+    import asyncio
+
+    _cid = company_id or 0
+    loop = asyncio.get_event_loop()
+    nudges = await loop.run_in_executor(None, get_nudges, _cid, user_id, page, user_role)
 
     logger.info(
         "Nudges for page=%s, company_id=%s: %d nudges",

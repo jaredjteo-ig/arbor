@@ -349,6 +349,7 @@ class ShadowIntentClassifier:
                 ],
                 max_tokens=512,
                 temperature=0,
+                timeout=15,
             )
 
             raw_content = response.choices[0].message.content or ""
