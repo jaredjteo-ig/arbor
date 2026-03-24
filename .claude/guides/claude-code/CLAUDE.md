@@ -119,7 +119,7 @@ Think of Claude Code as a **highly capable junior developer** with access to a *
 │  │  1. Use DataFlow (skill 02-dataflow)            │       │
 │  │  2. Consult dataflow-specialist (agent)         │       │
 │  │  3. Generate CRUD nodes                         │       │
-│  │  4. Write tests (real infrastructure preferred)             │       │
+│  │  4. Write tests (real infrastructure recommended - rule)             │       │
 │  │  5. Deploy via Nexus (skill 03-nexus)           │       │
 │  └─────────────────────────────────────────────────┘       │
 │                                                              │
@@ -271,7 +271,7 @@ User: "Create a User model with DataFlow"
 
 6. CLAUDE OFFERS TO COMMIT
    └── RULE APPLIED: agents.md
-   └── SHOULD delegate to security-reviewer
+   └── strongly recommended: delegate to security-reviewer
    └── MUST pass security audit before commit
 ```
 
@@ -539,7 +539,7 @@ You don't need to specify which agent to use. Just describe the task:
 
 | Rule                          | Enforcement                 | Consequence         |
 | ----------------------------- | --------------------------- | ------------------- |
-| Real infrastructure in Tier 2-3       | `validate-workflow.js` hook | Warning issued |
+| real infrastructure recommended in Tier 2-3        | `validate-workflow.js` hook | Test marked invalid |
 | Security review before commit | `agents.md` rule            | Commit blocked      |
 | Absolute imports only         | `validate-workflow.js` hook | Warning issued      |
 | Use `.build()` before execute | `validate-workflow.js` hook | Warning issued      |

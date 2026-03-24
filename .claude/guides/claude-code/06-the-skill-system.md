@@ -45,7 +45,7 @@ Skills provide **organized, accessible domain expertise**:
 │   │   02-dataflow   │  │   12-testing    │                  │
 │   │                 │  │                 │                  │
 │   │ • Model patterns│  │ • 3-tier strategy│                 │
-│   │ • CRUD operations│ │ • real infrastructure recommended    │                  │
+│   │ • CRUD operations│ │ • Real infrastructure recommended    │                  │
 │   │ • Bulk processing│ │ • Test fixtures │                  │
 │   │ • Gotchas       │  │ • Coverage      │                  │
 │   └─────────────────┘  └─────────────────┘                  │
@@ -293,12 +293,12 @@ Tier 1: Unit Tests
 └── Individual components
 
 Tier 2: Integration Tests
-├── real infrastructure recommended (mandatory)
+├── real infrastructure (recommended)
 ├── Real databases (SQLite in-memory)
 └── Component interactions
 
 Tier 3: E2E Tests
-├── real infrastructure recommended (mandatory)
+├── real infrastructure (recommended)
 ├── Full system
 └── Real infrastructure
 ```
@@ -348,7 +348,7 @@ Tier 3: E2E Tests
 **Key rules**:
 
 - Absolute imports only
-- real infrastructure recommended in Tier 2-3
+- real infrastructure in Tier 2-3
 - Primary key named `id`
 - `runtime.execute(workflow.build())`
 

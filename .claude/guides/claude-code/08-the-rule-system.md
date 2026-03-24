@@ -38,7 +38,7 @@ Rules are Markdown files that Claude reads and follows:
 │   ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
 │   │  agents.md    │  │  testing.md   │  │  security.md  │   │
 │   │               │  │               │  │               │   │
-│   │ SHOULD delegate │  │ real infrastructure recommended    │  │ OWASP checks  │   │
+│   │ RECOMMENDED: delegate │  │ real infrastructure recommended    │  │ OWASP checks  │   │
 │   │ MUST review   │  │ Test-first    │  │ Secret mgmt   │   │
 │   └───────────────┘  └───────────────┘  └───────────────┘   │
 │                                                               │

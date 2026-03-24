@@ -324,7 +324,7 @@ These agents help write and validate code.
 1. Writes tests first (Red phase)
 2. Implements minimal code to pass (Green phase)
 3. Refactors for quality (Refactor phase)
-4. Ensures real infrastructure recommended in Tier 2-3
+4. Ensures real infrastructure in Tier 2-3
 
 **Example request**:
 

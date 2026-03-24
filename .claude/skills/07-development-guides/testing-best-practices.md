@@ -218,7 +218,7 @@ pytest tests/e2e/
 
 ## Critical Testing Policies
 
-### 1. real infrastructure recommended in Tiers 2-3
+### 1. real infrastructure in Tiers 2-3
 ```python
 # ❌ NEVER in integration/e2e tests
 from unittest.mock import patch

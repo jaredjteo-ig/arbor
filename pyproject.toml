@@ -21,10 +21,11 @@ classifiers = [
 ]
 dependencies = [
     # Kailash SDK (includes: fastapi, uvicorn, pydantic, sqlalchemy, pandas, numpy, requests, pyyaml)
-    "kailash>=2.0.0",
+    "kailash[trust,pact]>=2.1.0",
     "kailash-nexus>=1.4.3",
     "kailash-dataflow>=1.2.0",
-    "kailash-kaizen>=2.1.0",
+    "kailash-kaizen>=2.2.1",
+    "kailash-pact>=0.4.0",
     # Terrene Foundation trust frameworks (bundled in src/ — not on PyPI)
     # "eatp>=0.2.0",
     # "trust-plane>=0.2.1",
@@ -88,7 +89,9 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 filterwarnings = [
-    "ignore::DeprecationWarning",
+    "ignore::DeprecationWarning:kaizen.*:",
+    "ignore::DeprecationWarning:jwt.*:",
+    "ignore::DeprecationWarning:passlib.*:",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",

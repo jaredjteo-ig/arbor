@@ -20,4 +20,4 @@ class StreamingAgent(BaseAgent):
 ```
 
 ## References
-- **Examples**: the package source
+- **Examples**: `examples/1-single-agent/streaming-chat/`
