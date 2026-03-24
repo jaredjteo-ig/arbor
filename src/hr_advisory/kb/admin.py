@@ -188,6 +188,71 @@ def get_kb_stats() -> dict:
     return stats
 
 
+_kb_seeded = False
+
+
+def ensure_kb_seeded() -> bool:
+    """Seed the KB from Python content modules if the Provision table is empty.
+
+    This is a lazy initialization: called once on first search. Subsequent
+    calls are no-ops.  Skips in test environments to avoid pool exhaustion.
+    Returns True if seeding was performed.
+    """
+    global _kb_seeded
+    if _kb_seeded:
+        return False
+
+    _kb_seeded = True  # Mark early to prevent re-entry
+
+    # Skip in test environments to avoid connection pool exhaustion
+    import sys
+
+    if "pytest" in sys.modules:
+        logger.debug("KB seed skipped in test environment")
+        return False
+
+    try:
+        # Quick check: are there any provisions already?
+        runtime = LocalRuntime()
+        wf = WorkflowBuilder()
+        wf.add_node("ProvisionListNode", "check", {"filter": {}, "enable_cache": False, "limit": 1})
+        results, _ = runtime.execute(wf.build())
+        existing = _extract_records(results["check"])
+        if existing:
+            logger.debug("KB already has provisions, skipping seed")
+            return False
+
+        # DB is empty — load all content bundles
+        from hr_advisory.kb.pipeline import KBContentPipeline
+        from hr_advisory.kb.content import (
+            employment_act,
+            cpf,
+            foreign_manpower,
+            tafep,
+            remaining_domains,
+        )
+
+        pipeline = KBContentPipeline()
+        modules = [employment_act, cpf, foreign_manpower, tafep, remaining_domains]
+        total = 0
+        for mod in modules:
+            try:
+                bundle = mod.get_bundle()
+                summary = pipeline.bulk_load(bundle)
+                count = len(summary.get("provisions", []))
+                total += count
+                logger.info("KB seed: loaded %d provisions from %s", count, mod.__name__)
+            except Exception as exc:
+                logger.warning("KB seed: failed to load %s: %s", mod.__name__, exc)
+
+        logger.info("KB seed complete: %d total provisions loaded", total)
+        return True
+
+    except Exception as exc:
+        logger.warning("KB seed check failed: %s", exc)
+        return False
+
+
 def search_provisions(
     query: str,
     domain: Optional[str] = None,
@@ -206,6 +271,9 @@ def search_provisions(
     Returns:
         List of matching provision dicts.
     """
+    # Ensure KB is populated on first search
+    ensure_kb_seeded()
+
     runtime = LocalRuntime()
 
     # Get all provisions (DataFlow ListNode doesn't support LIKE/ILIKE natively,

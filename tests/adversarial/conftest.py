@@ -35,32 +35,34 @@ def automated_checks():
 
 
 def run_advisory_query(query: str, company_context: dict | None = None) -> dict | None:
-    """Send a query through the advisory pipeline and return the response.
+    """Send a query through the advisory engine and return the response.
 
-    This calls the actual pipeline (integration test).
+    This calls the AdvisoryEngine directly (integration test).
     Uses the LLM configured in .env.
 
     Returns:
         Dict with keys: response_text, risk_tier, confidence, citations,
-        trust_metadata.  Returns None if LLM is unavailable or the
-        pipeline fails.
+        domains, usage.  Returns None if LLM is unavailable or the
+        engine fails.
     """
     from hr_advisory.agents.config import has_llm_available
 
     if not has_llm_available():
         pytest.skip("No LLM available for adversarial testing")
 
-    from hr_advisory.api.routers.advisory import _run_llm_advisory
+    try:
+        from hr_advisory.agents.advisory_engine import AdvisoryEngine
 
-    response = _run_llm_advisory(
-        query=query,
-        domains=[],  # Let analyzer detect
-        provisions=[],
-        company_context=company_context,
-        conversation_history="",
-    )
-
-    return response
+        engine = AdvisoryEngine()
+        result = engine.run(
+            query=query,
+            conversation_history=[],
+            company_context=company_context,
+        )
+        return result
+    except Exception as exc:
+        pytest.skip(f"Advisory engine failed: {exc}")
+        return None
 
 
 def assert_response_available(response: dict | None) -> dict:

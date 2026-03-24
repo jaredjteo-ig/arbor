@@ -80,7 +80,7 @@ async def test_full_pipeline():
     assert results["load"]["rows_inserted"] > 0
 ```
 
-### 3. real infrastructure recommended (Tiers 2-3)
+### 3. Real Infrastructure Recommended (Tiers 2-3)
 
 ```python
 # ✅ GOOD: Real infrastructure in integration tests
@@ -188,7 +188,7 @@ def test_workflow_with_both_runtimes(runtime_class):
 
 - [ ] Test written before implementation (TDD)
 - [ ] All 3 tiers covered (unit, integration, E2E)
-- [ ] real infrastructure recommended in Tiers 2-3 (use real Docker services)
+- [ ] real infrastructure in Tiers 2-3 (use real Docker services)
 - [ ] Clear, descriptive test names
 - [ ] Test isolation with fixtures
 - [ ] Tests run in CI/CD

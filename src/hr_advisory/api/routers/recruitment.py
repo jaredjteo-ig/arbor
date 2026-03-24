@@ -230,7 +230,8 @@ async def publish_job(
         "JobListingUpdateNode",
         job_id,
         {
-            "status": "published",
+            "status": "open",
+            "is_published": True,
             "published_at": datetime.now(timezone.utc).isoformat(),
         },
     )

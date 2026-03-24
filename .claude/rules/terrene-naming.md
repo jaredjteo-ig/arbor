@@ -29,7 +29,7 @@ See `rules/independence.md` for the full no-commercial-coupling policy.
 
 ### License Accuracy
 
-- Specifications (CARE, PACT, EATP, CO, CDI): **CC BY 4.0** (NOT CC-BY-SA — ShareAlike would prevent proprietary implementations)
+- Specifications (CARE, EATP, CO, CDI): **CC BY 4.0** (NOT CC-BY-SA — ShareAlike would prevent proprietary implementations)
 - Open source code (Kailash Python, EATP SDK, CO Toolkit, CARE Platform, Praxis): **Apache 2.0**
 - BSL 1.1 is **NOT** open source — use "source-available" or "open-core"
 
@@ -39,6 +39,4 @@ See `rules/independence.md` for the full no-commercial-coupling policy.
 - Constraint dimensions: **Financial, Operational, Temporal, Data Access, Communication** (these exact five names — no synonyms, no reordering)
 - CO = Cognitive Orchestration (domain-agnostic base methodology)
 - COC = Cognitive Orchestration for Codegen (CO applied to software development)
-- PACT = Principled Architecture for Constrained Trust (organizational accountability grammar, operating envelopes, knowledge clearance)
-- The Quartet: CARE (philosophy) + PACT (architecture) + EATP (protocol) + CO (methodology)
-- PACT specifies: D/T/R grammar, Operating Envelope delegation, Knowledge Clearance, Verification Gradient, Positional Addressing
+- CO sits in the trinity: CARE (philosophy) + EATP (protocol) + CO (methodology)

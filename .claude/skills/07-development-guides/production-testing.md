@@ -65,7 +65,7 @@ from kailash.runtime import LocalRuntime
 
 @pytest.fixture
 def test_database():
-    """Setup test database - real infrastructure preferred."""
+    """Setup test database - real infrastructure recommended."""
     import sqlite3
     conn = sqlite3.connect(":memory:")
     cursor = conn.cursor()
@@ -81,7 +81,7 @@ def test_database():
     conn.close()
 
 def test_database_workflow_integration(test_database):
-    """Test workflow with real database - real infrastructure preferred."""
+    """Test workflow with real database - NO MOCKS."""
     workflow = WorkflowBuilder()
 
     workflow.add_node("SQLReaderNode", "reader", {
@@ -109,7 +109,7 @@ result = {
     assert "test" in results["processor"]["result"]["values"]
 
 def test_api_workflow_integration():
-    """Test workflow with real API - real infrastructure preferred."""
+    """Test workflow with real API - NO MOCKS."""
     workflow = WorkflowBuilder()
 
     # Use real test API (jsonplaceholder)
@@ -188,7 +188,7 @@ result = {'transformed_data': df.to_dict('records')}
     assert all(output_df['category'].str.isupper())
 ```
 
-### 5. Test Organization (real infrastructure preferred Policy)
+### 5. Test Organization (Real Infrastructure Policy)
 
 ```python
 # tests/unit/test_nodes.py
@@ -205,7 +205,7 @@ import pytest
 
 @pytest.fixture(scope="session")
 def test_database():
-    """Real test database - real infrastructure preferred."""
+    """Real test database - real infrastructure recommended."""
     # Setup real database
     pass
 
@@ -359,7 +359,7 @@ def test_workflow_performance():
 
 ## Critical Testing Rules
 
-1. **real infrastructure preferred in Tiers 2-3**: Use real infrastructure
+1. **real infrastructure in Tiers 2-3**: Use real infrastructure
 2. **Test All Paths**: Ensure complete code coverage
 3. **Real Data**: Use realistic test data
 4. **Error Scenarios**: Test failures, not just successes
@@ -375,7 +375,7 @@ def test_workflow_performance():
 
 ## 9. Infrastructure Testing Patterns
 
-Testing infrastructure stores (ConnectionManager, StoreFactory, task queues, idempotency) requires async fixtures, singleton cleanup, and transaction atomicity verification. All infrastructure tests benefit from running against real databases -- real infrastructure is recommended.
+Testing infrastructure stores (ConnectionManager, StoreFactory, task queues, idempotency) requires async fixtures, singleton cleanup, and transaction atomicity verification. All infrastructure tests run against real databases -- real infrastructure recommended.
 
 ### Async Test Fixtures with ConnectionManager
 

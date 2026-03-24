@@ -5,16 +5,20 @@ description: "Load phase 05 (codify) for the current workspace. Update existing 
 
 ## Workspace Resolution
 
-1. If `$ARGUMENTS` specifies a project name, use 
-2. Otherwise, use the most recently modified directory under  (excluding `instructions/`)
+1. If `$ARGUMENTS` specifies a project name, use `workspaces/$ARGUMENTS/`
+2. Otherwise, use the most recently modified directory under `workspaces/` (excluding `instructions/`)
 3. If no workspace exists, ask the user to create one first
-4. Read all files in  for user context (this is the user's input surface)
+4. Read all files in `workspaces/<project>/briefs/` for user context (this is the user's input surface)
 
 ## Phase Check
 
-- Read  to confirm validation passed
+- Read `workspaces/<project>/04-validate/` to confirm validation passed
 - Read `docs/` and `docs/00-authority/` for knowledge base
 - Output: update existing agents and skills in their canonical locations (e.g., `agents/frameworks/`, `skills/01-core-sdk/`, `skills/02-dataflow/`, etc.)
+
+## Execution Model
+
+This phase executes under the **autonomous execution model** (see `rules/autonomous-execution.md`). Knowledge extraction and codification are autonomous — agents extract, structure, and validate knowledge without human intervention. The human reviews the codified output at the end (structural gate on what becomes institutional knowledge), but the extraction and synthesis process is fully autonomous.
 
 ## Workflow
 

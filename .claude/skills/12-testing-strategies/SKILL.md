@@ -1,17 +1,17 @@
 ---
 name: testing-strategies
-description: "Comprehensive testing strategies for Kailash applications including the 3-tier testing approach with real infrastructure recommended policy for Tiers 2-3. Use when asking about 'testing', 'test strategy', '3-tier testing', 'unit tests', 'integration tests', 'end-to-end tests', 'testing workflows', 'testing DataFlow', 'testing Nexus', 'real infrastructure recommended', 'real infrastructure', 'test organization', or 'testing best practices'."
+description: "Comprehensive testing strategies for Kailash applications including the 3-tier testing approach with real infrastructure policy for Tiers 2-3. Use when asking about 'testing', 'test strategy', '3-tier testing', 'unit tests', 'integration tests', 'end-to-end tests', 'testing workflows', 'testing DataFlow', 'testing Nexus', 'real infrastructure recommended', 'real infrastructure', 'test organization', or 'testing best practices'."
 ---
 
 # Kailash Testing Strategies
 
-Comprehensive testing approach for Kailash applications using the 3-tier testing strategy with real infrastructure recommended policy.
+Comprehensive testing approach for Kailash applications using the 3-tier testing strategy with real infrastructure policy.
 
 ## Overview
 
 Kailash testing philosophy:
 - **3-Tier Strategy**: Unit, Integration, End-to-End
-- **real infrastructure recommended Policy**: Tiers 2-3 use real infrastructure
+- **Real Infrastructure Policy**: Tiers 2-3 use real infrastructure
 - **Real Database Testing**: Actual PostgreSQL/SQLite
 - **Real API Testing**: Live HTTP calls
 - **Real LLM Testing**: Actual model calls (with caching)
@@ -78,7 +78,7 @@ def test_user_registration_flow(nexus: Nexus):
     assert response.json()["user_id"] is not None
 ```
 
-## real infrastructure recommended Policy
+## Real infrastructure recommended Policy
 
 ### Why No Mocking in Tiers 2-3?
 
@@ -215,8 +215,8 @@ def test_agent_execution():
 - ✅ Clean up resources after tests
 - ✅ Cache LLM responses for cost
 - ✅ Run Tier 1 in CI, Tier 2-3 optionally
-- ❌ prefer real infrastructure over mocking database in Tier 2-3
-- ❌ prefer real infrastructure over mocking HTTP calls in Tier 2-3
+- ❌ NEVER mock database in Tier 2-3
+- ❌ NEVER mock HTTP calls in Tier 2-3
 - ❌ NEVER skip resource cleanup
 - ❌ NEVER commit test credentials
 

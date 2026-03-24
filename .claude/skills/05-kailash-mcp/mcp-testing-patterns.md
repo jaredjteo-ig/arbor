@@ -16,7 +16,7 @@ Test MCP integrations with real servers and mock strategies.
 
 ## Quick Reference
 
-- **real infrastructure recommended Policy**: Test with real MCP servers (Tier 2/3)
+- **Real Infrastructure Policy**: Test with real MCP servers (Tier 2/3)
 - **Mock Provider**: Use "mock" provider for Tier 1 unit tests only
 - **Integration**: Tier 2 tests with real MCP servers
 - **E2E**: Tier 3 tests with full production-like setup

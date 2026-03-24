@@ -205,17 +205,14 @@ def _register_handlers(app: Nexus, session_store) -> None:
     ) -> dict:
         """Multi-channel handler for HR advisory queries.
 
-        Applies the full safety chain: sanitisation, screening, domain
-        detection, KB lookup, citation validation, and response generation.
+        Uses the AdvisoryEngine (LLM function-calling loop) with the full
+        safety chain: sanitisation, screening, KB lookup, citation
+        validation, and response generation.
         """
-        from hr_advisory.api.routers.advisory import (
-            _classify_risk_tier,
-            _detect_domains,
-            _generate_grounded_response,
-            _lookup_provisions,
-        )
+        import asyncio
+
+        from hr_advisory.agents.advisory_engine import AdvisoryEngine
         from hr_advisory.security.validation import sanitise_input
-        from hr_advisory.trust.citation_validator import validate_citations
         from hr_advisory.workflows.guardrails import ScreeningResult, screen_query
 
         clean_query = sanitise_input(query)
@@ -239,28 +236,23 @@ def _register_handlers(app: Nexus, session_store) -> None:
                 "escalated": True,
             }
 
-        domains = _detect_domains(clean_query)
-        provision_ids = _lookup_provisions(domains, query=clean_query)
-        citation_result = validate_citations(provision_ids)
-        provisions_cited = [
-            {
-                "provision_id": c.provision_id,
-                "title": c.title,
-                "authority_level": c.authority_level.value,
-            }
-            for c in citation_result.validated_citations
-        ]
-
-        confidence = 0.85 if citation_result.is_valid else 0.6
-        risk_tier = _classify_risk_tier(domains, confidence)
-        response_text = _generate_grounded_response(clean_query, domains, provisions_cited)
+        engine = AdvisoryEngine()
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: engine.run(
+                query=clean_query,
+                conversation_history=[],
+                company_id=company_id or None,
+            ),
+        )
 
         return {
             "query": clean_query,
-            "response": response_text,
-            "provisions_cited": provisions_cited,
-            "risk_tier": risk_tier,
-            "confidence_score": confidence,
+            "response": result.get("response_text", ""),
+            "provisions_cited": result.get("citations", []),
+            "risk_tier": result.get("risk_tier", "amber"),
+            "confidence_score": result.get("confidence", 0.7),
             "company_id": company_id or None,
             "conversation_id": conversation_id or None,
         }

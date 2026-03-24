@@ -162,7 +162,7 @@ class TestBundleStructure:
         assert "Data Protection" in names
 
     def test_bundle_has_provisions(self, bundle):
-        assert len(bundle["provisions"]) == 15
+        assert len(bundle["provisions"]) == 16
 
     def test_every_provision_has_required_fields(self, bundle):
         for prov in bundle["provisions"]:
@@ -192,7 +192,15 @@ class TestBundleStructure:
         family_sections = {
             p["section"] for p in bundle["provisions"] if p["domain_name"] == "Family Leave"
         }
-        expected = {"CDCSA-ML", "CDCSA-PL", "CDCSA-SPL", "CDCSA-CL", "CDCSA-ICL", "CDCSA-AL"}
+        expected = {
+            "CDCSA-ML",
+            "CDCSA-ML-RESIGN",
+            "CDCSA-PL",
+            "CDCSA-SPL",
+            "CDCSA-CL",
+            "CDCSA-ICL",
+            "CDCSA-AL",
+        }
         assert (
             family_sections == expected
         ), f"Expected family leave sections {expected}, got {family_sections}"
@@ -224,7 +232,7 @@ class TestBundleStructure:
             domain = prov["domain_name"]
             domain_counts[domain] = domain_counts.get(domain, 0) + 1
 
-        assert domain_counts["Family Leave"] == 6
+        assert domain_counts["Family Leave"] == 7
         assert domain_counts["Workplace Safety & Health"] == 3
         assert domain_counts["Retirement & Re-employment"] == 2
         assert domain_counts["Work Injury Compensation"] == 1
@@ -253,7 +261,7 @@ class TestRemainingDomainsLoading:
             assert domain["id"] is not None
 
     def test_provisions_loaded(self, loaded):
-        assert len(loaded["provisions"]) == 15
+        assert len(loaded["provisions"]) == 16
         for prov in loaded["provisions"]:
             assert prov["id"] is not None
             assert prov["source_act_id"] == loaded["act"]["id"]

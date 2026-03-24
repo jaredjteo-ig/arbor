@@ -120,16 +120,25 @@ def _verify_item_ownership(item_id: int, company_id: int) -> dict:
     return item
 
 
-def _record_movement(item_id: int, action: str, actor_id: int, **kwargs) -> dict:
+def _record_movement(
+    item_id: int,
+    company_id: int,
+    action: str,
+    actor_id: int,
+    employee_id: int = 0,
+    notes: str = "",
+) -> dict:
     """Create an inventory movement audit record."""
     return _dataflow_create(
         "InventoryMovementCreateNode",
         {
             "item_id": item_id,
+            "company_id": company_id,
             "action": action,
             "performed_by": actor_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            **kwargs,
+            "to_employee_id": employee_id,
+            "notes": notes,
+            "movement_date": datetime.now(timezone.utc).isoformat(),
         },
     )
 
@@ -148,9 +157,7 @@ async def list_locations(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    locations = _dataflow_list(
-        "InventoryLocationListNode", {"company_id": company_id}
-    )
+    locations = _dataflow_list("InventoryLocationListNode", {"company_id": company_id})
     return {"locations": locations, "count": len(locations)}
 
 
@@ -198,9 +205,7 @@ async def list_categories(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    categories = _dataflow_list(
-        "InventoryCategoryListNode", {"company_id": company_id}
-    )
+    categories = _dataflow_list("InventoryCategoryListNode", {"company_id": company_id})
     return {"categories": categories, "count": len(categories)}
 
 
@@ -300,7 +305,7 @@ async def create_item(
             "status": "available",
         },
     )
-    _record_movement(item.get("id", 0), "created", actor_id)
+    _record_movement(item.get("id", 0), company_id, "created", actor_id)
     return {"item": item}
 
 
@@ -319,9 +324,16 @@ async def update_item(
 
     body = await request.json()
     allowed = {
-        "name", "serial_number",
-        "category_id", "location_id", "quantity", "purchase_date",
-        "purchase_price", "warranty_expiry", "condition", "notes",
+        "name",
+        "serial_number",
+        "category_id",
+        "location_id",
+        "quantity",
+        "purchase_date",
+        "purchase_price",
+        "warranty_expiry",
+        "condition",
+        "notes",
     }
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
@@ -367,7 +379,7 @@ async def reserve_item(
             "updated_at": datetime.now(timezone.utc).isoformat(),
         },
     )
-    _record_movement(item_id, "reserved", actor_id, employee_id=employee_id)
+    _record_movement(item_id, company_id, "reserved", actor_id, employee_id=employee_id)
     return {"detail": "Item reserved.", "item_id": item_id, "employee_id": employee_id}
 
 
@@ -402,7 +414,7 @@ async def issue_item(
             "updated_at": datetime.now(timezone.utc).isoformat(),
         },
     )
-    _record_movement(item_id, "issued", actor_id, employee_id=employee_id)
+    _record_movement(item_id, company_id, "issued", actor_id, employee_id=employee_id)
     return {"detail": "Item issued.", "item_id": item_id, "employee_id": employee_id}
 
 
@@ -423,9 +435,7 @@ async def acknowledge_item(
     user_id = int(current_user.get("sub", 0))
     emp = _get_employee_for_user(user_id, company_id)
     if not emp or emp.get("id") != item.get("assigned_to_employee_id"):
-        raise HTTPException(
-            status_code=403, detail="Only the assigned employee can acknowledge."
-        )
+        raise HTTPException(status_code=403, detail="Only the assigned employee can acknowledge.")
 
     _dataflow_update(
         "InventoryItemUpdateNode",
@@ -436,7 +446,7 @@ async def acknowledge_item(
             "updated_at": datetime.now(timezone.utc).isoformat(),
         },
     )
-    _record_movement(item_id, "acknowledged", user_id, employee_id=emp.get("id"))
+    _record_movement(item_id, company_id, "acknowledged", user_id, employee_id=emp.get("id", 0))
     return {"detail": "Item acknowledged."}
 
 
@@ -476,7 +486,11 @@ async def return_item(
         },
     )
     _record_movement(
-        item_id, "returned", user_id, condition=body.get("condition", "good")
+        item_id,
+        company_id,
+        "returned",
+        user_id,
+        notes=f"condition: {body.get('condition', 'good')}",
     )
     return {"detail": "Item returned."}
 
@@ -508,7 +522,7 @@ async def dispose_item(
             "updated_at": datetime.now(timezone.utc).isoformat(),
         },
     )
-    _record_movement(item_id, "disposed", actor_id, reason=body.get("reason", ""))
+    _record_movement(item_id, company_id, "disposed", actor_id, notes=body.get("reason", ""))
     return {"detail": "Item disposed."}
 
 

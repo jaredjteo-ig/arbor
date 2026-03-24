@@ -14,11 +14,11 @@ The Agent Manifest system provides:
 
 **Source modules**:
 
-- `packages/kailash-kaizen/src/kaizen/manifest/agent.py` -- `AgentManifest`
-- `packages/kailash-kaizen/src/kaizen/manifest/governance.py` -- `GovernanceManifest`
-- `packages/kailash-kaizen/src/kaizen/deploy/client.py` -- `deploy()`, `deploy_local()`
-- `packages/kailash-kaizen/src/kaizen/deploy/registry.py` -- `FileRegistry` (alias: `LocalRegistry`)
-- `packages/kailash-kaizen/src/kaizen/deploy/introspect.py` -- `introspect_agent()`
+- `kaizen/manifest/agent.py` -- `AgentManifest`
+- `kaizen/manifest/governance.py` -- `GovernanceManifest`
+- `kaizen/deploy/client.py` -- `deploy()`, `deploy_local()`
+- `kaizen/deploy/registry.py` -- `FileRegistry` (alias: `LocalRegistry`)
+- `kaizen/deploy/introspect.py` -- `introspect_agent()`
 
 ---
 
@@ -308,8 +308,8 @@ assert result.status == "registered"
 
 ## References
 
-- **Source**: `packages/kailash-kaizen/src/kaizen/manifest/agent.py`
-- **Source**: `packages/kailash-kaizen/src/kaizen/manifest/governance.py`
-- **Source**: `packages/kailash-kaizen/src/kaizen/deploy/client.py`
-- **Source**: `packages/kailash-kaizen/src/kaizen/deploy/registry.py`
-- **Source**: `packages/kailash-kaizen/src/kaizen/deploy/introspect.py`
+- **Source**: `kaizen/manifest/agent.py`
+- **Source**: `kaizen/manifest/governance.py`
+- **Source**: `kaizen/deploy/client.py`
+- **Source**: `kaizen/deploy/registry.py`
+- **Source**: `kaizen/deploy/introspect.py`

@@ -660,6 +660,7 @@ DEFAULT_JOB_LISTINGS = [
         ),
         "salary_range_min": 7000.0,
         "salary_range_max": 10000.0,
+        "status": "open",
         "is_published": True,
     },
     {
@@ -678,6 +679,7 @@ DEFAULT_JOB_LISTINGS = [
         ),
         "salary_range_min": 4000.0,
         "salary_range_max": 5500.0,
+        "status": "open",
         "is_published": True,
     },
 ]

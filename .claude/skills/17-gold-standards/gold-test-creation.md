@@ -274,7 +274,7 @@ def test_db():
 
 - [ ] Test uses correct runtime (LocalRuntime for sync, AsyncLocalRuntime for async)
 - [ ] Test organized in correct tier (unit/, integration/, e2e/)
-- [ ] real infrastructure recommended in integration/e2e tests (use real Docker services)
+- [ ] Real infrastructure in integration/e2e tests (use real Docker services)
 - [ ] Clear, descriptive test name
 - [ ] Proper fixtures for test isolation
 - [ ] Error cases tested

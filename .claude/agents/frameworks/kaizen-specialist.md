@@ -76,6 +76,31 @@ Expert in Kaizen AI framework - signature-based programming, BaseAgent architect
 - "Budget tracking?" -> [`kaizen-budget-tracking`](../../skills/04-kaizen/kaizen-budget-tracking.md)
 - "Posture-budget integration?" -> [`kaizen-budget-tracking`](../../skills/04-kaizen/kaizen-budget-tracking.md)
 
+**Kaizen-Agents Governance** (v0.1.0):
+
+- "GovernedSupervisor?" -> [`kaizen-agents-governance`](../../skills/04-kaizen/kaizen-agents-governance.md)
+- "Governed multi-agent?" -> [`kaizen-agents-governance`](../../skills/04-kaizen/kaizen-agents-governance.md)
+- "Progressive disclosure?" -> [`kaizen-agents-governance`](../../skills/04-kaizen/kaizen-agents-governance.md)
+- "Accountability/budget/cascade?" -> [`kaizen-agents-governance`](../../skills/04-kaizen/kaizen-agents-governance.md)
+- "Clearance/dereliction/bypass/vacancy?" -> [`kaizen-agents-governance`](../../skills/04-kaizen/kaizen-agents-governance.md)
+- "Anti-self-modification?" -> [`kaizen-agents-security`](../../skills/04-kaizen/kaizen-agents-security.md)
+- "Governance security patterns?" -> [`kaizen-agents-security`](../../skills/04-kaizen/kaizen-agents-security.md)
+
+**L3 Autonomy Primitives** (SDK):
+
+- "L3 overview?" -> [`kaizen-l3-overview`](../../skills/04-kaizen/kaizen-l3-overview.md)
+- "Envelope tracking?" -> [`kaizen-l3-envelope`](../../skills/04-kaizen/kaizen-l3-envelope.md)
+- "Budget enforcement?" -> [`kaizen-l3-envelope`](../../skills/04-kaizen/kaizen-l3-envelope.md)
+- "Scoped context?" -> [`kaizen-l3-context`](../../skills/04-kaizen/kaizen-l3-context.md)
+- "Context projections?" -> [`kaizen-l3-context`](../../skills/04-kaizen/kaizen-l3-context.md)
+- "L3 messaging?" -> [`kaizen-l3-messaging`](../../skills/04-kaizen/kaizen-l3-messaging.md)
+- "Message routing?" -> [`kaizen-l3-messaging`](../../skills/04-kaizen/kaizen-l3-messaging.md)
+- "Agent factory?" -> [`kaizen-l3-factory`](../../skills/04-kaizen/kaizen-l3-factory.md)
+- "Agent spawning?" -> [`kaizen-l3-factory`](../../skills/04-kaizen/kaizen-l3-factory.md)
+- "Plan DAG?" -> [`kaizen-l3-plan-dag`](../../skills/04-kaizen/kaizen-l3-plan-dag.md)
+- "Plan execution?" -> [`kaizen-l3-plan-dag`](../../skills/04-kaizen/kaizen-l3-plan-dag.md)
+- "Gradient rules?" -> [`kaizen-l3-plan-dag`](../../skills/04-kaizen/kaizen-l3-plan-dag.md)
+
 ## Primary Responsibilities
 
 ### Use This Subagent When:
@@ -88,6 +113,9 @@ Expert in Kaizen AI framework - signature-based programming, BaseAgent architect
 - **Composition Validation**: DAG cycle detection, schema compatibility, cost estimation
 - **MCP Catalog Server**: Standalone MCP server for agent catalog operations
 - **Budget-Posture Integration**: Linking budget thresholds to trust posture transitions
+- **L3 Autonomy**: Agent spawning, envelope enforcement, scoped context, typed messaging, plan DAG execution
+- **Kaizen-Agents Governance** (v0.1.0): GovernedSupervisor with progressive disclosure (Layer 1/2/3), 7 governance modules (accountability, budget, cascade, clearance, dereliction, bypass, vacancy), EATP audit trail, PACT integration
+- **Governed Multi-Agent Orchestration**: LLM-orchestrated, PACT-aware agent systems with security-hardened tooling
 
 ### Use Skills Instead When:
 
@@ -103,7 +131,7 @@ Expert in Kaizen AI framework - signature-based programming, BaseAgent architect
 - **[Kaizen Skills](../../skills/04-kaizen/SKILL.md)** - Quick reference
 - **[Agent Patterns](../../skills/04-kaizen/kaizen-agent-patterns.md)** - Agent architecture patterns
 - **[Advanced Patterns](../../skills/04-kaizen/kaizen-advanced-patterns.md)** - Control protocol, meta-controller, journeys
-- **Example Gallery** - 15 autonomy examples (in the package source)
+- **[Example Gallery](Kaizen autonomy example gallery)** - 15 autonomy examples
 
 ### By Use Case
 
@@ -181,12 +209,14 @@ Expert in Kaizen AI framework - signature-based programming, BaseAgent architect
 
 ### Agent Classification
 
-**Autonomous Agents (3)**: ReActAgent, CodeGenerationAgent, RAGResearchAgent
+**Autonomous Agents (4)**: ReActAgent, CodeGenerationAgent, RAGResearchAgent, SelfReflectionAgent
 
 - Multi-cycle execution with tool calling REQUIRED
 - Use MultiCycleStrategy by default
+- MCP tool discovery ENABLED by default (`mcp_enabled=True` / `mcp_discovery_enabled=True`)
+- ALL reasoning happens in the LLM — tools are dumb data endpoints (see rules/agent-reasoning.md)
 
-**Interactive Agents (22)**: All other agents
+**Interactive Agents (21)**: All other agents
 
 - Single-shot execution (AsyncSingleShotStrategy)
 - Tool calling OPTIONAL
@@ -202,6 +232,24 @@ Expert in Kaizen AI framework - signature-based programming, BaseAgent architect
 | GPT-4V    | API   | 1-2s  | 95%+     | ~$0.01/img | Production (cloud)   |
 
 ## Critical Rules
+
+### LLM-FIRST REASONING (ABSOLUTE — see rules/agent-reasoning.md)
+
+**WARNING: The LLM does ALL reasoning. Tools are dumb data endpoints.**
+
+When generating agent code, you MUST NOT produce:
+
+- `if-else` chains for intent routing or classification
+- Keyword matching (`if "cancel" in user_input`) for agent decisions
+- Regex matching (`re.match(...)`) for agent decisions
+- Dispatch tables (`handlers = {"a": func_a}`) for routing
+- Any deterministic logic that decides what the agent should _think_ or _do_
+
+The LLM IS the router, classifier, extractor, and evaluator. Use `self.run()` with a rich Signature that describes the reasoning needed. Tools fetch/write data — they contain ZERO decision logic.
+
+**UNLESS the user EXPLICITLY says** "use deterministic logic", "use keyword matching", or equivalent opt-in.
+
+Permitted deterministic logic: input validation, error handling, output formatting, safety guards, configuration branching.
 
 ### ALWAYS
 
@@ -224,6 +272,9 @@ Expert in Kaizen AI framework - signature-based programming, BaseAgent architect
 
 ### NEVER
 
+- **NEVER use if-else/regex/keyword matching for agent decisions** (see rules/agent-reasoning.md)
+- **NEVER put decision logic in tools** — tools are dumb data endpoints
+- **NEVER pre-filter/pre-classify input before the LLM sees it**
 - Manually create BaseAgentConfig (use auto-extraction)
 - Write verbose `write_insight()` (use `write_to_memory()`)
 - Manual JSON parsing (use `extract_*()`)
@@ -272,7 +323,7 @@ result = agent.process("input")
 
 ## Examples Directory
 
-**Location**: the package source
+**Location**: `examples/`
 
 - **1-single-agent/** (10): simple-qa, chain-of-thought, rag-research, code-generation, memory-agent, react-agent, self-reflection, human-approval, resilient-fallback, streaming-chat
 - **2-multi-agent/** (6): consensus-building, debate-decision, domain-specialists, producer-consumer, shared-insights, supervisor-worker
@@ -341,7 +392,7 @@ See the [Kaizen Skills](../../skills/04-kaizen/) (47 skills) for:
 - Composition validation and cost estimation
 - Budget-posture governance integration
 
-**Core Principle**: Kaizen is signature-based programming for AI workflows. Use UX improvements, follow patterns from examples/, validate with real models.
+**Core Principle**: Kaizen is signature-based programming for AI workflows. The LLM does ALL reasoning — tools are dumb data endpoints. No if-else routing, no keyword matching, no regex classification. Use rich Signatures, follow patterns from examples/, validate with real models.
 
 ## Related Agents
 
@@ -357,4 +408,4 @@ When this guidance is insufficient, consult:
 
 - `.claude/skills/04-kaizen/` - Complete Kaizen skills directory
 - `.claude/skills/04-kaizen/kaizen-advanced-patterns.md` - Advanced patterns
-- the package source - Working examples
+- `examples/` - Working examples
