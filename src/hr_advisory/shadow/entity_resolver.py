@@ -11,6 +11,7 @@ mappings, and resolves relative date expressions (e.g. "Monday", "tomorrow",
 from __future__ import annotations
 
 import logging
+import math
 import re
 from datetime import date, timedelta
 from typing import Any
@@ -158,6 +159,12 @@ def resolve_entities(
     tool_params_set = set(tool_params)
 
     for key, value in entities.items():
+        # Guard against NaN/Inf in numeric values (trust-plane-security rule 3)
+        if isinstance(value, float) and not math.isfinite(value):
+            warnings.append(f"Rejected non-finite numeric value for '{key}': {value}")
+            logger.warning("Entity '%s' has non-finite value %s — skipping", key, value)
+            continue
+
         # Resolve relative dates in values
         resolved_value = _resolve_date(value)
 

@@ -43,8 +43,8 @@ def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> lis
         "list",
         {"filter": filter_dict, "limit": limit, "enable_cache": False},
     )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
+    with LocalRuntime() as runtime:
+        results, _ = runtime.execute(wf.build())
     raw = results["list"]
     if isinstance(raw, dict) and "records" in raw:
         return raw["records"]

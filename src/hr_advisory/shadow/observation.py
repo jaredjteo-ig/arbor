@@ -121,7 +121,11 @@ class ObservationStore:
         details: dict[str, Any] | None,
         session_id: str,
     ) -> None:
-        """Persist observation to database (best-effort, logs on failure)."""
+        """Persist observation to database (best-effort, logs on failure).
+
+        Uses context manager to properly close the runtime and release
+        the connection pool after execution.
+        """
         try:
             import json
 
@@ -144,8 +148,8 @@ class ObservationStore:
                     "details": details_json,
                 },
             )
-            runtime = LocalRuntime()
-            runtime.execute(wf.build())
+            with LocalRuntime() as runtime:
+                runtime.execute(wf.build())
         except Exception as exc:
             logger.warning("Failed to persist observation: %s", exc)
 
