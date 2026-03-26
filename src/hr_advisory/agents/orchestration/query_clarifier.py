@@ -9,14 +9,15 @@ Uses a fast, cheap LLM call (max_tokens=256, temperature=0.0) because
 it sits in the critical path of every request.
 """
 
+import dataclasses
 import logging
-from typing import Optional
+from typing import Any, Optional
 
-from kaizen.core.base_agent import BaseAgent
-from kaizen.memory import SharedMemoryPool
+from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import QueryClarifierConfig
 from hr_advisory.agents.signatures import QueryClarifierSignature
+from hr_advisory.agents.specialists._base import _KaizenCompatMixin
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ _DOMAIN_KEYWORDS = frozenset(
 _MIN_WORD_COUNT = 8
 
 
-class QueryClarifier(BaseAgent):
+class QueryClarifier(_KaizenCompatMixin, BaseAgent):
     """Lightweight agent that detects ambiguous queries before classification.
 
     Only fires when the query is genuinely ambiguous -- not on every query.
@@ -111,18 +112,16 @@ class QueryClarifier(BaseAgent):
     def __init__(
         self,
         config: Optional[QueryClarifierConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         **kwargs,
     ):
         config = config or QueryClarifierConfig()
         super().__init__(
-            config=config,
-            signature=QueryClarifierSignature(),
-            shared_memory=shared_memory,
             agent_id="query_clarifier",
-            mcp_servers=[],  # no tools needed
-            **kwargs,
+            config=dataclasses.asdict(config),
+            signature=QueryClarifierSignature(),
         )
+        self.shared_memory = shared_memory
 
     # ------------------------------------------------------------------
     # Extension points

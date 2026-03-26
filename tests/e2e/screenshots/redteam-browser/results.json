@@ -1,0 +1,86 @@
+{
+  "timestamp": "2026-03-21T14:02:34.020Z",
+  "target": "https://arbor.terrene.foundation",
+  "results": [
+    {
+      "name": "Test 1: CPF Calculation",
+      "passed": true,
+      "quality": "GOOD",
+      "notes": "All figures correct ($1,275/$1,500/$2,775). Citations: NO",
+      "responseTime": 27.057
+    },
+    {
+      "name": "Test 2: Maternity Leave",
+      "passed": true,
+      "quality": "EXCELLENT",
+      "notes": "16 weeks confirmed. EA/CDCSA: YES. Citizen: YES",
+      "responseTime": 47.112
+    },
+    {
+      "name": "Test 3: S Pass Quota",
+      "passed": true,
+      "quality": "EXCELLENT",
+      "notes": "DRC/quota info present. 35%: YES",
+      "responseTime": 33.063
+    },
+    {
+      "name": "Test 4: Multi-Turn Context",
+      "passed": true,
+      "quality": "EXCELLENT",
+      "notes": "Context maintained. 4 weeks correct.",
+      "responseTime": 51.12
+    },
+    {
+      "name": "Test 5: Multi-Domain (3 runs)",
+      "passed": true,
+      "quality": "EXCELLENT",
+      "notes": "3/3 passed. Avg time: 69.5s. Run1:PASS, Run2:PASS, Run3:PASS",
+      "responseTime": 69.476
+    },
+    {
+      "name": "Test 6: Out-of-Scope",
+      "passed": true,
+      "quality": "GOOD",
+      "notes": "Polite decline (redirects to HR topics)",
+      "responseTime": 9.017
+    },
+    {
+      "name": "Test 7: Conversation Persistence",
+      "passed": true,
+      "quality": "GOOD",
+      "notes": "Conversations persisted and visible",
+      "responseTime": 0
+    }
+  ],
+  "test5Details": [
+    {
+      "run": 1,
+      "passed": true,
+      "hasWP": true,
+      "hasTerm": true,
+      "elapsed": 74.166,
+      "notes": "Both domains covered",
+      "responsePreview": "AIMedium RiskModerate confidenceSummary answer (key points + practical steps)\n\nFirst check the employment contract and give the required notice (or pay in lieu)\n\n\nThe Employment Act requires either party to give notice to end employment; minimum notice depends on length of service (e.g. 1 day for <26 weeks, 1 week for 26 weeks–2 years, 2 weeks for 2–5 years, 4 weeks for 5+ years). The contract may set a different period but it must be the same for employer and employee. (Employment Act s.10)\nIns"
+    },
+    {
+      "run": 2,
+      "passed": true,
+      "hasWP": true,
+      "hasTerm": true,
+      "elapsed": 63.114,
+      "notes": "Both domains covered",
+      "responsePreview": "AIMedium RiskModerate confidenceSummary of what you must do and the legal points to follow (based only on the provisions you asked me to use)\n\nCheck the employment contract and give the correct notice (or pay in lieu)\n\n\nThe Employment Act requires either party to give notice to end the contract. Standard notice periods depend on length of service (statutory guide): less than 26 weeks = 1 day; 26 weeks–2 years = 1 week; 2–5 years = 2 weeks; 5+ years = 4 weeks. The contract’s notice term may apply"
+    },
+    {
+      "run": 3,
+      "passed": true,
+      "hasWP": true,
+      "hasTerm": true,
+      "elapsed": 71.148,
+      "notes": "Both domains covered",
+      "responsePreview": "AIMedium RiskHigh confidenceHere’s a concise, practical synthesis based only on the provisions you asked me to use.\nKey legal points you must check first\n\nEmployment-contract / key employment terms: check the written contract and the Key Employment Terms document (if issued) for the agreed notice period, last-day mechanics and any clause about pass renewal/non‑renewal. (See EA-S20A.)\nStatutory notice: if the Employment Act applies to this employee, either party may terminate by giving the notice"
+    }
+  ],
+  "consoleErrors": [],
+  "passRate": "7/7"
+}

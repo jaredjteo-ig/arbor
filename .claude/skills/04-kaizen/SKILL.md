@@ -64,7 +64,7 @@ print(result['summary'])
 ### Pipeline Patterns (Orchestration)
 
 ```python
-from kaizen.orchestration.pipeline import Pipeline
+from kaizen_agents.patterns.pipeline import Pipeline
 
 # Ensemble: Multi-perspective collaboration
 pipeline = Pipeline.ensemble(
@@ -96,31 +96,31 @@ blackboard = Pipeline.blackboard(
 
 ### Comprehensive Guides
 
-For in-depth documentation, see `kailash-kaizen package: docs/`:
+For in-depth documentation, see `kailash-kaizen/docs/`:
 
 **Core Guides:**
 
-- **[BaseAgent Architecture](../../../kailash-kaizen package: docs/guides/baseagent-architecture.md)** - Complete unified agent system guide
-- **[Multi-Agent Coordination](../../../kailash-kaizen package: docs/guides/multi-agent-coordination.md)** - Google A2A protocol, 5 coordination patterns
-- **[Signature Programming](../../../kailash-kaizen package: docs/guides/signature-programming.md)** - Complete signature system guide
-- **[Hooks System Guide](../../../kailash-kaizen package: docs/guides/hooks-system-guide.md)** - Event-driven observability framework
-- **[Integration Patterns](../../../kailash-kaizen package: docs/guides/integration-patterns.md)** - DataFlow, Nexus, MCP integration
-- **[Meta-Controller Guide](../../../kailash-kaizen package: docs/guides/meta-controller-guide.md)** - Intelligent task delegation
-- **[Planning System Guide](../../../kailash-kaizen package: docs/guides/planning-system-guide.md)** - Structured workflow orchestration
+- **[BaseAgent Architecture](../../../kailash-kaizen/docs/guides/baseagent-architecture.md)** - Complete unified agent system guide
+- **[Multi-Agent Coordination](../../../kailash-kaizen/docs/guides/multi-agent-coordination.md)** - Google A2A protocol, 5 coordination patterns
+- **[Signature Programming](../../../kailash-kaizen/docs/guides/signature-programming.md)** - Complete signature system guide
+- **[Hooks System Guide](../../../kailash-kaizen/docs/guides/hooks-system-guide.md)** - Event-driven observability framework
+- **[Integration Patterns](../../../kailash-kaizen/docs/guides/integration-patterns.md)** - DataFlow, Nexus, MCP integration
+- **[Meta-Controller Guide](../../../kailash-kaizen/docs/guides/meta-controller-guide.md)** - Intelligent task delegation
+- **[Planning System Guide](../../../kailash-kaizen/docs/guides/planning-system-guide.md)** - Structured workflow orchestration
 
 **Reference Documentation:**
 
 - **[Example Gallery](../../../examples/autonomy/EXAMPLE_GALLERY.md)** - 15 production-ready autonomy examples with learning paths
-- **[API Reference](../../../kailash-kaizen package: docs/reference/api-reference.md)** - Complete API documentation
-- **[Checkpoint API](../../../kailash-kaizen package: docs/reference/checkpoint-api.md)** - State persistence API
-- **[Coordination API](../../../kailash-kaizen package: docs/reference/coordination-api.md)** - Multi-agent coordination API
-- **[Interrupts API](../../../kailash-kaizen package: docs/reference/interrupts-api.md)** - Graceful shutdown API
-- **[Memory API](../../../kailash-kaizen package: docs/reference/memory-api.md)** - 3-tier memory system API
-- **[Observability API](../../../kailash-kaizen package: docs/reference/observability-api.md)** - Hooks and monitoring API
-- **[Planning Agents API](../../../kailash-kaizen package: docs/reference/planning-agents-api.md)** - Planning/PEV/ToT agents API
-- **[Tools API](../../../kailash-kaizen package: docs/reference/tools-api.md)** - Tool calling and approval API
-- **[Configuration Guide](../../../kailash-kaizen package: docs/reference/configuration.md)** - All configuration options
-- **[Troubleshooting](../../../kailash-kaizen package: docs/reference/troubleshooting.md)** - Common issues and solutions
+- **[API Reference](../../../kailash-kaizen/docs/reference/api-reference.md)** - Complete API documentation
+- **[Checkpoint API](../../../kailash-kaizen/docs/reference/checkpoint-api.md)** - State persistence API
+- **[Coordination API](../../../kailash-kaizen/docs/reference/coordination-api.md)** - Multi-agent coordination API
+- **[Interrupts API](../../../kailash-kaizen/docs/reference/interrupts-api.md)** - Graceful shutdown API
+- **[Memory API](../../../kailash-kaizen/docs/reference/memory-api.md)** - 3-tier memory system API
+- **[Observability API](../../../kailash-kaizen/docs/reference/observability-api.md)** - Hooks and monitoring API
+- **[Planning Agents API](../../../kailash-kaizen/docs/reference/planning-agents-api.md)** - Planning/PEV/ToT agents API
+- **[Tools API](../../../kailash-kaizen/docs/reference/tools-api.md)** - Tool calling and approval API
+- **[Configuration Guide](../../../kailash-kaizen/docs/reference/configuration.md)** - All configuration options
+- **[Troubleshooting](../../../kailash-kaizen/docs/reference/troubleshooting.md)** - Common issues and solutions
 
 ### Quick Start (Skills)
 
@@ -274,7 +274,7 @@ Located in the package source:
 ### Testing & Quality
 
 - **[kaizen-testing-patterns](kaizen-testing-patterns.md)** - Testing AI agents
-- **[Performance Benchmarks](../../../kailash-kaizen package: docs/benchmarks/BENCHMARK_GUIDE.md)** - Measure Kaizen performance
+- **[Performance Benchmarks](../../../kailash-kaizen/docs/benchmarks/BENCHMARK_GUIDE.md)** - Measure Kaizen performance
 
 ## Key Concepts
 

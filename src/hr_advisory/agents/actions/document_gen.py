@@ -10,20 +10,21 @@ Uses the LLM to fill templates with company-specific values and ensure
 statutory minimum clauses are present.
 """
 
+import dataclasses
 import json
 import logging
 from typing import Any, Dict, Optional
 
-from kaizen.core.base_agent import BaseAgent
-from kaizen.memory import SharedMemoryPool
+from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import DocumentGenerationConfig
+from hr_advisory.agents.specialists._base import _KaizenCompatMixin
 from hr_advisory.agents.specialists.signatures import DocumentGenerationSignature
 
 logger = logging.getLogger(__name__)
 
 
-class DocumentGenerationAgent(BaseAgent):
+class DocumentGenerationAgent(_KaizenCompatMixin, BaseAgent):
     """Generate HR documents from templates.
 
     Extension points used:
@@ -37,18 +38,16 @@ class DocumentGenerationAgent(BaseAgent):
     def __init__(
         self,
         config: Optional[DocumentGenerationConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         **kwargs,
     ):
         config = config or DocumentGenerationConfig()
         super().__init__(
-            config=config,
-            signature=DocumentGenerationSignature(),
-            shared_memory=shared_memory,
             agent_id="document_generation",
-            mcp_servers=[],
-            **kwargs,
+            config=dataclasses.asdict(config),
+            signature=DocumentGenerationSignature(),
         )
+        self.shared_memory = shared_memory
 
     def _default_signature(self):
         return DocumentGenerationSignature()

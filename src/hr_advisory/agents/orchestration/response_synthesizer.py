@@ -5,15 +5,16 @@ a plain-language answer with citations and risk-tier disclaimers
 suitable for Singapore SME owners and managers.
 """
 
+import dataclasses
 import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from kaizen.core.base_agent import BaseAgent
-from kaizen.memory import SharedMemoryPool
+from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import ResponseSynthesizerConfig, UNCERTAINTY_DEFAULTS
 from hr_advisory.agents.signatures import ResponseSynthesizerSignature
+from hr_advisory.agents.specialists._base import _KaizenCompatMixin
 from hr_advisory.workflows.guardrails import SYSTEM_PROMPT_SECURITY_FOOTER
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ RISK_DISCLAIMERS = {
 _RISK_TIER_SEVERITY = {"green": 0, "amber": 1, "red": 2}
 
 
-class ResponseSynthesizerAgent(BaseAgent):
+class ResponseSynthesizerAgent(_KaizenCompatMixin, BaseAgent):
     """Synthesize specialist outputs into a plain-language advisory.
 
     Extension points used:
@@ -44,18 +45,16 @@ class ResponseSynthesizerAgent(BaseAgent):
     def __init__(
         self,
         config: Optional[ResponseSynthesizerConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         **kwargs,
     ):
         config = config or ResponseSynthesizerConfig()
         super().__init__(
-            config=config,
-            signature=ResponseSynthesizerSignature(),
-            shared_memory=shared_memory,
             agent_id="response_synthesizer",
-            mcp_servers=[],
-            **kwargs,
+            config=dataclasses.asdict(config),
+            signature=ResponseSynthesizerSignature(),
         )
+        self.shared_memory = shared_memory
 
     # ------------------------------------------------------------------
     # Extension points

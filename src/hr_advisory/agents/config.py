@@ -101,32 +101,36 @@ def install_kaizen_provider_patch() -> None:
         def _patched_get_openai_config(model=None):
             ctx = get_request_llm_context()
             if ctx and ctx.api_key and ctx.provider == "openai":
-                from kaizen.config.providers import ProviderConfig
-
-                return ProviderConfig(
-                    provider="openai",
-                    model=model
-                    or ctx.model
-                    or os.getenv("KAIZEN_OPENAI_MODEL", "gpt-5-mini-2025-08-07"),
-                    api_key=ctx.api_key,
-                    base_url=ctx.base_url,
-                    timeout=int(os.getenv("KAIZEN_TIMEOUT", "30")),
-                    max_retries=int(os.getenv("KAIZEN_MAX_RETRIES", "3")),
-                )
+                return type(
+                    "ProviderConfig",
+                    (),
+                    {
+                        "provider": "openai",
+                        "model": model
+                        or ctx.model
+                        or os.getenv("KAIZEN_OPENAI_MODEL", "gpt-5-mini-2025-08-07"),
+                        "api_key": ctx.api_key,
+                        "base_url": ctx.base_url,
+                        "timeout": int(os.getenv("KAIZEN_TIMEOUT", "30")),
+                        "max_retries": int(os.getenv("KAIZEN_MAX_RETRIES", "3")),
+                    },
+                )()
             return _original_get_openai(model)
 
         def _patched_get_ollama_config(model=None):
             ctx = get_request_llm_context()
             if ctx and ctx.provider == "ollama" and ctx.base_url:
-                from kaizen.config.providers import ProviderConfig
-
-                return ProviderConfig(
-                    provider="ollama",
-                    model=model or ctx.model or "llama3.1:70b",
-                    base_url=ctx.base_url,
-                    timeout=int(os.getenv("KAIZEN_TIMEOUT", "60")),
-                    max_retries=int(os.getenv("KAIZEN_MAX_RETRIES", "3")),
-                )
+                return type(
+                    "ProviderConfig",
+                    (),
+                    {
+                        "provider": "ollama",
+                        "model": model or ctx.model or "llama3.1:70b",
+                        "base_url": ctx.base_url,
+                        "timeout": int(os.getenv("KAIZEN_TIMEOUT", "60")),
+                        "max_retries": int(os.getenv("KAIZEN_MAX_RETRIES", "3")),
+                    },
+                )()
             return _original_get_ollama(model)
 
         kp.get_openai_config = _patched_get_openai_config

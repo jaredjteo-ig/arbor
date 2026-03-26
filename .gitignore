@@ -99,3 +99,4 @@ apps/mobile/pubspec.lock
 redteam-*.png
 *.png
 .playwright-mcp/
+node_modules/

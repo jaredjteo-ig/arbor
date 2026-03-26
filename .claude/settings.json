@@ -91,19 +91,5 @@
         ]
       }
     ]
-  },
-  "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": [
-        "@playwright/mcp@latest",
-        "--browser",
-        "chromium"
-      ]
-    },
-    "marionette": {
-      "command": "marionette_mcp",
-      "args": []
-    }
   }
 }

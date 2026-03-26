@@ -4,7 +4,7 @@ Each signature declares the typed input/output contract for an agent.
 Signatures are compiled to Core SDK workflow parameters at runtime.
 """
 
-from kaizen.signatures import InputField, OutputField, Signature
+from kaizen import InputField, OutputField, Signature
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +33,6 @@ class QueryAnalyzerSignature(Signature):
     company_context: str = InputField(
         description="JSON string of company profile (headcount, sector, etc.)",
         default="{}",
-        required=False,
     )
     conversation_history: str = InputField(
         description=(
@@ -41,7 +40,6 @@ class QueryAnalyzerSignature(Signature):
             "Each turn shows User: ... and Assistant: ... pairs."
         ),
         default="",
-        required=False,
     )
 
     # Outputs
@@ -108,7 +106,6 @@ class QueryClarifierSignature(Signature):
             "Use this to resolve pronoun references before flagging ambiguity."
         ),
         default="",
-        required=False,
     )
 
     # Outputs
@@ -201,7 +198,6 @@ class ResponseSynthesizerSignature(Signature):
     company_context: str = InputField(
         description="JSON string of company profile (headcount, sector, nationality mix, etc.)",
         default="{}",
-        required=False,
     )
     conversation_history: str = InputField(
         description=(
@@ -209,7 +205,6 @@ class ResponseSynthesizerSignature(Signature):
             "Each turn shows User: ... and Assistant: ... pairs."
         ),
         default="",
-        required=False,
     )
     compliance_results: str = InputField(
         description=(
@@ -217,7 +212,6 @@ class ResponseSynthesizerSignature(Signature):
             "including contradictions and risk escalation flags"
         ),
         default="{}",
-        required=False,
     )
 
     # Outputs

@@ -11,14 +11,15 @@ single domain.  Instead it:
 This agent runs AFTER the domain specialists, as a quality gate.
 """
 
+import dataclasses
 import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from kaizen.core.base_agent import BaseAgent
-from kaizen.memory import SharedMemoryPool
+from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import ComplianceConfig, UNCERTAINTY_DEFAULTS
+from hr_advisory.agents.specialists._base import _KaizenCompatMixin
 from hr_advisory.agents.specialists.signatures import ComplianceSignature
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 VALID_RISK_TIERS = frozenset(["green", "amber", "red"])
 
 
-class ComplianceAgent(BaseAgent):
+class ComplianceAgent(_KaizenCompatMixin, BaseAgent):
     """Cross-domain compliance checker.
 
     Extension points used:
@@ -40,21 +41,23 @@ class ComplianceAgent(BaseAgent):
     def __init__(
         self,
         config: Optional[ComplianceConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         **kwargs,
     ):
         config = config or ComplianceConfig()
         super().__init__(
-            config=config,
-            signature=ComplianceSignature(),
-            shared_memory=shared_memory,
             agent_id="compliance_specialist",
-            mcp_servers=[],
-            **kwargs,
+            config=dataclasses.asdict(config),
+            signature=ComplianceSignature(),
         )
+        self.shared_memory = shared_memory
 
     def _default_signature(self):
         return ComplianceSignature()
+
+    def _generate_system_prompt(self) -> str:
+        """Return the system prompt for this agent."""
+        return self._domain_system_prompt()
 
     def _domain_system_prompt(self) -> str:
         return (
@@ -152,10 +155,9 @@ class ComplianceAgent(BaseAgent):
 
         # Determine whether compliance review escalated the risk tier
         # beyond what any individual specialist flagged.
-        risk_escalation = (
-            _severity.get(risk_tier, 0) > _severity.get(max_specialist_tier, 0)
-            or bool(compliance_flags)
-        )
+        risk_escalation = _severity.get(risk_tier, 0) > _severity.get(
+            max_specialist_tier, 0
+        ) or bool(compliance_flags)
 
         review: Dict[str, Any] = {
             "domain": "compliance",

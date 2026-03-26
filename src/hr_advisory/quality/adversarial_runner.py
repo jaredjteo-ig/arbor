@@ -377,14 +377,12 @@ class AdversarialRunner:
 
         start = time.time()
         try:
-            from hr_advisory.api.routers.advisory import _run_llm_advisory
+            from hr_advisory.agents.advisory_engine import AdvisoryEngine
 
-            response = _run_llm_advisory(
+            engine = AdvisoryEngine()
+            response = engine.run(
                 query=query,
-                domains=[],
-                provisions=[],
-                company_context=None,
-                conversation_history="",
+                conversation_history=[],
             )
 
             if response is None:
