@@ -13,11 +13,36 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from kaizen.memory import BufferMemory
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_TURNS = 20
+
+
+class _TurnBuffer:
+    """Simple windowed turn buffer (replaces old Kaizen BufferMemory)."""
+
+    def __init__(self, max_turns: int = DEFAULT_MAX_TURNS) -> None:
+        self._sessions: Dict[str, List[Dict[str, Any]]] = {}
+        self._max_turns = max_turns
+
+    def save_turn(self, session_id: str, turn: Dict[str, Any]) -> None:
+        if session_id not in self._sessions:
+            self._sessions[session_id] = []
+        self._sessions[session_id].append(turn)
+        if len(self._sessions[session_id]) > self._max_turns:
+            self._sessions[session_id] = self._sessions[session_id][-self._max_turns :]
+
+    def get_turns(self, session_id: str) -> List[Dict[str, Any]]:
+        return list(self._sessions.get(session_id, []))
+
+    def get_turn_count(self, session_id: str) -> int:
+        return len(self._sessions.get(session_id, []))
+
+    def clear(self, session_id: str) -> None:
+        self._sessions.pop(session_id, None)
+
+    def clear_all(self) -> None:
+        self._sessions.clear()
 
 
 class ShortTermMemory:
@@ -33,7 +58,7 @@ class ShortTermMemory:
     """
 
     def __init__(self, max_turns: int = DEFAULT_MAX_TURNS) -> None:
-        self._buffer = BufferMemory(max_turns=max_turns)
+        self._buffer = _TurnBuffer(max_turns=max_turns)
         self.max_turns = max_turns
 
     # ------------------------------------------------------------------
@@ -206,8 +231,7 @@ class ShortTermMemory:
                 "recent_domains": list,    # unique domains from last 3 turns
             }
         """
-        raw = self._buffer.load_context(session_id)
-        turns = raw.get("turns", [])
+        turns = self._buffer.get_turns(session_id)
 
         # Merge entities from last 3 turns for quick context
         recent = turns[-3:] if len(turns) >= 3 else turns

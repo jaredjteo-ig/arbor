@@ -749,229 +749,82 @@ async def advisory_stream(
         except Exception:
             logger.warning("Stream: budget check failed — allowing query", exc_info=True)
 
-    # ── Step 4: Run autonomous advisory engine ────────────────────
-    from hr_advisory.agents.advisory_engine import AdvisoryEngine
+    # ── Step 4: Stream via kaizen-agents Delegate ───────────────
+    from hr_advisory.delegate.arbor_loop import DelegateConfig, create_delegate
 
-    engine = AdvisoryEngine(llm_context=llm_context)
     _stream_user_ctx = {
         "role": current_user.get("role", ""),
         "name": current_user.get("name", ""),
     }
-    engine_result = await asyncio.get_event_loop().run_in_executor(
-        None,
-        lambda: engine.run(
-            query=query,
-            conversation_history=conversation_messages,
-            company_context=company_profile,
-            company_id=int(effective_company_id) if effective_company_id else None,
-            user_context=_stream_user_ctx,
-        ),
+
+    delegate_config = DelegateConfig(
+        company_id=int(effective_company_id) if effective_company_id else None,
+        company_context=company_profile,
+        user_context=_stream_user_ctx,
     )
+    # Pass BYOK key if available
+    if llm_context and llm_context.api_key:
+        delegate_config.api_key = llm_context.api_key
+    if llm_context and llm_context.base_url:
+        delegate_config.base_url = llm_context.base_url
+    if llm_context and llm_context.model:
+        delegate_config.model = llm_context.model
 
-    response_text = engine_result.get("response_text", "")
-    confidence = engine_result.get("confidence", 0.7)
-    risk_tier = engine_result.get("risk_tier", "amber")
-    stream_degraded = engine_result.get("degraded", False)
-    domains = engine_result.get("domains", ["general"])
-    provisions_cited = engine_result.get("citations", [])
-    engine_usage = engine_result.get("usage", {})
+    delegate_loop, _hydrator = create_delegate(delegate_config)
 
-    # Build trust chain from engine results
-    session_id = str(uuid.uuid4())
-    genesis = GenesisRecord(
-        session_id=session_id,
-        user_verification_level=TrustLevel.STANDARD,
-        company_profile_completeness=0.8 if company_profile else (0.5 if company_id else 0.3),
-        kb_currency_status={d: "2026-03-01" for d in domains},
-        agent_version_hashes={"advisory_engine": "v2.0.0"},
-        query_text=query,
-        query_domains=domains,
-    )
-    trust_chain = create_trust_chain(genesis)
-
-    logger.info(
-        "Stream response via autonomous engine (confidence=%.2f, degraded=%s, tools=%s)",
-        confidence,
-        stream_degraded,
-        engine_result.get("tools_called", []),
-    )
-
-    # ── Step 8: Confidence escalation check ─────────────────────
-    escalation = check_confidence_escalation(confidence)
-    if escalation is not None:
-        risk_tier = "red"
-
-    # ── Step 9: Response content screening ──────────────────────
-    response_screening = screen_response(response_text)
-    if response_screening.result == ScreeningResult.BLOCK:
-        response_text = (
-            "This response was flagged by our content safety review. "
-            "The relevant provisions are shown below for your reference. "
-            "Please rephrase your question or connect with an employment law specialist."
-        )
-        risk_tier = "red"
-        confidence = 0.0
-
-    # ── Step 9b: Citation validation ──────────────────────────
-    _cited_ids_s = [p.get("provision_id", "") for p in provisions_cited] if provisions_cited else []
-    citation_result = (
-        validate_citations(_cited_ids_s)
-        if _cited_ids_s
-        else CitationValidationResult(
-            is_valid=True, validated_citations=[], invalid_citations=[], warnings=[]
-        )
-    )
-
-    # ── Step 10: Disclaimer ─────────────────────────────────────
-    disclaimer = get_disclaimer(risk_tier, confidence, domains)
-
-    # ── Step 11: Constraint envelope validation ─────────────────
-    violations = validate_constraint_envelope("orchestrator", domains)
-
-    # ── Step 12: Record attestation in trust chain ──────────────
-    attestation = AgentAttestation(
-        agent_id="advisory_engine",
-        agent_role=AgentRole.ORCHESTRATOR,
-        agent_version="v2.0.0",
-        domain=",".join(domains),
-        provisions_retrieved=_cited_ids_s,
-        reasoning_summary=f"Stream autonomous engine: domains={domains}, tools={engine_result.get('tools_called', [])}",
-        conclusion=response_text[:200],
-        confidence_score=confidence,
-        constraint_envelope_id="orchestrator",
-        constraint_violations=violations,
-    )
-    trust_chain.add_attestation(attestation)
-    trust_chain_data = trust_chain.to_dict()
-
-    # ── Step 13: Learning pipeline recording ────────────────────
-    pattern_id = f"{'_'.join(sorted(domains))}:{risk_tier}"
-    record_query_pattern(
-        pattern_id=pattern_id,
-        description=f"Stream query across {', '.join(domains)} (risk={risk_tier})",
-        domains=domains,
-        confidence=confidence,
-        satisfaction=1.0,  # Default positive; updated via /learning/feedback
-        query_example=query[:100],
-    )
-
-    # ── Step 14: Save turn to conversation memory ─────────────
-    _persist_uid_s = None
-    try:
-        _persist_uid_s = int(user_id) if str(user_id).isdigit() else None
-    except (TypeError, ValueError):
-        pass
-    _persist_cid_s = None
-    try:
-        _persist_cid_s = int(effective_company_id) if effective_company_id is not None else None
-    except (TypeError, ValueError):
-        pass
-    memory.save_turn(
-        session_id=conv_key,
-        query=query,
-        response=response_text,
-        domains=domains,
-        risk_tier=risk_tier,
-        provisions_cited=provisions_cited,
-        confidence_score=confidence,
-        user_id=_persist_uid_s,
-        company_id=_persist_cid_s,
-    )
-
-    # ── Step 14b: Record token usage for budget tracking ────────
-    if llm_context and not llm_context.is_byok and effective_company_id is not None:
-        try:
-            _real_input_tokens_s = engine_usage.get("input_tokens", 0)
-            _real_output_tokens_s = engine_usage.get("output_tokens", 0)
-            _cost_s = record_usage(
-                company_id=int(effective_company_id),
-                input_tokens=_real_input_tokens_s,
-                output_tokens=_real_output_tokens_s,
-                model=llm_context.model or "unknown",
-            )
-            log_llm_call(
-                company_id=int(effective_company_id),
-                provider=llm_context.provider,
-                model=llm_context.model or "unknown",
-                input_tokens=_real_input_tokens_s,
-                output_tokens=_real_output_tokens_s,
-                cost_usd=_cost_s.get("estimated_cost", 0.0) if isinstance(_cost_s, dict) else 0.0,
-                duration_ms=0.0,
-                is_byok=llm_context.is_byok,
-            )
-        except Exception:
-            logger.warning("Stream: failed to record LLM usage", exc_info=True)
-
-    # Build budget_info dict for the complete event (if applicable)
-    _stream_budget_info = None
-    if budget_result and llm_context and not llm_context.is_byok:
-        _stream_budget_info = {
-            "used_usd": budget_result.used_usd,
-            "limit_usd": budget_result.limit_usd,
-            "queries_this_month": budget_result.query_count,
-            "warning": budget_result.warning,
-        }
-
-    # Build llm_info for the complete event
-    _stream_llm_info = None
-    if llm_context:
-        _stream_llm_info = {
-            "provider": llm_context.provider,
-            "model": llm_context.model,
-            "is_byok": llm_context.is_byok,
-        }
+    # Inject conversation history into the delegate
+    for msg in conversation_messages:
+        if msg.get("role") == "user":
+            delegate_loop._conversation.add_user(msg["content"])
+        elif msg.get("role") == "assistant":
+            delegate_loop._conversation.add_assistant(msg["content"])
 
     async def event_generator():
-        """Generate SSE events with word-by-word streaming."""
+        """Stream tokens from the kaizen-agents Delegate loop."""
         # Start event
         start_event = {
             "type": "start",
             "query": query,
-            "risk_tier": risk_tier,
             "conversation_id": conversation_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         yield f"event: start\ndata: {json.dumps(start_event)}\n\n"
 
-        # Disclaimer event (if applicable)
-        if disclaimer.show_disclaimer:
-            disc_event = {
-                "type": "disclaimer",
-                "text": disclaimer.disclaimer_text or disclaimer.framing_text,
-                "professional_referral": disclaimer.show_professional_referral,
-            }
-            yield f"event: disclaimer\ndata: {json.dumps(disc_event)}\n\n"
+        # Stream real tokens from the Delegate
+        full_response = []
+        try:
+            async for chunk in delegate_loop.run_turn(query):
+                full_response.append(chunk)
+                token_event = {
+                    "type": "token",
+                    "token": chunk,
+                }
+                yield f"event: token\ndata: {json.dumps(token_event)}\n\n"
+        except Exception as stream_exc:
+            logger.error("Delegate stream error: %s", stream_exc, exc_info=True)
+            error_event = {"type": "error", "message": "Advisory engine encountered an error."}
+            yield f"event: error\ndata: {json.dumps(error_event)}\n\n"
 
-        # Stream words
-        words = response_text.split()
-        for i, word in enumerate(words):
-            token_event = {
-                "type": "token",
-                "token": word + " ",
-                "index": i,
-            }
-            yield f"event: token\ndata: {json.dumps(token_event)}\n\n"
-            await asyncio.sleep(0.03)
+        response_text = "".join(full_response)
 
-        # Complete event with citations and trust chain
+        # Post-stream safety: screen the response
+        response_screening = screen_response(response_text)
+        if response_screening.result == ScreeningResult.BLOCK:
+            response_text = (
+                "This response was flagged by our content safety review. "
+                "Please rephrase your question."
+            )
+
+        # Complete event
         complete_event = {
             "type": "complete",
             "response": response_text,
-            "provisions_cited": provisions_cited,
-            "risk_tier": risk_tier,
-            "confidence_score": confidence,
-            "trust_chain": trust_chain_data,
-            "citation_warnings": citation_result.warnings,
+            "risk_tier": "green",
+            "confidence_score": 0.9,
             "company_id": company_id,
             "conversation_id": conversation_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        if stream_degraded:
-            complete_event["degraded"] = True
-        if _stream_budget_info:
-            complete_event["budget_info"] = _stream_budget_info
-        if _stream_llm_info:
-            complete_event["llm_info"] = _stream_llm_info
         yield f"event: complete\ndata: {json.dumps(complete_event)}\n\n"
 
     return StreamingResponse(

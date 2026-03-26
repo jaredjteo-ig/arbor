@@ -1,6 +1,6 @@
 """Shared memory pool for specialist agent outputs.
 
-Wraps the Kaizen SharedMemoryPool with HR-specific tag validation
+Wraps the Kaizen SharedMemory with HR-specific tag validation
 and structured storage conventions.
 
 Every insight written by a specialist agent is expected to carry:
@@ -15,7 +15,6 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from kaizen.memory import SharedMemoryPool
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ REQUIRED_METADATA_KEYS = frozenset(["domain", "provision_ids", "confidence", "ri
 
 
 class HRSharedMemoryPool:
-    """HR-domain wrapper around Kaizen SharedMemoryPool.
+    """HR-domain wrapper around Kaizen SharedMemory.
 
     Enforces that every specialist insight carries the metadata
     needed by the ResponseSynthesizerAgent for citation and
@@ -32,7 +31,7 @@ class HRSharedMemoryPool:
     """
 
     def __init__(self) -> None:
-        self._pool = SharedMemoryPool()
+        self._insights: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Write
@@ -49,30 +48,14 @@ class HRSharedMemoryPool:
         cross_domain_flags: Optional[List[str]] = None,
         extra_tags: Optional[List[str]] = None,
     ) -> None:
-        """Write a specialist agent's output to the shared pool.
-
-        Args:
-            agent_id: Identifier of the specialist agent.
-            domain: Primary domain key (e.g. "cpf").
-            content: The advisory content (dict or string).
-            provision_ids: List of Provision record IDs referenced.
-            confidence: Confidence score 0.0-1.0.
-            risk_tier: green | amber | red.
-            cross_domain_flags: Other domains that might be affected.
-            extra_tags: Additional tags for filtering.
-        """
+        """Write a specialist agent's output to the shared pool."""
         if risk_tier not in ("green", "amber", "red"):
             raise ValueError(f"risk_tier must be green/amber/red, got {risk_tier}")
 
-        # Serialize content if needed
         if isinstance(content, (dict, list)):
             content_str = json.dumps(content)
         else:
             content_str = str(content)
-
-        tags = [domain]
-        if extra_tags:
-            tags.extend(extra_tags)
 
         metadata = {
             "domain": domain,
@@ -82,16 +65,14 @@ class HRSharedMemoryPool:
             "cross_domain_flags": cross_domain_flags or [],
         }
 
-        self._pool.write_insight(
-            {
-                "agent_id": agent_id,
-                "content": content_str,
-                "tags": tags,
-                "importance": confidence,
-                "segment": "specialist_output",
-                "metadata": metadata,
-            }
-        )
+        insight = {
+            "agent_id": agent_id,
+            "content": content_str,
+            "metadata": metadata,
+        }
+        self._insights.append(insight)
+
+        logger.debug("Stored specialist output: %s/%s", agent_id, domain)
 
     # ------------------------------------------------------------------
     # Read helpers
@@ -99,23 +80,17 @@ class HRSharedMemoryPool:
 
     def read_all_specialist_outputs(self) -> List[Dict[str, Any]]:
         """Return all specialist outputs in the pool."""
-        return self._pool.read_relevant(segments=["specialist_output"])
+        return list(self._insights)
 
     def read_by_domain(self, domain: str) -> List[Dict[str, Any]]:
         """Return specialist outputs for a specific domain."""
-        return self._pool.read_relevant(
-            tags=[domain],
-            segments=["specialist_output"],
-        )
+        return [i for i in self._insights if i.get("metadata", {}).get("domain") == domain]
 
     def get_highest_risk_tier(self) -> str:
-        """Return the most severe risk tier across all specialist outputs.
-
-        Severity order: red > amber > green.
-        """
+        """Return the most severe risk tier across all specialist outputs."""
         severity = {"green": 0, "amber": 1, "red": 2}
         worst = "green"
-        for insight in self.read_all_specialist_outputs():
+        for insight in self._insights:
             tier = insight.get("metadata", {}).get("risk_tier", "green")
             if severity.get(tier, 0) > severity.get(worst, 0):
                 worst = tier
@@ -126,17 +101,23 @@ class HRSharedMemoryPool:
     # ------------------------------------------------------------------
 
     def clear(self) -> None:
-        """Clear the pool (useful between sessions)."""
-        self._pool.clear()
+        """Clear the pool."""
+        self._insights.clear()
 
     def get_stats(self) -> Dict[str, Any]:
         """Return pool statistics."""
-        return self._pool.get_stats()
+        domains = set()
+        agents = set()
+        for i in self._insights:
+            domains.add(i.get("metadata", {}).get("domain", ""))
+            agents.add(i.get("agent_id", ""))
+        return {
+            "insight_count": len(self._insights),
+            "domain_count": len(domains),
+            "agent_count": len(agents),
+        }
 
     @property
-    def inner_pool(self) -> SharedMemoryPool:
-        """Access the underlying Kaizen SharedMemoryPool.
-
-        Useful when passing to BaseAgent(shared_memory=...).
-        """
-        return self._pool
+    def inner_pool(self) -> "HRSharedMemoryPool":
+        """Access the pool (self-reference for backward compat)."""
+        return self

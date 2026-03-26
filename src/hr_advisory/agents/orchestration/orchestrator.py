@@ -11,8 +11,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from kaizen.core.base_agent import BaseAgent
-from kaizen.memory import SharedMemoryPool
+from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import OrchestratorConfig
 from hr_advisory.agents.signatures import OrchestratorSignature
@@ -44,7 +43,7 @@ class OrchestratorAgent(BaseAgent):
     def __init__(
         self,
         config: Optional[OrchestratorConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         **kwargs,
     ):
         config = config or OrchestratorConfig()

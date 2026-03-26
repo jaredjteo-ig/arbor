@@ -14,8 +14,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from kaizen.core.base_agent import BaseAgent
-from kaizen.memory import SharedMemoryPool
+from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import QueryAnalyzerConfig, UNCERTAINTY_DEFAULTS
 from hr_advisory.agents.signatures import QueryAnalyzerSignature
@@ -62,7 +61,7 @@ class QueryAnalyzerAgent(BaseAgent):
     def __init__(
         self,
         config: Optional[QueryAnalyzerConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         **kwargs,
     ):
         config = config or QueryAnalyzerConfig()

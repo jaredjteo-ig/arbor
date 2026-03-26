@@ -9,9 +9,8 @@ Advises on:
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
-from kaizen.memory import SharedMemoryPool
 
 from hr_advisory.agents.config import SpecialistConfig
 from hr_advisory.agents.specialists._base import BaseDomainSpecialist
@@ -33,7 +32,7 @@ class FairEmploymentAgent(BaseDomainSpecialist):
     def __init__(
         self,
         config: Optional[SpecialistConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         **kwargs,
     ):
         super().__init__(

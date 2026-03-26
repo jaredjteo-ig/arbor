@@ -97,7 +97,7 @@ app = Nexus(auto_discovery=False)  # CRITICAL
 
 db = DataFlow(
     database_url="postgresql://...",
-    auto_migrate=True,  # v0.11.0: Works in Docker/FastAPI with synchronous DDL support
+    auto_migrate=True,  # default: Works in Docker/FastAPI
 )
 ```
 
@@ -200,19 +200,10 @@ app = Nexus(preset="saas", cors_origins=["https://app.example.com"])
 
 ### Key Files
 
-- `kailash.nodes.handler` module - HandlerNode implementation
-- `nexus.core` module - handler() decorator, register_handler()
 - `tests/unit/nodes/test_handler_node.py` - 22 SDK unit tests
-- `tests/unit/test_handler_registration.py` - 16 Nexus unit tests
-- `tests/integration/test_handler_execution.py` - 7 integration tests
-- `tests/e2e/test_handler_e2e.py` - 3 E2E tests
 
 ### Migration Documentation
 
-- `docs/migration/handler-migration-guide.md` - 5 migration patterns, 6-phase checklist
-- `docs/migration/real-project-patterns.md` - 8 real-world patterns from 3 projects
-- `tests/docs/migration/` - 26 doc validation tests
-- `tests/docs/real_projects/` - 38 doc validation tests (incl. auth integration)
 
 **Type Mapping Limitation**: `_derive_params_from_signature()` maps complex generics (e.g., `List[dict]`) to `str`. Use plain `list` instead.
 
@@ -220,8 +211,6 @@ app = Nexus(preset="saas", cors_origins=["https://app.example.com"])
 
 - `.claude/skills/03-nexus/golden-patterns-catalog.md` - Top 10 patterns ranked by production usage
 - `.claude/skills/03-nexus/codegen-decision-tree.md` - Decision tree, anti-patterns, scaffolding templates
-- `tests/docs/golden_patterns/` - 53 golden pattern validation tests
-- `tests/docs/templates/` - 19 scaffolding template validation tests
 
 ## Authentication & Authorization (NexusAuthPlugin)
 
@@ -440,7 +429,7 @@ PEP 563 turns type annotations into strings, preventing FastAPI from recognizing
 
 ## Performance & Monitoring
 
-- **SQLite CARE Audit Storage** (v0.12.2): Nexus creates `AsyncLocalRuntime()` with `enable_monitoring=True` (default), so all workflow executions automatically get CARE audit persistence to SQLite WAL-mode database. Zero in-loop I/O (~35us/node overhead) with post-execution ACID flush.
+- **SQLite CARE Audit Storage** (current): Nexus creates `AsyncLocalRuntime()` with `enable_monitoring=True` (default), so all workflow executions automatically get CARE audit persistence to SQLite WAL-mode database. Zero in-loop I/O (~35us/node overhead) with post-execution ACID flush.
 
 ## Common Issues & Solutions
 

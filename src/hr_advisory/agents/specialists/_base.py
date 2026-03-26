@@ -13,8 +13,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from kaizen.core.base_agent import BaseAgent
-from kaizen.memory import SharedMemoryPool
+from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import SpecialistConfig, UNCERTAINTY_DEFAULTS
 from hr_advisory.workflows.guardrails import SYSTEM_PROMPT_SECURITY_FOOTER
@@ -38,7 +37,7 @@ class BaseDomainSpecialist(BaseAgent):
     def __init__(
         self,
         config: Optional[SpecialistConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         signature=None,
         **kwargs,
     ):

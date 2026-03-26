@@ -5,7 +5,7 @@ provisions, confidence, risk tier, cross-domain flags) but has its own
 domain-specific system prompt constraints.
 """
 
-from kaizen.signatures import InputField, OutputField, Signature
+from kaizen import InputField, OutputField, Signature
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +41,6 @@ class SpecialistSignature(Signature):
     company_context: str = InputField(
         description="JSON string of company profile (headcount, sector, nationality mix, etc.)",
         default="{}",
-        required=False,
     )
     relevant_provisions: str = InputField(
         description=(
@@ -49,7 +48,6 @@ class SpecialistSignature(Signature):
             "each with id, section, act, and text"
         ),
         default="[]",
-        required=False,
     )
     conversation_history: str = InputField(
         description=(
@@ -57,7 +55,6 @@ class SpecialistSignature(Signature):
             "Each turn shows User: ... and Assistant: ... pairs."
         ),
         default="",
-        required=False,
     )
 
     # Outputs
@@ -187,7 +184,6 @@ class ComplianceSignature(Signature):
     company_context: str = InputField(
         description="JSON string of company profile",
         default="{}",
-        required=False,
     )
 
     # Outputs
@@ -235,12 +231,10 @@ class DocumentGenerationSignature(Signature):
     company_context: str = InputField(
         description="JSON string of company profile for document personalisation",
         default="{}",
-        required=False,
     )
     specific_params: str = InputField(
         description="JSON object of template-specific parameters (e.g. employee name, salary)",
         default="{}",
-        required=False,
     )
 
     # Outputs

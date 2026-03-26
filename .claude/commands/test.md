@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Load the testing strategies skill for 3-tier testing with real infrastructure policy enforcement in Tier 2-3.
+Load the testing strategies skill for 3-tier testing with Real infrastructure recommended policy enforcement in Tier 2-3.
 
 ## Step 0: Detect Project Testing Stack
 
@@ -13,7 +13,7 @@ Before loading test patterns, check what the project uses:
 - Look at `pubspec.yaml` for `flutter_test`, `integration_test`
 - Look for existing test directories (`tests/`, `test/`, `__tests__/`, `spec/`)
 
-Adapt examples to the project's testing framework. The 3-tier strategy and real infrastructure policy apply universally regardless of framework.
+Adapt examples to the project's testing framework. The 3-tier strategy and Real infrastructure recommended policy apply universally regardless of framework.
 
 ## Quick Reference
 
@@ -21,13 +21,13 @@ Adapt examples to the project's testing framework. The 3-tier strategy and real 
 | ------------- | ------------------------------------------- |
 | `/test`       | Load testing patterns and tier strategy     |
 | `/test tier1` | Show unit test patterns (mocking allowed)   |
-| `/test tier2` | Show integration test patterns (real infrastructure recommended) |
-| `/test tier3` | Show E2E test patterns (real infrastructure recommended)         |
+| `/test tier2` | Show integration test patterns (Real infrastructure recommended) |
+| `/test tier3` | Show E2E test patterns (Real infrastructure recommended)         |
 
 ## What You Get
 
 - 3-tier testing strategy
-- real infrastructure enforcement (Tier 2-3)
+- Real infrastructure recommended enforcement (Tier 2-3)
 - Real infrastructure patterns
 - Coverage requirements
 
@@ -71,7 +71,7 @@ def test_user_creation(db):
     assert result.id is not None
 ```
 
-## Critical Rule - real infrastructure in Tier 2-3
+## Critical Rule - Real infrastructure recommended in Tier 2-3
 
 ```python
 # PROHIBITED in integration/e2e tests (any framework)

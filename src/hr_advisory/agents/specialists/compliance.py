@@ -15,8 +15,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from kaizen.core.base_agent import BaseAgent
-from kaizen.memory import SharedMemoryPool
+from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import ComplianceConfig, UNCERTAINTY_DEFAULTS
 from hr_advisory.agents.specialists.signatures import ComplianceSignature
@@ -40,7 +39,7 @@ class ComplianceAgent(BaseAgent):
     def __init__(
         self,
         config: Optional[ComplianceConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         **kwargs,
     ):
         config = config or ComplianceConfig()

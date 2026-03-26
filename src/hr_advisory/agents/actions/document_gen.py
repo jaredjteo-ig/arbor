@@ -14,8 +14,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from kaizen.core.base_agent import BaseAgent
-from kaizen.memory import SharedMemoryPool
+from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import DocumentGenerationConfig
 from hr_advisory.agents.specialists.signatures import DocumentGenerationSignature
@@ -37,7 +36,7 @@ class DocumentGenerationAgent(BaseAgent):
     def __init__(
         self,
         config: Optional[DocumentGenerationConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         **kwargs,
     ):
         config = config or DocumentGenerationConfig()

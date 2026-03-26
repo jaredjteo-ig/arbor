@@ -10,10 +10,9 @@ it sits in the critical path of every request.
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
-from kaizen.core.base_agent import BaseAgent
-from kaizen.memory import SharedMemoryPool
+from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import QueryClarifierConfig
 from hr_advisory.agents.signatures import QueryClarifierSignature
@@ -111,7 +110,7 @@ class QueryClarifier(BaseAgent):
     def __init__(
         self,
         config: Optional[QueryClarifierConfig] = None,
-        shared_memory: Optional[SharedMemoryPool] = None,
+        shared_memory: Any = None,
         **kwargs,
     ):
         config = config or QueryClarifierConfig()
