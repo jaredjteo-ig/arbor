@@ -7,6 +7,7 @@ in parallel, sequentially, or via a single router.
 Uses a supervisor-worker pattern: the orchestrator decides, specialists execute.
 """
 
+import dataclasses
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -15,6 +16,7 @@ from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import OrchestratorConfig
 from hr_advisory.agents.signatures import OrchestratorSignature
+from hr_advisory.agents.specialists._base import _KaizenCompatMixin
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,7 @@ DOMAIN_TO_SPECIALIST = {
 }
 
 
-class OrchestratorAgent(BaseAgent):
+class OrchestratorAgent(_KaizenCompatMixin, BaseAgent):
     """Plan which specialist agents to engage and in what order.
 
     Extension points used:
@@ -48,13 +50,11 @@ class OrchestratorAgent(BaseAgent):
     ):
         config = config or OrchestratorConfig()
         super().__init__(
-            config=config,
-            signature=OrchestratorSignature(),
-            shared_memory=shared_memory,
             agent_id="orchestrator",
-            mcp_servers=[],
-            **kwargs,
+            config=dataclasses.asdict(config),
+            signature=OrchestratorSignature(),
         )
+        self.shared_memory = shared_memory
 
     # ------------------------------------------------------------------
     # Extension points

@@ -153,3 +153,6 @@
 {"id":"obs_1773810390708_63urwqvkp","timestamp":"2026-03-18T05:06:30.708Z","type":"test_pattern","data":{"test_tier":"python","test_path":null},"context":{"session_id":"unknown","cwd":"/Users/esperie/repos/asme/aite/apps/web","framework":"unknown"}}
 {"id":"obs_1773810400813_nv2l6375v","timestamp":"2026-03-18T05:06:40.813Z","type":"test_pattern","data":{"test_tier":"pytest","test_path":"tests/unit/"},"context":{"session_id":"unknown","cwd":"/Users/esperie/repos/asme/aite/apps/web","framework":"unknown"}}
 {"timestamp":"2026-03-18T05:09:32.427Z","type":"stop","session_id":"b16d65f9-d9d3-49f8-a8e1-927e99c84430","reason":"signal","success":true}
+{"id":"obs_1774288092309_7fcpd76ys","timestamp":"2026-03-23T17:48:12.309Z","type":"test_pattern","data":{"test_tier":"python","test_path":null},"context":{"session_id":"unknown","cwd":"/Users/esperie/repos/terrene/arbor/apps/web","framework":"unknown"}}
+{"id":"obs_1774296252672_imnkuu3wi","timestamp":"2026-03-23T20:04:12.672Z","type":"test_pattern","data":{"test_tier":"python","test_path":null},"context":{"session_id":"unknown","cwd":"/Users/esperie/repos/terrene/arbor/apps/web","framework":"unknown"}}
+{"timestamp":"2026-03-23T20:06:09.280Z","type":"stop","session_id":"a7f17466-9126-48ca-b2e4-9036d4c18619","reason":"signal","success":true}

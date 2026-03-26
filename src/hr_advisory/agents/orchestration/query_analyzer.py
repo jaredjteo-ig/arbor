@@ -10,6 +10,7 @@ Uses Chain-of-Thought to reason through classification before
 producing the structured output.
 """
 
+import dataclasses
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -18,6 +19,7 @@ from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import QueryAnalyzerConfig, UNCERTAINTY_DEFAULTS
 from hr_advisory.agents.signatures import QueryAnalyzerSignature
+from hr_advisory.agents.specialists._base import _KaizenCompatMixin
 from hr_advisory.workflows.guardrails import SYSTEM_PROMPT_SECURITY_FOOTER
 
 logger = logging.getLogger(__name__)
@@ -50,7 +52,7 @@ VALID_INTENTS = frozenset(
 )
 
 
-class QueryAnalyzerAgent(BaseAgent):
+class QueryAnalyzerAgent(_KaizenCompatMixin, BaseAgent):
     """Classify and route HR advisory queries.
 
     Extension points used:
@@ -66,13 +68,11 @@ class QueryAnalyzerAgent(BaseAgent):
     ):
         config = config or QueryAnalyzerConfig()
         super().__init__(
-            config=config,
-            signature=QueryAnalyzerSignature(),
-            shared_memory=shared_memory,
             agent_id="query_analyzer",
-            mcp_servers=[],  # no MCP tools needed for classification
-            **kwargs,
+            config=dataclasses.asdict(config),
+            signature=QueryAnalyzerSignature(),
         )
+        self.shared_memory = shared_memory
 
     # ------------------------------------------------------------------
     # Extension points
