@@ -342,12 +342,29 @@ def register_arbor_tools(
     )
     always_active.add("get_company_context")
 
-    # ── 4. search_tools (handled by hydrator, not registry) ──
-    # The search_tools meta-tool is injected by the hydrator, not registered
-    # in the ToolRegistry. This avoids the tool being passed to the LLM
-    # as a regular tool (it's handled specially in the loop).
+    # ── 4. HRIS REST API tools (discoverable via search_tools) ─
+    try:
+        from hr_advisory.delegate.hris_tools import register_hris_tools
 
-    # ── 5. Build hydrator and index ───────────────────────────
+        hris_count = register_hris_tools(
+            registry,
+            jwt_token=jwt_token,
+            base_url="http://localhost:8000",
+        )
+        logger.info("Registered %d HRIS REST API tools", hris_count)
+    except Exception as exc:
+        logger.warning("Failed to register HRIS tools: %s", exc)
+
+    # ── 5. MCP server tools (discoverable via search_tools) ──
+    try:
+        from hr_advisory.delegate.mcp_tools import register_mcp_tools
+
+        mcp_count = register_mcp_tools(registry)
+        logger.info("Registered %d MCP server tools", mcp_count)
+    except Exception as exc:
+        logger.warning("Failed to register MCP tools: %s", exc)
+
+    # ── 6. Build hydrator and index ───────────────────────────
     hydrator = ToolHydrator(registry, always_active)
     hydrator.build_index()
 
