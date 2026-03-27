@@ -1,0 +1,93 @@
+# Arbor — Docker Hub Pull-Only Compose
+#
+# Quick start:
+#   curl -O https://raw.githubusercontent.com/terrene-foundation/arbor/main/docker-compose.hub.yml
+#   curl -O https://raw.githubusercontent.com/terrene-foundation/arbor/main/.env.example
+#   cp .env.example .env        # edit with your settings
+#   docker compose -f docker-compose.hub.yml up -d
+#
+# All images are pre-built on Docker Hub — nothing is compiled locally.
+# For local/DGX LLM usage, set OLLAMA_BASE_URL in your .env.
+
+services:
+  backend:
+    image: terrenefoundation/arbor-backend:${ARBOR_VERSION:-latest}
+    container_name: arbor-backend
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-arbor}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-arbor}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_PROD_MODEL=${OPENAI_PROD_MODEL:-gpt-5-mini-2025-08-07}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL:-gpt-5-mini-2025-08-07}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-}
+      - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - APP_ENV=production
+      - DEBUG=false
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-}
+      - KAILASH_RUNTIME=async
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    image: terrenefoundation/arbor-frontend:${ARBOR_VERSION:-latest}
+    container_name: arbor-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: arbor-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-arbor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-arbor}
+    volumes:
+      - arbor_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arbor}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: arbor-redis
+    volumes:
+      - arbor_redis:/data
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  arbor_pgdata:
+  arbor_redis:
