@@ -53,14 +53,37 @@ def create_delegate(
     if config is None:
         config = DelegateConfig()
 
-    # Resolve model
-    model = config.model or os.environ.get(
-        "DEFAULT_LLM_MODEL",
-        os.environ.get("OPENAI_PROD_MODEL", "gpt-5-chat-latest"),
+    # ── Resolve LLM provider settings ────────────────────────
+    # Generic env vars (LLM_*) take precedence over provider-specific (OPENAI_*).
+    # This supports any OpenAI-compatible endpoint: OpenAI, Ollama, vLLM, TGI, SGLang.
+    model = (
+        config.model
+        or os.environ.get("LLM_MODEL")
+        or os.environ.get("DEFAULT_LLM_MODEL")
+        or os.environ.get("OPENAI_PROD_MODEL")
+        or "gpt-5-chat-latest"
     )
 
-    # Resolve API key
-    api_key = config.api_key or os.environ.get("OPENAI_API_KEY", "")
+    api_key = (
+        config.api_key
+        or os.environ.get("LLM_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or "not-needed"  # Local inference (Ollama, vLLM) doesn't require a key
+    )
+
+    base_url = (
+        config.base_url
+        or os.environ.get("LLM_BASE_URL")
+        or os.environ.get("OPENAI_BASE_URL")
+        # No default — None means use OpenAI's default endpoint
+    )
+
+    logger.info(
+        "Delegate LLM config: model=%s, base_url=%s, key=%s",
+        model,
+        base_url or "(default: OpenAI)",
+        f"{api_key[:8]}..." if len(api_key) > 12 else "(local)",
+    )
 
     # Build tool registry
     registry = ToolRegistry()
@@ -77,10 +100,10 @@ def create_delegate(
         max_tokens=config.max_tokens,
     )
 
-    # Build OpenAI client
+    # Build OpenAI-compatible client (works with any provider)
     client_kwargs: dict[str, Any] = {"api_key": api_key}
-    if config.base_url:
-        client_kwargs["base_url"] = config.base_url
+    if base_url:
+        client_kwargs["base_url"] = base_url
     client = AsyncOpenAI(**client_kwargs)
 
     # Build system prompt
