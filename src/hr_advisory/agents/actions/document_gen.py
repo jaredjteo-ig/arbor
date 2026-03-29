@@ -10,7 +10,6 @@ Uses the LLM to fill templates with company-specific values and ensure
 statutory minimum clauses are present.
 """
 
-import dataclasses
 import json
 import logging
 from typing import Any, Dict, Optional
@@ -41,13 +40,14 @@ class DocumentGenerationAgent(_KaizenCompatMixin, BaseAgent):
         shared_memory: Any = None,
         **kwargs,
     ):
+        import os
+
         config = config or DocumentGenerationConfig()
-        super().__init__(
-            agent_id="document_generation",
-            config=dataclasses.asdict(config),
-            signature=DocumentGenerationSignature(),
-        )
+        model = os.environ.get("OPENAI_PROD_MODEL", os.environ.get("DEFAULT_LLM_MODEL", ""))
+        super().__init__(model=model, system_prompt=self._generate_system_prompt())
+        self.agent_id = "document_generation"
         self.shared_memory = shared_memory
+        self._docgen_config = config
 
     def _default_signature(self):
         return DocumentGenerationSignature()

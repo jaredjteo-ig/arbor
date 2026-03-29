@@ -1,0 +1,69 @@
+# ── Secrets — NEVER send to Docker daemon ──────────────────────
+.env
+.env.*
+**/.env
+**/.env.*
+**/.env.local
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.*
+secrets/
+
+# ── Git and version control ───────────────────────────────────
+.git
+.gitignore
+
+# ── Python artifacts ──────────────────────────────────────────
+__pycache__
+**/__pycache__
+*.pyc
+**/*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# ── Node artifacts ────────────────────────────────────────────
+node_modules/
+apps/web/node_modules/
+apps/web/.next/
+apps/mobile/
+
+# ── IDE and OS ────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Claude Code artifacts ─────────────────────────────────────
+.claude/
+scripts/
+
+# ── Test and development ──────────────────────────────────────
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ── Workspace and analysis docs ───────────────────────────────
+workspaces/
+docs/
+*.md
+!README.md
+
+# ── Deploy scripts (not needed in image) ──────────────────────
+deploy/ship.sh
+deploy/sync-env.sh
+deploy/setup-server.sh
+deploy/deployment-config.md
+deploy/deployments/

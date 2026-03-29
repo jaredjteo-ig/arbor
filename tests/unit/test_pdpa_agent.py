@@ -30,10 +30,11 @@ class TestPDPAAgentInstantiation:
         agent = PDPAAgent()
         assert agent.agent_id == "pdpa_specialist"
 
-    def test_signature_is_set(self):
+    def test_has_system_prompt(self):
         agent = PDPAAgent()
-        assert agent.signature is not None
-        assert isinstance(agent.signature, PDPASignature)
+        prompt = agent._generate_system_prompt()
+        assert prompt is not None
+        assert len(prompt) > 0
 
 
 # ===================================================================

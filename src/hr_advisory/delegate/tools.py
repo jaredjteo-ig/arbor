@@ -21,7 +21,7 @@ import re
 from collections import Counter
 from typing import Any
 
-from kaizen_agents.delegate.loop import ToolDef, ToolRegistry
+from kaizen_agents.delegate.loop import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,14 @@ def register_arbor_tools(
 
     # ── 2. Calculators ────────────────────────────────────────
     async def _calculate(calculator_type: str, **kwargs: Any) -> str:
+        import math
+
         from hr_advisory.agents.actions.calculator import CalculatorAgent
+
+        # NaN/Inf guard — reject non-finite numeric inputs (trust-plane-security)
+        for key, val in kwargs.items():
+            if isinstance(val, float) and not math.isfinite(val):
+                return json.dumps({"error": f"Invalid value for {key}: must be a finite number"})
 
         calc = CalculatorAgent()
         result = calc.calculate(calculator_type, kwargs)

@@ -5,7 +5,6 @@ a plain-language answer with citations and risk-tier disclaimers
 suitable for Singapore SME owners and managers.
 """
 
-import dataclasses
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -48,13 +47,14 @@ class ResponseSynthesizerAgent(_KaizenCompatMixin, BaseAgent):
         shared_memory: Any = None,
         **kwargs,
     ):
+        import os
+
         config = config or ResponseSynthesizerConfig()
-        super().__init__(
-            agent_id="response_synthesizer",
-            config=dataclasses.asdict(config),
-            signature=ResponseSynthesizerSignature(),
-        )
+        model = os.environ.get("OPENAI_PROD_MODEL", os.environ.get("DEFAULT_LLM_MODEL", ""))
+        super().__init__(model=model, system_prompt=self._generate_system_prompt())
+        self.agent_id = "response_synthesizer"
         self.shared_memory = shared_memory
+        self._synthesizer_config = config
 
     # ------------------------------------------------------------------
     # Extension points

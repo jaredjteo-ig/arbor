@@ -17,6 +17,7 @@ engine (intent classifier, tool registry, executor, PACE manager).
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections import OrderedDict, deque
@@ -577,11 +578,10 @@ async def shadow_execute(
 ) -> dict:
     """Main command entry point for the Shadow Agent.
 
-    Classifies the user's intent from their message, then either:
-    - Executes immediately (autonomous trust level — reads)
-    - Returns a PACE preview for confirmation (propose/always_propose — writes)
-    - Routes to the advisory pipeline (advisory module)
-    - Returns a navigation instruction (navigation module)
+    Uses the kaizen-agents Delegate to autonomously handle the user's
+    request. The LLM reasons about intent, discovers and calls tools,
+    and streams a response. This endpoint collects the full response
+    and returns a structured JSON matching the ShadowResponse contract.
 
     Request body:
         message: str — the user's command/question
@@ -589,10 +589,8 @@ async def shadow_execute(
 
     Returns a structured response with Arbor identity.
     """
-    from hr_advisory.shadow.intent_classifier import ShadowIntentClassifier
-    from hr_advisory.shadow.tool_registry import get_tool_registry
-    from hr_advisory.shadow.executor import ShadowExecutor
-    from hr_advisory.shadow.pace import PaceStep, get_pace_manager
+    from hr_advisory.delegate.arbor_loop import DelegateConfig, create_delegate
+    from kaizen_agents.delegate import TextDelta, ToolCallStart, ToolCallEnd, ErrorEvent
     from hr_advisory.shadow.formatter import ArborFormatter
     from hr_advisory.workflows.guardrails import (
         ScreeningResult,
@@ -676,204 +674,255 @@ async def shadow_execute(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    # ── Step 2: Intent classification ─────────────────────────────
-    classifier = ShadowIntentClassifier()
-    intent = await classifier.classify(message, page_context)
+    # ── Step 2: Run the Delegate ──────────────────────────────────
+    # The LLM reasons about intent, picks tools, executes, and responds.
+    # We inject page context into the prompt so the LLM is aware of where
+    # the user is in the app.
 
-    logger.info(
-        "Shadow intent: module=%s, action=%s, trust=%s, user=%s",
-        intent.module,
-        intent.action,
-        intent.trust_level,
-        user_id,
+    company_id = current_user.get("company_id")
+    delegate_config = DelegateConfig(
+        jwt_token=jwt_token,
+        company_id=int(company_id) if company_id else None,
+        user_context={
+            "role": current_user.get("role", ""),
+            "name": current_user.get("name", ""),
+        },
     )
 
-    formatter = ArborFormatter()
+    delegate = create_delegate(delegate_config)
 
-    # ── Step 2b: Entity validation defense ────────────────────────
-    # Validate intent.module and intent.action against the tool registry
-    # before routing, and filter entities to only known parameter keys.
-    registry = get_tool_registry()
-    known_modules = set(registry.get_all_modules())
+    prompt = message
+    if page_context and page_context != "dashboard":
+        prompt = f"[User is on the {page_context} page] {message}"
 
-    if intent.module not in known_modules and intent.module not in ("advisory", "navigation"):
-        logger.warning(
-            "Intent module '%s' not in registry — falling back to advisory. user=%s",
-            intent.module,
-            user_id,
-        )
-        intent = type(intent)(
-            module="advisory",
-            action="query",
-            entities={"query": message},
-            trust_level="autonomous",
-            requires_confirmation=False,
-            confirmation_message="Ask the HR advisory about your question",
-            has_attachment=intent.has_attachment,
-            attachment_intent=intent.attachment_intent,
-            raw_query=message,
-        )
-    elif intent.module not in ("advisory", "navigation"):
-        # Validate action is known for this module
-        resolved_tool = registry.resolve_tool(intent.module, intent.action)
-        if resolved_tool is not None:
-            # Filter entities to only keys that match the tool's params list
-            allowed_keys = set(resolved_tool.params)
-            # Also allow any key that looks like a valid entity (not empty)
-            # but log rejected keys for debugging
-            filtered_entities: dict = {}
-            for key, value in intent.entities.items():
-                if key in allowed_keys or not allowed_keys:
-                    filtered_entities[key] = value
-                else:
-                    logger.info(
-                        "Entity key '%s' rejected — not in tool params for %s.%s. " "Allowed: %s",
-                        key,
-                        intent.module,
-                        intent.action,
-                        ", ".join(sorted(allowed_keys)) if allowed_keys else "any",
-                    )
-            intent.entities.clear()
-            intent.entities.update(filtered_entities)
+    # Helper: synthesize intent dict from Delegate tool calls for frontend compat
+    _WRITE_VERBS = {
+        "create",
+        "update",
+        "delete",
+        "approve",
+        "reject",
+        "terminate",
+        "cancel",
+        "submit",
+        "post",
+        "import",
+    }
+    _DESTRUCTIVE_VERBS = {"delete", "terminate", "cancel"}
 
-    # ── Step 3: Route by module ───────────────────────────────────
-
-    # 3a. Advisory — route to the existing advisory pipeline
-    if intent.module == "advisory":
-        return {
-            "type": "advisory",
-            "message": formatter.format_advisory_routing(message),
-            "intent": intent.to_dict(),
-            "route_to": "/advisory/query",
-            "query": message,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-    # 3b. Navigation — return route for frontend to navigate to
-    if intent.module == "navigation":
-        route = intent.entities.get("route", "/my-dashboard")
-        # Validate route is a relative path — prevent external URL injection
-        if not route.startswith("/") or "://" in route:
-            route = "/my-dashboard"
-        description = intent.confirmation_message or route
-        nav = formatter.format_navigation(route, description)
-        return {
-            "type": "navigation",
-            "message": nav["message"],
-            "route": nav["route"],
-            "intent": intent.to_dict(),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-    # 3c. Attachment detected — prompt for file upload
-    if intent.has_attachment and intent.attachment_intent:
-        return {
-            "type": "attachment_required",
-            "message": formatter.format_attachment_prompt(intent.attachment_intent),
-            "intent": intent.to_dict(),
-            "attachment_intent": intent.attachment_intent,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-    # ── Step 4: Resolve tool from registry ────────────────────────
-    # Registry was already fetched in step 2b for validation
-    tool = registry.resolve_tool(intent.module, intent.action)
-
-    if tool is None:
-        # No registered tool — suggest advisory or navigation fallback
-        logger.warning(
-            "No tool found for %s.%s — falling back to advisory",
-            intent.module,
-            intent.action,
-        )
-        return {
-            "type": "advisory",
-            "message": formatter.format_advisory_routing(message),
-            "intent": intent.to_dict(),
-            "route_to": "/advisory/query",
-            "query": message,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-    # ── Step 4b: Check for multi-step workflow expansion ──────────
-    from hr_advisory.shadow.workflow_composer import compose_workflow
-
-    workflow_steps = compose_workflow(
-        module=intent.module,
-        action=intent.action,
-        entities=intent.entities,
-        registry=registry,
-    )
-
-    # ── Step 5: Trust level enforcement ───────────────────────────
-
-    if intent.trust_level == "autonomous":
-        # Read-only — execute immediately
-        executor = ShadowExecutor()
-        result = await executor.execute(tool, intent.entities, jwt_token, current_user=current_user)
-
-        if result.success:
-            display_message = formatter.format_read(result.data, intent.module, intent.action)
-        else:
-            display_message = formatter.format_error(result.error)
-
-        # Record in history
-        _record_action(
-            user_id,
-            {
-                "session_id": None,
-                "module": intent.module,
-                "action": intent.action,
+    def _synthesize_intent(tool_calls_list: list[dict]) -> dict:
+        """Build an intent dict matching ShadowResponse.intent shape."""
+        if not tool_calls_list:
+            return {
+                "module": "advisory",
+                "action": "query",
                 "trust_level": "autonomous",
-                "success": result.success,
-                "timestamp": result.timestamp,
-                "message": message,
-            },
-        )
+                "entities": {},
+            }
+        primary = tool_calls_list[-1]
+        name = primary["name"]
+        parts = name.replace("hris_", "").split("_", 1)
+        module = parts[0] if parts else "hris"
+        action = parts[1] if len(parts) > 1 else name
+        is_write = any(v in name.lower() for v in _WRITE_VERBS)
+        is_destructive = any(v in name.lower() for v in _DESTRUCTIVE_VERBS)
+        if is_destructive:
+            trust = "double_confirm"
+        elif is_write:
+            trust = "always_propose"
+        else:
+            trust = "autonomous"
+        return {"module": module, "action": action, "trust_level": trust, "entities": {}}
 
+    # Collect full response — tool calls and text
+    full_text: list[str] = []
+    tool_calls: list[dict] = []
+    error_msg: str | None = None
+
+    try:
+        async for event in delegate.run(prompt):
+            if isinstance(event, TextDelta):
+                full_text.append(event.text)
+            elif isinstance(event, ToolCallStart):
+                tool_calls.append({"name": event.name, "call_id": event.call_id})
+            elif isinstance(event, ToolCallEnd):
+                # Attach result to matching tool call
+                for tc in tool_calls:
+                    if tc.get("call_id") == event.call_id:
+                        tc["result"] = event.result
+                        tc["error"] = event.error
+                        break
+            elif isinstance(event, ErrorEvent):
+                error_msg = event.error
+    except Exception as exc:
+        logger.error("Delegate execution failed: %s", exc, exc_info=True)
+        error_msg = "The assistant encountered an error processing your request."
+
+    response_text = "".join(full_text).strip()
+    formatter = ArborFormatter()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # ── Step 3: Map result to ShadowResponse shape ────────────────
+    # The response must match the ShadowResponse TypeScript interface.
+    # Frontend expects: result, preview, navigation, advisory,
+    # out_of_scope, blocked, attachment_required, error.
+
+    intent = _synthesize_intent(tool_calls)
+
+    # Strip any existing "Arbor:" prefix from LLM output to avoid doubling
+    _clean_text = re.sub(r"^Arbor:\s*", "", response_text) if response_text else ""
+
+    def _arbor_msg(text: str, fallback: str = "") -> str:
+        return f"Arbor: {text}" if text else f"Arbor: {fallback}"
+
+    if error_msg:
         return {
-            "type": "result",
-            "message": display_message,
-            "data": result.data if result.success else None,
-            "success": result.success,
-            "error": result.error if not result.success else None,
-            "intent": intent.to_dict(),
-            "execution": result.to_dict(),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": "error",
+            "message": formatter.format_error(error_msg),
+            "success": False,
+            "error": error_msg,
+            "intent": intent,
+            "timestamp": now,
         }
 
-    else:
-        # propose, always_propose, or double_confirm — create PACE session
+    tool_names_called = [tc["name"] for tc in tool_calls]
+
+    # ── 3a. Navigation detection ─────────────────────────────────
+    # If the response suggests navigating to a page, return navigation type
+    # so the frontend can router.push() to it.
+    _NAV_PAGES = {
+        "dashboard": "/dashboard",
+        "employees": "/employees",
+        "payroll": "/payroll",
+        "leave": "/leave",
+        "attendance": "/attendance",
+        "claims": "/claims",
+        "shifts": "/shifts",
+        "appraisals": "/appraisals",
+        "projects": "/projects",
+        "inventory": "/inventory",
+        "recruitment": "/recruitment",
+        "reports": "/reports",
+        "documents": "/documents",
+        "compliance": "/compliance",
+        "settings": "/settings",
+        "calculator": "/calculator",
+        "my-dashboard": "/my-dashboard",
+        "my-leave": "/my-leave",
+        "my-payslips": "/my-payslips",
+        "profile": "/profile",
+    }
+    _lower_msg = message.lower()
+    _nav_keywords = ("go to", "navigate to", "open", "show me the", "take me to")
+    if any(_lower_msg.startswith(kw) or kw in _lower_msg for kw in _nav_keywords):
+        for page_name, route in _NAV_PAGES.items():
+            if page_name in _lower_msg:
+                return {
+                    "type": "navigation",
+                    "message": f"Arbor: Taking you to {page_name}.",
+                    "route": route,
+                    "intent": {
+                        "module": "navigation",
+                        "action": "navigate",
+                        "trust_level": "autonomous",
+                        "entities": {"route": route},
+                    },
+                    "timestamp": now,
+                }
+
+    # ── 3b. No tools called → advisory text response ─────────────
+    if not tool_names_called:
+        return {
+            "type": "advisory",
+            "message": (
+                _arbor_msg(_clean_text)
+                if _clean_text
+                else formatter.format_advisory_routing(message)
+            ),
+            "route_to": "/advisory/stream",
+            "query": message,
+            "intent": intent,
+            "timestamp": now,
+        }
+
+    # ── 3c. Write operations → PACE preview ──────────────────────
+    # If the Delegate called a write tool, create a PACE session so
+    # the frontend can show the PaceCard for confirmation.
+    _WRITE_VERBS = {
+        "create",
+        "update",
+        "delete",
+        "approve",
+        "reject",
+        "terminate",
+        "cancel",
+        "submit",
+        "post",
+        "import",
+    }
+    _DESTRUCTIVE_VERBS = {"delete", "terminate", "cancel"}
+
+    write_calls = [
+        tc for tc in tool_calls if any(verb in tc["name"].lower() for verb in _WRITE_VERBS)
+    ]
+
+    if write_calls:
+        from hr_advisory.shadow.pace import PaceStep, get_pace_manager
+        from hr_advisory.shadow.tool_registry import get_tool_registry as _get_shadow_registry
+
+        primary = write_calls[-1]
+        is_destructive = any(v in primary["name"].lower() for v in _DESTRUCTIVE_VERBS)
+        trust_level = "double_confirm" if is_destructive else "always_propose"
+
+        # Build PACE steps — resolve REST metadata from the shadow tool registry
+        # so /confirm can execute them via ShadowExecutor HTTP calls.
+        shadow_registry = _get_shadow_registry()
+        steps = []
+        for tc in write_calls:
+            # Delegate tool names: "hris_employees_create" → module="employees", action="create"
+            parts = tc["name"].replace("hris_", "").split("_", 1)
+            tc_module = parts[0] if parts else "hris"
+            tc_action = parts[1] if len(parts) > 1 else tc["name"]
+
+            resolved = shadow_registry.resolve_tool(tc_module, tc_action)
+            if resolved:
+                steps.append(
+                    PaceStep(
+                        description=resolved.description or tc["name"],
+                        tool_module=resolved.module,
+                        tool_action=resolved.action,
+                        method=resolved.method,
+                        path=resolved.path,
+                        params={},
+                    ),
+                )
+            else:
+                steps.append(
+                    PaceStep(
+                        description=(
+                            f"{tc['name']} — {response_text[:100]}" if response_text else tc["name"]
+                        ),
+                        tool_module=tc_module,
+                        tool_action=tc_action,
+                        method="POST",
+                        path=f"/{tc_module}/{tc_action}",
+                        params={},
+                    ),
+                )
+
         pace_manager = get_pace_manager()
-
-        # Use multi-step workflow if composer expanded it, otherwise single-step
-        if workflow_steps is not None:
-            steps = workflow_steps
-            logger.info(
-                "Workflow composer expanded %s.%s into %d steps",
-                intent.module,
-                intent.action,
-                len(steps),
-            )
-        else:
-            steps = [
-                PaceStep(
-                    description=tool.description,
-                    tool_module=tool.module,
-                    tool_action=tool.action,
-                    method=tool.method,
-                    path=tool.path,
-                    params=dict(intent.entities),
-                ),
-            ]
-
+        _primary_parts = primary["name"].replace("hris_", "").split("_", 1)
         session = pace_manager.create_session(
             user_id=user_id,
-            intent_module=intent.module,
-            intent_action=intent.action,
-            confirmation_message=intent.confirmation_message,
+            intent_module=_primary_parts[0] if _primary_parts else "hris",
+            intent_action=_primary_parts[1] if len(_primary_parts) > 1 else primary["name"],
+            confirmation_message=(
+                response_text[:200]
+                if response_text
+                else f"Arbor wants to execute: {primary['name']}"
+            ),
             steps=steps,
-            trust_level=intent.trust_level,
+            trust_level=trust_level,
         )
 
         preview_message = formatter.format_preview(session.to_dict())
@@ -883,11 +932,49 @@ async def shadow_execute(
             "message": preview_message,
             "session_id": session.id,
             "session": session.to_dict(),
-            "intent": intent.to_dict(),
+            "intent": intent,
             "requires_confirmation": True,
-            "requires_double_confirm": session.requires_double_confirm,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "requires_double_confirm": is_destructive,
+            "timestamp": now,
         }
+
+    # ── 3d. Read operations → immediate result ───────────────────
+    primary = tool_calls[-1]
+    result_data = None
+    if primary.get("result"):
+        try:
+            result_data = (
+                json.loads(primary["result"])
+                if isinstance(primary["result"], str)
+                else primary["result"]
+            )
+        except (json.JSONDecodeError, TypeError):
+            result_data = {"raw": primary.get("result", "")}
+
+    success = not primary.get("error")
+
+    _record_action(
+        user_id,
+        {
+            "session_id": None,
+            "module": primary["name"],
+            "action": "delegate",
+            "trust_level": "autonomous",
+            "success": success,
+            "timestamp": now,
+            "message": message,
+        },
+    )
+
+    return {
+        "type": "result",
+        "message": _arbor_msg(_clean_text, "Here are the results."),
+        "data": result_data,
+        "success": success,
+        "error": primary.get("error") if not success else None,
+        "intent": intent,
+        "timestamp": now,
+    }
 
 
 @router.post("/confirm")

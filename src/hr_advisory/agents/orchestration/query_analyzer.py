@@ -10,7 +10,6 @@ Uses Chain-of-Thought to reason through classification before
 producing the structured output.
 """
 
-import dataclasses
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -66,13 +65,14 @@ class QueryAnalyzerAgent(_KaizenCompatMixin, BaseAgent):
         shared_memory: Any = None,
         **kwargs,
     ):
+        import os
+
         config = config or QueryAnalyzerConfig()
-        super().__init__(
-            agent_id="query_analyzer",
-            config=dataclasses.asdict(config),
-            signature=QueryAnalyzerSignature(),
-        )
+        model = os.environ.get("OPENAI_PROD_MODEL", os.environ.get("DEFAULT_LLM_MODEL", ""))
+        super().__init__(model=model, system_prompt=self._generate_system_prompt())
+        self.agent_id = "query_analyzer"
         self.shared_memory = shared_memory
+        self._analyzer_config = config
 
     # ------------------------------------------------------------------
     # Extension points

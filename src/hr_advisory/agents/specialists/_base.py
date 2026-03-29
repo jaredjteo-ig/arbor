@@ -9,7 +9,6 @@ individual specialists only need to supply:
   3. Their system prompt (via ``_generate_system_prompt``)
 """
 
-import dataclasses
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -25,17 +24,24 @@ VALID_RISK_TIERS = frozenset(["green", "amber", "red"])
 
 
 class _KaizenCompatMixin:
-    """Compatibility shims for kailash-kaizen 2.3.0.
+    """Compatibility shims for kailash-kaizen 2.3.1.
 
-    CoreAgent.execute() replaced old BaseAgent.run(). These shims restore
-    the run/extract_*/write_to_memory API used by HR advisory agents.
+    Agent(model, system_prompt) replaced old BaseAgent(agent_id, config, signature).
+    Agent.run(task) is task-based; this mixin provides run(**kwargs) → run_sync(task).
     """
 
     shared_memory: Any = None
+    agent_id: str = ""
 
     def run(self, **inputs: Any) -> Dict[str, Any]:
-        """Delegate to CoreAgent.execute() for signature-based execution."""
-        return self.execute(**inputs)  # type: ignore[attr-defined]
+        """Convert keyword inputs to a task string for Agent.run_sync(task)."""
+        task = json.dumps(inputs, default=str)
+        result = super().run_sync(task)  # type: ignore[misc]
+        text = result.text if hasattr(result, "text") else str(result)
+        try:
+            return json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return {"answer_text": text}
 
     def write_to_memory(
         self,
@@ -118,22 +124,18 @@ class BaseDomainSpecialist(_KaizenCompatMixin, BaseAgent):
         signature=None,
         **kwargs,
     ):
+        import os
+
         config = config or SpecialistConfig()
+        model = os.environ.get("OPENAI_PROD_MODEL", os.environ.get("DEFAULT_LLM_MODEL", ""))
+        system_prompt = self._domain_system_prompt() + SYSTEM_PROMPT_SECURITY_FOOTER
         super().__init__(
-            agent_id=f"{self.domain}_specialist",
-            config=dataclasses.asdict(config),
-            signature=signature,
+            model=model,
+            system_prompt=system_prompt,
         )
+        self.agent_id = f"{self.domain}_specialist"
         self.shared_memory = shared_memory
-
-    # ------------------------------------------------------------------
-    # Compatibility shims for kaizen-kaizen 2.3.0 API change
-    # CoreAgent.execute() replaces old BaseAgent.run()
-    # ------------------------------------------------------------------
-
-    def run(self, **inputs: Any) -> Dict[str, Any]:
-        """Delegate to CoreAgent.execute() for signature-based execution."""
-        return self.execute(**inputs)
+        self._specialist_config = config
 
     def write_to_memory(
         self,
