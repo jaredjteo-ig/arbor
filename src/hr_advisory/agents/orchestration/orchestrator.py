@@ -12,7 +12,10 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from kaizen import CoreAgent as BaseAgent
+try:
+    from kaizen import BaseAgent
+except ImportError:
+    from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import OrchestratorConfig
 from hr_advisory.agents.signatures import OrchestratorSignature

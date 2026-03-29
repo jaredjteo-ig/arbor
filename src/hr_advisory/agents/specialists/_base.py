@@ -14,7 +14,10 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from kaizen import CoreAgent as BaseAgent
+try:
+    from kaizen import BaseAgent
+except ImportError:
+    from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import SpecialistConfig, UNCERTAINTY_DEFAULTS
 from hr_advisory.workflows.guardrails import SYSTEM_PROMPT_SECURITY_FOOTER

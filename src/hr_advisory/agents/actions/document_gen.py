@@ -15,7 +15,10 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from kaizen import CoreAgent as BaseAgent
+try:
+    from kaizen import BaseAgent
+except ImportError:
+    from kaizen import CoreAgent as BaseAgent
 
 from hr_advisory.agents.config import DocumentGenerationConfig
 from hr_advisory.agents.specialists._base import _KaizenCompatMixin
