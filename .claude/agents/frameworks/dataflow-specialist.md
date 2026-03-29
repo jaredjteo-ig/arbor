@@ -1,6 +1,6 @@
 ---
 name: dataflow-specialist
-description: Zero-config database framework specialist for Kailash DataFlow implementation. Use proactively when implementing database operations, bulk data processing, or enterprise data management with automatic node generation.
+description: "DataFlow database specialist. Use for zero-config DB operations, bulk processing, or auto-generated nodes."
 tools: Read, Write, Edit, Bash, Grep, Glob, Task
 model: opus
 ---

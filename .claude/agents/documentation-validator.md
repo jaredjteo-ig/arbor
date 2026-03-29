@@ -1,6 +1,6 @@
 ---
 name: documentation-validator
-description: Documentation validation specialist for testing code examples. Use when updating documentation or creating examples.
+description: "Docs code example validator. Use when updating documentation or verifying examples match SDK patterns."
 tools: Read, Write, Edit, Bash, Grep, Glob, Task
 model: sonnet
 ---

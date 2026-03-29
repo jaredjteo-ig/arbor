@@ -1,6 +1,6 @@
 ---
 name: eatp-expert
-description: Use this agent for questions about the Enterprise Agent Trust Protocol (EATP), trust lineage, agent attestation, delegation chains, verification gradient, trust postures, cascade revocation, or governance integration. Expert in EATP specification, trust operations, and implementation patterns.
+description: "EATP protocol expert. Use for trust lineage, attestation, delegation chains, or verification gradient questions."
 model: inherit
 allowed-tools:
   - Read

@@ -321,7 +321,7 @@ Use this skill:
 ## Related Skills
 
 - **[16-validation-patterns](../16-validation-patterns/SKILL.md)** - Validation tools
-- **[15-error-troubleshooting](../15-error-troubleshooting/SKILL.md)** - Error patterns
+- **[31-error-troubleshooting](../31-error-troubleshooting/SKILL.md)** - Error patterns
 - **[12-testing-strategies](../12-testing-strategies/SKILL.md)** - Testing strategies
 - **[01-core-sdk](../01-core-sdk/SKILL.md)** - Core patterns
 
