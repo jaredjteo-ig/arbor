@@ -21,12 +21,10 @@ classifiers = [
 ]
 dependencies = [
     # Kailash SDK (includes: fastapi, uvicorn, pydantic, sqlalchemy, pandas, numpy, requests, pyyaml)
-    "kailash[trust,pact]>=2.1.0",
-    "kailash-nexus>=1.5.0",
-    "kailash-dataflow>=1.2.0",
-    "kailash-kaizen>=2.3.0",
-    "kailash-pact>=0.4.0",
-    "kaizen-agents>=0.2.0",
+    "kailash[trust,pact,kaizen]>=2.2.1",
+    "kailash-nexus>=1.6.0",
+    "kailash-dataflow>=1.2.1",
+    "kaizen-agents>=0.4.0",
     # Terrene Foundation trust frameworks (bundled in src/ — not on PyPI)
     # "eatp>=0.2.0",
     # "trust-plane>=0.2.1",
