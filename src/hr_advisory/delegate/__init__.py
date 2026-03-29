@@ -21,10 +21,13 @@ Usage:
         yield chunk  # stream to client
 """
 
-from hr_advisory.delegate.arbor_loop import create_delegate
-from hr_advisory.delegate.tools import register_arbor_tools
+from hr_advisory.delegate.arbor_loop import DelegateConfig, create_delegate, stream_delegate
+from hr_advisory.delegate.tools import register_arbor_tools, ToolHydrator
 
 __all__ = [
+    "DelegateConfig",
+    "ToolHydrator",
     "create_delegate",
     "register_arbor_tools",
+    "stream_delegate",
 ]

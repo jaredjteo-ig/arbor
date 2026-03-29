@@ -751,6 +751,7 @@ async def advisory_stream(
 
     # ── Step 4: Stream via kaizen-agents Delegate ───────────────
     from hr_advisory.delegate.arbor_loop import DelegateConfig, create_delegate
+    from kaizen_agents.delegate import TextDelta, ErrorEvent
 
     _stream_user_ctx = {
         "role": current_user.get("role", ""),
@@ -770,14 +771,14 @@ async def advisory_stream(
     if llm_context and llm_context.model:
         delegate_config.model = llm_context.model
 
-    delegate_loop, _hydrator = create_delegate(delegate_config)
+    delegate_loop = create_delegate(delegate_config)
 
-    # Inject conversation history into the delegate
+    # Inject conversation history into the delegate's underlying loop
     for msg in conversation_messages:
         if msg.get("role") == "user":
-            delegate_loop._conversation.add_user(msg["content"])
+            delegate_loop.loop.conversation.add_user(msg["content"])
         elif msg.get("role") == "assistant":
-            delegate_loop._conversation.add_assistant(msg["content"])
+            delegate_loop.loop.conversation.add_assistant(msg["content"])
 
     async def event_generator():
         """Stream tokens from the kaizen-agents Delegate loop."""
@@ -792,34 +793,69 @@ async def advisory_stream(
 
         # Stream real tokens from the Delegate
         full_response = []
+        stream_error = False
+        token_index = 0
         try:
-            async for chunk in delegate_loop.run_turn(query):
-                full_response.append(chunk)
-                token_event = {
-                    "type": "token",
-                    "token": chunk,
-                }
-                yield f"event: token\ndata: {json.dumps(token_event)}\n\n"
+            async for event in delegate_loop.run(query):
+                if isinstance(event, TextDelta):
+                    full_response.append(event.text)
+                    token_event = {
+                        "type": "token",
+                        "token": event.text,
+                        "index": token_index,
+                    }
+                    token_index += 1
+                    yield f"event: token\ndata: {json.dumps(token_event)}\n\n"
+                elif isinstance(event, ErrorEvent):
+                    logger.warning("Delegate ErrorEvent: %s", event.error)
+                    # Don't emit error mid-stream — collect and handle at end
+                    stream_error = True
         except Exception as stream_exc:
             logger.error("Delegate stream error: %s", stream_exc, exc_info=True)
-            error_event = {"type": "error", "message": "Advisory engine encountered an error."}
-            yield f"event: error\ndata: {json.dumps(error_event)}\n\n"
+            stream_error = True
 
         response_text = "".join(full_response)
 
+        # Handle error: emit error event and stop (no complete after error)
+        if stream_error and not response_text:
+            error_event = {"type": "error", "message": "Advisory engine encountered an error."}
+            yield f"event: error\ndata: {json.dumps(error_event)}\n\n"
+            return
+
+        # Guard empty response
+        if not response_text:
+            response_text = (
+                "I wasn't able to generate a response for that question. "
+                "Could you rephrase or provide more detail?"
+            )
+
         # Post-stream safety: screen the response
         response_screening = screen_response(response_text)
+        risk_tier = "green"
         if response_screening.result == ScreeningResult.BLOCK:
             response_text = (
                 "This response was flagged by our content safety review. "
                 "Please rephrase your question."
             )
+            risk_tier = "red"
+
+        # Save conversation turn for multi-turn continuity
+        memory.save_turn(
+            session_id=conv_key,
+            query=query,
+            response=response_text,
+            domains=[],
+            risk_tier=risk_tier,
+            provisions_cited=[],
+            confidence_score=0.9,
+        )
 
         # Complete event
         complete_event = {
             "type": "complete",
             "response": response_text,
-            "risk_tier": "green",
+            "provisions_cited": [],
+            "risk_tier": risk_tier,
             "confidence_score": 0.9,
             "company_id": company_id,
             "conversation_id": conversation_id,

@@ -7,7 +7,6 @@ in parallel, sequentially, or via a single router.
 Uses a supervisor-worker pattern: the orchestrator decides, specialists execute.
 """
 
-import dataclasses
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -48,13 +47,14 @@ class OrchestratorAgent(_KaizenCompatMixin, BaseAgent):
         shared_memory: Any = None,
         **kwargs,
     ):
+        import os
+
         config = config or OrchestratorConfig()
-        super().__init__(
-            agent_id="orchestrator",
-            config=dataclasses.asdict(config),
-            signature=OrchestratorSignature(),
-        )
+        model = os.environ.get("OPENAI_PROD_MODEL", os.environ.get("DEFAULT_LLM_MODEL", ""))
+        super().__init__(model=model, system_prompt=self._generate_system_prompt())
+        self.agent_id = "orchestrator"
         self.shared_memory = shared_memory
+        self._orchestrator_config = config
 
     # ------------------------------------------------------------------
     # Extension points

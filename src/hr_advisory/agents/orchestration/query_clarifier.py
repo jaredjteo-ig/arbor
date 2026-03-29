@@ -9,7 +9,6 @@ Uses a fast, cheap LLM call (max_tokens=256, temperature=0.0) because
 it sits in the critical path of every request.
 """
 
-import dataclasses
 import logging
 from typing import Any, Optional
 
@@ -115,13 +114,14 @@ class QueryClarifier(_KaizenCompatMixin, BaseAgent):
         shared_memory: Any = None,
         **kwargs,
     ):
+        import os
+
         config = config or QueryClarifierConfig()
-        super().__init__(
-            agent_id="query_clarifier",
-            config=dataclasses.asdict(config),
-            signature=QueryClarifierSignature(),
-        )
+        model = os.environ.get("OPENAI_PROD_MODEL", os.environ.get("DEFAULT_LLM_MODEL", ""))
+        super().__init__(model=model, system_prompt=self._generate_system_prompt())
+        self.agent_id = "query_clarifier"
         self.shared_memory = shared_memory
+        self._clarifier_config = config
 
     # ------------------------------------------------------------------
     # Extension points
