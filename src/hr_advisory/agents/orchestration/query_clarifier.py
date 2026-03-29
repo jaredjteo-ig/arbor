@@ -13,10 +13,7 @@ import dataclasses
 import logging
 from typing import Any, Optional
 
-try:
-    from kaizen import BaseAgent
-except ImportError:
-    from kaizen import CoreAgent as BaseAgent
+from kaizen import Agent as BaseAgent  # kaizen 2.3.1+ canonical import
 
 from hr_advisory.agents.config import QueryClarifierConfig
 from hr_advisory.agents.signatures import QueryClarifierSignature
