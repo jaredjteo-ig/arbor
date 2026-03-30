@@ -1,3 +1,9 @@
+# Arbor Production — Docker Hub Images
+#
+# Deploy:
+#   scp docker-compose.prod.yml Caddyfile .env arbor-prod:~/arbor/
+#   ssh arbor-prod "cd ~/arbor && docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d"
+
 services:
   caddy:
     image: caddy:2-alpine
@@ -17,9 +23,7 @@ services:
     restart: unless-stopped
 
   backend:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.backend
+    image: terrenefoundation/arbor-backend:${ARBOR_VERSION:-latest}
     container_name: arbor-backend
     environment:
       - DATABASE_URL=${DATABASE_URL}
@@ -27,7 +31,7 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_PROD_MODEL=${OPENAI_PROD_MODEL:-gpt-5-mini-2025-08-07}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL:-gpt-5-mini-2025-08-07}
       - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -51,12 +55,7 @@ services:
       retries: 3
 
   frontend:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.frontend
-      args:
-        NEXT_PUBLIC_API_URL: https://arbor.terrene.foundation/api
-        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+    image: terrenefoundation/arbor-frontend:${ARBOR_VERSION:-latest}
     container_name: arbor-frontend
     environment:
       - NEXT_PUBLIC_API_URL=https://arbor.terrene.foundation/api
