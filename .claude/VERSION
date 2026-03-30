@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "coc-use-template",
   "description": "COC USE template for Python SDK projects",
   "released": "2026-03-30",
@@ -7,10 +7,23 @@
     "name": "kailash",
     "type": "coc-source",
     "version": "1.0.0",
-    "build_version": "1.0.0",
-    "synced_at": "2026-03-30T00:00:00Z"
+    "build_version": "2.2.1",
+    "synced_at": "2026-03-30T12:00:00Z"
   },
   "changelog": [
+    {
+      "version": "1.1.0",
+      "date": "2026-03-30",
+      "summary": "Engine-first framework rule, layer preference tables, Delegate-vs-BaseAgent skill",
+      "changes": [
+        "NEW: rules/framework-first.md — Engine-over-Primitives 3-layer model",
+        "NEW: skills/04-kaizen/kaizen-delegate-vs-baseagent.md — Delegate vs BaseAgent decision guide",
+        "UPDATED: agents/framework-advisor.md — added Step 2b layer selection table",
+        "UPDATED: agents/frameworks/dataflow-specialist.md — added layer preference section",
+        "UPDATED: agents/frameworks/nexus-specialist.md — added layer preference section",
+        "UPDATED: skills/13-architecture-decisions/decide-framework.md — added within-framework layer selection"
+      ]
+    },
     {
       "version": "1.0.0",
       "date": "2026-03-29",
