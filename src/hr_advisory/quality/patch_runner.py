@@ -46,37 +46,10 @@ MIN_IMPROVEMENT_THRESHOLD = 0.3
 # Maximum category score drop allowed during regression before rollback
 MAX_REGRESSION_DROP = 0.3
 
-# Map from agent identifiers to their module paths and class names
-_AGENT_MODULE_MAP: Dict[str, tuple[str, str]] = {
-    "employment_act_specialist": (
-        "hr_advisory.agents.specialists.employment_act",
-        "EmploymentActAgent",
-    ),
-    "cpf_specialist": (
-        "hr_advisory.agents.specialists.cpf",
-        "CPFAgent",
-    ),
-    "foreign_manpower_specialist": (
-        "hr_advisory.agents.specialists.foreign_manpower",
-        "ForeignManpowerAgent",
-    ),
-    "fair_employment_specialist": (
-        "hr_advisory.agents.specialists.fair_employment",
-        "FairEmploymentAgent",
-    ),
-    "tax_specialist": (
-        "hr_advisory.agents.specialists.tax",
-        "TaxAgent",
-    ),
-    "wsh_specialist": (
-        "hr_advisory.agents.specialists.wsh",
-        "WSHAgent",
-    ),
-    "pdpa_specialist": (
-        "hr_advisory.agents.specialists.pdpa",
-        "PDPAAgent",
-    ),
-}
+# Map from agent identifiers to their module paths and class names.
+# The specialist agents have been replaced by the Delegate engine.
+# This map is empty — PatchRunner will raise ValueError for any target_agent.
+_AGENT_MODULE_MAP: Dict[str, tuple[str, str]] = {}
 
 
 class PatchRunner:

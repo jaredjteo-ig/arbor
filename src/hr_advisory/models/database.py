@@ -20,12 +20,11 @@ _url = get_database_url()
 
 db = DataFlow(
     database_url=_url,
+    pool_size=20,
+    auto_migrate=True,
     config=DataFlowConfig(
         database_url=_url,
-        max_connections=20,
-        min_connections=1,
         connect_timeout_secs=30,
         max_lifetime_secs=3600,
-        auto_migrate=True,
     ),
 )

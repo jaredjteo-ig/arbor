@@ -27,12 +27,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "QueryAnalyzerConfig",
-    "QueryClarifierConfig",
-    "OrchestratorConfig",
-    "ResponseSynthesizerConfig",
     "SpecialistConfig",
-    "ComplianceConfig",
     "DocumentGenerationConfig",
     "has_llm_available",
     "resolve_provider_and_model",
@@ -251,98 +246,8 @@ def has_llm_available(
 
 
 @dataclass
-class QueryAnalyzerConfig:
-    """Config for the query classification agent."""
-
-    llm_provider: str = ""
-    model: str = ""
-    temperature: float = 0.1
-    max_tokens: int = 1024
-
-    def __post_init__(self):
-        if not self.model or not self.llm_provider:
-            p, m = resolve_provider_and_model()
-            if not self.llm_provider:
-                self.llm_provider = p
-            if not self.model:
-                self.model = m
-
-
-@dataclass
-class QueryClarifierConfig:
-    """Config for the query clarification agent."""
-
-    llm_provider: str = ""
-    model: str = ""
-    temperature: float = 0.0
-    max_tokens: int = 256
-
-    def __post_init__(self):
-        if not self.model or not self.llm_provider:
-            p, m = resolve_provider_and_model()
-            if not self.llm_provider:
-                self.llm_provider = p
-            if not self.model:
-                self.model = m
-
-
-@dataclass
-class OrchestratorConfig:
-    """Config for the dispatch planner agent."""
-
-    llm_provider: str = ""
-    model: str = ""
-    temperature: float = 0.1
-    max_tokens: int = 512
-
-    def __post_init__(self):
-        if not self.model or not self.llm_provider:
-            p, m = resolve_provider_and_model()
-            if not self.llm_provider:
-                self.llm_provider = p
-            if not self.model:
-                self.model = m
-
-
-@dataclass
-class ResponseSynthesizerConfig:
-    """Config for the response synthesis agent."""
-
-    llm_provider: str = ""
-    model: str = ""
-    temperature: float = 0.3
-    max_tokens: int = 4096
-
-    def __post_init__(self):
-        if not self.model or not self.llm_provider:
-            p, m = resolve_provider_and_model()
-            if not self.llm_provider:
-                self.llm_provider = p
-            if not self.model:
-                self.model = m
-
-
-@dataclass
 class SpecialistConfig:
     """Config shared by all domain specialist agents."""
-
-    llm_provider: str = ""
-    model: str = ""
-    temperature: float = 0.1
-    max_tokens: int = 2048
-
-    def __post_init__(self):
-        if not self.model or not self.llm_provider:
-            p, m = resolve_provider_and_model()
-            if not self.llm_provider:
-                self.llm_provider = p
-            if not self.model:
-                self.model = m
-
-
-@dataclass
-class ComplianceConfig:
-    """Config for the cross-domain compliance agent."""
 
     llm_provider: str = ""
     model: str = ""
