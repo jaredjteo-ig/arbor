@@ -1,9 +1,9 @@
 """Nexus platform configuration for the HR Advisory API gateway.
 
-Creates and configures the Nexus instance with:
-- auto_discovery=False (required for DataFlow integration)
-- CORS with explicit allowed headers (no wildcard)
+Uses NexusEngine with the SAAS preset for:
+- CORS with explicit allowed headers
 - Security headers middleware (HSTS, CSP, X-Frame-Options, etc.)
+- CSRF protection
 - Rate limiting
 - FastAPI routers for each endpoint domain
 - Session management with company context
@@ -11,8 +11,7 @@ Creates and configures the Nexus instance with:
 
 import logging
 
-from fastapi import Request, Response
-from nexus import Nexus
+from nexus import Nexus, NexusEngine, Preset
 
 from hr_advisory.api.routers import (
     admin_router,
@@ -50,13 +49,15 @@ from hr_advisory.api.routers import (
 )
 from hr_advisory.api.session import create_session_store
 from hr_advisory.config.settings import Settings, get_settings
-from hr_advisory.security.validation import SECURITY_HEADERS
 
 logger = logging.getLogger(__name__)
 
 
 def create_platform(settings: Settings | None = None) -> Nexus:
     """Create and configure the Nexus platform instance.
+
+    Uses NexusEngine with the SAAS preset for CORS, security headers,
+    CSRF, and rate limiting. Custom config overrides preset defaults.
 
     Args:
         settings: Application settings. If None, loaded from environment.
@@ -71,39 +72,38 @@ def create_platform(settings: Settings | None = None) -> Nexus:
     # This side-effect import is intentional and required.
     import hr_advisory.models  # noqa: F401
 
-    # --- Nexus instance ---
+    # --- NexusEngine with SAAS preset ---
     # auto_discovery=False is CRITICAL for DataFlow integration (prevents blocking).
     # enable_durability=False because the DurableWorkflowServer deduplicator caches
     # GET responses (including /auth/me) by method+path WITHOUT considering the
     # Authorization header — serving User A's data to User B. This is a security
     # issue for any authenticated endpoint. Disable until per-route cache control
     # is available.
-    app = Nexus(
-        api_port=settings.api_port,
-        auto_discovery=False,
-        cors_origins=settings.cors_origins_list,
-        cors_allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        cors_allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-        cors_allow_credentials=True,
-        rate_limit=100,
-        enable_durability=False,
+    engine = (
+        NexusEngine.builder()
+        .preset(Preset.SAAS)
+        .config(
+            api_port=settings.api_port,
+            auto_discovery=False,
+            cors_origins=settings.cors_origins_list,
+            cors_allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+            cors_allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+            cors_allow_credentials=True,
+            rate_limit=100,
+            enable_durability=False,
+        )
+        .build()
     )
+    app = engine.nexus
 
     # --- Disable trailing-slash 307 redirects ---
-    # FastAPI defaults to redirect_slashes=True, which causes 307 redirects
-    # when a client requests /path/ but the route is defined as /path (or
-    # vice versa). This breaks some API clients. Disable it so that routes
-    # match exactly as defined.
-    fast_api = app._gateway.app  # Access underlying FastAPI instance
+    fast_api = app._gateway.app
     fast_api.router.redirect_slashes = False
     logger.info("Trailing-slash 307 redirects disabled")
 
-    # --- Security headers middleware ---
-    _add_security_headers_middleware(app)
-
     # --- Session store ---
     session_store = create_session_store(settings)
-    app._session_store = session_store  # Attach for handler access
+    app._session_store = session_store
     logger.info(
         "Session store initialised (%s)",
         "redis" if settings.is_production else "in-memory",
@@ -115,22 +115,8 @@ def create_platform(settings: Settings | None = None) -> Nexus:
     # --- Register handler-based workflows ---
     _register_handlers(app, session_store)
 
-    logger.info("HR Advisory platform configured successfully")
+    logger.info("HR Advisory platform configured with NexusEngine (SAAS preset)")
     return app
-
-
-def _add_security_headers_middleware(app: Nexus) -> None:
-    """Add security headers to every HTTP response."""
-    fast_api = app._gateway.app  # Access underlying FastAPI instance
-
-    @fast_api.middleware("http")
-    async def security_headers_middleware(request: Request, call_next) -> Response:
-        response = await call_next(request)
-        for header, value in SECURITY_HEADERS.items():
-            response.headers[header] = value
-        return response
-
-    logger.info("Security headers middleware registered")
 
 
 def _register_routers(app: Nexus) -> None:

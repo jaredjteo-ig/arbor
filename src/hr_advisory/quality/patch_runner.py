@@ -1,27 +1,16 @@
 """PatchRunner -- automated test and rollback for instruction patches.
 
-Tests instruction patches before approval (in-memory only) and runs
-regression testing after deployment (modifies source files with rollback).
-
-Pre-approval flow:
-    1. Get evidence scenarios from patch evidence_ids
-    2. Run those scenarios as baseline (without patch)
-    3. Inject patch in-memory and re-run those scenarios
-    4. Compare before/after scores
-    5. If avg score improves >= 0.3: recommend ready_for_approval
-    6. If no improvement: recommend rejected
-
-Regression flow:
-    1. Run full 64-scenario suite as baseline (without patch)
-    2. Apply patch to source file
-    3. Re-run full 64-scenario suite
-    4. If any category avg drops > 0.3 below baseline: auto-rollback
-    5. If no regression: recommend deployed
+NOTE: The specialist agents have been replaced by the Delegate engine.
+PatchRunner's mechanism of patching individual specialist system prompts
+no longer works. The evaluation and pattern detection pipeline still
+functions, but patch testing/deployment will raise ValueError until
+PatchRunner is redesigned to target the Delegate's system prompt or
+tool descriptions.
 
 Usage:
     runner = PatchRunner()
-    result = runner.test_pre_approval(patch_dict)
-    result = runner.run_regression(patch_dict)
+    result = runner.test_pre_approval(patch_dict)  # raises ValueError
+    result = runner.run_regression(patch_dict)      # raises ValueError
 """
 
 from __future__ import annotations
