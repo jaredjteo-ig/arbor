@@ -19,6 +19,8 @@ from starlette.testclient import TestClient
 
 os.environ.setdefault("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
 
+pytestmark = pytest.mark.requires_postgres
+
 from hr_advisory.config.settings import Settings, get_settings
 
 _TEST_JWT_SECRET = "test-secret-key-for-integration-tests"
@@ -43,7 +45,7 @@ def settings() -> Settings:
     return Settings(
         app_env="development",
         api_port=8099,
-        cors_origins="http://localhost:3000",
+        cors_origins="*",
         jwt_secret_key=_TEST_JWT_SECRET,
         jwt_algorithm="HS256",
         jwt_expiry_minutes=60,

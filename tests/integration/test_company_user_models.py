@@ -10,6 +10,8 @@ import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
 
+pytestmark = pytest.mark.requires_postgres
+
 
 @pytest.fixture(scope="module")
 def db_instance():

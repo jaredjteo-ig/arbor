@@ -12,10 +12,25 @@ Exercises real API endpoints with TestClient (Tier 3 — no mocking).
 
 from __future__ import annotations
 
+import socket
 import uuid
 
 import pytest
 from starlette.testclient import TestClient
+
+
+# Skip entire module if PostgreSQL is not reachable (these tests need a real DB)
+def _pg_available() -> bool:
+    try:
+        s = socket.create_connection(("127.0.0.1", 5432), timeout=1)
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+if not _pg_available():
+    pytest.skip("PostgreSQL not reachable on localhost:5432", allow_module_level=True)
 
 from hr_advisory.api.platform import create_platform
 from hr_advisory.config.settings import Settings
@@ -32,7 +47,7 @@ def settings() -> Settings:
     return Settings(
         app_env="development",
         api_port=8099,
-        cors_origins="http://localhost:3000",
+        cors_origins="*",
     )
 
 

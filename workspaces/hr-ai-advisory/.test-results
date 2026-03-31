@@ -1,20 +1,40 @@
-commit: 3647369 (pre-changes baseline)
-timestamp: 2026-03-20T18:30:00+08:00
-baseline_pass: 28
-baseline_fail: 0
-final_pass: 465
-final_fail: 0
-new_tests: 437
+commit: uncommitted (M60 session — 2026-03-31)
+timestamp: 2026-03-31T18:30:00+08:00
+
+## Unit Tests (Tier 1)
+passed: 1155
+failed: 0
 regressions: 0
-command: pytest tests/unit/test_shadow_*.py --tb=short -q
-files:
-  test_shadow_engine.py: 43 (original + SSE + upload)
-  test_shadow_intent.py: 139 (T478 — intent classification)
-  test_shadow_pace.py: 68 (T479 — PACE safety)
-  test_shadow_permissions.py: 50 (T480 — permission boundaries)
-  test_shadow_adversarial.py: 60 (T481 — adversarial inputs)
-  test_shadow_workflows.py: 27 (T482 — multi-step workflows)
-  test_shadow_observation.py: 27 (T475 — observation service)
-  test_shadow_memory.py: 20 (T477 — memory distillation)
-  test_shadow_entity_resolver.py: 28 (entity resolution)
-  test_shadow_workflow_composer.py: 10 (workflow composer)
+new_tests: 5 (test_registration_company.py)
+command: pytest tests/unit/ -q --timeout=30 -p no:warnings
+
+## E2E Tests (Tier 3)
+passed: 42
+skipped: 2 (requires_postgres — live_api_all_flows, onboarding_flow)
+failed: 0
+new_tests: 8 (test_registration_flow.py)
+command: pytest tests/e2e/ -q --timeout=30 -p no:warnings
+
+## Integration Tests (Tier 2)
+passed: 697
+skipped: 335 (requires_postgres)
+failed: 0
+command: pytest tests/integration/ -q --timeout=30 -p no:warnings
+
+## Docker Build
+status: PASS
+image: arbor-backend:test
+
+## CI Note
+Run unit and e2e as SEPARATE pytest invocations (not combined).
+Module-level Settings caching causes cross-contamination in a single process.
+  pytest tests/unit/ && pytest tests/e2e/ && pytest tests/integration/
+
+## Security Red Team (Round 2)
+C1_FIXED: Tenant isolation bypass via company_id in public registration — removed
+C2_FIXED: Missing NaN guard on leave calculator — added math.isfinite()
+nan_guards: 6 calculators (cpf, cost_to_company, retrenchment, overtime, notice_period, leave)
+cors_star: test fixtures only
+tenant_isolation: verified
+guardrails: 4 layers wired
+company_name_length: capped at 255 chars

@@ -11,6 +11,7 @@ Output: applicable period, source (statutory vs contractual), salary-in-lieu.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -49,12 +50,14 @@ def calculate_notice_period(inp: NoticePeriodInput) -> NoticePeriodResult:
     minimum, the contractual period applies. Otherwise, the statutory
     minimum under EA s10 governs.
     """
+    if not math.isfinite(inp.monthly_salary) or inp.monthly_salary < 0:
+        raise ValueError("monthly_salary must be a finite non-negative number")
+    if not math.isfinite(inp.years_of_service) or inp.years_of_service < 0:
+        raise ValueError("years_of_service must be a finite non-negative number")
+
     statutory_weeks = _statutory_notice_weeks(inp.years_of_service)
 
-    if (
-        inp.contractual_notice_weeks is not None
-        and inp.contractual_notice_weeks >= statutory_weeks
-    ):
+    if inp.contractual_notice_weeks is not None and inp.contractual_notice_weeks >= statutory_weeks:
         notice_weeks = inp.contractual_notice_weeks
         source = "contractual"
     else:

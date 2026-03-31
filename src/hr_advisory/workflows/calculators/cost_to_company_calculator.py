@@ -12,6 +12,7 @@ Provides full cost breakdown for budgeting purposes.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from hr_advisory.workflows.calculators.cpf_calculator import (
@@ -102,6 +103,10 @@ def _cpf_employer_rate(citizenship: str, age: int, pr_year: int) -> float:
 
 def calculate_cost_to_company(inp: CostToCompanyInput) -> CostToCompanyResult:
     """Calculate total cost of employing one person."""
+    if not math.isfinite(inp.monthly_salary) or inp.monthly_salary < 0:
+        raise ValueError("monthly_salary must be a finite non-negative number")
+    if not math.isfinite(inp.age) or inp.age < 0:
+        raise ValueError("age must be a finite non-negative number")
     # CPF employer contribution
     cpf_rate = _cpf_employer_rate(inp.citizenship, inp.age, inp.pr_year)
     cpf_employer = round(inp.monthly_salary * cpf_rate, 2)

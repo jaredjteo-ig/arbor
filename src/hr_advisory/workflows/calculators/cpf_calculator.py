@@ -12,6 +12,7 @@ Rate tables reflect CPF contribution rates effective 1 January 2026.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -198,7 +199,14 @@ def calculate_cpf_contributions(input_data: CPFInput) -> CPFResult:
     Raises:
         ValueError: If inputs are invalid (negative wages, missing pr_year, etc.)
     """
-    # Validate
+    # Validate — NaN/Inf bypass numeric comparisons, so check finiteness first
+    for _field_name, _val in [
+        ("monthly_ow", input_data.monthly_ow),
+        ("monthly_aw", input_data.monthly_aw),
+        ("age", input_data.age),
+    ]:
+        if not math.isfinite(_val):
+            raise ValueError(f"{_field_name} must be a finite number")
     if input_data.monthly_ow < 0:
         raise ValueError("monthly_ow must be non-negative")
     if input_data.monthly_aw < 0:

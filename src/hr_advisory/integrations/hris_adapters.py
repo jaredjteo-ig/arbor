@@ -93,7 +93,6 @@ class HrisSyncResult:
 
 # ── In-memory stores ─────────────────────────────────────────
 
-_sync_configs: dict[str, HrisSyncConfig] = {}
 _sync_history: list[HrisSyncResult] = []
 
 
@@ -134,33 +133,6 @@ def _normalise_pass_type(raw: str) -> Optional[str]:
     return normalised
 
 
-async def _sync_api_provider(config: HrisSyncConfig) -> list[EmployeeRecord]:
-    """Sync employee data from a third-party HRIS API.
-
-    Raises:
-        NotImplementedError: API integrations require partnership agreements.
-    """
-    logger.warning(
-        "HRIS API sync requested for company %s (provider: %s) — not yet available. "
-        "Use CSV import instead (POST /integrations/hris/import-csv).",
-        config.company_id,
-        config.provider.value,
-    )
-    raise NotImplementedError(
-        f"{config.provider.value} API integration is not yet available. "
-        "Please use CSV import: POST /integrations/hris/import-csv with a CSV file "
-        "containing columns: employee_id, name, email, citizenship_status, date_of_birth, "
-        "monthly_basic_salary, job_title, department, employment_type, start_date, pass_type."
-    )
-
-
-_PROVIDER_ADAPTERS = {
-    HrisProvider.PROVIDER_A: _sync_api_provider,
-    HrisProvider.PROVIDER_B: _sync_api_provider,
-    HrisProvider.PROVIDER_C: _sync_api_provider,
-}
-
-
 # ── Public API ───────────────────────────────────────────────
 
 
@@ -172,43 +144,29 @@ async def sync_from_provider(
 ) -> HrisSyncResult:
     """Run a sync operation from an HRIS provider.
 
+    Only CSV import is currently supported. API provider sync
+    (PROVIDER_A, PROVIDER_B, PROVIDER_C) is not available --
+    use CSV import via POST /integrations/hris/import-csv.
+
     Returns the sync result with counts of new/updated records.
     """
-    config = _sync_configs.get(company_id)
-    if config is None:
-        config = HrisSyncConfig(
-            company_id=company_id,
-            provider=provider,
-            oauth_token=oauth_token,
-        )
-        _sync_configs[company_id] = config
-
     result = HrisSyncResult(
         sync_id=sync_id,
         company_id=company_id,
         provider=provider,
-        status=SyncStatus.IN_PROGRESS,
+        status=SyncStatus.FAILED,
     )
 
-    adapter = _PROVIDER_ADAPTERS.get(provider)
-    if adapter is None:
-        result.status = SyncStatus.FAILED
-        result.errors.append(f"Unsupported provider: {provider}")
+    if provider != HrisProvider.CSV:
+        result.errors.append(
+            f"API provider sync not available for {provider.value}. "
+            "Use CSV import: POST /integrations/hris/import-csv"
+        )
         _sync_history.append(result)
         return result
 
-    try:
-        records = await adapter(config)
-        result.total_records = len(records)
-        result.new_records = len(records)  # simplified — production diffs
-        result.status = SyncStatus.COMPLETED
-        result.completed_at = datetime.now()
-        config.last_sync_at = datetime.now()
-    except Exception as e:
-        result.status = SyncStatus.FAILED
-        result.errors.append(str(e))
-        logger.exception("HRIS sync failed for %s/%s", company_id, provider)
-
+    # CSV provider should use import_csv() directly, not this function.
+    result.errors.append("Use import_csv() for CSV imports, not sync_from_provider().")
     _sync_history.append(result)
     return result
 

@@ -15,6 +15,7 @@ All calculations reflect statutory minimums as at 1 January 2026.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -480,8 +481,14 @@ def calculate_leave_entitlement(input_data: LeaveInput) -> LeaveResult:
         LeaveResult with entitlement details.
 
     Raises:
-        ValueError: If leave_type is not recognized.
+        ValueError: If leave_type is not recognized or inputs are invalid.
     """
+    # NaN/Inf guard — years_of_service is a float that feeds into numeric
+    # comparisons (< 0.25, int(), etc.). NaN bypasses all comparisons silently;
+    # Inf produces incorrect int() conversions. Validate finiteness first.
+    if not math.isfinite(input_data.years_of_service) or input_data.years_of_service < 0:
+        raise ValueError("years_of_service must be a finite non-negative number")
+
     calculator = LEAVE_CALCULATORS.get(input_data.leave_type)
     if calculator is None:
         raise ValueError(

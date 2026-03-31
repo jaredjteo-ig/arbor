@@ -51,8 +51,12 @@ async def register(
 ) -> dict:
     """Register a new user account.
 
-    Accepts: email, password, name, optional company_id.
+    Accepts: email, password, name, optional company_name.
     Returns: user details + access_token + refresh_token.
+
+    SECURITY: The public registration endpoint does NOT accept company_id.
+    To join an existing company, use the invitation flow (POST /register-employee).
+    To create a new company during registration, provide company_name.
 
     Status codes:
         200: Success
@@ -65,7 +69,14 @@ async def register(
     email = body.get("email", "")
     password = body.get("password", "")
     name = body.get("name", "")
-    company_id = body.get("company_id")
+    # SECURITY: company_id is NOT accepted from public registration.
+    # Accepting an arbitrary company_id would allow an attacker to join any
+    # existing company by guessing/enumerating integer IDs — a tenant isolation
+    # bypass. Only the invitation flow (register-employee) may link to an
+    # existing company.
+    company_name_raw = body.get("company_name", "")
+    company_name = company_name_raw.strip()[:255] if isinstance(company_name_raw, str) else None
+    company_name = company_name or None
 
     # Input validation
     try:
@@ -83,13 +94,14 @@ async def register(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Register
+    # Register — company_id is always None for public registration
     try:
         result = auth_service.register_user(
             email=email,
             password=password,
             name=name,
-            company_id=company_id,
+            company_id=None,
+            company_name=company_name,
         )
     except ValueError as exc:
         error_msg = str(exc)

@@ -36,8 +36,10 @@ function CallbackHandler() {
           localStorage.setItem("access_token", response.access_token);
           localStorage.setItem("refresh_token", response.refresh_token);
           // Full page navigation (not router.push) so AuthProvider re-mounts
-          // and picks up the new tokens from localStorage
-          window.location.href = "/my-dashboard";
+          // and picks up the new tokens from localStorage.
+          // New users (no company) go to onboarding; existing users go to dashboard.
+          const dest = response.user.company_id ? "/dashboard" : "/onboarding";
+          window.location.href = dest;
         })
         .catch(() => {
           router.push("/login?error=sso_failed");

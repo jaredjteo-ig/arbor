@@ -7,6 +7,8 @@ cross-references are stored properly.
 
 import pytest
 
+pytestmark = pytest.mark.requires_postgres
+
 from hr_advisory.kb.content.employment_act import get_bundle
 from hr_advisory.kb.pipeline import KBContentPipeline
 from hr_advisory.kb.validator import KBContentValidator

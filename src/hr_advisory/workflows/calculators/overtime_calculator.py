@@ -11,6 +11,7 @@ Implements EA Part IV: s37 (overtime rate), s38 (max 72h/month).
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -65,6 +66,11 @@ def _ot_multiplier(day_type: str) -> float:
 
 def calculate_overtime(inp: OvertimeInput) -> OvertimeResult:
     """Calculate overtime pay per EA Part IV provisions."""
+    if not math.isfinite(inp.monthly_salary) or inp.monthly_salary < 0:
+        raise ValueError("monthly_salary must be a finite non-negative number")
+    if not math.isfinite(inp.hours_worked) or inp.hours_worked < 0:
+        raise ValueError("hours_worked must be a finite non-negative number")
+
     warnings: list[str] = []
 
     # Determine Part IV eligibility

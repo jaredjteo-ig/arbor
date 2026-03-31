@@ -6,11 +6,11 @@
 Registers Arbor's platform capabilities as tools in the kaizen-agents
 ToolRegistry. Tools are organized in two tiers:
 
-1. Always-active (~15 tools): KB search, calculators, navigation, context
-2. Discoverable via search_tools: All 600+ HRIS CRUD endpoints
+1. Always-active (~6 tools): KB search, calculators, navigation, context
+2. Discoverable via search_tools: 200+ HRIS CRUD endpoints
 
 The search_tools meta-tool enables the LLM to discover capabilities
-without overwhelming the context window with 600+ tool definitions.
+without overwhelming the context window with 200+ tool definitions.
 """
 
 from __future__ import annotations

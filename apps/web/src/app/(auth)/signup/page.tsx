@@ -24,6 +24,7 @@ import {
 const signupSchema = z
   .object({
     name: z.string().min(1, "auth.name_required"),
+    companyName: z.string().min(1, "auth.company_name_required"),
     email: z.string().min(1, "auth.invalid_email").email("auth.invalid_email"),
     password: z.string().min(8, "auth.password_requirements"),
     confirmPassword: z.string().min(1, "auth.passwords_must_match"),
@@ -344,7 +345,13 @@ function StandardSignupForm() {
     formState: { errors, isSubmitting },
   } = useForm<SignupFormValues>({
     resolver: zodResolver(signupSchema),
-    defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
+    defaultValues: {
+      name: "",
+      companyName: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+    },
   });
 
   async function onSubmit(data: SignupFormValues) {
@@ -354,6 +361,7 @@ function StandardSignupForm() {
         name: data.name,
         email: data.email,
         password: data.password,
+        company_name: data.companyName,
       });
     } catch (error) {
       if (error instanceof AuthError) {
@@ -396,6 +404,18 @@ function StandardSignupForm() {
           autoComplete="name"
           error={errors.name ? t(errors.name.message as string) : undefined}
           {...register("name")}
+        />
+
+        <AppInput
+          label={t("auth.company_name")}
+          placeholder="Acme Pte Ltd"
+          autoComplete="organization"
+          error={
+            errors.companyName
+              ? t(errors.companyName.message as string)
+              : undefined
+          }
+          {...register("companyName")}
         />
 
         <AppInput
