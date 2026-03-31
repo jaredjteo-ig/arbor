@@ -1,0 +1,55 @@
+# Session Notes — 2026-03-31
+
+### Read These Files First (in order)
+
+1. `src/hr_advisory/delegate/arbor_loop.py` — Delegate engine (207 tools, TAOD loop, streaming)
+2. `src/hr_advisory/delegate/tools.py` — ToolHydrator with BM25 search (6 always-active + ~201 discoverable)
+3. `src/hr_advisory/services/auth_service.py:345` — `register_user()` with atomic company creation via `company_name`
+4. `src/hr_advisory/api/routers/auth.py:47` — `/register` endpoint: company_id REMOVED from public registration (security fix)
+5. `src/hr_advisory/api/platform.py` — NexusEngine.builder().preset(Preset.SAAS)
+6. `deploy/.env.production.template` — All required env vars documented
+7. `deploy/docker-compose.prod.yml` — Production compose (Docker Hub pull-based)
+8. `workspaces/hr-ai-advisory/04-validate/round-13-comprehensive-redteam.md` — Full validation results
+
+## Accomplished
+
+- **Registration system fixed** — atomic user + company creation in single API call, frontend has company name field, redirects to /dashboard
+- **CRITICAL security fix** — removed `company_id` from public `/register` (tenant isolation bypass)
+- **NaN/Inf guards** on all 6 calculators (CPF, cost-to-company, retrenchment, overtime, notice period, leave)
+- **Dead code deleted** — PatchRunner (540 lines), HRIS API stub, fixed tool count docstring (600+ → 207)
+- **37 integration test CSRF failures fixed** — root cause: NexusEngine SAAS preset CSRF middleware
+- **SDK pins bumped** — kailash>=2.3.4, dataflow>=1.4.0, kaizen>=2.3.3, nexus>=1.6.1
+- **COC synced** to v1.2.0
+- **Google SSO restored** — credentials were in `deploy/.env.prod`, lost during .env rewrite, now restored
+- **Frontend rebuilt** with correct `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
+- **Production deployed v0.3.0** — backend + frontend on Docker Hub, all 5 containers healthy
+- **13 new tests** (5 unit + 8 E2E), 1,894 total passing
+- **4 red team rounds** (10-13) — Playwright browser + API, converged with 0 CRITICAL remaining
+- **Production .env consolidated** — credentials from flat files + Google OAuth + FRONTEND_URL
+
+## Outstanding
+
+- [ ] **PACE governance into Delegate** — trust levels still in frozensets, not GovernanceContext (M60+, blocked on pact-core)
+- [ ] **Google SSO full E2E** — redirect to Google works, but callback untested (needs real Google account in Playwright)
+- [ ] **HIGH: Unbounded in-memory stores** — `_sync_history` in hris_adapters.py, `_sessions`/`_evaluations`/`_patches` in qa.py (use deque(maxlen=10000))
+- [ ] **HIGH: Race condition in company lookup** — two simultaneous registrations with same company_name may cross-link
+- [ ] **Invite URL domain** — FRONTEND_URL added to production, but `deploy/docker-compose.prod.yml` doesn't pass it to the container
+- [ ] **50 pre-existing test failures** — compliance router, QA API, feedback pipeline (session 3 era, likely stale)
+
+### Oversight — Verify Before Starting
+
+- [ ] `curl -sf https://arbor.terrene.foundation/api/health` — production healthy
+- [ ] `pip show kailash kaizen-agents kailash-dataflow | grep Version` — kailash 2.3.4, kaizen-agents 0.6.0, dataflow 1.4.0
+- [ ] `python3 -c "from hr_advisory.delegate import create_delegate; print('OK')"` — delegate imports
+- [ ] `git log --oneline -3` — latest is round 13 redteam commit on main
+
+### Oversight — Verify After Completing
+
+- [ ] `pytest tests/unit/ -q --timeout=30 -p no:warnings` — 1,155+ tests pass
+- [ ] `pytest tests/e2e/ -q --timeout=30 -p no:warnings` — 42+ tests pass (run SEPARATELY from unit)
+- [ ] `docker build -f deploy/Dockerfile.backend -t arbor-backend:test .` — image builds
+- [ ] `curl -sf https://arbor.terrene.foundation/api/health` — production still healthy
+
+## Blockers
+
+- **PACT governance** — requires kailash-pact GovernanceContext integration (not started, depends on care repo)
