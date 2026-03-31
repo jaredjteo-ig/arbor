@@ -1,0 +1,82 @@
+# Arbor — PostgreSQL 16 + pgvector
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: arbor-pgdata
+  labels:
+    app.kubernetes.io/part-of: arbor
+    app.kubernetes.io/component: database
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arbor-postgres
+  labels:
+    app.kubernetes.io/part-of: arbor
+    app.kubernetes.io/component: database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: arbor-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: arbor-postgres
+        app.kubernetes.io/part-of: arbor
+        app.kubernetes.io/component: database
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg16
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: arbor-db-credentials
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "arbor"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "arbor"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: arbor-pgdata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arbor-postgres
+  labels:
+    app.kubernetes.io/part-of: arbor
+    app.kubernetes.io/component: database
+spec:
+  selector:
+    app.kubernetes.io/name: arbor-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None

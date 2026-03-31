@@ -1,0 +1,51 @@
+# Arbor — Ingress
+# Routes: / → frontend, /api → backend, /health → backend
+#
+# Requires an Ingress controller (nginx-ingress, traefik, etc.)
+# TLS is enabled/disabled by deploy.sh based on configure settings.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: arbor-ingress
+  labels:
+    app.kubernetes.io/part-of: arbor
+  annotations:
+    #TLS# cert-manager.io/cluster-issuer: "CERT_ISSUER"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    # SSE support for advisory streaming
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  #TLS# tls:
+  #TLS#   - hosts:
+  #TLS#       - ARBOR_DOMAIN
+  #TLS#     secretName: arbor-tls
+  rules:
+    - host: ARBOR_DOMAIN
+      http:
+        paths:
+          # Backend API
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: arbor-backend
+                port:
+                  number: 8000
+          # Health check (direct to backend)
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: arbor-backend
+                port:
+                  number: 8000
+          # Frontend (catch-all)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: arbor-frontend
+                port:
+                  number: 3000

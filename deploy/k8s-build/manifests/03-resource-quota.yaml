@@ -1,0 +1,17 @@
+# Arbor Build System — Resource Quota
+# Prevents build jobs from consuming excessive cluster resources.
+# Tune these values based on your cluster capacity.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: build-limits
+  namespace: arbor-build
+spec:
+  hard:
+    # Max 3 concurrent build pods
+    pods: "3"
+    # Total CPU/memory across all build pods
+    requests.cpu: "3"
+    requests.memory: "6Gi"
+    limits.cpu: "6"
+    limits.memory: "12Gi"

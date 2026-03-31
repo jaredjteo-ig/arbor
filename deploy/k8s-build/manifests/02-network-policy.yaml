@@ -1,0 +1,40 @@
+# Arbor Build System — Network Policy
+# Build pods can ONLY reach container registries (HTTPS/443)
+# and DNS. No lateral movement, no internet access, no inbound.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: build-pod-egress
+  namespace: arbor-build
+spec:
+  podSelector:
+    matchLabels:
+      app: arbor-kaniko-build
+  policyTypes:
+    - Egress
+    - Ingress
+  # No inbound traffic to build pods
+  ingress: []
+  egress:
+    # HTTPS to registries (Docker Hub, GHCR, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    # Git clone over HTTPS (same port, but explicit for clarity)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    # DNS resolution (kube-dns)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

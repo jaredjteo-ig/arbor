@@ -1,0 +1,12 @@
+# Arbor Build System — Namespace
+# Enforces Pod Security Standards at the restricted level.
+# Build pods cannot run as root or escalate privileges.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: arbor-build
+  labels:
+    app.kubernetes.io/part-of: arbor
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
