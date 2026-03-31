@@ -24,6 +24,10 @@ from starlette.testclient import TestClient
 
 os.environ.setdefault("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
 
+# Classes that need PostgreSQL are marked individually with
+# @pytest.mark.requires_postgres. TestPasswordHashing, TestJWTTokens,
+# and TestRoleBasedAccess run without a database.
+
 from hr_advisory.api.platform import create_platform
 from hr_advisory.config.settings import Settings, get_settings
 from hr_advisory.services.auth_service import AuthService
@@ -53,7 +57,7 @@ def settings() -> Settings:
     return Settings(
         app_env="development",
         api_port=8098,
-        cors_origins="http://localhost:3000",
+        cors_origins="*",
         jwt_secret_key=_TEST_JWT_SECRET,
         jwt_algorithm="HS256",
         jwt_expiry_minutes=60,
@@ -175,6 +179,7 @@ class TestJWTTokens:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestRegistration:
     """POST /auth/register endpoint."""
 
@@ -261,6 +266,7 @@ class TestRegistration:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestLogin:
     """POST /auth/login endpoint."""
 
@@ -312,6 +318,7 @@ class TestLogin:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestTokenRefresh:
     """POST /auth/refresh endpoint."""
 
@@ -362,6 +369,7 @@ class TestTokenRefresh:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestProtectedMe:
     """GET /auth/me — requires valid JWT."""
 
@@ -455,6 +463,7 @@ class TestRoleBasedAccess:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestPasswordReset:
     """POST /auth/password-reset-request and POST /auth/password-reset."""
 
@@ -600,6 +609,7 @@ class TestPasswordReset:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestLogout:
     """POST /auth/logout — server-side JWT revocation."""
 
@@ -668,6 +678,7 @@ class TestLogout:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.requires_postgres
 class TestTokenRevocation:
     """Server-side JWT token revocation via blocklist.
 

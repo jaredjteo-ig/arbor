@@ -348,8 +348,13 @@ class AuthService:
         password: str,
         name: str,
         company_id: int | None = None,
+        company_name: str | None = None,
     ) -> dict:
         """Register a new user.
+
+        If ``company_name`` is provided and ``company_id`` is None, a new
+        Company record is created atomically and linked to the user so the
+        JWT includes it from the very first token.
 
         Returns:
             dict with "user", "access_token", "refresh_token", "token_type".
@@ -360,6 +365,10 @@ class AuthService:
         self.validate_email(email)
         self.validate_password(password)
         self.validate_name(name)
+
+        # Normalize company_name: treat blank/whitespace-only as None
+        if company_name is not None:
+            company_name = company_name.strip() or None
 
         # Check for duplicate email
         existing = self._find_user_by_email(email)
@@ -373,6 +382,16 @@ class AuthService:
             password_hash=password_hash,
             company_id=company_id,
         )
+
+        # If the caller provided a company_name but no company_id, create
+        # a Company and link it to the newly created user.
+        if company_name and company_id is None:
+            created_company_id = self._create_company_for_registration(company_name, user["id"])
+            if created_company_id is not None:
+                # Re-fetch the user so the dict includes the updated company_id
+                refreshed = self._find_user_by_id(user["id"])
+                if refreshed is not None:
+                    user = refreshed
 
         access_token = self.create_access_token(
             user_id=user["id"],
@@ -396,6 +415,97 @@ class AuthService:
             "refresh_token": refresh_token,
             "token_type": "bearer",
         }
+
+    def _create_company_for_registration(self, company_name: str, user_id: int) -> int | None:
+        """Create a Company record and link it to the given user.
+
+        Returns the new company_id, or None on failure. Failures are logged
+        but never raised -- the user is still registered without a company.
+        """
+        from kailash.runtime import LocalRuntime
+        from kailash.workflow.builder import WorkflowBuilder
+
+        import hr_advisory.models  # noqa: F401
+
+        try:
+            # Step 1: Create the Company
+            create_params = {
+                "name": company_name.strip(),
+                "uen": "",
+                "sector": "",
+                "headcount_local": 0,
+                "headcount_pr": 0,
+                "headcount_ep": 0,
+                "headcount_sp": 0,
+                "headcount_wp": 0,
+                "is_active": True,
+                "profile_completeness_score": 0.0,
+            }
+
+            wf = WorkflowBuilder()
+            wf.add_node("CompanyCreateNode", "create_company", create_params)
+            runtime = LocalRuntime()
+            results, _ = runtime.execute(wf.build())
+            create_result = results["create_company"]
+
+            # Step 2: Look up the created company to get the ID
+            company_id = create_result.get("id")
+            if company_id is None:
+                wf2 = WorkflowBuilder()
+                wf2.add_node(
+                    "CompanyListNode",
+                    "find_company",
+                    {
+                        "filter": {"name": company_name.strip()},
+                        "limit": 1,
+                        "enable_cache": False,
+                    },
+                )
+                runtime2 = LocalRuntime()
+                results2, _ = runtime2.execute(wf2.build())
+                records = results2["find_company"].get("records", [])
+                if records:
+                    company_id = records[-1].get("id")
+
+            if company_id is None:
+                logger.warning(
+                    "Created company '%s' but could not retrieve its ID",
+                    company_name,
+                )
+                return None
+
+            # Step 3: Update the user's company_id
+            self._update_user(user_id, {"company_id": company_id})
+
+            # Step 4: Seed company defaults
+            try:
+                from hr_advisory.services.company_seeding import seed_company_defaults
+
+                seed_company_defaults(company_id)
+            except Exception:
+                logger.warning(
+                    "Failed to seed defaults for company %s (user %s)",
+                    company_id,
+                    user_id,
+                    exc_info=True,
+                )
+
+            logger.info(
+                "Created company '%s' (id=%s) for user %s during registration",
+                company_name,
+                company_id,
+                user_id,
+            )
+            return company_id
+
+        except Exception:
+            logger.warning(
+                "Failed to create company '%s' for user %s during registration",
+                company_name,
+                user_id,
+                exc_info=True,
+            )
+            return None
 
     def authenticate(self, email: str, password: str) -> dict:
         """Authenticate a user with email + password.

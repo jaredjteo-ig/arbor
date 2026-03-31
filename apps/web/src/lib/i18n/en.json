@@ -26,6 +26,8 @@
     "password": "Password",
     "confirm_password": "Confirm password",
     "name": "Full name",
+    "company_name": "Company name",
+    "company_name_required": "Please enter your company name",
     "forgot_password": "Forgot password?",
     "forgot_password_heading": "Reset your password",
     "forgot_password_subheading": "Enter your email and we will send you a reset link",

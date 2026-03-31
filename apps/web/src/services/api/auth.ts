@@ -16,6 +16,7 @@ export interface RegisterData {
   name: string;
   email: string;
   password: string;
+  company_name?: string;
 }
 
 export interface RegisterEmployeeData {

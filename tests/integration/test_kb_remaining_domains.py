@@ -8,6 +8,8 @@ are stored properly.
 
 import pytest
 
+pytestmark = pytest.mark.requires_postgres
+
 from hr_advisory.kb.content.remaining_domains import get_bundle
 from hr_advisory.kb.pipeline import KBContentPipeline
 from hr_advisory.kb.validator import KBContentValidator

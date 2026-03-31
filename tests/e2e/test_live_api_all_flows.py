@@ -8,14 +8,27 @@ full coverage of all routes using the same production code path.
 Each test is written as a user story: "A user tried to X, and got Y."
 """
 
-import sys
+import socket
 import time
 import warnings
 
 import pytest
 
-sys.path.insert(0, "/Users/esperie/repos/asme/aite/src")
 warnings.filterwarnings("ignore")
+
+
+# Skip entire module if PostgreSQL is not reachable
+def _pg_available() -> bool:
+    try:
+        s = socket.create_connection(("127.0.0.1", 5432), timeout=1)
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+if not _pg_available():
+    pytest.skip("PostgreSQL not reachable on localhost:5432", allow_module_level=True)
 
 from fastapi.testclient import TestClient
 from hr_advisory.api.platform import create_platform
@@ -26,7 +39,7 @@ from hr_advisory.config.settings import Settings
 settings = Settings(
     app_env="development",
     api_port=8099,
-    cors_origins="http://localhost:3000,http://localhost:5173",
+    cors_origins="*",  # Allow missing Origin header from TestClient
 )
 platform = create_platform(settings)
 app = platform._gateway.app

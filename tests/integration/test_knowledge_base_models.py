@@ -12,6 +12,8 @@ import pytest
 # Ensure DATABASE_URL is set for tests
 os.environ.setdefault("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
 
+pytestmark = pytest.mark.requires_postgres
+
 
 def _sync(coro):
     """Run an async coroutine synchronously."""

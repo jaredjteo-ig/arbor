@@ -9,6 +9,8 @@ import uuid
 import pytest
 from starlette.testclient import TestClient
 
+pytestmark = pytest.mark.requires_postgres
+
 from hr_advisory.api.platform import create_platform
 from hr_advisory.config.settings import Settings
 
@@ -19,7 +21,7 @@ def settings() -> Settings:
     return Settings(
         app_env="development",
         api_port=8099,
-        cors_origins="http://localhost:3000,http://localhost:5173",
+        cors_origins="*",
     )
 
 

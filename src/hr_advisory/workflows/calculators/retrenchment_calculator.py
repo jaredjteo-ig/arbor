@@ -12,6 +12,7 @@ Advisory on Managing Excess Manpower recommends a market norm.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -65,9 +66,12 @@ def calculate_retrenchment(inp: RetrenchmentInput) -> RetrenchmentResult:
     The Tripartite Advisory recommends a prevailing market norm of
     2 weeks to 1 month of salary per completed year of service.
     """
-    weeks_per_year, sector_note = _SECTOR_NORMS.get(
-        inp.sector.lower(), _DEFAULT_NORM
-    )
+    if not math.isfinite(inp.monthly_salary) or inp.monthly_salary < 0:
+        raise ValueError("monthly_salary must be a finite non-negative number")
+    if not math.isfinite(inp.years_of_service) or inp.years_of_service < 0:
+        raise ValueError("years_of_service must be a finite non-negative number")
+
+    weeks_per_year, sector_note = _SECTOR_NORMS.get(inp.sector.lower(), _DEFAULT_NORM)
 
     weekly_salary = inp.monthly_salary / 4.0
     per_year_benefit = round(weekly_salary * weeks_per_year, 2)

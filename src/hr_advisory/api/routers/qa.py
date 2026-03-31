@@ -18,9 +18,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
-from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.api.middleware.auth_middleware import get_current_user
 from hr_advisory.models.qa import PatchStatus, SessionStatus, validate_score
 
 logger = logging.getLogger(__name__)
@@ -38,24 +38,6 @@ _patches: Dict[int, Dict[str, Any]] = {}
 _next_session_id = 1
 _next_evaluation_id = 1
 _next_patch_id = 1
-
-# Controls whether LLM-dependent background tasks (pre-approval testing,
-# regression testing) are actually executed. Disabled by default to prevent
-# blocking in unit tests where FastAPI TestClient runs background tasks
-# synchronously. Enable explicitly in production via enable_llm_background_tasks().
-_llm_background_tasks_enabled: bool = False
-
-
-def enable_llm_background_tasks() -> None:
-    """Enable LLM-dependent background tasks (pre-approval, regression).
-
-    Call this at application startup to enable the PatchRunner background
-    tasks. This must be called explicitly to avoid blocking in test
-    environments where FastAPI TestClient runs tasks synchronously.
-    """
-    global _llm_background_tasks_enabled
-    _llm_background_tasks_enabled = True
-    logger.info("LLM background tasks enabled for QA patch testing")
 
 
 # ---------------------------------------------------------------------------
@@ -121,9 +103,7 @@ def _run_pattern_detection() -> None:
     """Run PatternDetector and MutationEngine as a background task.
 
     Scans all evaluations for recurring failure patterns and proposes
-    InstructionPatch candidates for any new clusters found. After a patch
-    is proposed, schedules PatchRunner.test_pre_approval() to automatically
-    test the patch before it can be approved.
+    InstructionPatch candidates for any new clusters found.
 
     This function is designed to be called as a FastAPI BackgroundTask
     after an evaluation is submitted. It must never raise -- all errors
@@ -156,15 +136,9 @@ def _run_pattern_detection() -> None:
                         cluster["affected_agent"],
                         cluster["failure_category"],
                     )
-                    # Schedule pre-approval testing for the new patch
-                    if _llm_background_tasks_enabled:
-                        _run_pre_approval_test(patch_id)
-                    else:
-                        logger.info(
-                            "Skipping pre-approval test for patch %d: "
-                            "LLM background tasks not enabled",
-                            patch_id,
-                        )
+                    # Patch proposed -- admin can manually approve or reject.
+                    # Automated pre-approval testing was removed with PatchRunner
+                    # (specialist agents no longer exist).
             except Exception as exc:
                 logger.error(
                     "Failed to propose patch for cluster agent=%s, category=%s: %s",
@@ -179,105 +153,6 @@ def _run_pattern_detection() -> None:
             exc,
             exc_info=True,
         )
-
-
-def _run_pre_approval_test(patch_id: int) -> None:
-    """Run PatchRunner.test_pre_approval() for a patch as a background task.
-
-    Updates the patch status based on the test result:
-    - READY_FOR_APPROVAL if the patch improves scores
-    - REJECTED if the patch does not improve scores
-
-    This function must never raise -- all errors are logged and swallowed.
-    """
-    try:
-        from hr_advisory.quality.patch_runner import PatchRunner
-
-        patch = _patches.get(patch_id)
-        if patch is None:
-            logger.error(
-                "Pre-approval test: patch %d not found in _patches store",
-                patch_id,
-            )
-            return
-
-        patch["status"] = PatchStatus.TESTING
-        logger.info("Starting pre-approval test for patch %d", patch_id)
-
-        runner = PatchRunner()
-        result = runner.test_pre_approval(patch)
-
-        patch["test_results"] = result
-        patch["status"] = result["status_recommendation"]
-
-        logger.info(
-            "Pre-approval test for patch %d completed: recommendation=%s, delta=%.2f",
-            patch_id,
-            result["status_recommendation"],
-            result.get("score_delta", 0.0),
-        )
-    except Exception as exc:
-        logger.error(
-            "Pre-approval test failed for patch %d: %s",
-            patch_id,
-            exc,
-            exc_info=True,
-        )
-        # Leave patch in TESTING status on failure -- admin can re-trigger or reject
-        patch = _patches.get(patch_id)
-        if patch is not None:
-            patch["status"] = PatchStatus.PROPOSED
-            patch["test_results"] = {"error": str(exc)}
-
-
-def _run_regression_test(patch_id: int) -> None:
-    """Run PatchRunner.run_regression() for a patch as a background task.
-
-    Updates the patch status based on the regression result:
-    - DEPLOYED if no category regressions detected
-    - ROLLED_BACK if any category regresses beyond threshold
-
-    This function must never raise -- all errors are logged and swallowed.
-    """
-    try:
-        from hr_advisory.quality.patch_runner import PatchRunner
-
-        patch = _patches.get(patch_id)
-        if patch is None:
-            logger.error(
-                "Regression test: patch %d not found in _patches store",
-                patch_id,
-            )
-            return
-
-        logger.info("Starting regression test for patch %d", patch_id)
-
-        runner = PatchRunner()
-        result = runner.run_regression(patch)
-
-        patch["test_results"] = result
-        patch["status"] = result["status_recommendation"]
-
-        if result["status_recommendation"] == PatchStatus.DEPLOYED:
-            patch["deployed_at"] = datetime.now(tz=timezone.utc).isoformat()
-
-        logger.info(
-            "Regression test for patch %d completed: recommendation=%s, " "rolled_back=%s",
-            patch_id,
-            result["status_recommendation"],
-            result.get("rolled_back", False),
-        )
-    except Exception as exc:
-        logger.error(
-            "Regression test failed for patch %d: %s",
-            patch_id,
-            exc,
-            exc_info=True,
-        )
-        # On regression failure, leave patch in approved status
-        patch = _patches.get(patch_id)
-        if patch is not None:
-            patch["test_results"] = {"error": str(exc)}
 
 
 def _fetch_conversations_for_session(
@@ -562,14 +437,12 @@ async def list_patches(
 @router.post("/patches/{patch_id}/approve")
 async def approve_patch(
     patch_id: int,
-    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Approve an instruction patch and schedule regression testing.
+    """Approve an instruction patch.
 
     The patch must be in 'ready_for_approval' status (i.e., it must have
-    passed pre-approval testing). After approval, a regression test is
-    scheduled as a background task to run the full 64-scenario suite.
+    passed pre-approval testing).
     """
     _require_admin(user)
 
@@ -596,18 +469,6 @@ async def approve_patch(
     patch["status"] = PatchStatus.APPROVED
     patch["approved_at"] = datetime.now(tz=timezone.utc).isoformat()
     patch["approved_by"] = user.get("sub", user.get("id"))
-
-    # Schedule regression testing as a background task
-    if _llm_background_tasks_enabled:
-        background_tasks.add_task(_run_regression_test, patch_id)
-    else:
-        logger.info(
-            "Skipping regression test for patch %d: "
-            "LLM background tasks not enabled. Call "
-            "enable_llm_background_tasks() at application startup "
-            "to enable automated regression testing.",
-            patch_id,
-        )
 
     return patch
 

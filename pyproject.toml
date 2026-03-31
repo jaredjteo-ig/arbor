@@ -21,10 +21,10 @@ classifiers = [
 ]
 dependencies = [
     # Kailash SDK (includes: fastapi, uvicorn, pydantic, sqlalchemy, pandas, numpy, requests, pyyaml)
-    "kailash[trust,pact,kaizen]>=2.2.1",
-    "kailash-nexus>=1.6.0",
-    "kailash-dataflow>=1.2.1",
-    "kailash-kaizen>=2.3.1",
+    "kailash[trust,pact,kaizen]>=2.3.4",
+    "kailash-nexus>=1.6.1",
+    "kailash-dataflow>=1.4.0",
+    "kailash-kaizen>=2.3.3",
     "kailash-pact>=0.4.1",
     "kaizen-agents>=0.4.0",
     # Terrene Foundation trust frameworks (bundled in src/ — not on PyPI)
@@ -104,6 +104,8 @@ filterwarnings = [
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests requiring external services",
+    "requires_postgres: marks tests that need a running PostgreSQL instance",
+    "e2e: marks tests as end-to-end tests exercising full user journeys",
 ]
 
 [tool.black]
