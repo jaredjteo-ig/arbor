@@ -126,7 +126,7 @@ export const authApi = {
   },
 
   requestPasswordReset(email: string): Promise<{ message: string }> {
-    return fetch(`${API_BASE}/auth/forgot-password`, {
+    return fetch(`${API_BASE}/auth/password-reset-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),

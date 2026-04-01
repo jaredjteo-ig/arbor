@@ -23,7 +23,7 @@ import { payrollApi, type PayrollRun } from "@/services/api/payroll";
 /* ── Helpers ──────────────────────────────────────────────── */
 
 function formatCurrency(amount: number): string {
-  return `$${amount.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${(amount ?? 0).toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -63,11 +63,12 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
+  const s = status || "draft";
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[status] || STATUS_STYLES.draft}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[s] || STATUS_STYLES.draft}`}
     >
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {s.charAt(0).toUpperCase() + s.slice(1)}
     </span>
   );
 }
@@ -189,12 +190,16 @@ export default function PayrollPage() {
         payroll_type: "monthly",
       });
       toast.success("Payroll calculated successfully");
-      router.push(`/payroll/${result.id}`);
+      // Backend returns { payroll_run: {...}, payslips: [...] }
+      const runId = result.id || (result as any).payroll_run?.id;
+      router.push(`/payroll/${runId}`);
     } catch (err: unknown) {
       const message =
         err instanceof Error
           ? err.message
-          : "Failed to calculate payroll. Please try again.";
+          : typeof err === "object" && err !== null && "detail" in err
+            ? String((err as Record<string, unknown>).detail)
+            : "Failed to calculate payroll. Please try again.";
       toast.error(message);
     } finally {
       setIsCalculating(false);

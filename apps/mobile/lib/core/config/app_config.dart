@@ -7,7 +7,7 @@ import 'dart:io' show Platform;
 /// special `10.0.2.2` alias while iOS simulators and other platforms use
 /// `localhost`.
 abstract final class AppConfig {
-  /// Base URL for the AITE backend API.
+  /// Base URL for the Arbor backend API.
   static String get apiBaseUrl {
     if (Platform.isAndroid) {
       return const String.fromEnvironment(

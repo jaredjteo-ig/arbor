@@ -29,7 +29,7 @@ import {
 /* ── Helpers ──────────────────────────────────────────────── */
 
 function formatCurrency(amount: number): string {
-  return `$${amount.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${(amount ?? 0).toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /* ── Status styles ────────────────────────────────────────── */
@@ -44,11 +44,12 @@ const ITEM_STATUS_STYLES: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
+  const s = status || "available";
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${ITEM_STATUS_STYLES[status] || ITEM_STATUS_STYLES.available}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${ITEM_STATUS_STYLES[s] || ITEM_STATUS_STYLES.available}`}
     >
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {s.charAt(0).toUpperCase() + s.slice(1)}
     </span>
   );
 }

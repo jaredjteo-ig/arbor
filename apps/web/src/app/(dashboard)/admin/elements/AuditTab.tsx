@@ -76,7 +76,7 @@ function RecommendationCard({
         <div className="flex items-center justify-between flex-wrap gap-2">
           <RiskTierBadge tier={tier} />
           <span className="text-xs font-medium text-[var(--color-gray-500)] uppercase">
-            {status.replace(/_/g, " ")}
+            {(status || "pending").replace(/_/g, " ")}
           </span>
         </div>
 

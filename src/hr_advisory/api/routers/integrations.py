@@ -88,6 +88,46 @@ async def call_tool(
     return result
 
 
+# ── Integration Status (frontend-facing) ────────────────────
+
+
+@router.get("/status")
+async def integration_status(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get connection status for all providers (frontend format).
+
+    Maps the internal health monitor data to the ProviderStatus shape
+    expected by the frontend integrations page.
+    """
+    from hr_advisory.mcp_servers.health import get_health_monitor
+
+    monitor = get_health_monitor()
+    statuses = monitor.get_all_statuses()
+
+    # Map health status to connection status
+    status_map = {
+        "healthy": "disconnected",  # healthy infra but no credentials = not connected
+        "degraded": "error",
+        "down": "error",
+        "unknown": "disconnected",
+    }
+
+    providers = []
+    for connector in statuses:
+        name = connector.get("name", connector.get("connector_id", "unknown"))
+        health = connector.get("status", "unknown")
+        providers.append({
+            "provider": name,
+            "category": connector.get("category", "other"),
+            "status": status_map.get(health, "disconnected"),
+            "last_sync": connector.get("last_success"),
+            "error_message": None,
+        })
+
+    return {"providers": providers}
+
+
 # ── Connector Health ─────────────────────────────────────────
 
 
@@ -507,3 +547,139 @@ async def reject_action(
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result["message"])
     return result
+
+
+# ── Accounting Sync ─────────────────────────────────────────
+
+
+@router.get("/accounting-sync")
+async def accounting_sync_status(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get accounting sync status for payroll runs.
+
+    Returns sync records showing which payroll runs have been synced
+    to the configured accounting provider (Xero, QuickBooks, Zoho).
+    Returns an empty list if no accounting provider is configured.
+    """
+    company_id = str(get_current_company_id(current_user) or "")
+
+    # Try to get sync records from the accounting server if available
+    try:
+        from hr_advisory.mcp_servers.registry import get_server
+        server = get_server("accounting")
+        if server is not None:
+            records = server.get_sync_records(company_id=company_id)
+            return {"records": records, "total": len(records)}
+    except Exception:
+        logger.debug("Accounting server not available, returning empty sync status")
+
+    return {
+        "records": [],
+        "total": 0,
+    }
+
+
+@router.post("/accounting-sync/{run_id}")
+async def trigger_accounting_sync(
+    run_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Trigger accounting sync for a specific payroll run.
+
+    Initiates a journal entry push to the configured accounting provider.
+    Returns an error if no accounting provider is configured.
+    """
+    company_id = str(get_current_company_id(current_user) or "")
+
+    try:
+        from hr_advisory.mcp_servers.registry import call_tool as mcp_call_tool
+        result = await mcp_call_tool(
+            "accounting_sync_payroll",
+            company_id=company_id,
+            user_id=str(current_user.get("id", "unknown")),
+            run_id=run_id,
+        )
+        return result
+    except Exception as exc:
+        logger.warning("Accounting sync failed for run_id=%s: %s", run_id, exc)
+        raise HTTPException(
+            status_code=400,
+            detail="Accounting sync is not configured. Connect an accounting provider in Integrations settings.",
+        )
+
+
+# ── SkillsFuture Courses ───────────────────────────────────
+
+
+@router.get("/skillsfuture/courses")
+async def list_skillsfuture_courses(
+    query: Optional[str] = None,
+    topic: Optional[str] = None,
+    duration: Optional[str] = None,
+    funding: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Search SkillsFuture courses.
+
+    Returns courses from the SkillsFuture Singapore API.
+    Returns an empty list if SkillsFuture API credentials are not configured.
+    """
+    # Try to call the SkillsFuture MCP tool if available
+    try:
+        from hr_advisory.mcp_servers.registry import call_tool as mcp_call_tool
+        company_id = str(get_current_company_id(current_user) or "")
+        params = {}
+        if query:
+            params["query"] = query
+        if topic:
+            params["topic"] = topic
+        if duration:
+            params["duration"] = duration
+        if funding:
+            params["funding"] = funding
+
+        result = await mcp_call_tool(
+            "skillsfuture_search_courses",
+            company_id=company_id,
+            user_id=str(current_user.get("id", "unknown")),
+            **params,
+        )
+        return result
+    except Exception:
+        logger.debug("SkillsFuture MCP tool not available")
+
+    return {
+        "courses": [],
+        "total": 0,
+    }
+
+
+@router.get("/skillsfuture/courses/{course_id}/grant-check")
+async def check_skillsfuture_grant(
+    course_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Check SkillsFuture grant eligibility for a specific course.
+
+    Returns eligibility info or a default response if the API is not configured.
+    """
+    try:
+        from hr_advisory.mcp_servers.registry import call_tool as mcp_call_tool
+        company_id = str(get_current_company_id(current_user) or "")
+        result = await mcp_call_tool(
+            "skillsfuture_check_grant",
+            company_id=company_id,
+            user_id=str(current_user.get("id", "unknown")),
+            course_id=course_id,
+        )
+        return result
+    except Exception:
+        logger.debug("SkillsFuture grant check not available")
+
+    return {
+        "eligible": False,
+        "grant_amount": 0,
+        "sfc_balance": 0,
+        "message": "SkillsFuture API credentials are not configured. Connect SkillsFuture in Integrations settings.",
+    }

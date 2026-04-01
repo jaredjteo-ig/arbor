@@ -7,7 +7,7 @@ import '../config/app_config.dart';
 import '../services/auth_service.dart';
 import 'auth_interceptor.dart';
 
-/// Centralized HTTP client for all AITE backend API calls.
+/// Centralized HTTP client for all Arbor backend API calls.
 ///
 /// Configures [Dio] with:
 /// - The correct base URL from [AppConfig]

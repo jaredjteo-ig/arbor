@@ -64,7 +64,7 @@ const SECTORS: Record<string, SectorConfig> = {
 };
 
 const fmt = (n: number) =>
-  `$${n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `$${(n ?? 0).toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 interface QuotaResult {
   totalWorkers: number;

@@ -41,11 +41,12 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
+  const s = status || "active";
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[status] || STATUS_STYLES.inactive}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[s] || STATUS_STYLES.inactive}`}
     >
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {s.charAt(0).toUpperCase() + s.slice(1)}
     </span>
   );
 }
@@ -392,11 +393,12 @@ const INVITATION_STATUS_STYLES: Record<string, string> = {
 };
 
 function InvitationStatusBadge({ status }: { status: string }) {
+  const s = status || "pending";
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${INVITATION_STATUS_STYLES[status] || INVITATION_STATUS_STYLES.revoked}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${INVITATION_STATUS_STYLES[s] || INVITATION_STATUS_STYLES.revoked}`}
     >
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {s.charAt(0).toUpperCase() + s.slice(1)}
     </span>
   );
 }

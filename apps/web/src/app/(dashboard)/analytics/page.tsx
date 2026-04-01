@@ -775,7 +775,11 @@ export default function AnalyticsPage() {
                       </span>
                     </div>
                     <p className="text-xs text-[var(--color-gray-500)] mt-1">
-                      Status: {compliance.overall_status.replace("_", " ")}
+                      Status:{" "}
+                      {(compliance.overall_status || "healthy").replace(
+                        "_",
+                        " ",
+                      )}
                     </p>
                   </div>
                   <div

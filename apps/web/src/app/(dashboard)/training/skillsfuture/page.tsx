@@ -228,9 +228,9 @@ function CourseCard({
         </div>
 
         {/* Topics */}
-        {course.topics.length > 0 && (
+        {(course.topics?.length ?? 0) > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {course.topics.slice(0, 3).map((topic) => (
+            {(course.topics ?? []).slice(0, 3).map((topic) => (
               <span
                 key={topic}
                 className="px-2 py-0.5 rounded text-xs bg-[var(--color-gray-100)] text-[var(--color-gray-600)]"
@@ -238,9 +238,9 @@ function CourseCard({
                 {topic}
               </span>
             ))}
-            {course.topics.length > 3 && (
+            {(course.topics?.length ?? 0) > 3 && (
               <span className="text-xs text-[var(--color-gray-400)]">
-                +{course.topics.length - 3} more
+                +{(course.topics?.length ?? 0) - 3} more
               </span>
             )}
           </div>
@@ -363,13 +363,13 @@ function CourseDetailModal({
           )}
 
           {/* Topics */}
-          {course.topics.length > 0 && (
+          {(course.topics?.length ?? 0) > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-2">
                 Topics Covered
               </h3>
               <div className="flex flex-wrap gap-2">
-                {course.topics.map((topic) => (
+                {(course.topics ?? []).map((topic) => (
                   <span
                     key={topic}
                     className="px-2.5 py-1 rounded-full text-xs bg-[var(--color-gray-100)] text-[var(--color-gray-600)]"
@@ -405,9 +405,9 @@ function CourseDetailModal({
               </p>
               {grantData.eligible && (
                 <div className="flex gap-4 mt-2 text-sm">
-                  <span>Grant: {formatCurrency(grantData.grant_amount)}</span>
+                  <span>Grant: {formatCurrency(grantData.grant_amount ?? 0)}</span>
                   <span>
-                    SFC Balance: {formatCurrency(grantData.sfc_balance)}
+                    SFC Balance: {formatCurrency(grantData.sfc_balance ?? 0)}
                   </span>
                 </div>
               )}
@@ -492,20 +492,20 @@ export default function SkillsFutureBrowserPage() {
         />
       )}
 
-      {data && data.courses.length === 0 && (
+      {data && (data.courses?.length ?? 0) === 0 && (
         <EmptyState
           message="No courses found"
           description="Try adjusting your search filters to find relevant courses."
         />
       )}
 
-      {data && data.courses.length > 0 && (
+      {data && (data.courses?.length ?? 0) > 0 && (
         <>
           <p className="text-sm text-[var(--color-gray-500)]">
-            {data.total} course{data.total !== 1 ? "s" : ""} found
+            {data.total ?? 0} course{(data.total ?? 0) !== 1 ? "s" : ""} found
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data.courses.map((course) => (
+            {(data.courses ?? []).map((course) => (
               <CourseCard
                 key={course.id}
                 course={course}

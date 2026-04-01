@@ -103,7 +103,7 @@ def _dataflow_delete(node_type: str, record_id: int) -> dict:
 # --------------------------------------------------------------------------
 
 
-@router.get("/")
+@router.get("")
 async def list_approval_groups(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
@@ -118,7 +118,7 @@ async def list_approval_groups(
     return {"approval_groups": groups, "count": len(groups)}
 
 
-@router.post("/")
+@router.post("")
 async def create_approval_group(
     request: Request,
     current_user: dict = Depends(require_role("owner", "hr_manager")),

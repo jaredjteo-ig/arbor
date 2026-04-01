@@ -57,21 +57,27 @@ const STATUTORY_DEFAULTS: LeaveType[] = [
 
 /* -- Icon mapping for API data ------------------------------------- */
 
+const LEAVE_TYPE_LABELS: Record<string, string> = {
+  annual: "Annual Leave",
+  sick: "Sick Leave",
+  hospitalization: "Hospitalisation Leave",
+};
+
 const ICON_MAP: Record<
   string,
   { icon: typeof Palmtree; color: string; bgColor: string }
 > = {
-  "Annual Leave": {
+  annual: {
     icon: Palmtree,
     color: "text-emerald-600",
     bgColor: "bg-emerald-50",
   },
-  "Sick Leave": {
+  sick: {
     icon: Thermometer,
     color: "text-amber-600",
     bgColor: "bg-amber-50",
   },
-  "Hospitalisation Leave": {
+  hospitalization: {
     icon: Hospital,
     color: "text-red-600",
     bgColor: "bg-red-50",
@@ -85,15 +91,19 @@ const DEFAULT_ICON = {
 };
 
 function mapBalanceToLeaveType(balance: LeaveBalance): LeaveType {
-  const iconInfo = ICON_MAP[balance.name] ?? DEFAULT_ICON;
+  const leaveType = balance.leave_type ?? "";
+  const iconInfo = ICON_MAP[leaveType] ?? DEFAULT_ICON;
+  const label =
+    LEAVE_TYPE_LABELS[leaveType] ??
+    leaveType.charAt(0).toUpperCase() + leaveType.slice(1);
   return {
-    name: balance.name,
+    name: label,
     icon: iconInfo.icon,
     color: iconInfo.color,
     bgColor: iconInfo.bgColor,
-    entitlement: balance.entitlement,
-    used: balance.used,
-    pending: balance.pending,
+    entitlement: balance.entitlement_days ?? 0,
+    used: balance.used_days ?? 0,
+    pending: balance.pending_days ?? 0,
   };
 }
 

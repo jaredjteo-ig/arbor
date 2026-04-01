@@ -50,14 +50,27 @@ def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> lis
 
 @router.get("/payroll")
 async def payroll_summary_report(
-    period_start: str = Query(...),
-    period_end: str = Query(...),
+    period_start: str = Query(None),
+    period_end: str = Query(None),
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
-    """Payroll summary report for a given period."""
+    """Payroll summary report for a given period.
+
+    If period_start / period_end are omitted, defaults to the current calendar month.
+    """
+    from datetime import date as _date
+
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+
+    # Default to current month if dates not provided
+    if not period_start:
+        today = _date.today()
+        period_start = today.replace(day=1).isoformat()
+    if not period_end:
+        today = _date.today()
+        period_end = today.isoformat()
 
     runs = _dataflow_list(
         "PayrollRunListNode",

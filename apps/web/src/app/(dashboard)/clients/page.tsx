@@ -393,6 +393,11 @@ export default function ClientsPage() {
                       <tr
                         key={client.id}
                         className="border-b border-[var(--color-gray-100)] hover:bg-[var(--color-gray-50)] transition-colors cursor-pointer"
+                        onClick={() =>
+                          toast.info(
+                            `${client.name} -- client detail view coming soon`,
+                          )
+                        }
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -445,9 +450,9 @@ export default function ClientsPage() {
                             : "—"}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button className="p-1 rounded hover:bg-[var(--color-gray-100)] text-[var(--color-gray-400)]">
+                          <span className="p-1 rounded text-[var(--color-gray-400)]">
                             <ChevronRight className="h-4 w-4" />
-                          </button>
+                          </span>
                         </td>
                       </tr>
                     ))}
@@ -502,7 +507,15 @@ export default function ClientsPage() {
                           No compliance check yet
                         </span>
                       )}
-                      <AppButton variant="text" size="sm">
+                      <AppButton
+                        variant="text"
+                        size="sm"
+                        onClick={() =>
+                          toast.info(
+                            `${client.name} -- client detail view coming soon`,
+                          )
+                        }
+                      >
                         View <ChevronRight className="h-3 w-3 ml-1" />
                       </AppButton>
                     </div>

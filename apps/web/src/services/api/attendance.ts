@@ -129,15 +129,15 @@ export const attendanceApi = {
     period_end: string;
   }): Promise<TimesheetApproval> {
     return apiClient.post<TimesheetApproval>(
-      "/attendance/timesheets/submit",
+      "/attendance/timesheet/submit",
       params,
     );
   },
 
   /** Approve a timesheet (admin). */
   approveTimesheet(timesheetId: number): Promise<TimesheetApproval> {
-    return apiClient.post<TimesheetApproval>(
-      `/attendance/timesheets/${timesheetId}/approve`,
+    return apiClient.patch<TimesheetApproval>(
+      `/attendance/timesheet/${timesheetId}/approve`,
     );
   },
 
@@ -153,9 +153,56 @@ export const attendanceApi = {
   },
 
   /** Get today's attendance overview for all employees (admin). */
-  getTodayOverview(): Promise<{ employees: TodayAttendance[] }> {
-    return apiClient.get<{ employees: TodayAttendance[] }>(
-      "/attendance/today/overview",
-    );
+  async getTodayOverview(): Promise<{ employees: TodayAttendance[] }> {
+    const data = await apiClient.get<{
+      date: string;
+      present: {
+        employee_id: number;
+        name: string;
+        clock_in?: string;
+        clock_out?: string;
+      }[];
+      late: {
+        employee_id: number;
+        name: string;
+        clock_in?: string;
+        clock_out?: string;
+      }[];
+      absent: { employee_id: number; name: string }[];
+      on_leave: { employee_id: number; name: string }[];
+    }>("/attendance/today/dashboard");
+
+    const employees: TodayAttendance[] = [
+      ...data.present.map((e) => ({
+        employee_id: e.employee_id,
+        employee_name: e.name,
+        clock_in: e.clock_in ?? null,
+        clock_out: e.clock_out ?? null,
+        status: "present" as const,
+      })),
+      ...data.late.map((e) => ({
+        employee_id: e.employee_id,
+        employee_name: e.name,
+        clock_in: e.clock_in ?? null,
+        clock_out: e.clock_out ?? null,
+        status: "late" as const,
+      })),
+      ...data.absent.map((e) => ({
+        employee_id: e.employee_id,
+        employee_name: e.name,
+        clock_in: null,
+        clock_out: null,
+        status: "absent" as const,
+      })),
+      ...data.on_leave.map((e) => ({
+        employee_id: e.employee_id,
+        employee_name: e.name,
+        clock_in: null,
+        clock_out: null,
+        status: "on_leave" as const,
+      })),
+    ];
+
+    return { employees };
   },
 };

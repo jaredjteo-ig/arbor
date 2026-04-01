@@ -15,7 +15,7 @@ import { useCpfCalculation } from "@/hooks/api/useCalculators";
 import type { CpfCalculationResponse } from "@/types/api";
 
 const fmt = (n: number) =>
-  `$${n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `$${(n ?? 0).toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 

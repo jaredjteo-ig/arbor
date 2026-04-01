@@ -28,11 +28,12 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
+  const s = status || "active";
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[status] || STATUS_STYLES.pending}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[s] || STATUS_STYLES.pending}`}
     >
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {s.charAt(0).toUpperCase() + s.slice(1)}
     </span>
   );
 }
@@ -76,7 +77,7 @@ function RequestItemModal({
     if (!description.trim()) return;
     setIsSubmitting(true);
     try {
-      await inventoryApi.createRequest({ description: description.trim() });
+      await inventoryApi.createRequest({ item_name: description.trim(), description: description.trim() });
       toast.success("Item request submitted");
       setDescription("");
       onSuccess();

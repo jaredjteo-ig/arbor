@@ -431,7 +431,7 @@ async def schedule_interview(
         raise HTTPException(status_code=400, detail="scheduled_at is required.")
 
     interview = _dataflow_create(
-        "InterviewCreateNode",
+        "InterviewScheduleCreateNode",
         {
             "company_id": company_id,
             "candidate_id": candidate_id,
@@ -483,7 +483,7 @@ async def update_interview(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("InterviewReadNode", interview_id)
+    existing = _dataflow_read("InterviewScheduleReadNode", interview_id)
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Interview not found.")
 
@@ -502,7 +502,7 @@ async def update_interview(
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = _dataflow_update("InterviewUpdateNode", interview_id, updates)
+    result = _dataflow_update("InterviewScheduleUpdateNode", interview_id, updates)
     return {"interview": result}
 
 
@@ -522,7 +522,7 @@ async def add_feedback(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("InterviewReadNode", interview_id)
+    existing = _dataflow_read("InterviewScheduleReadNode", interview_id)
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Interview not found.")
 

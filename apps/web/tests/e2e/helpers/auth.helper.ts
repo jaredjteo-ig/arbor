@@ -82,7 +82,7 @@ export async function registerUserViaApi(
  * to port 8099, adding the correct CORS headers so the browser accepts
  * the response.
  *
- * The aite_app on port 8099 is configured with cors_origins for
+ * The arbor app on port 8099 is configured with cors_origins for
  * localhost:3000 and localhost:5173 — NOT localhost:3002 where the
  * frontend is running. The browser blocks the CORS response, causing
  * auth failures. This interceptor adds the missing header.

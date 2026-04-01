@@ -5,6 +5,7 @@ import {
   AppCard,
   AppButton,
   AppInput,
+  DatePicker,
   EmptyState,
   toast,
 } from "@/components/design-system";
@@ -43,11 +44,12 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
+  const s = status || "pending";
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[status] || STATUS_STYLES.draft}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[s] || STATUS_STYLES.draft}`}
     >
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {s.charAt(0).toUpperCase() + s.slice(1)}
     </span>
   );
 }
@@ -312,22 +314,17 @@ function ApplyLeaveModal({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <AppInput
+            <DatePicker
               label="Start Date"
-              variant="date"
               value={startDate}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setStartDate(e.target.value)
-              }
+              onChange={setStartDate}
               required
             />
-            <AppInput
+            <DatePicker
               label="End Date"
-              variant="date"
               value={endDate}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setEndDate(e.target.value)
-              }
+              onChange={setEndDate}
+              min={startDate}
               required
             />
           </div>

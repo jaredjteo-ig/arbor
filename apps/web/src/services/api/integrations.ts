@@ -231,37 +231,37 @@ export const integrationsApi = {
 
   /** Get health status for all connectors. */
   connectorHealth(): Promise<ConnectorHealthResponse> {
-    return apiClient.get<ConnectorHealthResponse>("/admin/connector-health");
+    return apiClient.get<ConnectorHealthResponse>("/integrations/health");
   },
 
   /** Get government filing submissions. */
   filingsList(): Promise<FilingListResponse> {
-    return apiClient.get<FilingListResponse>("/admin/submission-ledger");
+    return apiClient.get<FilingListResponse>("/integrations/submissions");
   },
 
   /** Get saga detail for a filing. */
   sagaDetail(filingId: string): Promise<SagaDetail> {
-    return apiClient.get<SagaDetail>(`/admin/sagas/${filingId}`);
+    return apiClient.get<SagaDetail>(`/integrations/sagas/${filingId}`);
   },
 
   /** Retry a failed filing. */
   retryFiling(filingId: string): Promise<{ message: string }> {
     return apiClient.post<{ message: string }>(
-      `/admin/sagas/${filingId}/retry`,
+      `/integrations/sagas/${filingId}/resume`,
     );
   },
 
   /** Get accounting sync status for payroll runs. */
   accountingSyncStatus(): Promise<AccountingSyncResponse> {
     return apiClient.get<AccountingSyncResponse>(
-      "/payroll/accounting-sync-status",
+      "/integrations/accounting-sync",
     );
   },
 
   /** Trigger sync for a specific payroll run. */
   syncPayrollRun(runId: number): Promise<{ message: string }> {
     return apiClient.post<{ message: string }>(
-      `/payroll/accounting-sync/${runId}`,
+      `/integrations/accounting-sync/${runId}`,
     );
   },
 

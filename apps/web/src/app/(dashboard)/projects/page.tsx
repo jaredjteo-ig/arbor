@@ -16,7 +16,7 @@ import { projectsApi, type Project } from "@/services/api/projects";
 /* ── Helpers ──────────────────────────────────────────────── */
 
 function formatCurrency(amount: number): string {
-  return `$${amount.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${(amount ?? 0).toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(d: string): string {
@@ -39,7 +39,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const label = status.replace(/_/g, " ");
+  const label = (status || "active").replace(/_/g, " ");
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[status] || STATUS_STYLES.active}`}
@@ -269,8 +269,8 @@ export default function ProjectsPage() {
 
   const filtered = projects.filter(
     (p) =>
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.code.toLowerCase().includes(search.toLowerCase()),
+      (p.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (p.code ?? "").toLowerCase().includes(search.toLowerCase()),
   );
 
   if (error && !isLoading) {
@@ -376,7 +376,7 @@ export default function ProjectsPage() {
                     </p>
                   </div>
                 )}
-                {project.budget > 0 && (
+                {(project.budget ?? 0) > 0 && (
                   <div>
                     <p className="text-[var(--color-gray-500)]">Budget</p>
                     <p className="font-medium text-[var(--color-gray-700)]">

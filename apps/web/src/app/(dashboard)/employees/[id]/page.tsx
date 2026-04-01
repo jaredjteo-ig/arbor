@@ -6,6 +6,7 @@ import {
   AppCard,
   AppButton,
   AppInput,
+  DatePicker,
   EmployeePicker,
   toast,
 } from "@/components/design-system";
@@ -570,11 +571,10 @@ function PersonalTab({
             onChange={(e) => updateField("email", e.target.value)}
             disabled={!isAdmin}
           />
-          <AppInput
+          <DatePicker
             label="Date of Birth"
-            variant="date"
             value={getVal("date_of_birth")}
-            onChange={(e) => updateField("date_of_birth", e.target.value)}
+            onChange={(v) => updateField("date_of_birth", v)}
             disabled={!isAdmin}
           />
           <AppInput
@@ -605,12 +605,36 @@ function PersonalTab({
           />
           <AppInput
             label="Race"
+            variant="select"
+            options={[
+              { value: "", label: "Select..." },
+              { value: "chinese", label: "Chinese" },
+              { value: "malay", label: "Malay" },
+              { value: "indian", label: "Indian" },
+              { value: "eurasian", label: "Eurasian" },
+              { value: "other", label: "Other" },
+            ]}
             value={getVal("race")}
             onChange={(e) => updateField("race", e.target.value)}
             disabled={!isAdmin}
           />
           <AppInput
             label="Nationality"
+            variant="select"
+            options={[
+              { value: "", label: "Select..." },
+              { value: "singaporean", label: "Singaporean" },
+              { value: "malaysian", label: "Malaysian" },
+              { value: "indonesian", label: "Indonesian" },
+              { value: "thai", label: "Thai" },
+              { value: "japanese", label: "Japanese" },
+              { value: "chinese", label: "Chinese" },
+              { value: "indian", label: "Indian" },
+              { value: "filipino", label: "Filipino" },
+              { value: "vietnamese", label: "Vietnamese" },
+              { value: "myanmar", label: "Myanmar" },
+              { value: "other", label: "Other" },
+            ]}
             value={getVal("nationality")}
             onChange={(e) => updateField("nationality", e.target.value)}
             disabled={!isAdmin}
@@ -1106,13 +1130,10 @@ function FamilyMembersInline({
           setNewMember({ ...newMember, relationship: e.target.value })
         }
       />
-      <AppInput
+      <DatePicker
         label="Date of Birth"
-        variant="date"
         value={newMember.date_of_birth}
-        onChange={(e) =>
-          setNewMember({ ...newMember, date_of_birth: e.target.value })
-        }
+        onChange={(v) => setNewMember({ ...newMember, date_of_birth: v })}
       />
       <AppInput
         label="Gender"
@@ -1399,18 +1420,16 @@ function EmploymentTab({
             onChange={(e) => updateField("employment_type", e.target.value)}
             disabled={!isAdmin}
           />
-          <AppInput
+          <DatePicker
             label="Start Date"
-            variant="date"
             value={getVal("start_date")}
-            onChange={(e) => updateField("start_date", e.target.value)}
+            onChange={(v) => updateField("start_date", v)}
             disabled={!isAdmin}
           />
-          <AppInput
+          <DatePicker
             label="End Date"
-            variant="date"
             value={getVal("end_date")}
-            onChange={(e) => updateField("end_date", e.target.value)}
+            onChange={(v) => updateField("end_date", v)}
             disabled={!isAdmin}
           />
           <AppInput
@@ -1454,11 +1473,10 @@ function EmploymentTab({
             }
             disabled={!isAdmin}
           />
-          <AppInput
+          <DatePicker
             label="Probation End Date"
-            variant="date"
             value={getVal("probation_end_date")}
-            onChange={(e) => updateField("probation_end_date", e.target.value)}
+            onChange={(v) => updateField("probation_end_date", v)}
             disabled={!isAdmin}
           />
           <div className="flex flex-col gap-1.5">
@@ -1698,7 +1716,7 @@ function CompensationTab({
                 </div>
                 <div className="text-right flex items-center gap-2">
                   <span className="text-sm font-semibold text-[var(--color-gray-900)]">
-                    ${comp.amount.toLocaleString()}
+                    ${(comp.amount ?? 0).toLocaleString()}
                   </span>
                   {isAdmin && comp.is_active && (
                     <button
@@ -1787,25 +1805,23 @@ function CompensationTab({
                   })
                 }
               />
-              <AppInput
+              <DatePicker
                 label="Effective From"
-                variant="date"
                 value={newComponent.effective_from}
-                onChange={(e) =>
+                onChange={(v) =>
                   setNewComponent({
                     ...newComponent,
-                    effective_from: e.target.value,
+                    effective_from: v,
                   })
                 }
               />
-              <AppInput
+              <DatePicker
                 label="Effective To (optional)"
-                variant="date"
                 value={newComponent.effective_to}
-                onChange={(e) =>
+                onChange={(v) =>
                   setNewComponent({
                     ...newComponent,
-                    effective_to: e.target.value,
+                    effective_to: v,
                   })
                 }
               />
@@ -1927,13 +1943,10 @@ function StatutoryTab({
             onChange={(e) => updateField("immigration_status", e.target.value)}
             disabled={!isAdmin}
           />
-          <AppInput
+          <DatePicker
             label="Immigration Effective Date"
-            variant="date"
             value={getVal("immigration_effective_date")}
-            onChange={(e) =>
-              updateField("immigration_effective_date", e.target.value)
-            }
+            onChange={(v) => updateField("immigration_effective_date", v)}
             disabled={!isAdmin}
           />
           <AppInput
@@ -1964,12 +1977,9 @@ function StatutoryTab({
               Work Pass Expiry
             </label>
             <div className="flex items-center gap-2">
-              <AppInput
-                variant="date"
+              <DatePicker
                 value={getVal("work_pass_expiry")}
-                onChange={(e) =>
-                  updateField("work_pass_expiry", e.target.value)
-                }
+                onChange={(v) => updateField("work_pass_expiry", v)}
                 disabled={!isAdmin}
               />
               {workPassExpiry && (
@@ -2452,11 +2462,10 @@ function DocumentsTab({
                 value={uploadDocType}
                 onChange={(e) => setUploadDocType(e.target.value)}
               />
-              <AppInput
+              <DatePicker
                 label="Expiry Date (optional)"
-                variant="date"
                 value={uploadExpiryDate}
-                onChange={(e) => setUploadExpiryDate(e.target.value)}
+                onChange={setUploadExpiryDate}
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -3656,25 +3665,23 @@ function SkillsTab({
                   })
                 }
               />
-              <AppInput
+              <DatePicker
                 label="Certified Date"
-                variant="date"
                 value={newSkill.certified_date}
-                onChange={(e) =>
+                onChange={(v) =>
                   setNewSkill({
                     ...newSkill,
-                    certified_date: e.target.value,
+                    certified_date: v,
                   })
                 }
               />
-              <AppInput
+              <DatePicker
                 label="Expiry Date"
-                variant="date"
                 value={newSkill.expiry_date}
-                onChange={(e) =>
+                onChange={(v) =>
                   setNewSkill({
                     ...newSkill,
-                    expiry_date: e.target.value,
+                    expiry_date: v,
                   })
                 }
               />
@@ -4124,13 +4131,10 @@ function EditStatutoryForm({
           }
           placeholder="Encrypted on save"
         />
-        <AppInput
+        <DatePicker
           label="Work Pass Expiry"
-          variant="date"
           value={form.work_pass_expiry}
-          onChange={(e) =>
-            setForm({ ...form, work_pass_expiry: e.target.value })
-          }
+          onChange={(v) => setForm({ ...form, work_pass_expiry: v })}
         />
         <AppInput
           label="IRAS Auto-Inclusion"
@@ -4307,11 +4311,10 @@ function ExtendProbationForm({
         </div>
       </div>
 
-      <AppInput
+      <DatePicker
         label="New End Date"
-        variant="date"
         value={newEndDate}
-        onChange={(e) => setNewEndDate(e.target.value)}
+        onChange={setNewEndDate}
       />
 
       <div className="flex flex-col gap-1.5">
@@ -4400,11 +4403,10 @@ function TerminateEmployeeForm({
         </div>
       </div>
 
-      <AppInput
+      <DatePicker
         label="Termination Date"
-        variant="date"
         value={endDate}
-        onChange={(e) => setEndDate(e.target.value)}
+        onChange={setEndDate}
       />
 
       <div className="flex flex-col gap-1.5">

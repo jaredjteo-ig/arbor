@@ -18,6 +18,8 @@ import { HRISModuleGrid } from "@/components/management/HRISModuleGrid";
 import { CompanySetupModal } from "@/components/company/CompanySetupModal";
 import { complianceApi } from "@/services/api/compliance";
 import { adminApi } from "@/services/api/admin";
+import { employeesApi, type Employee } from "@/services/api/employees";
+import { leaveApi } from "@/services/api/leave";
 import type {
   ComplianceStatusResponse,
   PlatformMetricsResponse,
@@ -39,6 +41,8 @@ import {
   Sparkles,
   BookOpen,
   Scale,
+  Users,
+  Clock,
 } from "lucide-react";
 
 /* ── Types ──────────────────────────────────────────────────── */
@@ -323,6 +327,213 @@ function AdvisoryPreviewCard() {
   );
 }
 
+/* ── Headcount Breakdown + Pending Approvals + Deadlines ──── */
+
+const PASS_TYPE_CONFIG: {
+  key: string;
+  label: string;
+  color: string;
+}[] = [
+  { key: "citizen", label: "Local", color: "#3b82f6" },
+  { key: "pr", label: "PR", color: "#10b981" },
+  { key: "ep", label: "EP", color: "#f59e0b" },
+  { key: "sp", label: "SP", color: "#8b5cf6" },
+  { key: "wp", label: "WP", color: "#ef4444" },
+];
+
+function HeadcountAndAlerts({
+  employees,
+  pendingLeaveCount,
+  isLoading,
+}: {
+  employees: Employee[];
+  pendingLeaveCount: number;
+  isLoading: boolean;
+}) {
+  const router = useRouter();
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {[1, 2, 3].map((n) => (
+          <AppCard key={n} variant="flat">
+            <div className="animate-pulse">
+              <div className="h-4 w-24 bg-[var(--color-gray-200)] rounded mb-3" />
+              <div className="h-8 w-12 bg-[var(--color-gray-200)] rounded mb-2" />
+              <div className="h-3 w-32 bg-[var(--color-gray-100)] rounded" />
+            </div>
+          </AppCard>
+        ))}
+      </div>
+    );
+  }
+
+  const activeEmployees = employees.filter((e) => e.status === "active");
+  const totalHeadcount = activeEmployees.length;
+
+  /* Breakdown by pass type */
+  const passBreakdown: Record<string, number> = {};
+  for (const e of activeEmployees) {
+    const pt = (e.employment_type || "unknown").toLowerCase();
+    passBreakdown[pt] = (passBreakdown[pt] || 0) + 1;
+  }
+
+  if (totalHeadcount === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Headcount Summary */}
+      <AppCard variant="flat">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+              Total Headcount
+            </p>
+            <p className="text-2xl font-bold text-[var(--color-gray-900)] mt-1">
+              {totalHeadcount}
+            </p>
+          </div>
+          <div className="p-2 rounded-lg bg-blue-50">
+            <Users className="h-5 w-5 text-blue-600" />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          {PASS_TYPE_CONFIG.map((pt) => {
+            const count = passBreakdown[pt.key] || 0;
+            const pct =
+              totalHeadcount > 0
+                ? Math.round((count / totalHeadcount) * 100)
+                : 0;
+            return (
+              <div key={pt.key} className="flex items-center gap-2">
+                <div
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: pt.color }}
+                />
+                <span className="text-xs text-[var(--color-gray-600)] flex-1">
+                  {pt.label}
+                </span>
+                <span className="text-xs font-medium text-[var(--color-gray-900)]">
+                  {count}
+                </span>
+                <span className="text-[10px] text-[var(--color-gray-400)] w-8 text-right">
+                  {pct}%
+                </span>
+              </div>
+            );
+          })}
+          {/* Other types not in the standard list */}
+          {Object.entries(passBreakdown)
+            .filter(([key]) => !PASS_TYPE_CONFIG.some((pt) => pt.key === key))
+            .map(([key, count]) => (
+              <div key={key} className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full shrink-0 bg-[var(--color-gray-400)]" />
+                <span className="text-xs text-[var(--color-gray-600)] flex-1">
+                  {key
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase())}
+                </span>
+                <span className="text-xs font-medium text-[var(--color-gray-900)]">
+                  {count}
+                </span>
+              </div>
+            ))}
+        </div>
+      </AppCard>
+
+      {/* Pending Approvals */}
+      <AppCard variant="flat">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+              Pending Approvals
+            </p>
+            <p className="text-2xl font-bold text-[var(--color-gray-900)] mt-1">
+              {pendingLeaveCount}
+            </p>
+          </div>
+          <div className="p-2 rounded-lg bg-amber-50">
+            <ClipboardCheck className="h-5 w-5 text-amber-600" />
+          </div>
+        </div>
+        <div className="space-y-2">
+          {pendingLeaveCount > 0 ? (
+            <>
+              <p className="text-xs text-[var(--color-gray-500)]">
+                {pendingLeaveCount} leave{" "}
+                {pendingLeaveCount === 1 ? "request" : "requests"} awaiting your
+                review
+              </p>
+              <AppButton
+                variant="outlined"
+                size="sm"
+                onClick={() => router.push("/leave")}
+                className="w-full"
+              >
+                Review Leave Requests
+              </AppButton>
+            </>
+          ) : (
+            <div className="text-center py-2">
+              <CheckCircle2 className="h-6 w-6 text-emerald-500 mx-auto mb-1" />
+              <p className="text-xs text-[var(--color-gray-500)]">
+                All caught up -- no pending approvals
+              </p>
+            </div>
+          )}
+        </div>
+      </AppCard>
+
+      {/* Upcoming Deadlines */}
+      <AppCard variant="flat">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+              Upcoming Deadlines
+            </p>
+          </div>
+          <div className="p-2 rounded-lg bg-red-50">
+            <Clock className="h-5 w-5 text-red-600" />
+          </div>
+        </div>
+        <div className="space-y-2">
+          {activeEmployees.length > 0 ? (
+            <>
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-50 border border-amber-100">
+                <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                <span className="text-xs text-amber-700">
+                  CPF submission due on 14th of each month
+                </span>
+              </div>
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 border border-blue-100">
+                <Calendar className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                <span className="text-xs text-blue-700">
+                  IR8A filing deadline: 1 Mar annually
+                </span>
+              </div>
+              {employees.some(
+                (e) =>
+                  e.employment_type &&
+                  ["ep", "sp", "wp"].includes(e.employment_type.toLowerCase()),
+              ) && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-red-50 border border-red-100">
+                  <AlertCircle className="h-3.5 w-3.5 text-red-600 shrink-0" />
+                  <span className="text-xs text-red-700">
+                    Check work pass expiry dates for foreign workers
+                  </span>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-[var(--color-gray-500)] text-center py-2">
+              No upcoming deadlines
+            </p>
+          )}
+        </div>
+      </AppCard>
+    </div>
+  );
+}
+
 /* ── Company Setup CTA ────────────────────────────────────── */
 
 function CompanySetupCTA() {
@@ -361,12 +572,16 @@ export default function DashboardPage() {
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [complianceError, setComplianceError] = useState<string | null>(null);
   const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+  const [workforceLoading, setWorkforceLoading] = useState(true);
 
   /* ── Fetch data ──────────────────────────────────────────── */
   useEffect(() => {
     if (!user?.company_id) {
       setComplianceLoading(false);
       setMetricsLoading(false);
+      setWorkforceLoading(false);
       return;
     }
 
@@ -385,6 +600,25 @@ export default function DashboardPage() {
         setMetricsError("Unable to load platform metrics right now."),
       )
       .finally(() => setMetricsLoading(false));
+
+    /* Fetch workforce data for headcount breakdown */
+    employeesApi
+      .list()
+      .then((data) => setEmployees(data.employees || []))
+      .catch(() => {
+        /* graceful */
+      })
+      .finally(() => setWorkforceLoading(false));
+
+    /* Fetch pending leave approvals count */
+    leaveApi
+      .listApplications({ status: "pending" })
+      .then((data) =>
+        setPendingLeaveCount(data.count || data.applications?.length || 0),
+      )
+      .catch(() => {
+        /* graceful */
+      });
   }, [user?.company_id]);
 
   /* ── Derive metric cards from real data ──────────────────── */
@@ -576,6 +810,13 @@ export default function DashboardPage() {
           })}
         </div>
       )}
+
+      {/* Headcount + Pending Approvals + Deadlines */}
+      <HeadcountAndAlerts
+        employees={employees}
+        pendingLeaveCount={pendingLeaveCount}
+        isLoading={workforceLoading}
+      />
 
       {/* Quick actions */}
       <div>

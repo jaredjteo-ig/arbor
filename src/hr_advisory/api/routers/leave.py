@@ -1036,6 +1036,42 @@ async def cancel_application(
 
 
 # --------------------------------------------------------------------------
+# GET /balances — Balance for the current user's employee
+# --------------------------------------------------------------------------
+
+
+@router.get("/balances")
+async def get_my_leave_balances(
+    year: int = 0,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get leave balances for the currently authenticated employee.
+
+    Resolves the logged-in user to their employee record and returns
+    balances broken down by leave type for the given year.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    if year == 0:
+        year = datetime.now(timezone.utc).year
+
+    user_id = int(current_user.get("sub", 0))
+    employee = _get_employee_for_user(user_id, company_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="No employee record found for current user.")
+
+    employee_id = employee["id"]
+    balances = _dataflow_list(
+        "LeaveBalanceListNode",
+        {"employee_id": employee_id, "year": year},
+    )
+
+    return {"balances": balances}
+
+
+# --------------------------------------------------------------------------
 # GET /balances/{employee_id} — Balance by type for a year
 # --------------------------------------------------------------------------
 

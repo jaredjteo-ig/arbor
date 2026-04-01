@@ -10,7 +10,7 @@ import { ResultPanel } from "./ResultPanel";
 import { ResultRow } from "./ResultRow";
 
 const fmt = (n: number) =>
-  `$${n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `$${(n ?? 0).toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /* ── CPF employer rates ─────────────────────────────────── */
 

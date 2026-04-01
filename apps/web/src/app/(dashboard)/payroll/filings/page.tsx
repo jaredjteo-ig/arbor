@@ -225,7 +225,7 @@ function FilingDetailDrawer({
                   Processing Steps
                 </h3>
                 <div className="rounded-[8px] border border-[var(--color-gray-200)] divide-y divide-[var(--color-gray-100)] px-4">
-                  {data.steps.map((step, i) => (
+                  {(data.steps ?? []).map((step, i) => (
                     <SagaStepRow key={i} step={step} />
                   ))}
                 </div>
@@ -365,14 +365,14 @@ export default function GovernmentFilingsPage() {
         />
       )}
 
-      {data && data.filings.length === 0 && (
+      {data && (data.filings?.length ?? 0) === 0 && (
         <EmptyState
           message="No filings yet"
           description="Government filings will appear here once you run payroll and submit statutory reports."
         />
       )}
 
-      {data && data.filings.length > 0 && (
+      {data && (data.filings?.length ?? 0) > 0 && (
         <AppCard variant="standard">
           <div className="overflow-x-auto -mx-5 -my-4">
             <table className="w-full min-w-[700px]">
@@ -399,7 +399,7 @@ export default function GovernmentFilingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.filings.map((filing) => (
+                {(data.filings ?? []).map((filing) => (
                   <FilingRow
                     key={filing.id}
                     filing={filing}

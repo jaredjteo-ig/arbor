@@ -119,14 +119,14 @@ function HealthCard({ connector }: { connector: ConnectorHealth }) {
           </p>
           <p
             className={`text-lg font-semibold ${
-              connector.error_rate > 10
+              (connector.error_rate ?? 0) > 10
                 ? "text-[var(--color-error)]"
-                : connector.error_rate > 5
+                : (connector.error_rate ?? 0) > 5
                   ? "text-[var(--color-warning)]"
                   : "text-[var(--color-gray-900)]"
             }`}
           >
-            {connector.error_rate.toFixed(1)}%
+            {(connector.error_rate ?? 0).toFixed(1)}%
           </p>
         </div>
         <div className="rounded-lg bg-[var(--color-gray-50)] p-3">
@@ -134,13 +134,13 @@ function HealthCard({ connector }: { connector: ConnectorHealth }) {
             Avg Latency
           </p>
           <p className="text-lg font-semibold text-[var(--color-gray-900)]">
-            {connector.avg_latency_ms}ms
+            {connector.avg_latency_ms ?? 0}ms
           </p>
         </div>
         <div className="rounded-lg bg-[var(--color-gray-50)] p-3">
           <p className="text-xs text-[var(--color-gray-500)] mb-1">Uptime</p>
           <p className="text-lg font-semibold text-[var(--color-gray-900)]">
-            {connector.uptime_pct.toFixed(1)}%
+            {(connector.uptime_pct ?? 0).toFixed(1)}%
           </p>
         </div>
         <div className="rounded-lg bg-[var(--color-gray-50)] p-3">

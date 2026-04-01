@@ -113,14 +113,14 @@ export const leaveApi = {
 
   /** Approve a leave application. */
   approve(applicationId: number): Promise<LeaveApplication> {
-    return apiClient.post<LeaveApplication>(
+    return apiClient.patch<LeaveApplication>(
       `/leave/applications/${applicationId}/approve`,
     );
   },
 
   /** Reject a leave application. */
   reject(applicationId: number, reason: string): Promise<LeaveApplication> {
-    return apiClient.post<LeaveApplication>(
+    return apiClient.patch<LeaveApplication>(
       `/leave/applications/${applicationId}/reject`,
       { reason },
     );
@@ -128,14 +128,14 @@ export const leaveApi = {
 
   /** Withdraw a pending leave application (by the employee). */
   withdraw(applicationId: number): Promise<LeaveApplication> {
-    return apiClient.post<LeaveApplication>(
+    return apiClient.patch<LeaveApplication>(
       `/leave/applications/${applicationId}/withdraw`,
     );
   },
 
   /** Cancel an approved leave application (by admin). */
   cancel(applicationId: number): Promise<LeaveApplication> {
-    return apiClient.post<LeaveApplication>(
+    return apiClient.patch<LeaveApplication>(
       `/leave/applications/${applicationId}/cancel`,
     );
   },
@@ -156,7 +156,9 @@ export const leaveApi = {
 
   /** List public holidays. */
   listHolidays(): Promise<{ holidays: PublicHoliday[] }> {
-    return apiClient.get<{ holidays: PublicHoliday[] }>("/leave/holidays");
+    return apiClient.get<{ holidays: PublicHoliday[] }>(
+      "/leave/public-holidays",
+    );
   },
 
   /** Get leave calendar for a date range. */

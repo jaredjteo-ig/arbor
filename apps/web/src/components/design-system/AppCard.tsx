@@ -29,7 +29,7 @@ export function AppCard({
   return (
     <div
       className={clsx(
-        "rounded-[12px] bg-[var(--color-surface-card)] overflow-hidden",
+        "rounded-[12px] bg-[var(--color-surface-card)] overflow-visible",
         variantStyles[variant],
         className,
       )}

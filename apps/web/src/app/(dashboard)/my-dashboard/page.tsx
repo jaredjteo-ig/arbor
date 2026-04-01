@@ -96,7 +96,7 @@ function EmploymentSummaryCard({
 /* -- Leave Balance Card -------------------------------------------- */
 
 /** Statutory defaults for Singapore Employment Act minimums */
-const STATUTORY_LEAVE = [
+const STATUTORY_LEAVE: LeaveDisplay[] = [
   {
     name: "Annual Leave",
     used: 0,
@@ -121,19 +121,29 @@ interface LeaveDisplay {
   color: string;
 }
 
+const LEAVE_TYPE_LABELS: Record<string, string> = {
+  annual: "Annual Leave",
+  sick: "Sick Leave",
+  hospitalization: "Hospitalization Leave",
+};
+
 const ICON_MAP: Record<string, { icon: typeof Palmtree; color: string }> = {
-  "Annual Leave": { icon: Palmtree, color: "text-emerald-600" },
-  "Sick Leave": { icon: Thermometer, color: "text-amber-600" },
+  annual: { icon: Palmtree, color: "text-emerald-600" },
+  sick: { icon: Thermometer, color: "text-amber-600" },
 };
 
 const DEFAULT_LEAVE_ICON = { icon: CalendarDays, color: "text-blue-600" };
 
 function mapBalanceToDisplay(balance: LeaveBalance): LeaveDisplay {
-  const iconInfo = ICON_MAP[balance.name] ?? DEFAULT_LEAVE_ICON;
+  const leaveType = balance.leave_type ?? "";
+  const iconInfo = ICON_MAP[leaveType] ?? DEFAULT_LEAVE_ICON;
+  const label =
+    LEAVE_TYPE_LABELS[leaveType] ??
+    leaveType.charAt(0).toUpperCase() + leaveType.slice(1);
   return {
-    name: balance.name,
-    used: (balance.used ?? 0) + (balance.pending ?? 0),
-    total: balance.entitlement ?? 0,
+    name: label,
+    used: (balance.used_days ?? 0) + (balance.pending_days ?? 0),
+    total: balance.entitlement_days ?? 0,
     icon: iconInfo.icon,
     color: iconInfo.color,
   };

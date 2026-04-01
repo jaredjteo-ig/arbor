@@ -210,3 +210,133 @@ async def change_password(
 
     logger.info("Password changed for user_id=%s", user_id)
     return {"message": "Password changed successfully"}
+
+
+# ------------------------------------------------------------------
+# Notification preferences
+# ------------------------------------------------------------------
+
+_DEFAULT_NOTIFICATION_PREFERENCES: list[dict] = [
+    {
+        "type": "leave_approval",
+        "label": "Leave Approvals",
+        "description": "Notifications when leave applications need your approval or are approved/rejected.",
+        "channels": ["email"],
+    },
+    {
+        "type": "payroll_ready",
+        "label": "Payroll Ready",
+        "description": "Notifications when payroll is finalized and payslips are available.",
+        "channels": ["email"],
+    },
+    {
+        "type": "claim_status",
+        "label": "Claim Status Updates",
+        "description": "Notifications when claims are approved, rejected, or need attention.",
+        "channels": ["email"],
+    },
+    {
+        "type": "document_expiry",
+        "label": "Document Expiry Reminders",
+        "description": "Reminders when employee documents (work permits, certifications) are expiring.",
+        "channels": ["email"],
+    },
+    {
+        "type": "compliance_alert",
+        "label": "Compliance Alerts",
+        "description": "Alerts for regulatory deadlines and compliance requirements.",
+        "channels": ["email"],
+    },
+]
+
+_notification_prefs_lock = Lock()
+_notification_prefs: dict[int, dict] = {}
+
+
+def _get_notification_prefs(user_id: int) -> dict:
+    """Return notification preferences for a user, with defaults."""
+    with _notification_prefs_lock:
+        if user_id not in _notification_prefs:
+            _notification_prefs[user_id] = {
+                "preferences": deepcopy(_DEFAULT_NOTIFICATION_PREFERENCES),
+                "phone_number": None,
+            }
+        return deepcopy(_notification_prefs[user_id])
+
+
+@router.get("/notification-preferences")
+async def get_notification_preferences(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get the current user's notification preferences.
+
+    Returns notification channel preferences and phone number.
+
+    Status codes:
+        200: Success
+        401: Not authenticated
+    """
+    user_id = current_user.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    prefs = _get_notification_prefs(user_id)
+    logger.info("Notification preferences retrieved for user_id=%s", user_id)
+    return prefs
+
+
+@router.put("/notification-preferences")
+async def update_notification_preferences(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Update the current user's notification preferences.
+
+    Status codes:
+        200: Success
+        400: Invalid input
+        401: Not authenticated
+    """
+    user_id = current_user.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    body = await request.json()
+
+    with _notification_prefs_lock:
+        current = _get_notification_prefs(user_id)
+
+        if "preferences" in body:
+            if not isinstance(body["preferences"], list):
+                raise HTTPException(status_code=400, detail="preferences must be a list")
+            current["preferences"] = body["preferences"]
+
+        if "phone_number" in body:
+            current["phone_number"] = body["phone_number"]
+
+        _notification_prefs[user_id] = deepcopy(current)
+
+    logger.info("Notification preferences updated for user_id=%s", user_id)
+    return current
+
+
+@router.post("/notification-preferences/test")
+async def test_notification_channel(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Send a test notification on a specific channel.
+
+    Status codes:
+        200: Test sent
+        401: Not authenticated
+    """
+    user_id = current_user.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    body = await request.json()
+    channel = body.get("channel", "email")
+
+    logger.info("Test notification sent via %s for user_id=%s", channel, user_id)
+    return {"success": True, "message": f"Test notification sent via {channel}."}

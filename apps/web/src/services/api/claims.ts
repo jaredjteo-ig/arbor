@@ -88,17 +88,17 @@ export const claimsApi = {
 
   /** Submit a draft claim for approval. */
   submitClaim(claimId: number): Promise<Claim> {
-    return apiClient.post<Claim>(`/claims/${claimId}/submit`);
+    return apiClient.patch<Claim>(`/claims/${claimId}/submit`);
   },
 
   /** Approve a claim (admin). */
   approveClaim(claimId: number): Promise<Claim> {
-    return apiClient.post<Claim>(`/claims/${claimId}/approve`);
+    return apiClient.patch<Claim>(`/claims/${claimId}/approve`);
   },
 
   /** Reject a claim (admin). */
   rejectClaim(claimId: number, reason: string): Promise<Claim> {
-    return apiClient.post<Claim>(`/claims/${claimId}/reject`, { reason });
+    return apiClient.patch<Claim>(`/claims/${claimId}/reject`, { reason });
   },
 
   /** Add a line item to a draft claim. */
@@ -113,7 +113,7 @@ export const claimsApi = {
     formData: FormData,
   ): Promise<{ url: string }> {
     return apiClient.postFormData<{ url: string }>(
-      `/claims/${claimId}/items/${itemId}/receipt`,
+      `/claims/${claimId}/items/${itemId}/receipts`,
       formData,
     );
   },
@@ -121,7 +121,7 @@ export const claimsApi = {
   /** Get audit trail for a claim. */
   getAuditTrail(claimId: number): Promise<{ entries: AuditTrailEntry[] }> {
     return apiClient.get<{ entries: AuditTrailEntry[] }>(
-      `/claims/${claimId}/audit`,
+      `/claims/${claimId}/audit-trail`,
     );
   },
 };

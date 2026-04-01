@@ -18,6 +18,8 @@ import {
   CreditCard,
   ChevronDown,
   ChevronUp,
+  Download,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -30,7 +32,7 @@ import {
 /* ── Helpers ──────────────────────────────────────────────── */
 
 function formatCurrency(amount: number): string {
-  return `$${amount.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${(amount ?? 0).toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -59,11 +61,12 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
+  const s = status || "draft";
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[status] || STATUS_STYLES.draft}`}
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[s] || STATUS_STYLES.draft}`}
     >
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {s.charAt(0).toUpperCase() + s.slice(1)}
     </span>
   );
 }
@@ -323,7 +326,12 @@ export default function PayrollRunDetailPage({
     setError(null);
     try {
       const data = await payrollApi.getRun(runId);
-      setRun(data);
+      // Backend returns { run: {...}, payslips: [...] } — flatten into PayrollRunDetail
+      if (data.run && data.payslips) {
+        setRun({ ...data.run, payslips: data.payslips } as any);
+      } else {
+        setRun(data);
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -380,6 +388,47 @@ export default function PayrollRunDetailPage({
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to cancel payroll run.";
+      toast.error(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function downloadFile(type: "cpf" | "giro") {
+    setActionLoading(type);
+    try {
+      const endpoint =
+        type === "cpf"
+          ? `/payroll/runs/${runId}/cpf-file`
+          : `/payroll/runs/${runId}/bank-file`;
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}${endpoint}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("access_token") || ""}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      if (!res.ok) throw new Error("Failed to generate file");
+      const text = await res.text();
+      const blob = new Blob([text], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download =
+        type === "cpf"
+          ? `cpf-esubmit-${run?.period_start || "run"}.csv`
+          : `bank-giro-${run?.period_start || "run"}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(
+        `${type === "cpf" ? "CPF e-Submit" : "Bank GIRO"} file downloaded`,
+      );
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to download file.";
       toast.error(message);
     } finally {
       setActionLoading(null);
@@ -524,6 +573,32 @@ export default function PayrollRunDetailPage({
             </div>
           )}
 
+          {/* File downloads */}
+          {run.status !== "cancelled" && (
+            <div className="flex flex-wrap gap-3">
+              <AppButton
+                variant="outlined"
+                size="sm"
+                onClick={() => downloadFile("cpf")}
+                loading={actionLoading === "cpf"}
+                disabled={actionLoading !== null}
+              >
+                <Download className="h-4 w-4 mr-1.5" />
+                CPF e-Submit File
+              </AppButton>
+              <AppButton
+                variant="outlined"
+                size="sm"
+                onClick={() => downloadFile("giro")}
+                loading={actionLoading === "giro"}
+                disabled={actionLoading !== null}
+              >
+                <FileText className="h-4 w-4 mr-1.5" />
+                Bank GIRO File
+              </AppButton>
+            </div>
+          )}
+
           {/* Payslip table */}
           <div>
             <h2 className="text-lg font-semibold text-[var(--color-gray-900)] mb-3">
@@ -557,9 +632,9 @@ export default function PayrollRunDetailPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {run.payslips.map((payslip) => (
+                      {run.payslips.map((payslip, idx) => (
                         <PayslipRow
-                          key={payslip.payslip_id}
+                          key={payslip.payslip_id || payslip.id || idx}
                           payslip={payslip}
                           runId={runId}
                         />

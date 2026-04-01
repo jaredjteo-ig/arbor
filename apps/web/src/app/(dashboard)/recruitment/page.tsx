@@ -67,8 +67,7 @@ function StatusBadge({
   status: string;
   styles: Record<string, string>;
 }) {
-  const safeStatus = status || "unknown";
-  const label = safeStatus.replace(/_/g, " ");
+  const label = (status || "new").replace(/_/g, " ");
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${styles[safeStatus] || styles.new || ""}`}

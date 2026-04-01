@@ -141,6 +141,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
         "flex items-center h-[56px] px-4 shrink-0",
         "bg-[var(--color-surface-card)]",
         "border-b border-[var(--color-gray-200)]",
+        "lg:pr-[calc(var(--shadow-margin-collapsed)+1rem)]",
       )}
     >
       {/* Hamburger (mobile only) */}

@@ -11,10 +11,11 @@ Each test is written as a user story: "A user tried to X, and got Y."
 import sys
 import time
 import warnings
+from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, "/Users/esperie/repos/asme/aite/src")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 warnings.filterwarnings("ignore")
 
 from fastapi.testclient import TestClient

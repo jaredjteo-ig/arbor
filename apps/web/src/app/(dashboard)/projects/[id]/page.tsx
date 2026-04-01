@@ -31,7 +31,7 @@ import {
 /* ── Helpers ──────────────────────────────────────────────── */
 
 function formatCurrency(amount: number): string {
-  return `$${amount.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${(amount ?? 0).toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(d: string): string {
@@ -353,7 +353,7 @@ export default function ProjectDetailPage() {
               <p className="text-xs text-[var(--color-gray-500)]">Budget</p>
             </div>
             <p className="text-xl font-bold text-[var(--color-gray-900)]">
-              {formatCurrency(project.budget)}
+              {formatCurrency(project.budget ?? 0)}
             </p>
           </AppCard>
           <AppCard variant="flat">
@@ -373,7 +373,8 @@ export default function ProjectDetailPage() {
               <p className="text-xs text-[var(--color-gray-500)]">Timeline</p>
             </div>
             <p className="text-sm font-medium text-[var(--color-gray-900)]">
-              {formatDate(project.start_date)} - {formatDate(project.end_date)}
+              {formatDate(project.start_date ?? "")} -{" "}
+              {formatDate(project.end_date ?? "")}
             </p>
           </AppCard>
         </div>
@@ -438,10 +439,10 @@ export default function ProjectDetailPage() {
                           {a.role || "-"}
                         </td>
                         <td className="py-3 px-3 text-center text-[var(--color-gray-700)]">
-                          {a.allocation_pct}%
+                          {a.allocation_pct ?? 100}%
                         </td>
                         <td className="py-3 px-5 text-right text-[var(--color-gray-700)]">
-                          {a.hourly_rate > 0
+                          {(a.hourly_rate ?? 0) > 0
                             ? formatCurrency(a.hourly_rate)
                             : "-"}
                         </td>
@@ -500,10 +501,10 @@ export default function ProjectDetailPage() {
                           {ts.employee_name || `#${ts.employee_id}`}
                         </td>
                         <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                          {formatDate(ts.entry_date)}
+                          {formatDate(ts.entry_date ?? "")}
                         </td>
                         <td className="py-3 px-3 text-center text-[var(--color-gray-700)]">
-                          {ts.hours}h
+                          {ts.hours ?? 0}h
                         </td>
                         <td className="py-3 px-5 text-[var(--color-gray-600)] truncate max-w-[200px]">
                           {ts.description || "-"}
@@ -528,7 +529,7 @@ export default function ProjectDetailPage() {
                   Budget
                 </p>
                 <p className="text-lg font-bold text-[var(--color-gray-900)]">
-                  {formatCurrency(costs.total_budget)}
+                  {formatCurrency(costs.total_budget ?? 0)}
                 </p>
               </AppCard>
               <AppCard variant="flat">
@@ -536,7 +537,7 @@ export default function ProjectDetailPage() {
                   Actual Cost
                 </p>
                 <p className="text-lg font-bold text-[var(--color-gray-900)]">
-                  {formatCurrency(costs.total_actual)}
+                  {formatCurrency(costs.total_actual ?? 0)}
                 </p>
               </AppCard>
               <AppCard variant="flat">
@@ -544,7 +545,7 @@ export default function ProjectDetailPage() {
                   Timesheet Cost
                 </p>
                 <p className="text-lg font-bold text-[var(--color-gray-900)]">
-                  {formatCurrency(costs.total_timesheet_cost)}
+                  {formatCurrency(costs.total_timesheet_cost ?? 0)}
                 </p>
               </AppCard>
               <AppCard variant="flat">
@@ -552,10 +553,10 @@ export default function ProjectDetailPage() {
                   Variance
                 </p>
                 <p
-                  className={`text-lg font-bold ${costs.variance >= 0 ? "text-emerald-600" : "text-red-600"}`}
+                  className={`text-lg font-bold ${(costs.variance ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}
                 >
-                  {costs.variance >= 0 ? "+" : ""}
-                  {formatCurrency(costs.variance)}
+                  {(costs.variance ?? 0) >= 0 ? "+" : ""}
+                  {formatCurrency(costs.variance ?? 0)}
                 </p>
               </AppCard>
             </div>
