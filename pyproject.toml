@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hr-ai-advisory"
 version = "0.1.0"
-description = "AI-powered HR advisory platform for Singapore SMEs"
+description = "AI-powered HR advisory platform with employment law compliance"
 authors = [
-    {name = "Terrene Foundation", email = "dev@arbor.sg"}
+    {name = "Terrene Foundation", email = "dev@arbor.terrene.dev"}
 ]
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,14 +20,11 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    # Kailash SDK (includes: fastapi, uvicorn, pydantic, sqlalchemy, pandas, numpy, requests, pyyaml)
+    # Kailash SDK — EATP/trust-plane integrated into kailash core v2.0+
     "kailash>=2.0.0",
     "kailash-nexus>=1.4.3",
     "kailash-dataflow>=1.2.0",
     "kailash-kaizen>=2.1.0",
-    # Terrene Foundation trust frameworks (bundled in src/ — not on PyPI)
-    # "eatp>=0.2.0",
-    # "trust-plane>=0.2.1",
     # CLI Framework
     "click>=8.0",
     "rich>=13.0.0",

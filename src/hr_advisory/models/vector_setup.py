@@ -8,7 +8,7 @@ import os
 
 from dataflow.adapters import PostgreSQLVectorAdapter
 
-VECTOR_DIMENSIONS = 1536  # OpenAI text-embedding-3-small
+VECTOR_DIMENSIONS = 768  # Gemini text-embedding-004 (768-dim)
 
 
 def get_vector_adapter() -> PostgreSQLVectorAdapter:

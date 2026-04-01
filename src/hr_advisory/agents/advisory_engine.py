@@ -17,6 +17,8 @@ import logging
 import os
 from typing import Any, Optional
 
+from hr_advisory.agents.llm_context import GEMINI_OPENAI_BASE_URL
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["AdvisoryEngine"]
@@ -653,7 +655,7 @@ class AdvisoryEngine:
 
         # Build the OpenAI client
         client = self._build_client()
-        model = self._ctx.model or os.environ.get("DEFAULT_LLM_MODEL", "gpt-5-chat-latest")
+        model = self._ctx.model or os.environ.get("DEFAULT_LLM_MODEL", "gemini-2.5-flash")
 
         # Build messages
         system_prompt = _build_system_prompt(company_context, user_context)
@@ -687,8 +689,11 @@ class AdvisoryEngine:
 
                 # If the model wants to call tools, execute them
                 if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
-                    # Add the assistant message with tool calls
-                    messages.append(choice.message.model_dump())
+                    # Add the assistant message with tool calls.
+                    # Strip None/null values — Gemini's OpenAI-compatible endpoint
+                    # rejects 'null' struct values on subsequent rounds.
+                    msg = choice.message.model_dump(exclude_none=True)
+                    messages.append(msg)
 
                     for tool_call in choice.message.tool_calls:
                         fn_name = tool_call.function.name
@@ -807,7 +812,12 @@ class AdvisoryEngine:
             }
 
     def _build_client(self):
-        """Build an OpenAI client from the LLM context."""
+        """Build an OpenAI-compatible client from the LLM context.
+
+        Google Gemini is supported via Google's OpenAI-compatible endpoint
+        (https://ai.google.dev/gemini-api/docs/openai). This means we use
+        the OpenAI SDK with Gemini's base_url — no separate SDK needed.
+        """
         from openai import OpenAI
 
         if self._ctx.provider == "ollama":
@@ -815,6 +825,13 @@ class AdvisoryEngine:
             if not base_url.endswith("/v1"):
                 base_url += "/v1"
             return OpenAI(api_key="ollama", base_url=base_url)
+
+        if self._ctx.provider == "gemini":
+            # Google's OpenAI-compatible endpoint for Gemini
+            return OpenAI(
+                api_key=self._ctx.api_key,
+                base_url=GEMINI_OPENAI_BASE_URL,
+            )
 
         # OpenAI and OpenAI-compatible providers (DeepSeek, Mistral, etc.)
         kwargs: dict[str, Any] = {}

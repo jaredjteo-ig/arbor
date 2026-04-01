@@ -18,7 +18,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["LLMKeyContext"]
+__all__ = ["LLMKeyContext", "GEMINI_OPENAI_BASE_URL"]
+
+# Google's OpenAI-compatible endpoint for Gemini models.
+# See: https://ai.google.dev/gemini-api/docs/openai
+GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 
 @dataclass(frozen=True)
@@ -39,7 +43,7 @@ class LLMKeyContext:
     """
 
     api_key: Optional[str] = field(default=None, repr=False)
-    provider: str = "openai"
+    provider: str = "gemini"
     model: str = ""
     base_url: Optional[str] = None
     is_byok: bool = False
@@ -82,6 +86,16 @@ class LLMKeyContext:
         from hr_advisory.config.settings import get_settings
 
         settings = get_settings()
+        # Priority 1: Gemini
+        if settings.gemini_api_key:
+            return cls(
+                api_key=settings.gemini_api_key,
+                provider="gemini",
+                model=settings.gemini_model or "gemini-2.5-flash",
+                is_byok=False,
+                company_id=company_id,
+            )
+        # Priority 2: OpenAI
         if settings.openai_api_key:
             return cls(
                 api_key=settings.openai_api_key,
@@ -90,7 +104,7 @@ class LLMKeyContext:
                 is_byok=False,
                 company_id=company_id,
             )
-        # No OpenAI key — try Ollama
+        # Priority 3: Ollama
         return cls(
             provider="ollama",
             model=settings.ollama_model or "",

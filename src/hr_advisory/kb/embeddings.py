@@ -12,6 +12,8 @@ from typing import Optional
 from kailash.runtime import LocalRuntime
 from kailash.workflow.builder import WorkflowBuilder
 
+from hr_advisory.agents.llm_context import GEMINI_OPENAI_BASE_URL
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,13 +24,13 @@ class EmbeddingPipeline:
         """Initialise the embedding pipeline.
 
         Args:
-            model: The OpenAI embedding model to use. Defaults to
+            model: The embedding model to use. Defaults to
                    EMBEDDING_MODEL from .env, falling back to
-                   "text-embedding-3-small".
+                   "text-embedding-004" (Gemini).
         """
         import os
 
-        self.model = model or os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
+        self.model = model or os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
         self._runtime = LocalRuntime()
 
     def _execute(self, node_type: str, node_id: str, params: dict) -> dict:
@@ -48,12 +50,13 @@ class EmbeddingPipeline:
         return []
 
     def _get_api_key(self) -> Optional[str]:
-        """Get the OpenAI API key from environment.
+        """Get the API key from environment.
 
+        Checks GOOGLE_API_KEY first, then falls back to OPENAI_API_KEY.
         Returns None if no key is set, allowing callers to skip
         gracefully.
         """
-        key = os.environ.get("OPENAI_API_KEY", "")
+        key = os.environ.get("GOOGLE_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
         if not key or not key.strip():
             return None
         return key.strip()
@@ -68,15 +71,22 @@ class EmbeddingPipeline:
         api_key = self._get_api_key()
         if not api_key:
             logger.warning(
-                "OPENAI_API_KEY not set. Skipping embedding generation. "
-                "Set the key in .env to enable embeddings."
+                "No embedding API key set. Skipping embedding generation. "
+                "Set GOOGLE_API_KEY or OPENAI_API_KEY in .env to enable embeddings."
             )
             return None
 
         try:
             import openai
 
-            client = openai.OpenAI(api_key=api_key)
+            google_key = os.environ.get("GOOGLE_API_KEY", "")
+            if google_key:
+                client = openai.OpenAI(
+                    api_key=google_key,
+                    base_url=GEMINI_OPENAI_BASE_URL,
+                )
+            else:
+                client = openai.OpenAI(api_key=api_key)
             response = client.embeddings.create(
                 input=text,
                 model=self.model,
@@ -186,8 +196,8 @@ class EmbeddingPipeline:
         api_key = self._get_api_key()
         if not api_key:
             logger.warning(
-                "OPENAI_API_KEY not set. Skipping all embeddings. "
-                "Set the key in .env to enable embeddings."
+                "No embedding API key set. Skipping all embeddings. "
+                "Set GOOGLE_API_KEY or OPENAI_API_KEY in .env to enable embeddings."
             )
             # Count total provisions so the caller knows what was skipped
             all_provisions_raw = self._execute("ProvisionListNode", "all_provs", {"filter": {}})

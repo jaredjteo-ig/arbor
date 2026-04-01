@@ -39,6 +39,8 @@ class Settings:
     openai_prod_model: str = "gpt-4o"
     openai_dev_model: str = "gpt-4o-mini"
     anthropic_api_key: str = ""
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     default_llm_model: str = "gpt-4o"
 
     # Ollama (local LLM fallback)
@@ -55,7 +57,7 @@ class Settings:
 
     # Email
     sendgrid_api_key: str = ""
-    from_email: str = "noreply@arbor.sg"
+    from_email: str = "noreply@arbor.terrene.dev"
 
     @property
     def is_production(self) -> bool:
@@ -111,10 +113,12 @@ def get_settings() -> Settings:
         database_url=database_url,
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
-        openai_prod_model=os.environ.get("OPENAI_PROD_MODEL", "gpt-5-mini-2025-08-07"),
-        openai_dev_model=os.environ.get("OPENAI_DEV_MODEL", "gpt-5-mini-2025-08-07"),
+        openai_prod_model=os.environ.get("OPENAI_PROD_MODEL", "gemini-2.5-flash"),
+        openai_dev_model=os.environ.get("OPENAI_DEV_MODEL", "gemini-2.5-flash"),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-        default_llm_model=os.environ.get("DEFAULT_LLM_MODEL", "gpt-5-mini-2025-08-07"),
+        gemini_api_key=os.environ.get("GOOGLE_API_KEY", ""),
+        gemini_model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+        default_llm_model=os.environ.get("DEFAULT_LLM_MODEL", "gemini-2.5-flash"),
         ollama_model=os.environ.get("OLLAMA_MODEL", ""),
         ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
         jwt_secret_key=jwt_secret,
@@ -124,5 +128,5 @@ def get_settings() -> Settings:
         google_oauth_client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", ""),
         google_oauth_redirect_uri=os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", ""),
         sendgrid_api_key=os.environ.get("SENDGRID_API_KEY", ""),
-        from_email=os.environ.get("FROM_EMAIL", "noreply@arbor.sg"),
+        from_email=os.environ.get("FROM_EMAIL", "noreply@arbor.terrene.dev"),
     )

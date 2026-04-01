@@ -9,7 +9,8 @@ or from per-request LLMKeyContext (BYOK / Ollama overrides).
 Provider resolution order:
   1. Per-request LLMKeyContext (BYOK key or company Ollama endpoint)
   2. OpenAI server key (from OPENAI_API_KEY env var)
-  3. Ollama (if running locally with a model available)
+  3. Gemini server key (from GOOGLE_API_KEY env var)
+  4. Ollama (if running locally with a model available)
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from hr_advisory.config.settings import get_settings
+from hr_advisory.agents.llm_context import GEMINI_OPENAI_BASE_URL
 
 if TYPE_CHECKING:
     from hr_advisory.agents.llm_context import LLMKeyContext
@@ -99,6 +101,10 @@ def install_kaizen_provider_patch() -> None:
         _original_get_ollama = kp.get_ollama_config
 
         def _patched_get_openai_config(model=None):
+            # Check if this is a Gemini request routed through OpenAI-compatible endpoint
+            gemini_result = _patched_get_openai_config_for_gemini(model)
+            if gemini_result is not None:
+                return gemini_result
             ctx = get_request_llm_context()
             if ctx and ctx.api_key and ctx.provider == "openai":
                 from kaizen.config.providers import ProviderConfig
@@ -114,6 +120,22 @@ def install_kaizen_provider_patch() -> None:
                     max_retries=int(os.getenv("KAIZEN_MAX_RETRIES", "3")),
                 )
             return _original_get_openai(model)
+
+        def _patched_get_openai_config_for_gemini(model=None):
+            """Route Gemini provider through OpenAI-compatible endpoint."""
+            ctx = get_request_llm_context()
+            if ctx and ctx.provider == "gemini" and ctx.api_key:
+                from kaizen.config.providers import ProviderConfig
+
+                return ProviderConfig(
+                    provider="openai",  # Kaizen uses OpenAI SDK
+                    model=model or ctx.model or "gemini-2.5-flash",
+                    api_key=ctx.api_key,
+                    base_url=GEMINI_OPENAI_BASE_URL,
+                    timeout=int(os.getenv("KAIZEN_TIMEOUT", "30")),
+                    max_retries=int(os.getenv("KAIZEN_MAX_RETRIES", "3")),
+                )
+            return None
 
         def _patched_get_ollama_config(model=None):
             ctx = get_request_llm_context()
@@ -200,7 +222,12 @@ def resolve_provider_and_model(
         model = settings.openai_prod_model or settings.default_llm_model
         return "openai", model
 
-    # Priority 2: Ollama auto-detect
+    # Priority 2: Gemini from env
+    if settings.gemini_api_key:
+        model = settings.gemini_model or "gemini-2.5-flash"
+        return "gemini", model
+
+    # Priority 3: Ollama auto-detect
     ollama_model = _detect_ollama()
     if ollama_model:
         return "ollama", ollama_model
@@ -236,6 +263,8 @@ def has_llm_available(
 
     # Server env check
     settings = get_settings()
+    if settings.gemini_api_key:
+        return True
     if settings.openai_api_key:
         return True
     return _detect_ollama() is not None

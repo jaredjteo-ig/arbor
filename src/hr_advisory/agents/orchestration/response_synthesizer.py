@@ -13,6 +13,7 @@ from kaizen.core.base_agent import BaseAgent
 from kaizen.memory import SharedMemoryPool
 
 from hr_advisory.agents.config import ResponseSynthesizerConfig, UNCERTAINTY_DEFAULTS
+from hr_advisory.agents.llm_context import GEMINI_OPENAI_BASE_URL
 from hr_advisory.agents.signatures import ResponseSynthesizerSignature
 from hr_advisory.workflows.guardrails import SYSTEM_PROMPT_SECURITY_FOOTER
 
@@ -116,8 +117,18 @@ class ResponseSynthesizerAgent(BaseAgent):
         try:
             from openai import OpenAI
 
-            client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
-            model = os.environ.get("DEFAULT_LLM_MODEL", "gpt-5-mini-2025-08-07")
+            google_key = os.environ.get("GOOGLE_API_KEY", "")
+            openai_key = os.environ.get("OPENAI_API_KEY", "")
+
+            if google_key:
+                client = OpenAI(
+                    api_key=google_key,
+                    base_url=GEMINI_OPENAI_BASE_URL,
+                )
+                model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+            else:
+                client = OpenAI(api_key=openai_key)
+                model = os.environ.get("DEFAULT_LLM_MODEL", "gemini-2.5-flash")
 
             system_prompt = self._generate_system_prompt()
             user_prompt = (

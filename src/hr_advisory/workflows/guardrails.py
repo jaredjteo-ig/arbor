@@ -16,6 +16,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
+from hr_advisory.agents.llm_context import GEMINI_OPENAI_BASE_URL
+
 
 class ScreeningResult(str, Enum):
     """Result of query screening."""
@@ -483,8 +485,9 @@ def screen_scope(query: str) -> ScreeningOutput:
     try:
         import os
 
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
+        google_key = os.environ.get("GOOGLE_API_KEY", "")
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        if not google_key and not openai_key:
             # No API key — can't classify, fail open
             return ScreeningOutput(
                 result=ScreeningResult.PASS,
@@ -494,10 +497,17 @@ def screen_scope(query: str) -> ScreeningOutput:
 
         import openai
 
-        client = openai.OpenAI(api_key=api_key)
-        model = os.environ.get(
-            "OPENAI_DEV_MODEL", os.environ.get("OPENAI_PROD_MODEL", "gpt-5-mini-2025-08-07")
-        )
+        if google_key:
+            client = openai.OpenAI(
+                api_key=google_key,
+                base_url=GEMINI_OPENAI_BASE_URL,
+            )
+            model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        else:
+            client = openai.OpenAI(api_key=openai_key)
+            model = os.environ.get(
+                "OPENAI_DEV_MODEL", os.environ.get("OPENAI_PROD_MODEL", "gpt-5-mini-2025-08-07")
+            )
 
         response = client.chat.completions.create(
             model=model,

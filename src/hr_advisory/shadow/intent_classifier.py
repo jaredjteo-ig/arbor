@@ -19,6 +19,8 @@ import logging
 import os
 from dataclasses import dataclass, field
 
+from hr_advisory.agents.llm_context import GEMINI_OPENAI_BASE_URL
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -323,18 +325,27 @@ class ShadowIntentClassifier:
 
         Returns None if the LLM is unavailable or the call fails.
         """
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
+        # Resolve API key and client — prefer Gemini, fall back to OpenAI
+        google_key = os.environ.get("GOOGLE_API_KEY", "")
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        if not google_key and not openai_key:
             return None
 
         try:
             import openai
 
-            client = openai.OpenAI(api_key=api_key)
-            model = os.environ.get(
-                "OPENAI_DEV_MODEL",
-                os.environ.get("OPENAI_PROD_MODEL", "gpt-5-mini-2025-08-07"),
-            )
+            if google_key:
+                client = openai.OpenAI(
+                    api_key=google_key,
+                    base_url=GEMINI_OPENAI_BASE_URL,
+                )
+                model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+            else:
+                client = openai.OpenAI(api_key=openai_key)
+                model = os.environ.get(
+                    "OPENAI_DEV_MODEL",
+                    os.environ.get("OPENAI_PROD_MODEL", "gpt-5-mini-2025-08-07"),
+                )
 
             user_msg = _USER_MESSAGE_TEMPLATE.format(
                 message=message,
