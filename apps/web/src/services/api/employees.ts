@@ -131,10 +131,11 @@ export interface EmployeeDocument {
 }
 
 export interface LeaveBalance {
-  name: string;
-  entitlement: number;
-  used: number;
-  pending: number;
+  leave_type: string;
+  year: number;
+  entitlement_days: number;
+  used_days: number;
+  pending_days: number;
 }
 
 export interface CompanyPolicy {

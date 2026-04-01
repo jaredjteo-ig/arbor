@@ -44,3 +44,6 @@ export type { FeedbackButtonsProps, FeedbackPayload } from "./FeedbackButtons";
 export { BarChart, DonutChart, TrendLine } from "./SimpleChart";
 
 export { EmployeePicker } from "./EmployeePicker";
+
+export { DatePicker } from "./DatePicker";
+export type { DatePickerProps } from "./DatePicker";

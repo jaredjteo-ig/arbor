@@ -140,9 +140,13 @@ def _verify_project_ownership(project_id: int, company_id: int) -> dict:
 @router.get("/")
 async def list_projects(
     status: str | None = Query(None),
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """List all projects for the current company."""
+    """List all projects for the current company.
+
+    All authenticated users can view projects; employees see only projects
+    they are assigned to unless they are owner/hr_manager.
+    """
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
@@ -151,6 +155,24 @@ async def list_projects(
     if status:
         filters["status"] = status
     projects = _dataflow_list("ProjectListNode", filters)
+
+    # Non-admin users see only projects they are assigned to
+    role = current_user.get("role", "employee")
+    if role not in ("owner", "hr_manager", "consultant"):
+        user_id = int(current_user.get("sub", 0))
+        emp = _get_employee_for_user(user_id, company_id)
+        if emp:
+            emp_id = emp.get("id")
+            assigned_ids = {
+                a.get("project_id")
+                for a in _dataflow_list(
+                    "ProjectAssignmentListNode", {"employee_id": emp_id}
+                )
+            }
+            projects = [p for p in projects if p.get("id") in assigned_ids]
+        else:
+            projects = []
+
     return {"projects": projects, "count": len(projects)}
 
 
@@ -260,7 +282,7 @@ async def archive_project(
 @router.get("/{project_id}/assignments")
 async def list_assignments(
     project_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """List employee assignments for a project."""
     company_id = get_current_company_id(current_user)
@@ -535,12 +557,12 @@ async def create_timesheet_entry(
 
     body = await request.json()
     project_id = body.get("project_id")
-    entry_date = body.get("date", "")
+    entry_date = body.get("entry_date") or body.get("date", "")
     hours = body.get("hours", 0.0)
 
     if not project_id or not entry_date or hours <= 0:
         raise HTTPException(
-            status_code=400, detail="project_id, date, and hours (>0) are required."
+            status_code=400, detail="project_id, entry_date, and hours (>0) are required."
         )
 
     _verify_project_ownership(project_id, company_id)
@@ -566,7 +588,7 @@ async def create_timesheet_entry(
         {
             "project_id": project_id,
             "employee_id": employee_id,
-            "date": entry_date,
+            "entry_date": entry_date,
             "hours": hours,
             "description": body.get("description", ""),
             "task": body.get("task", ""),
@@ -604,14 +626,17 @@ async def list_timesheet_entries(
         emp = _get_employee_for_user(user_id, company_id)
         if emp:
             filters["employee_id"] = emp.get("id")
+        else:
+            # No employee record — return empty rather than all entries
+            return {"entries": [], "count": 0}
 
     entries = _dataflow_list("TimesheetEntryListNode", filters)
 
     # Client-side date filtering (DataFlow may not support range queries directly)
     if date_from:
-        entries = [e for e in entries if e.get("date", "") >= date_from]
+        entries = [e for e in entries if e.get("entry_date", "") >= date_from]
     if date_to:
-        entries = [e for e in entries if e.get("date", "") <= date_to]
+        entries = [e for e in entries if e.get("entry_date", "") <= date_to]
 
     return {"entries": entries, "count": len(entries)}
 
@@ -643,7 +668,7 @@ async def update_timesheet_entry(
             raise HTTPException(status_code=403, detail="Access denied.")
 
     body = await request.json()
-    allowed = {"hours", "description", "task", "date"}
+    allowed = {"hours", "description", "task", "entry_date"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
@@ -680,6 +705,125 @@ async def delete_timesheet_entry(
 
     _dataflow_delete("TimesheetEntryDeleteNode", entry_id)
     return {"detail": "Entry deleted."}
+
+
+@router.post("/timesheets/entries/{entry_id}/submit")
+async def submit_timesheet_entry(
+    entry_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Submit a draft timesheet entry for approval."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    existing = _dataflow_read("TimesheetEntryReadNode", entry_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Entry not found.")
+
+    if existing.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Entry not found.")
+
+    role = current_user.get("role", "employee")
+    if role not in ("owner", "hr_manager"):
+        user_id = int(current_user.get("sub", 0))
+        emp = _get_employee_for_user(user_id, company_id)
+        if not emp or emp.get("id") != existing.get("employee_id"):
+            raise HTTPException(status_code=403, detail="Access denied.")
+
+    current_status = existing.get("status", "draft")
+    if current_status != "draft":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only draft entries can be submitted (current: {current_status}).",
+        )
+
+    result = _dataflow_update(
+        "TimesheetEntryUpdateNode",
+        entry_id,
+        {"status": "submitted", "updated_at": datetime.now(timezone.utc).isoformat()},
+    )
+    return {"entry": result, "message": "Timesheet entry submitted for approval."}
+
+
+@router.post("/timesheets/entries/{entry_id}/approve")
+async def approve_timesheet_entry(
+    entry_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Approve a submitted timesheet entry."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    existing = _dataflow_read("TimesheetEntryReadNode", entry_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Entry not found.")
+
+    if existing.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Entry not found.")
+
+    current_status = existing.get("status", "draft")
+    if current_status != "submitted":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only submitted entries can be approved (current: {current_status}).",
+        )
+
+    user_id = int(current_user.get("sub", 0))
+    result = _dataflow_update(
+        "TimesheetEntryUpdateNode",
+        entry_id,
+        {
+            "status": "approved",
+            "approved_by": user_id,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return {"entry": result, "message": "Timesheet entry approved."}
+
+
+@router.post("/timesheets/entries/{entry_id}/reject")
+async def reject_timesheet_entry(
+    entry_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Reject a submitted timesheet entry."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    existing = _dataflow_read("TimesheetEntryReadNode", entry_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Entry not found.")
+
+    if existing.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Entry not found.")
+
+    current_status = existing.get("status", "draft")
+    if current_status != "submitted":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only submitted entries can be rejected (current: {current_status}).",
+        )
+
+    body = await request.json()
+    reason = body.get("reason", "")
+    _validate_text_length(reason, "reason")
+
+    user_id = int(current_user.get("sub", 0))
+    result = _dataflow_update(
+        "TimesheetEntryUpdateNode",
+        entry_id,
+        {
+            "status": "rejected",
+            "approved_by": user_id,
+            "rejection_reason": reason,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return {"entry": result, "message": "Timesheet entry rejected."}
 
 
 # --------------------------------------------------------------------------
@@ -746,6 +890,51 @@ async def create_allocation(
 # --------------------------------------------------------------------------
 # Cost calculation & reports
 # --------------------------------------------------------------------------
+
+
+@router.get("/{project_id}/costs")
+async def get_project_costs(
+    project_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get cost summary for a project (read-only variant of /calculate)."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    project = _verify_project_ownership(project_id, company_id)
+
+    entries = _dataflow_list("TimesheetEntryListNode", {"project_id": project_id})
+    assignments = _dataflow_list(
+        "ProjectAssignmentListNode", {"project_id": project_id}
+    )
+    rate_map: dict[int, float] = {}
+    for a in assignments:
+        rate_map[a.get("employee_id", 0)] = a.get("hourly_rate", 0.0)
+
+    total_hours = 0.0
+    labour_cost = 0.0
+    for entry in entries:
+        emp_id = entry.get("employee_id", 0)
+        hours = entry.get("hours", 0.0)
+        rate = rate_map.get(emp_id, 0.0)
+        total_hours += hours
+        labour_cost += hours * rate
+
+    overheads = _dataflow_list("ProjectOverheadListNode", {"project_id": project_id})
+    overhead_total = sum(o.get("amount", 0.0) for o in overheads)
+
+    total_cost = labour_cost + overhead_total
+    budget = float(project.get("budget_amount", project.get("budget", 0.0)) or 0.0)
+
+    return {
+        "project_id": project_id,
+        "total_budget": round(budget, 2),
+        "total_actual": round(total_cost, 2),
+        "total_timesheet_cost": round(labour_cost, 2),
+        "total_overhead_cost": round(overhead_total, 2),
+        "variance": round(budget - total_cost, 2),
+    }
 
 
 @router.post("/calculate")
@@ -839,3 +1028,23 @@ async def project_report(
         "total_entries": len(entries),
         "overhead_total": round(overhead_total, 2),
     }
+
+
+# --------------------------------------------------------------------------
+# Single project detail (placed after all static GET routes to avoid
+# /{project_id} shadowing /roles, /timesheets, /allocations, /report)
+# --------------------------------------------------------------------------
+
+
+@router.get("/{project_id}")
+async def get_project(
+    project_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get a single project by ID."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    project = _verify_project_ownership(project_id, company_id)
+    return project

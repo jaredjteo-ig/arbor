@@ -1149,10 +1149,14 @@ def _serialize_employee(
         "notice_period_days": emp.get("notice_period_days", 0),
         "is_active": emp.get("is_active", True),
         # Personal details
+        "alias": emp.get("alias", ""),
+        "phone": emp.get("phone", ""),
+        "photo_url": emp.get("photo_url", ""),
         "date_of_birth": emp.get("date_of_birth", ""),
         "gender": emp.get("gender", ""),
         "marital_status": emp.get("marital_status", ""),
         "race": emp.get("race", ""),
+        "religion": emp.get("religion", ""),
         # Identity — encrypted at rest, decrypted/masked here
         "nric_fin": nric_value,
         "nric_fin_last4": emp.get("nric_fin_last4", ""),
@@ -1166,9 +1170,15 @@ def _serialize_employee(
         "bank_account_number": bank_value,
         "bank_account_last4": emp.get("bank_account_last4", ""),
         "bank_code": emp.get("bank_code", ""),
+        "branch_code": emp.get("branch_code", ""),
         # Address
         "residential_address": emp.get("residential_address", ""),
         "postal_code": emp.get("postal_code", ""),
+        "address_block": emp.get("address_block", ""),
+        "address_street": emp.get("address_street", ""),
+        "address_unit": emp.get("address_unit", ""),
+        "address_building": emp.get("address_building", ""),
+        "address_postal_code": emp.get("address_postal_code", ""),
         # Organisational
         "reporting_manager_id": emp.get("reporting_manager_id"),
         # Probation
@@ -1665,28 +1675,81 @@ async def get_my_employee_record(
     """Get the current user's employee record.
 
     Any authenticated user with an employee record can access this.
+    If no employee record exists, returns a synthesized record from
+    the user's auth data to avoid 404 console errors on the frontend.
 
     Status codes:
-        200: Success
-        404: No employee record found
+        200: Success (may return synthesized data if no employee record)
+        404: No user data available at all
     """
     user_id = int(current_user.get("sub", 0))
     company_id = current_user.get("company_id")
 
     if company_id is None:
+        # No company yet — return a synthesized record from user data
+        # instead of 404 to avoid console errors on the frontend.
+        user = _find_user_by_id(user_id)
+        if user is not None:
+            role = current_user.get("role", "")
+            return {
+                "id": 0,
+                "name": user.get("name", ""),
+                "email": user.get("email", ""),
+                "department": "",
+                "job_title": role.replace("_", " ").title() if role else "Employee",
+                "start_date": "",
+                "employment_type": "full_time",
+            }
         raise HTTPException(
             status_code=404,
             detail="No employee record found.",
         )
 
     employee = _find_employee_by_user_id(user_id, company_id)
+    user = _find_user_by_id(user_id)
+
+    # Auto-create an employee record for owner/hr_manager users who don't
+    # have one yet (e.g. the company creator visiting My Profile for the
+    # first time).  This prevents 404 errors on the profile page.
     if employee is None:
+        role = current_user.get("role")
+        if role in ("owner", "hr_manager") and user is not None:
+            try:
+                _create_employee({
+                    "user_id": user_id,
+                    "company_id": company_id,
+                    "department": "",
+                    "designation": role.replace("_", " ").title(),
+                    "employment_type": "full_time",
+                    "start_date": "",
+                    "is_active": True,
+                })
+                employee = _find_employee_by_user_id(user_id, company_id)
+            except Exception as exc:
+                logger.warning(
+                    "Auto-create employee failed for user_id=%s: %s", user_id, exc
+                )
+
+    if employee is None:
+        # Return a synthesized record from user data instead of 404.
+        # This prevents console errors on the frontend for owner/hr_manager
+        # users who may not have a full employee record yet.
+        if user is not None:
+            role = current_user.get("role", "")
+            return {
+                "id": 0,
+                "name": user.get("name", ""),
+                "email": user.get("email", ""),
+                "department": "",
+                "job_title": role.replace("_", " ").title() if role else "Employee",
+                "start_date": "",
+                "employment_type": "full_time",
+            }
         raise HTTPException(
             status_code=404,
             detail="No employee record found.",
         )
 
-    user = _find_user_by_id(user_id)
     return _serialize_employee(employee, user, include_sensitive=False)
 
 

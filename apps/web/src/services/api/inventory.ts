@@ -99,7 +99,7 @@ export const inventoryApi = {
   createItem: (data: Partial<InventoryItem>) =>
     apiClient.post<InventoryItem>("/inventory/items", data),
   updateItem: (id: number, data: Partial<InventoryItem>) =>
-    apiClient.put<InventoryItem>(`/inventory/items/${id}`, data),
+    apiClient.patch<InventoryItem>(`/inventory/items/${id}`, data),
 
   /* Lifecycle actions */
   issueItem: (id: number, data: { employee_id: number; notes?: string }) =>
@@ -124,9 +124,9 @@ export const inventoryApi = {
   createRequest: (data: Partial<InventoryRequest>) =>
     apiClient.post<InventoryRequest>("/inventory/requests", data),
   approveRequest: (id: number) =>
-    apiClient.post<{ message: string }>(`/inventory/requests/${id}/approve`),
+    apiClient.put<{ message: string }>(`/inventory/requests/${id}/approve`),
   rejectRequest: (id: number, reason: string) =>
-    apiClient.post<{ message: string }>(`/inventory/requests/${id}/reject`, {
+    apiClient.put<{ message: string }>(`/inventory/requests/${id}/deny`, {
       reason,
     }),
 

@@ -83,7 +83,7 @@ export const projectsApi = {
   createProject: (data: Partial<Project>) =>
     apiClient.post<Project>("/projects/", data),
   updateProject: (id: number, data: Partial<Project>) =>
-    apiClient.put<Project>(`/projects/${id}`, data),
+    apiClient.patch<Project>(`/projects/${id}`, data),
 
   /* Assignments */
   listAssignments: (projectId: number) =>
@@ -91,9 +91,9 @@ export const projectsApi = {
       `/projects/${projectId}/assignments`,
     ),
   createAssignment: (projectId: number, data: Partial<ProjectAssignment>) =>
-    apiClient.post<ProjectAssignment>(
+    apiClient.post<{ assignments: ProjectAssignment[]; count: number }>(
       `/projects/${projectId}/assignments`,
-      data,
+      { assignments: [data] },
     ),
   removeAssignment: (projectId: number, assignmentId: number) =>
     apiClient.delete<{ message: string }>(
@@ -124,10 +124,11 @@ export const projectsApi = {
       { reason },
     ),
 
-  /* My Timesheets (employee self-service) */
+  /* My Timesheets (employee self-service) — uses same endpoint; backend
+     automatically scopes to current employee for non-admin roles. */
   listMyTimesheets: (params?: Record<string, string>) =>
     apiClient.get<{ entries: TimesheetEntry[]; count: number }>(
-      "/projects/timesheets/me",
+      "/projects/timesheets",
       params,
     ),
 

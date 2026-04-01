@@ -333,6 +333,32 @@ async def update_item(
 
 
 # --------------------------------------------------------------------------
+# My items (employee self-service)
+# --------------------------------------------------------------------------
+
+
+@router.get("/items/me")
+async def list_my_items(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """List inventory items assigned to the current employee."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    emp = _get_employee_for_user(user_id, company_id)
+    if not emp:
+        return {"items": [], "count": 0}
+
+    items = _dataflow_list(
+        "InventoryItemListNode",
+        {"company_id": company_id, "assigned_to_employee_id": emp.get("id")},
+    )
+    return {"items": items, "count": len(items)}
+
+
+# --------------------------------------------------------------------------
 # Item lifecycle transitions
 # --------------------------------------------------------------------------
 

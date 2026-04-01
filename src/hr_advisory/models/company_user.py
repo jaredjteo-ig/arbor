@@ -1908,9 +1908,15 @@ class TimesheetEntry:
     entry_date: str = ""
     hours: float = 0.0
     minutes: int = 0
+    description: str = ""
+    task: str = ""
     rate_type: str = "normal"  # normal/overtime/holiday
     billable: bool = True
     notes: str = ""
+    status: str = "draft"  # draft/submitted/approved/rejected
+    approved_by: int = 0
+    rejection_reason: str = ""
+    created_by: int = 0
     created_by_type: str = "employee"  # admin/manager/employee
 
     __dataflow__ = {
@@ -1918,6 +1924,7 @@ class TimesheetEntry:
             {"name": "idx_timesheet_employee", "fields": ["employee_id"]},
             {"name": "idx_timesheet_project", "fields": ["project_id"]},
             {"name": "idx_timesheet_date", "fields": ["entry_date"]},
+            {"name": "idx_timesheet_status", "fields": ["status"]},
         ],
     }
 
