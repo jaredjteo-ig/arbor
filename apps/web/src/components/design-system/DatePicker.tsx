@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useId } from "react";
+import { createPortal } from "react-dom";
 import clsx from "clsx";
 import {
   ChevronLeft,
@@ -111,6 +112,7 @@ export function DatePicker({
   const describedBy = errorId ?? helperId;
 
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const calendarRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
 
   // Calendar view state
@@ -132,10 +134,10 @@ export function DatePicker({
   // Close on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (
-        wrapperRef.current &&
-        !wrapperRef.current.contains(e.target as Node)
-      ) {
+      const target = e.target as Node;
+      const inWrapper = wrapperRef.current?.contains(target);
+      const inCalendar = calendarRef.current?.contains(target);
+      if (!inWrapper && !inCalendar) {
         setIsOpen(false);
       }
     }
@@ -266,123 +268,135 @@ export function DatePicker({
         )}
       </button>
 
-      {/* Calendar popover */}
-      {isOpen && (
-        <div className="relative z-50">
-          <div className="absolute top-0 left-0 w-[280px] bg-white rounded-[12px] border border-[var(--color-gray-200)] shadow-lg p-3">
-            {/* Month/year navigation */}
-            <div className="flex items-center justify-between mb-2">
-              <button
-                type="button"
-                onClick={prevMonth}
-                className="p-1.5 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
-                aria-label="Previous month"
-              >
-                <ChevronLeft className="h-4 w-4 text-[var(--color-gray-600)]" />
-              </button>
-              <div className="flex items-center gap-1">
-                <select
-                  value={viewMonth}
-                  onChange={(e) => setViewMonth(Number(e.target.value))}
-                  className="text-sm font-semibold text-[var(--color-gray-900)] bg-transparent border-none cursor-pointer focus:outline-none pr-0"
+      {/* Calendar popover — rendered via portal to escape overflow clipping */}
+      {isOpen &&
+        createPortal(
+          <div
+            ref={calendarRef}
+            style={{
+              position: "fixed",
+              zIndex: 9999,
+              top:
+                (wrapperRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+              left: wrapperRef.current?.getBoundingClientRect().left ?? 0,
+            }}
+          >
+            <div className="w-[280px] bg-white rounded-[12px] border border-[var(--color-gray-200)] shadow-lg p-3">
+              {/* Month/year navigation */}
+              <div className="flex items-center justify-between mb-2">
+                <button
+                  type="button"
+                  onClick={prevMonth}
+                  className="p-1.5 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+                  aria-label="Previous month"
                 >
-                  {MONTH_NAMES.map((name, idx) => (
-                    <option key={idx} value={idx}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={viewYear}
-                  onChange={(e) => setViewYear(Number(e.target.value))}
-                  className="text-sm font-semibold text-[var(--color-gray-900)] bg-transparent border-none cursor-pointer focus:outline-none"
-                >
-                  {Array.from({ length: 30 }, (_, i) => viewYear - 15 + i).map(
-                    (y) => (
+                  <ChevronLeft className="h-4 w-4 text-[var(--color-gray-600)]" />
+                </button>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={viewMonth}
+                    onChange={(e) => setViewMonth(Number(e.target.value))}
+                    className="text-sm font-semibold text-[var(--color-gray-900)] bg-transparent border-none cursor-pointer focus:outline-none pr-0"
+                  >
+                    {MONTH_NAMES.map((name, idx) => (
+                      <option key={idx} value={idx}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={viewYear}
+                    onChange={(e) => setViewYear(Number(e.target.value))}
+                    className="text-sm font-semibold text-[var(--color-gray-900)] bg-transparent border-none cursor-pointer focus:outline-none"
+                  >
+                    {Array.from(
+                      { length: 30 },
+                      (_, i) => viewYear - 15 + i,
+                    ).map((y) => (
                       <option key={y} value={y}>
                         {y}
                       </option>
-                    ),
-                  )}
-                </select>
-              </div>
-              <button
-                type="button"
-                onClick={nextMonth}
-                className="p-1.5 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
-                aria-label="Next month"
-              >
-                <ChevronRight className="h-4 w-4 text-[var(--color-gray-600)]" />
-              </button>
-            </div>
-
-            {/* Day-of-week headers */}
-            <div className="grid grid-cols-7 mb-1">
-              {DAY_LABELS.map((d) => (
-                <div
-                  key={d}
-                  className="text-center text-[10px] font-medium text-[var(--color-gray-500)] uppercase tracking-wider py-1"
-                >
-                  {d}
+                    ))}
+                  </select>
                 </div>
-              ))}
-            </div>
+                <button
+                  type="button"
+                  onClick={nextMonth}
+                  className="p-1.5 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+                  aria-label="Next month"
+                >
+                  <ChevronRight className="h-4 w-4 text-[var(--color-gray-600)]" />
+                </button>
+              </div>
 
-            {/* Day grid */}
-            <div className="grid grid-cols-7">
-              {calendarCells.map((day, idx) => {
-                if (day === null) {
-                  return <div key={`empty-${idx}`} className="h-8" />;
-                }
-                const cellDate = new Date(viewYear, viewMonth, day);
-                const cellIso = toIso(cellDate);
-                const isSelected = cellIso === value;
-                const isToday = cellIso === todayIso;
-                const isDisabled = isDateDisabled(cellDate);
-
-                return (
-                  <button
-                    key={day}
-                    type="button"
-                    disabled={isDisabled}
-                    onClick={() => selectDate(day)}
-                    className={clsx(
-                      "h-8 w-full rounded-lg text-sm transition-colors",
-                      "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]",
-                      isSelected
-                        ? "bg-[var(--color-primary)] text-white font-semibold"
-                        : isToday
-                          ? "bg-[var(--color-primary-bg)] text-[var(--color-primary)] font-medium"
-                          : "text-[var(--color-gray-700)] hover:bg-[var(--color-gray-100)]",
-                      isDisabled &&
-                        "opacity-30 cursor-not-allowed hover:bg-transparent",
-                    )}
+              {/* Day-of-week headers */}
+              <div className="grid grid-cols-7 mb-1">
+                {DAY_LABELS.map((d) => (
+                  <div
+                    key={d}
+                    className="text-center text-[10px] font-medium text-[var(--color-gray-500)] uppercase tracking-wider py-1"
                   >
-                    {day}
-                  </button>
-                );
-              })}
-            </div>
+                    {d}
+                  </div>
+                ))}
+              </div>
 
-            {/* Today shortcut */}
-            <div className="mt-2 pt-2 border-t border-[var(--color-gray-100)]">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!isDateDisabled(today)) {
-                    onChange(todayIso);
-                    setIsOpen(false);
+              {/* Day grid */}
+              <div className="grid grid-cols-7">
+                {calendarCells.map((day, idx) => {
+                  if (day === null) {
+                    return <div key={`empty-${idx}`} className="h-8" />;
                   }
-                }}
-                disabled={isDateDisabled(today)}
-                className="w-full text-xs text-center text-[var(--color-primary)] hover:underline disabled:opacity-50 disabled:no-underline py-1"
-              >
-                Today
-              </button>
+                  const cellDate = new Date(viewYear, viewMonth, day);
+                  const cellIso = toIso(cellDate);
+                  const isSelected = cellIso === value;
+                  const isToday = cellIso === todayIso;
+                  const isDisabled = isDateDisabled(cellDate);
+
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => selectDate(day)}
+                      className={clsx(
+                        "h-8 w-full rounded-lg text-sm transition-colors",
+                        "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]",
+                        isSelected
+                          ? "bg-[var(--color-primary)] text-white font-semibold"
+                          : isToday
+                            ? "bg-[var(--color-primary-bg)] text-[var(--color-primary)] font-medium"
+                            : "text-[var(--color-gray-700)] hover:bg-[var(--color-gray-100)]",
+                        isDisabled &&
+                          "opacity-30 cursor-not-allowed hover:bg-transparent",
+                      )}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Today shortcut */}
+              <div className="mt-2 pt-2 border-t border-[var(--color-gray-100)]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isDateDisabled(today)) {
+                      onChange(todayIso);
+                      setIsOpen(false);
+                    }
+                  }}
+                  disabled={isDateDisabled(today)}
+                  className="w-full text-xs text-center text-[var(--color-primary)] hover:underline disabled:opacity-50 disabled:no-underline py-1"
+                >
+                  Today
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
 
       {error && (
         <p

@@ -46,40 +46,73 @@ export const policiesApi = {
   /** Admin: list all policies for the current company. */
   list(): Promise<{ policies: PolicyRecord[]; count: number }> {
     return apiClient.get<{ policies: PolicyRecord[]; count: number }>(
-      "/policies",
+      "/policies/",
     );
   },
 
   /** Admin: get a single policy by ID. */
-  get(id: number): Promise<PolicyRecord> {
-    return apiClient.get<PolicyRecord>(`/policies/${id}`);
+  async get(id: number): Promise<PolicyRecord> {
+    const data = await apiClient.get<{ policy: PolicyRecord }>(
+      `/policies/${id}`,
+    );
+    return (
+      (data as { policy: PolicyRecord }).policy ??
+      (data as unknown as PolicyRecord)
+    );
   },
 
   /** Admin: create a new policy record. */
-  create(data: Partial<PolicyRecord>): Promise<PolicyRecord> {
-    return apiClient.post<PolicyRecord>("/policies", data);
+  async create(data: Partial<PolicyRecord>): Promise<PolicyRecord> {
+    const resp = await apiClient.post<{ policy: PolicyRecord }>(
+      "/policies/",
+      data,
+    );
+    return (
+      (resp as { policy: PolicyRecord }).policy ??
+      (resp as unknown as PolicyRecord)
+    );
   },
 
   /** Admin: upload a policy document (PDF/DOCX). */
-  upload(formData: FormData): Promise<PolicyRecord> {
-    return apiClient.postFormData<PolicyRecord>("/policies/upload", formData);
+  async upload(formData: FormData): Promise<PolicyRecord> {
+    const resp = await apiClient.postFormData<{ policy: PolicyRecord }>(
+      "/policies/upload",
+      formData,
+    );
+    return (
+      (resp as { policy: PolicyRecord }).policy ??
+      (resp as unknown as PolicyRecord)
+    );
   },
 
   /** Admin: update policy metadata. */
-  update(id: number, data: Partial<PolicyRecord>): Promise<PolicyRecord> {
-    return apiClient.patch<PolicyRecord>(`/policies/${id}`, data);
+  async update(id: number, data: Partial<PolicyRecord>): Promise<PolicyRecord> {
+    const resp = await apiClient.patch<{ policy: PolicyRecord }>(
+      `/policies/${id}`,
+      data,
+    );
+    return (
+      (resp as { policy: PolicyRecord }).policy ??
+      (resp as unknown as PolicyRecord)
+    );
   },
 
   /** Admin: update extracted policy content. */
-  updateContent(id: number, content: string): Promise<PolicyRecord> {
-    return apiClient.patch<PolicyRecord>(`/policies/${id}/content`, {
-      content,
-    });
+  updateContent(
+    id: number,
+    content: string,
+  ): Promise<{ policy_id: number; message: string }> {
+    return apiClient.put<{ policy_id: number; message: string }>(
+      `/policies/${id}/content`,
+      {
+        content,
+      },
+    );
   },
 
   /** Admin: archive a policy (soft delete). */
   archive(id: number): Promise<{ message: string }> {
-    return apiClient.post<{ message: string }>(`/policies/${id}/archive`);
+    return apiClient.delete<{ message: string }>(`/policies/${id}`);
   },
 
   /** Admin: list all versions of a policy. */

@@ -1185,6 +1185,14 @@ def _serialize_employee(
         "probation_months": emp.get("probation_months", 3),
         "probation_end_date": emp.get("probation_end_date", ""),
         "confirmation_status": emp.get("confirmation_status", "on_probation"),
+        # Tax & CPF
+        "iras_auto_inclusion": emp.get("iras_auto_inclusion", True),
+        "tax_reference": emp.get("tax_reference", ""),
+        "cpf_status": emp.get("cpf_status", "include"),
+        "amcs_enabled": emp.get("amcs_enabled", False),
+        "pmbs_enabled": emp.get("pmbs_enabled", False),
+        "community_chest_amount": emp.get("community_chest_amount", 0.0),
+        "shg_override_amount": emp.get("shg_override_amount", 0.0),
     }
     return result
 
@@ -2185,6 +2193,8 @@ async def update_employee(
         "gender",
         "marital_status",
         "race",
+        "religion",
+        "phone",
         "nric_fin",
         "work_pass_number",
         "work_pass_expiry",
@@ -2200,6 +2210,14 @@ async def update_employee(
         "probation_end_date",
         "confirmation_status",
         "is_active",
+        "employee_id_internal",
+        "iras_auto_inclusion",
+        "tax_reference",
+        "cpf_status",
+        "amcs_enabled",
+        "pmbs_enabled",
+        "community_chest_amount",
+        "shg_override_amount",
     }
 
     updates = {k: v for k, v in body.items() if k in allowed_fields}

@@ -122,6 +122,19 @@ def _dataflow_read(node_type: str, record_id: int) -> dict | None:
     return result
 
 
+def _dataflow_delete(node_type: str, record_id: int) -> dict:
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(node_type, "delete", {"id": record_id})
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    return results.get("delete", {})
+
+
 # --------------------------------------------------------------------------
 # Internal helpers
 # --------------------------------------------------------------------------

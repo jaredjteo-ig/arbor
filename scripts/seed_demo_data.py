@@ -888,20 +888,21 @@ def seed_leave_types(client: ArborClient) -> list[dict]:
 def seed_employees(
     client: ArborClient, company_id: int, max_employees: int
 ) -> list[dict]:
-    """Step 3: Create employees via invite + direct update flow.
+    """Step 3: Create employees via the invitation flow.
 
-    Since employees are created through the invitation flow, we use
-    a pragmatic approach: create User records via the auth endpoint,
-    then patch them via the admin employee update endpoint.
+    The proper Arbor flow is: admin invites → employee registers with
+    invitation token → this creates both User + Employee records.
 
-    For demo seeding, we create employees directly through the internal
-    employee list (POST invite creates the invitation, and we track
-    created employee records).
+    For demo seeding we: (1) POST /employees/invite to create an invitation,
+    (2) POST /auth/register with the invitation_token to accept it (creates
+    user + employee), (3) PATCH /employees/{id} to fill in profile details.
+
+    The admin token is saved/restored so subsequent API calls still work.
     """
     _print("\n--- Step 3: Employees ---")
 
     # Check existing employees
-    resp = client.get("/employees/")
+    resp = client.get("/employees")
     existing_employees: list[dict] = []
     if resp.status_code == 200:
         existing_employees = resp.json().get("employees", [])
@@ -914,10 +915,14 @@ def seed_employees(
     created_employees: list[dict] = []
     skipped = 0
 
+    # Save the admin token — we'll need to restore it after each employee registration
+    admin_token = client._token
+
     for profile in profiles:
         email = profile["email"]
+        name = profile["name"]
+
         if email.lower() in existing_emails:
-            # Find the existing employee record
             matching = [
                 e for e in existing_employees if e.get("email", "").lower() == email.lower()
             ]
@@ -926,58 +931,73 @@ def seed_employees(
             skipped += 1
             continue
 
-        # Step 1: Create a user account for this employee
-        name = profile["name"]
+        # Step 1: Admin sends invitation
+        client._token = admin_token
+        role = profile.get("role", "employee")
+        if role == "owner":
+            role = "employee"  # Can't invite as owner
+        invite_resp = client.post(
+            "/employees/invite",
+            {"email": email, "role": role, "name": name},
+        )
+
+        if invite_resp.status_code == 409:
+            # Already invited or exists — check if employee record exists
+            skipped += 1
+            continue
+        elif invite_resp.status_code not in (200, 201):
+            _fail(f"Employee {name}", f"invite failed: {invite_resp.status_code} — {invite_resp.text[:200]}")
+            continue
+
+        invite_data = invite_resp.json()
+        # Token may be in invite_url (e.g. "...?token=abc") or as a direct field
+        invitation_token = invite_data.get("invitation_token") or invite_data.get("token")
+        if not invitation_token:
+            invite_url = invite_data.get("invite_url", "")
+            if "token=" in invite_url:
+                invitation_token = invite_url.split("token=")[-1].split("&")[0]
+
+        if not invitation_token:
+            _fail(f"Employee {name}", "no invitation token returned")
+            continue
+
+        # Step 2: Accept invitation via /auth/register-employee — creates User + Employee
         reg_resp = client.post(
-            "/auth/register",
+            "/auth/register-employee",
             {
                 "email": email,
                 "password": "Employee2026!",
                 "name": name,
-                "company_id": company_id,
+                "invitation_token": invitation_token,
             },
         )
 
-        if reg_resp.status_code == 409:
-            # User already exists — still need to check if employee record exists
-            skipped += 1
-            # Try to find existing employee
-            emp_check = client.get("/employees/")
-            if emp_check.status_code == 200:
-                for e in emp_check.json().get("employees", []):
-                    if e.get("email", "").lower() == email.lower():
-                        created_employees.append(e)
-                        break
-            continue
-        elif reg_resp.status_code not in (200, 201):
+        if reg_resp.status_code not in (200, 201):
             _fail(f"Employee {name}", f"registration failed: {reg_resp.status_code} — {reg_resp.text[:200]}")
+            client._token = admin_token
             continue
 
-        user_data = reg_resp.json()
-        new_user_id = user_data.get("user", {}).get("id") or user_data.get("id")
-
-        # Step 2: Refresh employee list to find the newly created employee record
-        # (Registration with company_id creates an employee record automatically)
-        time.sleep(0.1)  # Brief pause for DB write propagation
-        emp_list_resp = client.get("/employees/")
+        # Step 3: Restore admin token and find the new employee record
+        client._token = admin_token
+        time.sleep(0.1)
+        emp_list_resp = client.get("/employees")
         if emp_list_resp.status_code != 200:
             _fail(f"Employee {name}", "could not list employees after creation")
             continue
 
-        # Find the employee record for this user
         employee_record = None
         for e in emp_list_resp.json().get("employees", []):
-            if e.get("email", "").lower() == email.lower() or e.get("user_id") == new_user_id:
+            if e.get("email", "").lower() == email.lower():
                 employee_record = e
                 break
 
         if not employee_record:
-            _fail(f"Employee {name}", "employee record not found after registration")
+            _fail(f"Employee {name}", "employee record not found after invitation acceptance")
             continue
 
         emp_id = employee_record.get("id")
 
-        # Step 3: Update the employee record with full profile details
+        # Step 4: Update employee profile with full details
         update_fields: dict[str, Any] = {}
         for field in [
             "department", "designation", "employment_type", "start_date",
@@ -991,21 +1011,13 @@ def seed_employees(
         if update_fields:
             patch_resp = client.patch(f"/employees/{emp_id}", json=update_fields)
             if patch_resp.status_code not in (200, 201):
-                _fail(
-                    f"Employee {name}",
-                    f"profile update failed: {patch_resp.status_code}",
-                )
-
-        # Refresh the employee record to include the updates
-        emp_get_resp = client.get("/employees/")
-        if emp_get_resp.status_code == 200:
-            for e in emp_get_resp.json().get("employees", []):
-                if e.get("id") == emp_id:
-                    employee_record = e
-                    break
+                _fail(f"Employee {name}", f"profile update failed: {patch_resp.status_code}")
 
         created_employees.append(employee_record)
         _ok(f"Employee {name}", f"id={emp_id}, dept={profile['department']}")
+
+    # Restore admin token
+    client._token = admin_token
 
     if skipped:
         _skip("Employees", f"{skipped} already existed")

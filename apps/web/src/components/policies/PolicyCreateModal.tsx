@@ -15,22 +15,22 @@ import {
   CheckCircle2,
   AlertCircle,
   Edit,
+  Trash2,
 } from "lucide-react";
 import { policiesApi, type PolicyRecord } from "@/services/api/policies";
 
 /* -- Constants --------------------------------------------------- */
 
 const CATEGORIES = [
-  { value: "Leave", label: "Leave" },
-  { value: "Compensation", label: "Compensation" },
-  { value: "Workplace Conduct", label: "Workplace Conduct" },
-  { value: "Health & Safety", label: "Health & Safety" },
-  { value: "Flexible Work", label: "Flexible Work" },
-  { value: "Data Privacy", label: "Data Privacy" },
-  { value: "Anti-Harassment", label: "Anti-Harassment" },
-  { value: "Termination", label: "Termination" },
-  { value: "Benefits", label: "Benefits" },
-  { value: "Other", label: "Other" },
+  { value: "employment_terms", label: "Employment Terms" },
+  { value: "leave_absence", label: "Leave & Absence" },
+  { value: "compensation_benefits", label: "Compensation & Benefits" },
+  { value: "workplace_safety", label: "Workplace Safety" },
+  { value: "fair_employment", label: "Fair Employment" },
+  { value: "foreign_worker", label: "Foreign Workers" },
+  { value: "tax_filing", label: "Tax & Filing" },
+  { value: "general_hr", label: "General HR" },
+  { value: "code_of_conduct", label: "Code of Conduct" },
 ] as const;
 
 const ACCEPTED_FILE_TYPES = ".pdf,.doc,.docx,.txt";
@@ -49,7 +49,13 @@ interface PolicyCreateModalProps {
 /* -- Extraction status badge ------------------------------------- */
 
 function ExtractionStatusBadge({ status }: { status: string }) {
-  if (status === "completed" || status === "success") {
+  const s = (status || "").toLowerCase();
+  if (
+    s === "completed" ||
+    s === "complete" ||
+    s === "success" ||
+    s === "good"
+  ) {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
         <CheckCircle2 className="h-3 w-3" />
@@ -57,7 +63,7 @@ function ExtractionStatusBadge({ status }: { status: string }) {
       </span>
     );
   }
-  if (status === "processing" || status === "pending") {
+  if (s === "processing" || s === "pending") {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
         <Loader2 className="h-3 w-3 animate-spin" />
@@ -65,10 +71,19 @@ function ExtractionStatusBadge({ status }: { status: string }) {
       </span>
     );
   }
+  if (s === "failed" || s === "timeout") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+        <AlertCircle className="h-3 w-3" />
+        {s === "timeout" ? "Timeout" : "Failed"}
+      </span>
+    );
+  }
+  // Default for empty/unknown — treat as success (manual text entry has no extraction)
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
-      <AlertCircle className="h-3 w-3" />
-      {status === "failed" ? "Failed" : status || "Unknown"}
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+      <CheckCircle2 className="h-3 w-3" />
+      {s ? s.charAt(0).toUpperCase() + s.slice(1) : "Complete"}
     </span>
   );
 }
@@ -519,7 +534,8 @@ export function PolicyCreateModal({
                     Category
                   </span>
                   <span className="text-sm text-[var(--color-gray-900)]">
-                    {uploadedPolicy.category}
+                    {CATEGORIES.find((c) => c.value === uploadedPolicy.category)
+                      ?.label || uploadedPolicy.category}
                   </span>
                 </div>
                 {uploadedPolicy.file_name && (
@@ -622,10 +638,40 @@ export function PolicyCreateModal({
             </>
           )}
 
-          {showUploadPreview && (
-            <AppButton variant="primary" size="sm" onClick={handleUploadDone}>
-              Done
-            </AppButton>
+          {showUploadPreview && uploadedPolicy && (
+            <>
+              <AppButton
+                variant="danger"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await policiesApi.archive(uploadedPolicy.id);
+                    toast.success("Policy deleted");
+                    resetState();
+                    onSuccess();
+                  } catch {
+                    toast.error("Failed to delete policy");
+                  }
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                Delete
+              </AppButton>
+              <AppButton
+                variant="outlined"
+                size="sm"
+                onClick={() => {
+                  handleUploadDone();
+                  window.location.href = `/policies/${uploadedPolicy.id}`;
+                }}
+              >
+                <Edit className="h-3.5 w-3.5 mr-1" />
+                Edit
+              </AppButton>
+              <AppButton variant="primary" size="sm" onClick={handleUploadDone}>
+                Done
+              </AppButton>
+            </>
           )}
         </div>
       </div>

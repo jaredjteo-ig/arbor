@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AppCard,
   AppButton,
@@ -26,6 +27,27 @@ import {
   type PolicyRecord,
   type PolicyAcknowledgmentRecord,
 } from "@/services/api/policies";
+
+/* -- Helpers ----------------------------------------------------- */
+
+const CATEGORY_LABELS: Record<string, string> = {
+  employment_terms: "Employment Terms",
+  leave_absence: "Leave & Absence",
+  compensation_benefits: "Compensation & Benefits",
+  workplace_safety: "Workplace Safety",
+  fair_employment: "Fair Employment",
+  foreign_worker: "Foreign Workers",
+  tax_filing: "Tax & Filing",
+  general_hr: "General HR",
+  code_of_conduct: "Code of Conduct",
+};
+
+function formatCategory(raw: string): string {
+  return (
+    CATEGORY_LABELS[raw] ||
+    raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
 
 /* -- Types ------------------------------------------------------- */
 
@@ -174,7 +196,7 @@ function OverviewTab({
         </h3>
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <InfoRow label="Title" value={policy.title} />
-          <InfoRow label="Category" value={policy.category} />
+          <InfoRow label="Category" value={formatCategory(policy.category)} />
           <InfoRow
             label="Status"
             value={<StatusBadge status={policy.status} />}
@@ -272,8 +294,8 @@ function ContentTab({
   async function handleSave() {
     setIsSaving(true);
     try {
-      const updated = await policiesApi.updateContent(policy.id, editContent);
-      onContentUpdated(updated);
+      await policiesApi.updateContent(policy.id, editContent);
+      onContentUpdated({ ...policy, content: editContent });
       setIsEditing(false);
       toast.success("Content updated successfully");
     } catch (err: unknown) {
@@ -612,6 +634,7 @@ export default function PolicyDetailPage({
   const resolvedParams = use(params);
   const policyId = Number(resolvedParams.id);
 
+  const router = useRouter();
   const { user } = useAuth();
   const isAdmin =
     user?.role === "owner" ||
@@ -625,6 +648,7 @@ export default function PolicyDetailPage({
   const [ackCount, setAckCount] = useState(0);
   const [needsAck, setNeedsAck] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
 
   /* Fetch policy */
   const fetchPolicy = useCallback(async () => {
@@ -679,8 +703,8 @@ export default function PolicyDetailPage({
     setIsArchiving(true);
     try {
       await policiesApi.archive(policy.id);
-      toast.success("Policy archived");
-      fetchPolicy();
+      toast.success("Policy archived successfully");
+      router.push("/policies");
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to archive policy";
@@ -771,24 +795,47 @@ export default function PolicyDetailPage({
                 <StatusBadge status={policy.status} />
               </div>
               <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-                {policy.category}
+                {formatCategory(policy.category)}
                 {policy.effective_date &&
                   ` \u00b7 Effective ${formatDate(policy.effective_date)}`}
               </p>
             </div>
           </div>
 
-          {isAdmin && policy.status !== "archived" && (
-            <AppButton
-              variant="outlined"
-              size="sm"
-              onClick={handleArchive}
-              loading={isArchiving}
-            >
-              <Archive className="h-4 w-4 mr-1" />
-              Archive
-            </AppButton>
-          )}
+          {isAdmin &&
+            policy.status !== "archived" &&
+            (showArchiveConfirm ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-[var(--color-gray-600)]">
+                  Archive this policy?
+                </span>
+                <AppButton
+                  variant="danger"
+                  size="sm"
+                  onClick={handleArchive}
+                  loading={isArchiving}
+                >
+                  Yes, archive
+                </AppButton>
+                <AppButton
+                  variant="text"
+                  size="sm"
+                  onClick={() => setShowArchiveConfirm(false)}
+                  disabled={isArchiving}
+                >
+                  Cancel
+                </AppButton>
+              </div>
+            ) : (
+              <AppButton
+                variant="outlined"
+                size="sm"
+                onClick={() => setShowArchiveConfirm(true)}
+              >
+                <Archive className="h-4 w-4 mr-1" />
+                Archive
+              </AppButton>
+            ))}
         </div>
       </div>
 

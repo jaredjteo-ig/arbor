@@ -751,7 +751,7 @@ def review_flagged_query(query_id: str, notes: str = "") -> Optional[FlaggedQuer
 _request_counts: dict[str, list[datetime]] = {}
 _MAX_RATE_LIMIT_USERS = 10000
 _WINDOW_SECONDS = 60
-_MAX_REQUESTS_PER_WINDOW = 30
+_MAX_REQUESTS_PER_WINDOW = 120
 
 
 def check_rate_limit(user_id: str) -> bool:

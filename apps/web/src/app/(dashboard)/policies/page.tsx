@@ -18,6 +18,7 @@ import {
   AlertCircle,
   Bell,
   CheckCircle2,
+  Archive,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { policiesApi, type PolicyRecord } from "@/services/api/policies";
@@ -25,21 +26,39 @@ import { PolicyCreateModal } from "@/components/policies/PolicyCreateModal";
 
 /* -- Constants --------------------------------------------------- */
 
+const CATEGORY_LABELS: Record<string, string> = {
+  employment_terms: "Employment Terms",
+  leave_absence: "Leave & Absence",
+  compensation_benefits: "Compensation & Benefits",
+  workplace_safety: "Workplace Safety",
+  fair_employment: "Fair Employment",
+  foreign_worker: "Foreign Workers",
+  tax_filing: "Tax & Filing",
+  general_hr: "General HR",
+  code_of_conduct: "Code of Conduct",
+};
+
+function formatCategory(raw: string): string {
+  return (
+    CATEGORY_LABELS[raw] ||
+    raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
 const POLICY_CATEGORIES = [
   "All",
-  "Leave",
-  "Compensation",
-  "Workplace Conduct",
-  "Health & Safety",
-  "Flexible Work",
-  "Data Privacy",
-  "Anti-Harassment",
-  "Termination",
-  "Benefits",
-  "Other",
+  "employment_terms",
+  "leave_absence",
+  "compensation_benefits",
+  "workplace_safety",
+  "fair_employment",
+  "foreign_worker",
+  "tax_filing",
+  "general_hr",
+  "code_of_conduct",
 ] as const;
 
-type StatusTab = "all" | "active" | "draft" | "archived";
+type StatusTab = "active" | "draft" | "archived";
 
 /* -- Status badge ------------------------------------------------ */
 
@@ -141,63 +160,83 @@ function AcknowledgmentBanner({
 function PolicyCard({
   policy,
   onClick,
+  onArchive,
+  isAdmin,
 }: {
   policy: PolicyRecord;
   onClick: () => void;
+  onArchive?: () => void;
+  isAdmin?: boolean;
 }) {
   return (
     <AppCard
       variant="flat"
       className="hover:border-[var(--color-primary)] transition-colors cursor-pointer"
     >
-      <button
-        type="button"
-        onClick={onClick}
-        className="w-full text-left flex items-start gap-3"
-      >
-        <div className="p-2 rounded-lg bg-[var(--color-primary-bg)] shrink-0">
-          <FileText className="h-5 w-5 text-[var(--color-primary)]" />
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-semibold text-[var(--color-gray-900)]">
-              {policy.title}
-            </p>
-            <span className="text-[10px] font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-500)] px-1.5 py-0.5 rounded">
-              v{policy.version_number}
-            </span>
-            <StatusBadge status={policy.status} />
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          onClick={onClick}
+          className="flex-1 text-left flex items-start gap-3 min-w-0"
+        >
+          <div className="p-2 rounded-lg bg-[var(--color-primary-bg)] shrink-0">
+            <FileText className="h-5 w-5 text-[var(--color-primary)]" />
           </div>
 
-          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-            <span className="text-xs text-[var(--color-gray-500)]">
-              {policy.category}
-            </span>
-            {policy.effective_date && (
-              <span className="text-xs text-[var(--color-gray-400)] flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                Effective {formatDate(policy.effective_date)}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-sm font-semibold text-[var(--color-gray-900)]">
+                {policy.title}
+              </p>
+              <span className="text-[10px] font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-500)] px-1.5 py-0.5 rounded">
+                v{policy.version_number}
               </span>
-            )}
-            {policy.file_name && (
-              <span className="text-xs text-[var(--color-gray-400)] flex items-center gap-1">
-                <FileTypeIcon fileType={policy.file_type} />
-                {policy.file_name}
-              </span>
-            )}
-          </div>
-
-          {policy.requires_acknowledgment && (
-            <div className="flex items-center gap-1 mt-1.5">
-              <CheckCircle2 className="h-3 w-3 text-[var(--color-primary)]" />
-              <span className="text-xs text-[var(--color-primary)]">
-                Acknowledgment required
-              </span>
+              <StatusBadge status={policy.status} />
             </div>
-          )}
-        </div>
-      </button>
+
+            <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+              <span className="text-xs text-[var(--color-gray-500)]">
+                {formatCategory(policy.category)}
+              </span>
+              {policy.effective_date && (
+                <span className="text-xs text-[var(--color-gray-400)] flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  Effective {formatDate(policy.effective_date)}
+                </span>
+              )}
+              {policy.file_name && (
+                <span className="text-xs text-[var(--color-gray-400)] flex items-center gap-1">
+                  <FileTypeIcon fileType={policy.file_type} />
+                  {policy.file_name}
+                </span>
+              )}
+            </div>
+
+            {policy.requires_acknowledgment && (
+              <div className="flex items-center gap-1 mt-1.5">
+                <CheckCircle2 className="h-3 w-3 text-[var(--color-primary)]" />
+                <span className="text-xs text-[var(--color-primary)]">
+                  Acknowledgment required
+                </span>
+              </div>
+            )}
+          </div>
+        </button>
+
+        {isAdmin && onArchive && policy.status !== "archived" && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onArchive();
+            }}
+            className="p-2 rounded-lg text-[var(--color-gray-400)] hover:text-amber-600 hover:bg-amber-50 transition-colors shrink-0"
+            title="Archive policy"
+          >
+            <Archive className="h-4 w-4" />
+          </button>
+        )}
+      </div>
     </AppCard>
   );
 }
@@ -217,7 +256,7 @@ export default function PoliciesPage() {
   const [pendingPolicies, setPendingPolicies] = useState<PolicyRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusTab, setStatusTab] = useState<StatusTab>("all");
+  const [statusTab, setStatusTab] = useState<StatusTab>("active");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -255,6 +294,20 @@ export default function PoliciesPage() {
     }
   }, []);
 
+  const handleArchivePolicy = useCallback(
+    async (policyId: number, policyTitle: string) => {
+      if (!confirm(`Archive "${policyTitle}"?`)) return;
+      try {
+        await policiesApi.archive(policyId);
+        toast.success("Policy archived");
+        fetchPolicies();
+      } catch {
+        toast.error("Failed to archive policy");
+      }
+    },
+    [fetchPolicies],
+  );
+
   /* Fetch pending acknowledgments (employee view) */
   const fetchPending = useCallback(async () => {
     if (isAdmin) return;
@@ -274,22 +327,18 @@ export default function PoliciesPage() {
   /* Filter logic */
   const statusTabs: { key: StatusTab; label: string }[] = isAdmin
     ? [
-        { key: "all", label: "All" },
         { key: "active", label: "Active" },
         { key: "draft", label: "Draft" },
         { key: "archived", label: "Archived" },
       ]
-    : [
-        { key: "all", label: "All" },
-        { key: "active", label: "Active" },
-      ];
+    : [{ key: "active", label: "Active" }];
 
   const filteredPolicies = policies.filter((p) => {
     /* Employee view: only active policies */
     if (!isAdmin && p.status !== "active") return false;
 
     /* Status tab */
-    if (statusTab !== "all" && p.status !== statusTab) return false;
+    if (p.status !== statusTab) return false;
 
     /* Category filter */
     if (categoryFilter !== "All" && p.category !== categoryFilter) return false;
@@ -369,12 +418,7 @@ export default function PoliciesPage() {
         {/* Status tabs */}
         <div className="flex items-center gap-1 flex-wrap">
           {statusTabs.map((tab) => {
-            const count =
-              tab.key === "all"
-                ? policies.filter((p) =>
-                    !isAdmin ? p.status === "active" : true,
-                  ).length
-                : policies.filter((p) => p.status === tab.key).length;
+            const count = policies.filter((p) => p.status === tab.key).length;
 
             return (
               <button
@@ -428,7 +472,7 @@ export default function PoliciesPage() {
           >
             {POLICY_CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>
-                {cat === "All" ? "All Categories" : cat}
+                {cat === "All" ? "All Categories" : formatCategory(cat)}
               </option>
             ))}
           </select>
@@ -488,6 +532,8 @@ export default function PoliciesPage() {
               key={policy.id}
               policy={policy}
               onClick={() => router.push(`/policies/${policy.id}`)}
+              isAdmin={isAdmin}
+              onArchive={() => handleArchivePolicy(policy.id, policy.title)}
             />
           ))}
         </div>
@@ -501,7 +547,7 @@ export default function PoliciesPage() {
             return (
               <div key={category}>
                 <h2 className="text-sm font-semibold text-[var(--color-gray-700)] mb-3 flex items-center gap-2">
-                  {category}
+                  {formatCategory(category)}
                   <span className="text-xs font-normal text-[var(--color-gray-400)]">
                     ({categoryPolicies.length})
                   </span>

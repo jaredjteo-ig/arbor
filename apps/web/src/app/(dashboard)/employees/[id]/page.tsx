@@ -624,17 +624,17 @@ function PersonalTab({
             variant="select"
             options={[
               { value: "", label: "Select..." },
-              { value: "singaporean", label: "Singaporean" },
-              { value: "malaysian", label: "Malaysian" },
-              { value: "indonesian", label: "Indonesian" },
-              { value: "thai", label: "Thai" },
-              { value: "japanese", label: "Japanese" },
-              { value: "chinese", label: "Chinese" },
-              { value: "indian", label: "Indian" },
-              { value: "filipino", label: "Filipino" },
-              { value: "vietnamese", label: "Vietnamese" },
-              { value: "myanmar", label: "Myanmar" },
-              { value: "other", label: "Other" },
+              { value: "Singaporean", label: "Singaporean" },
+              { value: "Malaysian", label: "Malaysian" },
+              { value: "Indonesian", label: "Indonesian" },
+              { value: "Thai", label: "Thai" },
+              { value: "Japanese", label: "Japanese" },
+              { value: "Chinese", label: "Chinese" },
+              { value: "Indian", label: "Indian" },
+              { value: "Filipino", label: "Filipino" },
+              { value: "Vietnamese", label: "Vietnamese" },
+              { value: "Myanmar", label: "Myanmar" },
+              { value: "Other", label: "Other" },
             ]}
             value={getVal("nationality")}
             onChange={(e) => updateField("nationality", e.target.value)}
@@ -2006,14 +2006,16 @@ function StatutoryTab({
             variant="select"
             options={[
               { value: "", label: "Select..." },
-              { value: "yes", label: "Yes" },
-              { value: "no", label: "No" },
+              { value: "true", label: "Yes" },
+              { value: "false", label: "No" },
             ]}
-            value={getVal("iras_auto_inclusion" as keyof EmployeeDetail)}
+            value={String(
+              getVal("iras_auto_inclusion" as keyof EmployeeDetail) ?? "",
+            )}
             onChange={(e) =>
               updateField(
                 "iras_auto_inclusion" as keyof EmployeeDetail,
-                e.target.value,
+                e.target.value === "true",
               )
             }
             disabled={!isAdmin}
@@ -2049,12 +2051,15 @@ function StatutoryTab({
             variant="select"
             options={[
               { value: "", label: "Select..." },
-              { value: "yes", label: "Yes" },
-              { value: "no", label: "No" },
+              { value: "true", label: "Yes" },
+              { value: "false", label: "No" },
             ]}
-            value={getVal("amcs" as keyof EmployeeDetail)}
+            value={String(getVal("amcs_enabled" as keyof EmployeeDetail) ?? "")}
             onChange={(e) =>
-              updateField("amcs" as keyof EmployeeDetail, e.target.value)
+              updateField(
+                "amcs_enabled" as keyof EmployeeDetail,
+                e.target.value === "true",
+              )
             }
             disabled={!isAdmin}
           />
@@ -2063,12 +2068,15 @@ function StatutoryTab({
             variant="select"
             options={[
               { value: "", label: "Select..." },
-              { value: "yes", label: "Yes" },
-              { value: "no", label: "No" },
+              { value: "true", label: "Yes" },
+              { value: "false", label: "No" },
             ]}
-            value={getVal("pmbs" as keyof EmployeeDetail)}
+            value={String(getVal("pmbs_enabled" as keyof EmployeeDetail) ?? "")}
             onChange={(e) =>
-              updateField("pmbs" as keyof EmployeeDetail, e.target.value)
+              updateField(
+                "pmbs_enabled" as keyof EmployeeDetail,
+                e.target.value === "true",
+              )
             }
             disabled={!isAdmin}
           />
@@ -2086,10 +2094,10 @@ function StatutoryTab({
           />
           <AppInput
             label="SHG Override"
-            value={getVal("shg_override" as keyof EmployeeDetail)}
+            value={getVal("shg_override_amount" as keyof EmployeeDetail)}
             onChange={(e) =>
               updateField(
-                "shg_override" as keyof EmployeeDetail,
+                "shg_override_amount" as keyof EmployeeDetail,
                 e.target.value,
               )
             }
@@ -4153,7 +4161,7 @@ function EditStatutoryForm({
     pass_type: employee.pass_type || "",
     work_pass_number: employee.work_pass_number || "",
     work_pass_expiry: employee.work_pass_expiry || "",
-    iras_auto_inclusion: employee.iras_auto_inclusion || "",
+    iras_auto_inclusion: String(employee.iras_auto_inclusion ?? ""),
     tax_reference: employee.tax_reference || "",
     cpf_status: employee.cpf_status || "",
   });
@@ -4237,8 +4245,8 @@ function EditStatutoryForm({
           variant="select"
           options={[
             { value: "", label: "Select..." },
-            { value: "yes", label: "Yes" },
-            { value: "no", label: "No" },
+            { value: "true", label: "Yes" },
+            { value: "false", label: "No" },
           ]}
           value={form.iras_auto_inclusion}
           onChange={(e) =>
