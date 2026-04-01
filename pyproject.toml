@@ -7,7 +7,7 @@ name = "hr-ai-advisory"
 version = "0.1.0"
 description = "AI-powered HR advisory platform with employment law compliance"
 authors = [
-    {name = "Terrene Foundation", email = "dev@arbor.terrene.dev"}
+    {name = "Jared Teo", email = "jared.teo@cubic-alpha.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.11"
