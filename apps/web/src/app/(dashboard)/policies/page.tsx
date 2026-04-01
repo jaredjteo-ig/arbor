@@ -1,245 +1,551 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { AppCard } from "@/components/design-system";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
+import {
+  AppCard,
+  AppButton,
+  EmptyState,
+  toast,
+} from "@/components/design-system";
 import {
   FileText,
-  ChevronDown,
-  ChevronRight,
-  Palmtree,
-  Laptop,
-  BookOpen,
-  ShieldCheck,
-  Info,
+  Plus,
+  Search,
+  FileType,
+  FileBadge,
+  Clock,
+  AlertCircle,
+  Bell,
+  CheckCircle2,
 } from "lucide-react";
-import { employeesApi, type CompanyPolicy } from "@/services/api/employees";
+import { useAuth } from "@/contexts/AuthContext";
+import { policiesApi, type PolicyRecord } from "@/services/api/policies";
+import { PolicyCreateModal } from "@/components/policies/PolicyCreateModal";
 
-/* -- Types --------------------------------------------------------- */
+/* -- Constants --------------------------------------------------- */
 
-interface PolicySection {
-  id: string;
-  title: string;
-  icon: typeof Palmtree;
-  summary: string;
-  content: string[];
-}
+const POLICY_CATEGORIES = [
+  "All",
+  "Leave",
+  "Compensation",
+  "Workplace Conduct",
+  "Health & Safety",
+  "Flexible Work",
+  "Data Privacy",
+  "Anti-Harassment",
+  "Termination",
+  "Benefits",
+  "Other",
+] as const;
 
-/* -- Standard Singapore policies (regulatory content) -------------- */
+type StatusTab = "all" | "active" | "draft" | "archived";
 
-const STANDARD_POLICIES: PolicySection[] = [
-  {
-    id: "leave",
-    title: "Leave Policy",
-    icon: Palmtree,
-    summary:
-      "Annual, sick, and hospitalisation leave entitlements under the Employment Act.",
-    content: [
-      "Annual Leave: Employees are entitled to 7 days of annual leave after completing 12 months of service with the same employer. Entitlements increase progressively by 1 day per year of service, up to a maximum of 14 days.",
-      "Sick Leave: Employees are entitled to 14 days of paid outpatient sick leave per year if they have been employed for at least 6 months. A valid medical certificate from a registered doctor is required.",
-      "Hospitalisation Leave: Employees are entitled to up to 60 days of paid hospitalisation leave per year (inclusive of the 14 days outpatient sick leave). This applies to employees covered under the Employment Act.",
-      "Pro-rated Leave: For employees who have not completed 12 months of service, leave entitlements are pro-rated based on the number of completed months of service.",
-    ],
-  },
-  {
-    id: "fwa",
-    title: "Flexible Work Arrangements (FWA)",
-    icon: Laptop,
-    summary:
-      "Guidelines for requesting and managing flexible work arrangements per MOM Tripartite Guidelines.",
-    content: [
-      "Eligibility: All employees who have completed their probation period may apply for flexible work arrangements. Requests should be submitted to your direct supervisor at least 2 weeks in advance.",
-      "Types of FWA: The company supports various flexible work arrangements including flexi-time (varying start and end times), flexi-place (working from home or other locations), and flexi-load (part-time or job sharing arrangements).",
-      "Request Process: Submit your FWA request through the HR portal or to your manager. The company will respond within 2 weeks. If declined, reasons will be provided in writing.",
-      "Trial Period: New FWA arrangements are subject to a 3-month trial period. Performance will be reviewed regularly to ensure work objectives continue to be met.",
-    ],
-  },
-  {
-    id: "handbook",
-    title: "Employee Handbook",
-    icon: BookOpen,
-    summary: "General employment terms, code of conduct, and company policies.",
-    content: [
-      "Working Hours: Standard working hours are from 9:00 AM to 6:00 PM, Monday through Friday, with a 1-hour lunch break. Overtime work may be required from time to time with prior approval from your supervisor.",
-      "Notice Period: The notice period for termination of employment is aligned with the Employment Act. For employees with less than 26 weeks of service, 1 day notice is required. For 26 weeks to 2 years, 1 week. For 2 to 5 years, 2 weeks. For 5 years and above, 4 weeks.",
-      "Code of Conduct: All employees are expected to maintain professional standards, respect colleagues, protect company property and confidential information, and comply with all relevant Singapore laws and regulations.",
-      "Grievance Procedure: Employees who have concerns or grievances should first discuss them with their direct supervisor. If unresolved, they may escalate to HR or use the company's formal grievance process.",
-    ],
-  },
-  {
-    id: "safety",
-    title: "Workplace Safety and Health",
-    icon: ShieldCheck,
-    summary:
-      "Safety policies and reporting procedures under the Workplace Safety and Health Act.",
-    content: [
-      "General Safety: All employees are responsible for maintaining a safe working environment. Report any unsafe conditions immediately to your supervisor or the safety officer.",
-      "Incident Reporting: All workplace incidents, injuries, and near-misses must be reported within 24 hours. Use the incident report form available on the HR portal or contact the safety officer directly.",
-      "Emergency Procedures: Familiarise yourself with the emergency evacuation plan for your work area. Fire drills are conducted quarterly. Assembly points are clearly marked at all exits.",
-      "Health and Wellness: The company provides annual health screening for all employees. Mental health support is available through our Employee Assistance Programme (EAP).",
-    ],
-  },
-];
+/* -- Status badge ------------------------------------------------ */
 
-/* -- Icon mapping for API policies --------------------------------- */
-
-const ICON_MAP: Record<string, typeof Palmtree> = {
-  leave: Palmtree,
-  fwa: Laptop,
-  handbook: BookOpen,
-  safety: ShieldCheck,
+const STATUS_STYLES: Record<string, string> = {
+  active: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  draft: "bg-amber-50 text-amber-700 border-amber-200",
+  archived:
+    "bg-[var(--color-gray-100)] text-[var(--color-gray-500)] border-[var(--color-gray-200)]",
 };
 
-function mapApiPolicyToSection(policy: CompanyPolicy): PolicySection {
-  return {
-    id: policy.id,
-    title: policy.title,
-    icon: ICON_MAP[policy.id] ?? ICON_MAP[policy.category ?? ""] ?? FileText,
-    summary: policy.summary,
-    content: policy.content,
-  };
+function StatusBadge({ status }: { status: string }) {
+  const s = status || "draft";
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[s] || STATUS_STYLES.draft}`}
+    >
+      {s.charAt(0).toUpperCase() + s.slice(1)}
+    </span>
+  );
 }
 
-/* -- Loading skeleton ---------------------------------------------- */
+/* -- File type icon ---------------------------------------------- */
 
-function PolicySkeleton() {
+function FileTypeIcon({ fileType }: { fileType: string | null }) {
+  if (!fileType)
+    return <FileText className="h-4 w-4 text-[var(--color-gray-400)]" />;
+  const ft = fileType.toLowerCase();
+  if (ft.includes("pdf")) return <FileBadge className="h-4 w-4 text-red-500" />;
+  if (ft.includes("doc") || ft.includes("docx"))
+    return <FileType className="h-4 w-4 text-blue-500" />;
+  return <FileText className="h-4 w-4 text-[var(--color-gray-400)]" />;
+}
+
+/* -- Helper: format date ----------------------------------------- */
+
+function formatDate(isoDate: string): string {
+  if (!isoDate) return "-";
+  try {
+    return new Date(isoDate).toLocaleDateString("en-SG", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return isoDate;
+  }
+}
+
+/* -- Loading skeleton -------------------------------------------- */
+
+function PolicyCardSkeleton() {
   return (
     <AppCard variant="flat">
       <div className="animate-pulse flex items-start gap-3">
         <div className="h-9 w-9 rounded-lg bg-[var(--color-gray-200)]" />
         <div className="flex-1">
-          <div className="h-4 w-40 bg-[var(--color-gray-200)] rounded mb-2" />
-          <div className="h-3 w-64 bg-[var(--color-gray-100)] rounded" />
+          <div className="h-4 w-48 bg-[var(--color-gray-200)] rounded mb-2" />
+          <div className="h-3 w-32 bg-[var(--color-gray-100)] rounded mb-2" />
+          <div className="h-3 w-24 bg-[var(--color-gray-100)] rounded" />
         </div>
+        <div className="h-5 w-16 bg-[var(--color-gray-200)] rounded-full" />
       </div>
     </AppCard>
   );
 }
 
-/* -- Expandable Policy Card ---------------------------------------- */
+/* -- Pending acknowledgment banner ------------------------------- */
 
-function PolicyCard({ policy }: { policy: PolicySection }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const Icon = policy.icon;
+function AcknowledgmentBanner({
+  pendingCount,
+  onViewPending,
+}: {
+  pendingCount: number;
+  onViewPending: () => void;
+}) {
+  if (pendingCount === 0) return null;
 
   return (
-    <AppCard variant="flat" className="overflow-hidden">
+    <div className="flex items-center gap-3 rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3">
+      <Bell className="h-5 w-5 text-amber-600 shrink-0" />
+      <div className="flex-1">
+        <p className="text-sm font-medium text-amber-800">
+          {pendingCount} {pendingCount === 1 ? "policy needs" : "policies need"}{" "}
+          your acknowledgment
+        </p>
+        <p className="text-xs text-amber-600 mt-0.5">
+          Please review and acknowledge the updated policies below.
+        </p>
+      </div>
+      <AppButton variant="outlined" size="sm" onClick={onViewPending}>
+        View
+      </AppButton>
+    </div>
+  );
+}
+
+/* -- Policy Card ------------------------------------------------- */
+
+function PolicyCard({
+  policy,
+  onClick,
+}: {
+  policy: PolicyRecord;
+  onClick: () => void;
+}) {
+  return (
+    <AppCard
+      variant="flat"
+      className="hover:border-[var(--color-primary)] transition-colors cursor-pointer"
+    >
       <button
         type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-start gap-3 text-left"
+        onClick={onClick}
+        className="w-full text-left flex items-start gap-3"
       >
         <div className="p-2 rounded-lg bg-[var(--color-primary-bg)] shrink-0">
-          <Icon className="h-5 w-5 text-[var(--color-primary)]" />
+          <FileText className="h-5 w-5 text-[var(--color-primary)]" />
         </div>
+
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-[var(--color-gray-900)]">
-            {policy.title}
-          </p>
-          <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-            {policy.summary}
-          </p>
-        </div>
-        <div className="shrink-0 mt-1 text-[var(--color-gray-400)]">
-          {isExpanded ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold text-[var(--color-gray-900)]">
+              {policy.title}
+            </p>
+            <span className="text-[10px] font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-500)] px-1.5 py-0.5 rounded">
+              v{policy.version_number}
+            </span>
+            <StatusBadge status={policy.status} />
+          </div>
+
+          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+            <span className="text-xs text-[var(--color-gray-500)]">
+              {policy.category}
+            </span>
+            {policy.effective_date && (
+              <span className="text-xs text-[var(--color-gray-400)] flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                Effective {formatDate(policy.effective_date)}
+              </span>
+            )}
+            {policy.file_name && (
+              <span className="text-xs text-[var(--color-gray-400)] flex items-center gap-1">
+                <FileTypeIcon fileType={policy.file_type} />
+                {policy.file_name}
+              </span>
+            )}
+          </div>
+
+          {policy.requires_acknowledgment && (
+            <div className="flex items-center gap-1 mt-1.5">
+              <CheckCircle2 className="h-3 w-3 text-[var(--color-primary)]" />
+              <span className="text-xs text-[var(--color-primary)]">
+                Acknowledgment required
+              </span>
+            </div>
           )}
         </div>
       </button>
-
-      {isExpanded && (
-        <div className="mt-4 pt-4 border-t border-[var(--color-gray-200)] space-y-3">
-          {policy.content.map((paragraph, index) => (
-            <p
-              key={index}
-              className="text-sm text-[var(--color-gray-700)] leading-relaxed"
-            >
-              {paragraph}
-            </p>
-          ))}
-        </div>
-      )}
     </AppCard>
   );
 }
 
-/* -- Page ---------------------------------------------------------- */
+/* -- Page -------------------------------------------------------- */
 
 export default function PoliciesPage() {
-  const [policies, setPolicies] = useState<PolicySection[]>([]);
+  const router = useRouter();
+  const { user } = useAuth();
+  const isAdmin =
+    user?.role === "owner" ||
+    user?.role === "hr_manager" ||
+    user?.role === "consultant";
+
+  /* State */
+  const [policies, setPolicies] = useState<PolicyRecord[]>([]);
+  const [pendingPolicies, setPendingPolicies] = useState<PolicyRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isStandardFallback, setIsStandardFallback] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusTab, setStatusTab] = useState<StatusTab>("all");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  /* Debounced search */
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [searchQuery]);
 
-    async function fetchPolicies() {
-      try {
-        const data = await employeesApi.policies();
-        if (!cancelled && data.policies && data.policies.length > 0) {
-          setPolicies(data.policies.map(mapApiPolicyToSection));
-          setIsStandardFallback(false);
-        } else {
-          if (!cancelled) {
-            setPolicies(STANDARD_POLICIES);
-            setIsStandardFallback(true);
-          }
-        }
-      } catch {
-        if (!cancelled) {
-          setPolicies(STANDARD_POLICIES);
-          setIsStandardFallback(true);
-        }
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
+  /* Fetch policies */
+  const fetchPolicies = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await policiesApi.list();
+      setPolicies(data.policies ?? []);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to load policies. Please try again.";
+      setError(message);
+      setPolicies([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  /* Fetch pending acknowledgments (employee view) */
+  const fetchPending = useCallback(async () => {
+    if (isAdmin) return;
+    try {
+      const data = await policiesApi.pendingAcknowledgments();
+      setPendingPolicies(data.pending_policies ?? []);
+    } catch {
+      // Non-critical: silently fail
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    fetchPolicies();
+    fetchPending();
+  }, [fetchPolicies, fetchPending]);
+
+  /* Filter logic */
+  const statusTabs: { key: StatusTab; label: string }[] = isAdmin
+    ? [
+        { key: "all", label: "All" },
+        { key: "active", label: "Active" },
+        { key: "draft", label: "Draft" },
+        { key: "archived", label: "Archived" },
+      ]
+    : [
+        { key: "all", label: "All" },
+        { key: "active", label: "Active" },
+      ];
+
+  const filteredPolicies = policies.filter((p) => {
+    /* Employee view: only active policies */
+    if (!isAdmin && p.status !== "active") return false;
+
+    /* Status tab */
+    if (statusTab !== "all" && p.status !== statusTab) return false;
+
+    /* Category filter */
+    if (categoryFilter !== "All" && p.category !== categoryFilter) return false;
+
+    /* Search */
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      return (
+        p.title.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        (p.content && p.content.toLowerCase().includes(q))
+      );
     }
 
+    return true;
+  });
+
+  /* Group by category */
+  const categoriesInUse = Array.from(
+    new Set(filteredPolicies.map((p) => p.category)),
+  ).sort();
+
+  function handlePolicyCreated() {
+    setShowCreateModal(false);
     fetchPolicies();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    toast.success("Policy created successfully");
+  }
+
+  function scrollToPending() {
+    document
+      .getElementById("pending-acknowledgments")
+      ?.scrollIntoView({ behavior: "smooth" });
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <FileText
-          className="h-7 w-7 text-[var(--color-primary)]"
-          aria-hidden="true"
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <FileText
+            className="h-7 w-7 text-[var(--color-primary)]"
+            aria-hidden="true"
+          />
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+              Company Policies
+            </h1>
+            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+              {isAdmin
+                ? "Manage company policies, track acknowledgments, and ensure compliance."
+                : "Review company policies and acknowledge updates."}
+            </p>
+          </div>
+        </div>
+        {isAdmin && (
+          <AppButton
+            variant="primary"
+            size="sm"
+            onClick={() => setShowCreateModal(true)}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add Policy
+          </AppButton>
+        )}
+      </div>
+
+      {/* Pending acknowledgment banner (employee view) */}
+      {!isAdmin && pendingPolicies.length > 0 && (
+        <AcknowledgmentBanner
+          pendingCount={pendingPolicies.length}
+          onViewPending={scrollToPending}
         />
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            Company Policies
-          </h1>
-          <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-            Review company policies and employment guidelines. Click to expand
-            each section.
-          </p>
+      )}
+
+      {/* Filters */}
+      <div className="space-y-3">
+        {/* Status tabs */}
+        <div className="flex items-center gap-1 flex-wrap">
+          {statusTabs.map((tab) => {
+            const count =
+              tab.key === "all"
+                ? policies.filter((p) =>
+                    !isAdmin ? p.status === "active" : true,
+                  ).length
+                : policies.filter((p) => p.status === tab.key).length;
+
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setStatusTab(tab.key)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                  statusTab === tab.key
+                    ? "bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary)]"
+                    : "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] hover:bg-[var(--color-gray-200)] border border-transparent"
+                }`}
+              >
+                {tab.label}
+                <span className="text-[10px] opacity-70">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Search + Category */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-gray-400)]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search policies..."
+              className="
+                w-full rounded-[8px] border px-3 py-2 pl-9 text-sm min-h-[44px]
+                bg-[var(--color-surface-input)] text-[var(--foreground)]
+                border-[var(--color-surface-input-border)]
+                placeholder:text-[var(--color-gray-400)]
+                transition-colors
+                focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                focus:border-[var(--color-surface-input-focus)]
+              "
+            />
+          </div>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="
+              rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+              bg-[var(--color-surface-input)] text-[var(--foreground)]
+              border-[var(--color-surface-input-border)]
+              transition-colors
+              focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+              focus:border-[var(--color-surface-input-focus)]
+            "
+          >
+            {POLICY_CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat === "All" ? "All Categories" : cat}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Standard policies notice */}
-      {!isLoading && isStandardFallback && (
-        <div className="flex items-start gap-2 rounded-[8px] border border-[var(--color-gray-200)] bg-[var(--color-gray-50)] px-4 py-3">
-          <Info className="h-4 w-4 text-[var(--color-gray-500)] mt-0.5 shrink-0" />
-          <p className="text-sm text-[var(--color-gray-600)]">
-            Standard Singapore employment policies. Your company may have
-            additional policies.
-          </p>
+      {/* Policy list */}
+      {isLoading ? (
+        <div className="space-y-4">
+          {[1, 2, 3, 4].map((n) => (
+            <PolicyCardSkeleton key={n} />
+          ))}
+        </div>
+      ) : error ? (
+        <AppCard variant="standard">
+          <div className="py-8 text-center">
+            <AlertCircle className="h-8 w-8 text-[var(--color-error)] mx-auto mb-2" />
+            <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
+            <AppButton variant="outlined" size="sm" onClick={fetchPolicies}>
+              Try again
+            </AppButton>
+          </div>
+        </AppCard>
+      ) : filteredPolicies.length === 0 ? (
+        <EmptyState
+          icon={<FileText className="h-12 w-12" aria-hidden="true" />}
+          message={
+            policies.length === 0
+              ? "No policies yet"
+              : "No policies match your filters"
+          }
+          description={
+            policies.length === 0
+              ? isAdmin
+                ? "Add your first company policy to get started."
+                : "Your company has not uploaded any policies yet."
+              : "Try adjusting your search or filters."
+          }
+          action={
+            policies.length === 0 && isAdmin ? (
+              <AppButton
+                variant="primary"
+                size="sm"
+                onClick={() => setShowCreateModal(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Policy
+              </AppButton>
+            ) : undefined
+          }
+        />
+      ) : categoryFilter !== "All" || debouncedSearch ? (
+        /* Flat list when filtering */
+        <div className="space-y-3">
+          {filteredPolicies.map((policy) => (
+            <PolicyCard
+              key={policy.id}
+              policy={policy}
+              onClick={() => router.push(`/policies/${policy.id}`)}
+            />
+          ))}
+        </div>
+      ) : (
+        /* Grouped by category */
+        <div className="space-y-6">
+          {categoriesInUse.map((category) => {
+            const categoryPolicies = filteredPolicies.filter(
+              (p) => p.category === category,
+            );
+            return (
+              <div key={category}>
+                <h2 className="text-sm font-semibold text-[var(--color-gray-700)] mb-3 flex items-center gap-2">
+                  {category}
+                  <span className="text-xs font-normal text-[var(--color-gray-400)]">
+                    ({categoryPolicies.length})
+                  </span>
+                </h2>
+                <div className="space-y-3">
+                  {categoryPolicies.map((policy) => (
+                    <PolicyCard
+                      key={policy.id}
+                      policy={policy}
+                      onClick={() => router.push(`/policies/${policy.id}`)}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Policy cards */}
-      <div className="space-y-4">
-        {isLoading
-          ? [1, 2, 3, 4].map((n) => <PolicySkeleton key={n} />)
-          : policies.map((policy) => (
-              <PolicyCard key={policy.id} policy={policy} />
+      {/* Pending acknowledgments section (employee view) */}
+      {!isAdmin && pendingPolicies.length > 0 && (
+        <div id="pending-acknowledgments">
+          <h2 className="text-lg font-semibold text-[var(--color-gray-900)] mb-3 flex items-center gap-2">
+            <Bell className="h-5 w-5 text-amber-500" aria-hidden="true" />
+            Pending Acknowledgments
+          </h2>
+          <div className="space-y-3">
+            {pendingPolicies.map((policy) => (
+              <PolicyCard
+                key={`pending-${policy.id}`}
+                policy={policy}
+                onClick={() => router.push(`/policies/${policy.id}`)}
+              />
             ))}
-      </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create policy modal */}
+      <PolicyCreateModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={handlePolicyCreated}
+      />
     </div>
   );
 }

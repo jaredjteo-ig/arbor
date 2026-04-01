@@ -1041,7 +1041,9 @@ class CompanyPolicy:
     """Company policy document.
 
     Stores policy content (leave, FWA, handbook, safety, benefits)
-    with versioning via effective_date.
+    with versioning via effective_date and version_number.
+    Categories use a 9-value taxonomy (+ custom strings).
+    Supports file uploads (PDF/DOCX/TXT) with text extraction.
     """
 
     company_id: int
@@ -1050,12 +1052,51 @@ class CompanyPolicy:
     content: str = ""
     effective_date: str = ""
     is_active: bool = True
+    # --- New fields for company policy upload feature ---
+    category: str = ""
+    version_number: int = 1
+    superseded_by_id: int = 0
+    uploaded_by: int = 0
+    file_name: str = ""
+    file_path: str = ""
+    file_type: str = ""
+    file_size_bytes: int = 0
+    content_hash: str = ""
+    extraction_status: str = ""
+    requires_acknowledgment: bool = False
+    status: str = "active"
 
     __dataflow__ = {
         "indexes": [
             {"name": "idx_policy_company", "fields": ["company_id"]},
             {"name": "idx_policy_type", "fields": ["policy_type"]},
             {"name": "idx_policy_active", "fields": ["is_active"]},
+            {"name": "idx_policy_category", "fields": ["category"]},
+            {"name": "idx_policy_status", "fields": ["status"]},
+        ],
+    }
+
+
+@db.model
+class PolicyAcknowledgment:
+    """Tracks employee acknowledgment of company policies.
+
+    Created when an employee acknowledges a specific version of a policy.
+    Idempotent: re-acknowledging the same version is a no-op.
+    """
+
+    company_id: int
+    policy_id: int
+    employee_id: int
+    version_acknowledged: int = 1
+    acknowledged_at: str = ""
+    ip_address: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_ack_company", "fields": ["company_id"]},
+            {"name": "idx_ack_policy", "fields": ["policy_id"]},
+            {"name": "idx_ack_employee", "fields": ["employee_id"]},
         ],
     }
 

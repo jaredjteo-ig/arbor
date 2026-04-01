@@ -30,6 +30,7 @@ export { projectsApi } from "./projects";
 export { inventoryApi } from "./inventory";
 export { recruitmentApi } from "./recruitment";
 export { reportsApi } from "./reports";
+export { policiesApi } from "./policies";
 export { shadowApi } from "./shadow";
 export type {
   ShadowResponse,

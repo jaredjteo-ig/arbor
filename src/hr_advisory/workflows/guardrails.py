@@ -16,9 +16,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from hr_advisory.agents.llm_context import GEMINI_OPENAI_BASE_URL
-
-
 class ScreeningResult(str, Enum):
     """Result of query screening."""
 
@@ -498,6 +495,8 @@ def screen_scope(query: str) -> ScreeningOutput:
         import openai
 
         if google_key:
+            from hr_advisory.agents.llm_context import GEMINI_OPENAI_BASE_URL
+
             client = openai.OpenAI(
                 api_key=google_key,
                 base_url=GEMINI_OPENAI_BASE_URL,

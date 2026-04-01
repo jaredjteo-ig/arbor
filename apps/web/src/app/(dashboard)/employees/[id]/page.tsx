@@ -58,6 +58,7 @@ import {
   type AdminLeaveBalance,
   type FamilyMember,
 } from "@/services/api/employees";
+import { policiesApi } from "@/services/api/policies";
 
 /* ── Constants ──────────────────────────────────────────────── */
 
@@ -3063,16 +3064,75 @@ function OnboardingTab({
 }) {
   const completeness = computeCompleteness(employee);
 
+  /* Fetch policy acknowledgment status for onboarding checklist */
+  const [policyStatus, setPolicyStatus] = useState<{
+    totalRequired: number;
+    pendingCount: number;
+    loaded: boolean;
+  }>({ totalRequired: 0, pendingCount: 0, loaded: false });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchPolicyStatus() {
+      try {
+        /* Fetch all policies and pending in parallel to compute counts */
+        const [allData, pendingData] = await Promise.all([
+          policiesApi.list(),
+          policiesApi.pendingAcknowledgments(),
+        ]);
+
+        if (cancelled) return;
+
+        const requiringAck = (allData.policies ?? []).filter(
+          (p) => p.requires_acknowledgment && p.status === "active",
+        );
+        const pending = pendingData.pending_policies ?? [];
+
+        setPolicyStatus({
+          totalRequired: requiringAck.length,
+          pendingCount: pending.length,
+          loaded: true,
+        });
+      } catch {
+        /* Non-critical: show as incomplete if we cannot determine status */
+        if (!cancelled) {
+          setPolicyStatus({ totalRequired: 0, pendingCount: 0, loaded: true });
+        }
+      }
+    }
+
+    fetchPolicyStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const policyAckDone =
+    policyStatus.loaded &&
+    policyStatus.totalRequired > 0 &&
+    policyStatus.pendingCount === 0;
+
+  const policyAckDetail = !policyStatus.loaded
+    ? "Checking..."
+    : policyStatus.totalRequired === 0
+      ? "No policies require acknowledgment"
+      : policyStatus.pendingCount === 0
+        ? `All ${policyStatus.totalRequired} policies acknowledged`
+        : `${policyStatus.totalRequired - policyStatus.pendingCount} of ${policyStatus.totalRequired} acknowledged`;
+
   const checklistItems = [
     {
       label: "Profile completed (>80%)",
       done: completeness > 80,
       detail: `${completeness}% complete`,
+      href: undefined as string | undefined,
     },
     {
       label: "NRIC / FIN submitted",
       done: Boolean(employee.nric_fin),
       detail: employee.nric_fin ? "Submitted" : "Missing",
+      href: undefined as string | undefined,
     },
     {
       label: "Bank details submitted",
@@ -3081,11 +3141,13 @@ function OnboardingTab({
         employee.bank_name && employee.bank_account_number
           ? employee.bank_name
           : "Missing",
+      href: undefined as string | undefined,
     },
     {
       label: "Emergency contact added",
       done: false, // Will be updated async
       detail: "Check Personal tab",
+      href: undefined as string | undefined,
     },
     {
       label: "Employment contract uploaded",
@@ -3101,6 +3163,7 @@ function OnboardingTab({
       )
         ? "Uploaded"
         : "Not found",
+      href: undefined as string | undefined,
     },
     {
       label: "Tax form submitted",
@@ -3118,6 +3181,13 @@ function OnboardingTab({
       )
         ? "Uploaded"
         : "Not found",
+      href: undefined as string | undefined,
+    },
+    {
+      label: "Company policies acknowledged",
+      done: policyAckDone,
+      detail: policyAckDetail,
+      href: "/policies" as string | undefined,
     },
   ];
 
@@ -3146,38 +3216,64 @@ function OnboardingTab({
 
       {/* Checklist */}
       <div className="space-y-2">
-        {checklistItems.map((item, idx) => (
-          <div
-            key={idx}
-            className={`flex items-center gap-3 px-4 py-3 rounded-[8px] border ${
-              item.done
-                ? "border-emerald-200 bg-emerald-50"
-                : "border-[var(--color-gray-200)] bg-white"
-            }`}
-          >
-            <div
-              className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                item.done ? "bg-emerald-500" : "bg-[var(--color-gray-200)]"
-              }`}
-            >
-              {item.done && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p
-                className={`text-sm font-medium ${
-                  item.done
-                    ? "text-emerald-700"
-                    : "text-[var(--color-gray-900)]"
+        {checklistItems.map((item, idx) => {
+          const content = (
+            <>
+              <div
+                className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                  item.done ? "bg-emerald-500" : "bg-[var(--color-gray-200)]"
                 }`}
               >
-                {item.label}
-              </p>
-              <p className="text-xs text-[var(--color-gray-500)]">
-                {item.detail}
-              </p>
+                {item.done && (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-white" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p
+                  className={`text-sm font-medium ${
+                    item.done
+                      ? "text-emerald-700"
+                      : "text-[var(--color-gray-900)]"
+                  }`}
+                >
+                  {item.label}
+                </p>
+                <p className="text-xs text-[var(--color-gray-500)]">
+                  {item.detail}
+                </p>
+              </div>
+            </>
+          );
+
+          if (item.href) {
+            return (
+              <Link
+                key={idx}
+                href={item.href}
+                className={`flex items-center gap-3 px-4 py-3 rounded-[8px] border transition-colors ${
+                  item.done
+                    ? "border-emerald-200 bg-emerald-50"
+                    : "border-[var(--color-gray-200)] bg-white hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-bg)]"
+                }`}
+              >
+                {content}
+              </Link>
+            );
+          }
+
+          return (
+            <div
+              key={idx}
+              className={`flex items-center gap-3 px-4 py-3 rounded-[8px] border ${
+                item.done
+                  ? "border-emerald-200 bg-emerald-50"
+                  : "border-[var(--color-gray-200)] bg-white"
+              }`}
+            >
+              {content}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -29,6 +29,7 @@ class AuthorityLevel(str, Enum):
     STATUTORY = "statutory"
     TRIPARTITE_GUIDELINE = "tripartite_guideline"
     BEST_PRACTICE = "best_practice"
+    COMPANY_POLICY = "company_policy"
 
 
 class CitationStatus(str, Enum):
@@ -336,6 +337,7 @@ _AUTHORITY_LEVEL_MAP: dict[str, AuthorityLevel] = {
     "statutory": AuthorityLevel.STATUTORY,
     "tripartite_guideline": AuthorityLevel.TRIPARTITE_GUIDELINE,
     "best_practice": AuthorityLevel.BEST_PRACTICE,
+    "company_policy": AuthorityLevel.COMPANY_POLICY,
 }
 
 
@@ -446,12 +448,24 @@ def get_valid_provisions() -> dict[str, dict]:
 # ── Validation functions ─────────────────────────────────────
 
 
+def _is_company_policy_citation(pid: str) -> bool:
+    """Check if a provision ID is a company policy citation (format: policy-{id})."""
+    import re
+
+    return bool(re.match(r"^policy-\d+$", pid))
+
+
 def validate_citations(provision_ids: list[str]) -> CitationValidationResult:
     """Validate a list of provision IDs against the KB.
 
     This is a pre-delivery guardrail -- runs on EVERY response before
     it reaches the user. If any citation cannot be resolved, the
     response should be regenerated.
+
+    Company policy citations (format 'policy-{id}') are recognized as
+    valid citations with COMPANY_POLICY authority level. They are not
+    looked up in the KB provisions since they come from the company's
+    own policy database.
     """
     provisions = get_valid_provisions()
 
@@ -462,6 +476,19 @@ def validate_citations(provision_ids: list[str]) -> CitationValidationResult:
     today = date.today()
 
     for pid in provision_ids:
+        # T017: Recognize company policy citations (format: policy-{id})
+        if _is_company_policy_citation(pid):
+            validated.append(
+                ValidatedCitation(
+                    provision_id=pid,
+                    title=f"Company Policy {pid}",
+                    authority_level=AuthorityLevel.COMPANY_POLICY,
+                    status=CitationStatus.VALID,
+                    last_verified=today,
+                )
+            )
+            continue
+
         kb_entry = provisions.get(pid)
 
         if kb_entry is None:

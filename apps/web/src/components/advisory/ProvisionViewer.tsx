@@ -15,12 +15,15 @@ const authorityStyles: Record<AuthorityLevel, string> = {
     "bg-[var(--color-authority-guideline-bg)] text-[var(--color-authority-guideline)] border-[var(--color-authority-guideline)]",
   "best-practice":
     "bg-[var(--color-authority-best-practice-bg)] text-[var(--color-authority-best-practice)] border-[var(--color-authority-best-practice)]",
+  "company-policy":
+    "bg-[var(--color-authority-company-policy-bg)] text-[var(--color-authority-company-policy)] border-[var(--color-authority-company-policy)]",
 };
 
 const authorityLabels: Record<AuthorityLevel, string> = {
   statutory: "Statutory",
   guideline: "Guideline",
   "best-practice": "Best Practice",
+  "company-policy": "Company Policy",
 };
 
 function toAuthorityLevel(

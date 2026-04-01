@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { AppCard } from "@/components/design-system";
 import { apiClient } from "@/services/api/client";
 import { employeesApi, type LeaveBalance } from "@/services/api/employees";
+import { policiesApi, type PolicyRecord } from "@/services/api/policies";
 import {
   Briefcase,
   CalendarDays,
@@ -13,6 +14,8 @@ import {
   Thermometer,
   ArrowRight,
   Info,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -259,39 +262,129 @@ function LeaveBalanceCard() {
 /* -- Company Policies Card ----------------------------------------- */
 
 function CompanyPoliciesCard() {
-  const policies = [
-    { name: "Leave Policy", href: "/policies" },
-    { name: "Flexible Work Arrangements", href: "/policies" },
-    { name: "Employee Handbook", href: "/policies" },
-  ];
+  const [pendingPolicies, setPendingPolicies] = useState<PolicyRecord[]>([]);
+  const [allPolicies, setAllPolicies] = useState<PolicyRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchPolicies() {
+      try {
+        const [allData, pendingData] = await Promise.all([
+          policiesApi.list(),
+          policiesApi.pendingAcknowledgments(),
+        ]);
+
+        if (cancelled) return;
+
+        const active = (allData.policies ?? []).filter(
+          (p) => p.status === "active",
+        );
+        setAllPolicies(active);
+        setPendingPolicies(pendingData.pending_policies ?? []);
+      } catch {
+        if (!cancelled) {
+          setAllPolicies([]);
+          setPendingPolicies([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    fetchPolicies();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (isLoading) return <CardSkeleton />;
+
+  const hasPending = pendingPolicies.length > 0;
 
   return (
     <AppCard variant="flat">
       <div className="flex items-start gap-3 mb-3">
-        <div className="p-2 rounded-lg bg-[var(--color-primary-bg)] shrink-0">
-          <FileText className="h-5 w-5 text-[var(--color-primary)]" />
+        <div
+          className={`p-2 rounded-lg shrink-0 ${
+            hasPending ? "bg-amber-50" : "bg-[var(--color-primary-bg)]"
+          }`}
+        >
+          {hasPending ? (
+            <AlertCircle className="h-5 w-5 text-amber-500" />
+          ) : (
+            <FileText className="h-5 w-5 text-[var(--color-primary)]" />
+          )}
         </div>
         <div>
           <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
             Company Policies
           </p>
+          {hasPending && (
+            <p className="text-xs text-amber-600 mt-0.5">
+              {pendingPolicies.length} pending acknowledgment
+              {pendingPolicies.length !== 1 ? "s" : ""}
+            </p>
+          )}
         </div>
       </div>
 
-      <div className="space-y-1">
-        {policies.map((policy) => (
-          <Link
-            key={policy.name}
-            href={policy.href}
-            className="flex items-center justify-between p-2 -mx-2 rounded-lg hover:bg-[var(--color-gray-50)] transition-colors group"
-          >
-            <span className="text-sm text-[var(--color-gray-700)] group-hover:text-[var(--color-primary)]">
-              {policy.name}
-            </span>
-            <ArrowRight className="h-3.5 w-3.5 text-[var(--color-gray-400)] group-hover:text-[var(--color-primary)]" />
-          </Link>
-        ))}
-      </div>
+      {/* Pending policies shown first as action items */}
+      {hasPending && (
+        <div className="space-y-1 mb-2">
+          {pendingPolicies.slice(0, 3).map((policy) => (
+            <Link
+              key={policy.id}
+              href={`/policies/${policy.id}`}
+              className="flex items-center justify-between p-2 -mx-2 rounded-lg bg-amber-50 hover:bg-amber-100 transition-colors group border border-amber-100"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                <span className="text-sm text-amber-800 group-hover:text-amber-900 truncate">
+                  {policy.title}
+                </span>
+              </div>
+              <span className="text-xs text-amber-600 shrink-0 ml-2">
+                Review
+              </span>
+            </Link>
+          ))}
+          {pendingPolicies.length > 3 && (
+            <Link
+              href="/policies#pending-acknowledgments"
+              className="flex items-center gap-1 px-2 text-xs text-amber-600 hover:underline"
+            >
+              +{pendingPolicies.length - 3} more{" "}
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* Acknowledged / other active policies */}
+      {!hasPending && allPolicies.length > 0 && (
+        <div className="space-y-1">
+          {allPolicies.slice(0, 3).map((policy) => (
+            <Link
+              key={policy.id}
+              href={`/policies/${policy.id}`}
+              className="flex items-center justify-between p-2 -mx-2 rounded-lg hover:bg-[var(--color-gray-50)] transition-colors group"
+            >
+              <span className="text-sm text-[var(--color-gray-700)] group-hover:text-[var(--color-primary)] truncate">
+                {policy.title}
+              </span>
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 ml-2" />
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {allPolicies.length === 0 && !hasPending && (
+        <p className="text-sm text-[var(--color-gray-500)]">
+          No active policies yet
+        </p>
+      )}
 
       <Link
         href="/policies"
@@ -299,6 +392,92 @@ function CompanyPoliciesCard() {
       >
         View all policies <ArrowRight className="h-3 w-3" />
       </Link>
+    </AppCard>
+  );
+}
+
+/* -- Pending Acknowledgments Banner -------------------------------- */
+
+function PendingAcknowledgmentsBanner() {
+  const [pendingPolicies, setPendingPolicies] = useState<PolicyRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchPending() {
+      try {
+        const data = await policiesApi.pendingAcknowledgments();
+        if (!cancelled) {
+          setPendingPolicies(data.pending_policies ?? []);
+        }
+      } catch {
+        if (!cancelled) setPendingPolicies([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    fetchPending();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* Do not render if still loading or nothing pending */
+  if (isLoading || pendingPolicies.length === 0) return null;
+
+  const CATEGORY_LABELS: Record<string, string> = {
+    employment_terms: "Employment Terms",
+    leave_absence: "Leave & Absence",
+    compensation_benefits: "Compensation & Benefits",
+    workplace_safety: "Workplace Safety",
+    fair_employment: "Fair Employment",
+    foreign_worker: "Foreign Worker",
+    tax_filing: "Tax Filing",
+    general_hr: "General HR",
+    code_of_conduct: "Code of Conduct",
+  };
+
+  return (
+    <AppCard variant="flat">
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-lg bg-amber-50 shrink-0">
+          <AlertCircle className="h-5 w-5 text-amber-500" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-gray-900)]">
+            You have {pendingPolicies.length} polic
+            {pendingPolicies.length === 1 ? "y" : "ies"} to review and
+            acknowledge
+          </p>
+          <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+            Please review the following company policies
+          </p>
+
+          <div className="mt-3 space-y-2">
+            {pendingPolicies.map((policy) => (
+              <Link
+                key={policy.id}
+                href={`/policies/${policy.id}`}
+                className="flex items-center justify-between p-2.5 rounded-[8px] border border-amber-100 bg-amber-50 hover:bg-amber-100 transition-colors group"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[var(--color-gray-900)] group-hover:text-amber-900 truncate">
+                    {policy.title}
+                  </p>
+                  <p className="text-xs text-[var(--color-gray-500)]">
+                    {CATEGORY_LABELS[policy.category] ?? policy.category}
+                  </p>
+                </div>
+                <span className="flex items-center gap-1 text-xs font-medium text-amber-600 group-hover:text-amber-700 shrink-0 ml-3">
+                  Review <ArrowRight className="h-3 w-3" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
     </AppCard>
   );
 }
@@ -354,6 +533,9 @@ export default function MyDashboardPage() {
           Here&apos;s your personal overview
         </p>
       </div>
+
+      {/* Pending policy acknowledgments nudge */}
+      <PendingAcknowledgmentsBanner />
 
       {/* 3-card responsive grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

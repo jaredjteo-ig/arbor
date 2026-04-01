@@ -79,6 +79,7 @@ def seed_company_defaults(company_id: int) -> dict:
 DEFAULT_POLICIES = [
     {
         "policy_type": "leave",
+        "category": "leave_absence",
         "title": "Leave Policy",
         "content": (
             "Annual leave entitlement per Employment Act s88: minimum 7 days "
@@ -90,6 +91,7 @@ DEFAULT_POLICIES = [
     },
     {
         "policy_type": "fwa",
+        "category": "employment_terms",
         "title": "Flexible Work Arrangements",
         "content": (
             "Per Tripartite Guidelines on FWA Requests (TG-FWAR), effective "
@@ -99,6 +101,7 @@ DEFAULT_POLICIES = [
     },
     {
         "policy_type": "handbook",
+        "category": "general_hr",
         "title": "Employee Handbook",
         "content": (
             "Key Employment Terms (KETs) must be provided within 14 days of "
@@ -108,6 +111,7 @@ DEFAULT_POLICIES = [
     },
     {
         "policy_type": "wsh",
+        "category": "workplace_safety",
         "title": "Workplace Safety and Health",
         "content": (
             "Per Workplace Safety and Health Act (WSHA), employers must take "
@@ -138,10 +142,15 @@ def _seed_policies(company_id: int) -> dict:
             {
                 "company_id": company_id,
                 "policy_type": policy["policy_type"],
+                "category": policy.get("category", ""),
                 "title": policy["title"],
                 "content": policy["content"],
                 "effective_date": today,
                 "is_active": True,
+                "version_number": 1,
+                "file_type": "text",
+                "status": "active",
+                "extraction_status": "",
             },
         )
         count += 1

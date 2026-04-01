@@ -20,8 +20,14 @@ export interface ProvisionCited {
   provision_id: string;
   title: string;
   relevance: number;
-  /** Authority level from the backend citation validator (statutory/guideline/best-practice). */
+  /** Authority level from the backend citation validator (statutory/guideline/best-practice/company-policy). */
   authority_level?: string;
+  /** Company policy ID when source_type is "company_policy". */
+  policy_id?: number;
+  /** Version of the company policy cited. */
+  policy_version?: number;
+  /** Distinguishes statutory provisions from company policy provisions. */
+  source_type?: "statutory" | "company_policy";
 }
 
 export interface AdvisoryQueryResponse {

@@ -1895,14 +1895,21 @@ async def get_my_leave_balances(
 
 # --------------------------------------------------------------------------
 # GET /employees/policies — List company policies
+# DEPRECATED: The canonical endpoint is now GET /policies/ with full CRUD,
+# versioning, file uploads, and acknowledgment tracking. This endpoint is
+# retained for backward compatibility and will be removed in a future release.
 # --------------------------------------------------------------------------
 
 
-@router.get("/policies")
+@router.get("/policies", deprecated=True)
 async def list_policies(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """List company policies for the current user's company.
+
+    .. deprecated::
+        Use ``GET /policies/`` instead, which supports filtering by
+        category/status, versioning, and acknowledgment tracking.
 
     Returns all active policies (leave, FWA, handbook, safety, etc.)
     that have been configured for the company. Default policies are

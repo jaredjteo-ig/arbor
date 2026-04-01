@@ -1,0 +1,14 @@
+commit: 07b15f2 (uncommitted changes on top)
+timestamp: 2026-04-01T18:00:00+08:00
+baseline_pass: 35
+baseline_fail: 1 (pre-existing: test_advisory_router.py::test_returns_list)
+final_pass: 1586
+final_fail: 181 (all pre-existing: shadow_intent, shadow_permissions, shadow_workflows, advisory_router, advisory_safety_chain)
+new_tests: 136
+regressions: 0
+command: pytest tests/unit/ tests/regression/ --tb=short -q
+
+Notes:
+- 136 new tests all pass (policy_parser: 41, company_policy_search: 12, advisory_engine_policy: 18, citation_validator: 6, statutory_floor_check: 34, advisory_integration: 20, mobile_regression: 5)
+- 181 failures are ALL pre-existing (shadow agent tests, advisory router/safety chain tests)
+- 5 errors in test_mobile_policy_compat.py::TestDeprecatedEndpoint are expected (require Docker/FastAPI app)

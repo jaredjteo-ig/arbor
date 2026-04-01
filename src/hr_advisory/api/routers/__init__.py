@@ -24,6 +24,7 @@ from hr_advisory.api.routers.leave import router as leave_router
 from hr_advisory.api.routers.llm_config import router as llm_config_router
 from hr_advisory.api.routers.llm_config import user_llm_router
 from hr_advisory.api.routers.payroll import router as payroll_router
+from hr_advisory.api.routers.policies import router as policies_router
 from hr_advisory.api.routers.profile import router as profile_router
 from hr_advisory.api.routers.projects import router as projects_router
 from hr_advisory.api.routers.qa import router as qa_router
@@ -60,6 +61,7 @@ __all__ = [
     "llm_config_router",
     "user_llm_router",
     "payroll_router",
+    "policies_router",
     "profile_router",
     "projects_router",
     "qa_router",

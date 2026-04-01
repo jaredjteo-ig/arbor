@@ -125,13 +125,13 @@ const adminManagementNavItems: NavItem[] = [
         href: "/leave",
         icon: CalendarDays,
       },
-      {
-        labelKey: "nav.leave.policies",
-        label: "Policies",
-        href: "/leave",
-        icon: BookOpen,
-      },
     ],
+  },
+  {
+    labelKey: "nav.policies",
+    label: "Policies",
+    href: "/policies",
+    icon: FileText,
   },
   {
     labelKey: "nav.claims",

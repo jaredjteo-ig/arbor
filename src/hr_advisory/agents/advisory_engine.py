@@ -18,6 +18,7 @@ import os
 from typing import Any, Optional
 
 from hr_advisory.agents.llm_context import GEMINI_OPENAI_BASE_URL
+from hr_advisory.workflows.guardrails import screen_injection, ScreeningResult
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +226,49 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "search_company_policies",
+            "description": (
+                "Search the user's company internal policies (leave, FWA, "
+                "handbook, safety, benefits, etc.). Returns matching company "
+                "policies with title, category, content excerpt, and effective "
+                "date. Use this ALONGSIDE search_kb when the user asks about "
+                "their company's specific rules — company policies supplement "
+                "statutory law, they do not replace it."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Search query — use terms matching company policy "
+                            "topics like 'annual leave', 'work from home', "
+                            "'safety procedures', 'benefits'"
+                        ),
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Optional category filter to narrow results",
+                        "enum": [
+                            "leave",
+                            "flexible_work",
+                            "workplace_safety",
+                            "benefits",
+                            "code_of_conduct",
+                            "compensation",
+                            "handbook",
+                            "termination",
+                            "custom",
+                        ],
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_company_context",
             "description": (
                 "Retrieve the company profile including sector, headcount "
@@ -281,9 +325,22 @@ def _build_system_prompt(
         "- search_kb: Singapore employment law provisions. Use it to ground "
         "legal claims with specific section numbers. If it returns nothing, "
         "you still know the law — answer anyway.\n"
+        "- search_company_policies: The user's company internal policies "
+        "(leave, FWA, handbook, safety, benefits). Use alongside search_kb "
+        "when the question involves the company's specific rules.\n"
         "- Calculators (CPF, leave, salary, quota/levy): Use when the user "
         "needs exact numbers. These are deterministic.\n"
         "- get_company_context: The user's company profile for personalisation.\n\n"
+        "COMPANY POLICY RULES:\n"
+        "- ALWAYS state the statutory position first, then the company position.\n"
+        "- If a company policy is below the statutory minimum: say so explicitly "
+        "— the statutory minimum prevails.\n"
+        "- If a company policy exceeds the statutory minimum: note this "
+        "positively — the company offers more than required by law.\n"
+        "- If no company policy exists on a topic: say so, and fall back to "
+        "the statutory position.\n"
+        "- NEVER present a company policy as having the force of law — company "
+        "policies are internal rules, not legislation.\n\n"
         "BOUNDARIES:\n"
         "- Do not fabricate section numbers. If you cite a provision, it must "
         "be real. If unsure of the exact section, describe the rule without "
@@ -486,10 +543,59 @@ def _search_python_kb(query: str, domain: str | None = None, limit: int = 5) -> 
 # -- Tool execution ----------------------------------------------------------
 
 
-def _execute_tool_call(name: str, arguments: dict) -> str:
-    """Execute a tool call and return the result as a JSON string."""
+def _execute_tool_call(name: str, arguments: dict, company_id: int | None = None) -> str:
+    """Execute a tool call and return the result as a JSON string.
+
+    Args:
+        name: Tool function name.
+        arguments: Tool call arguments from the LLM.
+        company_id: Company ID for company-scoped tool calls (e.g. search_company_policies).
+    """
     try:
-        if name == "search_kb":
+        if name == "search_company_policies":
+            if company_id is None:
+                return json.dumps({"error": "company_id is required for policy search"})
+
+            from hr_advisory.services.company_policy_search import search_company_policies
+
+            results = search_company_policies(
+                query=arguments.get("query", ""),
+                company_id=company_id,
+                category=arguments.get("category"),
+                limit=5,
+            )
+
+            # T013: Screen each result's content_excerpt for injection attempts
+            screened_results = []
+            for r in results:
+                excerpt = r.get("content_excerpt", "")
+                if excerpt:
+                    injection_check = screen_injection(excerpt)
+                    if injection_check.result == ScreeningResult.BLOCK:
+                        logger.warning(
+                            "Injection detected in company policy %s (policy_id=%s), stripping content",
+                            r.get("title", ""),
+                            r.get("policy_id", ""),
+                        )
+                        continue  # Strip flagged content entirely
+                screened_results.append(r)
+
+            if not screened_results and results:
+                # ALL results were stripped due to injection
+                return json.dumps(
+                    {
+                        "results": [],
+                        "results_screened": True,
+                        "message": (
+                            "Relevant company policies were found but their content "
+                            "could not be included."
+                        ),
+                    }
+                )
+
+            return json.dumps(screened_results, default=str)
+
+        elif name == "search_kb":
             results = _search_kb_with_fallback(
                 query=arguments.get("query", ""),
                 domain=arguments.get("domain"),
@@ -670,6 +776,7 @@ class AdvisoryEngine:
         total_output_tokens = 0
         tools_called: list[str] = []
         kb_results_seen: list[dict] = []
+        company_policy_results_seen: list[dict] = []
 
         try:
             for round_num in range(MAX_TOOL_ROUNDS):
@@ -703,12 +810,23 @@ class AdvisoryEngine:
                             fn_args = {}
 
                         tools_called.append(fn_name)
-                        result_str = _execute_tool_call(fn_name, fn_args)
+                        result_str = _execute_tool_call(
+                            fn_name, fn_args, company_id=company_id
+                        )
 
                         # Track KB results for citation extraction
                         if fn_name == "search_kb":
                             try:
                                 kb_results_seen.extend(json.loads(result_str))
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+
+                        # Track company policy results for citation extraction
+                        if fn_name == "search_company_policies":
+                            try:
+                                parsed = json.loads(result_str)
+                                if isinstance(parsed, list):
+                                    company_policy_results_seen.extend(parsed)
                             except (json.JSONDecodeError, TypeError):
                                 pass
 
@@ -736,6 +854,26 @@ class AdvisoryEngine:
                             }
                         )
 
+                    # T015: Statutory primacy nudge — if the LLM searched company
+                    # policies for a regulated topic but hasn't searched the KB,
+                    # nudge it to look up the statutory position first.
+                    policy_call_count = sum(
+                        1 for t in tools_called if t == "search_company_policies"
+                    )
+                    if policy_call_count > 0 and kb_call_count == 0:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    "You checked the company's internal policies but "
+                                    "have not yet looked up the statutory position. "
+                                    "Please search the knowledge base (search_kb) for "
+                                    "the relevant legal provisions first — statutory "
+                                    "law takes precedence over company policies."
+                                ),
+                            }
+                        )
+
                     continue  # Next round — let LLM process tool results
 
                 # Model is done — extract the response
@@ -745,8 +883,10 @@ class AdvisoryEngine:
                 # Extract domains from which search_kb calls were made
                 domains = self._extract_domains_from_tools(messages)
 
-                # Build citations from KB results
-                citations = self._extract_citations(kb_results_seen)
+                # Build citations from KB results and company policy results
+                citations = self._extract_citations(
+                    kb_results_seen, company_policy_results_seen
+                )
 
                 return {
                     "response_text": cleaned_text,
@@ -783,7 +923,9 @@ class AdvisoryEngine:
                 "risk_tier": "amber",
                 "confidence": min(confidence, 0.5),
                 "domains": self._extract_domains_from_tools(messages),
-                "citations": self._extract_citations(kb_results_seen),
+                "citations": self._extract_citations(
+                    kb_results_seen, company_policy_results_seen
+                ),
                 "tools_called": tools_called,
                 "usage": {
                     "input_tokens": total_input_tokens,
@@ -883,10 +1025,23 @@ class AdvisoryEngine:
         return sorted(domains) if domains else ["general"]
 
     @staticmethod
-    def _extract_citations(kb_results: list[dict]) -> list[dict]:
-        """Build citation list from KB search results."""
-        seen = set()
-        citations = []
+    def _extract_citations(
+        kb_results: list[dict],
+        company_policy_results: list[dict] | None = None,
+    ) -> list[dict]:
+        """Build citation list from KB search results and company policy results.
+
+        Args:
+            kb_results: Results from search_kb tool calls.
+            company_policy_results: Results from search_company_policies tool calls.
+
+        Returns:
+            List of citation dicts with provision_id, title, authority_level.
+        """
+        seen: set[str] = set()
+        citations: list[dict] = []
+
+        # KB citations (statutory, tripartite, etc.)
         for r in kb_results:
             section = r.get("section", "")
             if section and section not in seen:
@@ -898,4 +1053,21 @@ class AdvisoryEngine:
                         "authority_level": r.get("authority_level", "statute"),
                     }
                 )
+
+        # Company policy citations (T016)
+        if company_policy_results:
+            for r in company_policy_results:
+                policy_id = r.get("policy_id")
+                if policy_id is not None:
+                    provision_id = f"policy-{policy_id}"
+                    if provision_id not in seen:
+                        seen.add(provision_id)
+                        citations.append(
+                            {
+                                "provision_id": provision_id,
+                                "title": r.get("title", ""),
+                                "authority_level": "company_policy",
+                            }
+                        )
+
         return citations

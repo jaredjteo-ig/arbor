@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ChatBubble,
   SourceCitation,
@@ -58,8 +59,17 @@ function riskTierLabel(tier: string): string {
  */
 function resolveAuthority(provision: ProvisionCited): AuthorityLevel {
   const raw = provision.authority_level;
-  if (raw === "statutory" || raw === "guideline" || raw === "best-practice") {
+  if (
+    raw === "statutory" ||
+    raw === "guideline" ||
+    raw === "best-practice" ||
+    raw === "company-policy"
+  ) {
     return raw;
+  }
+  /* Company policy provisions from the backend use source_type */
+  if (provision.source_type === "company_policy") {
+    return "company-policy";
   }
   return deriveAuthorityFromId(provision.provision_id);
 }
@@ -133,6 +143,7 @@ export function SystemMessage({
   streaming = false,
   messageId,
 }: SystemMessageProps) {
+  const router = useRouter();
   const [selectedProvision, setSelectedProvision] =
     useState<ProvisionCited | null>(null);
   const [escalationOpen, setEscalationOpen] = useState(false);
@@ -147,6 +158,21 @@ export function SystemMessage({
       : undefined
   ) as RiskTier | undefined;
 
+  function handleCitationClick(p: ProvisionCited) {
+    /* Company policy citations navigate to the policy detail page */
+    if (
+      p.source_type === "company_policy" ||
+      p.authority_level === "company-policy"
+    ) {
+      if (p.policy_id) {
+        router.push(`/policies/${p.policy_id}`);
+        return;
+      }
+    }
+    /* All other citations open the provision viewer */
+    setSelectedProvision(p);
+  }
+
   const sources =
     provisionsCited && provisionsCited.length > 0 ? (
       <>
@@ -155,7 +181,7 @@ export function SystemMessage({
             key={p.provision_id}
             label={p.title}
             authority={resolveAuthority(p)}
-            onClick={() => setSelectedProvision(p)}
+            onClick={() => handleCitationClick(p)}
           />
         ))}
       </>
