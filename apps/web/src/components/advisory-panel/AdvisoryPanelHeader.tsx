@@ -35,7 +35,7 @@ export function AdvisoryPanelHeader({
           <MessageSquare className="h-4 w-4 text-[var(--color-primary)]" />
         </div>
         <span className="text-sm font-semibold text-[var(--color-gray-900)]">
-          Ask Arbor
+          Ask Central
         </span>
       </div>
 

@@ -22,9 +22,9 @@ function ArborLogo() {
   return (
     <div className="flex items-center gap-2">
       <div className="flex items-center justify-center rounded-lg bg-blue-600 text-white font-bold w-9 h-9 text-base">
-        A
+        C
       </div>
-      <span className="text-xl font-bold text-gray-900">Arbor</span>
+      <span className="text-xl font-bold text-gray-900">Central</span>
     </div>
   );
 }
@@ -38,7 +38,7 @@ function LandingNav() {
     <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
       <div className="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-6 h-16">
         {/* Left: Logo */}
-        <Link href="/" aria-label="Arbor Home">
+        <Link href="/" aria-label="Central Home">
           <ArborLogo />
         </Link>
 
@@ -321,7 +321,7 @@ function BottomCta() {
           Ready to simplify your HR?
         </h2>
         <p className="text-lg text-white/80 mb-8 max-w-xl mx-auto">
-          Free for all Singapore SMEs. Set up in under a minute. No credit card
+          Free to get started. Set up in under a minute. No credit card
           required.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -353,9 +353,9 @@ function LandingFooter() {
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2">
             <div className="flex items-center justify-center rounded-lg bg-white/10 text-white font-bold w-8 h-8 text-sm">
-              A
+              C
             </div>
-            <span className="text-white font-semibold">Arbor</span>
+            <span className="text-white font-semibold">Central</span>
             <span className="text-sm text-gray-500 ml-2">
               by Terrene Foundation
             </span>

@@ -459,7 +459,7 @@ export function ChatContainer({
               <span className="text-2xl">&#x1F4AC;</span>
             </div>
             <h2 className="text-xl font-bold text-[var(--color-gray-900)] mb-2">
-              Ask Arbor anything about Singapore HR
+              Ask Central anything about HR compliance
             </h2>
             <p className="text-sm text-[var(--color-gray-500)] mb-6">
               Get instant, cited guidance about employment law, CPF, foreign

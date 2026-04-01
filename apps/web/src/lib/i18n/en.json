@@ -1,7 +1,7 @@
 {
   "app": {
-    "name": "Arbor",
-    "tagline": "AI-powered HR Advisory for Singapore SMEs"
+    "name": "Central",
+    "tagline": "AI-powered HR Advisory Platform"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -18,10 +18,10 @@
   "auth": {
     "login": "Log in",
     "login_heading": "Welcome back",
-    "login_subheading": "Sign in to your Arbor account",
+    "login_subheading": "Sign in to your Central account",
     "signup": "Sign up",
     "signup_heading": "Create your account",
-    "signup_subheading": "Get started with Arbor HR Advisory",
+    "signup_subheading": "Get started with Central HR Advisory",
     "email": "Email address",
     "password": "Password",
     "confirm_password": "Confirm password",

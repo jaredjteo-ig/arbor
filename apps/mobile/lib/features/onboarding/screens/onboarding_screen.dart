@@ -163,7 +163,7 @@ class _WelcomeStep extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.base),
           Text(
-            'Welcome to AITE',
+            'Welcome to Central',
             style: AppTypography.heading.copyWith(
               color: AppColors.neutralGray900,
             ),

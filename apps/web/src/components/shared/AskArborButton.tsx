@@ -41,7 +41,7 @@ export function AskArborButton({
         )}
       >
         <Sparkles className="h-4 w-4" aria-hidden="true" />
-        Ask Arbor about this
+        Ask Central about this
       </button>
     );
   }
@@ -62,7 +62,7 @@ export function AskArborButton({
       )}
     >
       <Sparkles className="h-4 w-4" aria-hidden="true" />
-      Ask Arbor about this
+      Ask Central about this
     </button>
   );
 }

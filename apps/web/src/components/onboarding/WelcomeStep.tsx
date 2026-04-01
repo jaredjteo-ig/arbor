@@ -44,10 +44,10 @@ export function WelcomeStep({ onNext, isLoggedIn }: WelcomeStepProps) {
           <Building2 className="w-8 h-8" />
         </div>
         <h1 className="text-2xl font-bold text-[var(--color-gray-900)] mb-2">
-          Welcome to Arbor
+          Welcome to Central
         </h1>
         <p className="text-[var(--color-gray-600)] text-base">
-          Your AI-powered HR advisory platform for Singapore SMEs.
+          Your AI-powered HR advisory platform.
           {!isLoggedIn &&
             " Sign up to get started, or continue to set up your company profile."}
         </p>

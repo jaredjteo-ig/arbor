@@ -201,7 +201,7 @@ export function ComplianceSnapshotStep({
         Compliance Snapshot
       </h2>
       <p className="text-sm text-[var(--color-gray-500)] mb-6">
-        Here&apos;s a quick overview based on your company profile. Ask Arbor
+        Here&apos;s a quick overview based on your company profile. Ask Central
         for detailed guidance on any of these topics.
       </p>
 

@@ -380,7 +380,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.base),
             Text(
-              'Ask AITE anything about Singapore HR',
+              'Ask Central anything about HR compliance',
               style: AppTypography.title.copyWith(
                 color: AppColors.neutralGray900,
               ),

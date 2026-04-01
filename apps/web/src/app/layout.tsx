@@ -11,8 +11,8 @@ const sourceSans = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "Arbor — HR Advisory",
-  description: "AI-powered HR advisory platform for Singapore SMEs",
+  title: "Central — HR Advisory",
+  description: "AI-powered HR advisory platform with employment law compliance",
 };
 
 export default function RootLayout({

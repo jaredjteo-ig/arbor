@@ -53,7 +53,7 @@ export function ShadowWidget({
 
   return (
     <div
-      className="fixed bottom-6 right-6"
+      className="fixed bottom-6 right-6 lg:right-[calc(var(--shadow-margin-current,var(--shadow-margin-collapsed))+1.5rem)] transition-[right] duration-[var(--shadow-transition-normal)] ease-out"
       style={{ zIndex: "var(--z-shadow-widget)" }}
     >
       {/* Attention ripple ring — only when agent has something to surface */}
@@ -76,8 +76,8 @@ export function ShadowWidget({
       <button
         type="button"
         onClick={onToggle}
-        aria-label="Ask Arbor (Ctrl+Shift+A)"
-        title="Ask Arbor (Ctrl+Shift+A)"
+        aria-label="Ask Central (Ctrl+Shift+A)"
+        title="Ask Central (Ctrl+Shift+A)"
         className={clsx(
           "relative flex items-center justify-center",
           "rounded-full cursor-pointer",

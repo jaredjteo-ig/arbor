@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appName => 'AITE';
+  String get appName => 'Central';
 
   @override
   String get appTagline => 'AI-powered HR Advisory for Singapore SMEs';

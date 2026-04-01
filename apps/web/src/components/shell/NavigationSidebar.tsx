@@ -366,11 +366,11 @@ export function NavigationSidebar({
               "w-8 h-8 text-sm",
             )}
           >
-            A
+            C
           </div>
           {!collapsed && (
             <span className="text-white font-semibold text-lg truncate">
-              Arbor
+              Central
             </span>
           )}
         </div>

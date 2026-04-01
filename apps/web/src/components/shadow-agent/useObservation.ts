@@ -137,7 +137,7 @@ function generateInsights(visits: PageVisit[]): ObservationInsight[] {
     else if (page === "/policies") {
       insights.push({
         id: `obs-policies-${count}`,
-        message: `You've reviewed policies ${count} times. Looking for something specific? Ask Arbor.`,
+        message: `You've reviewed policies ${count} times. Looking for something specific? Ask Central.`,
         page,
         visitCount: count,
       });

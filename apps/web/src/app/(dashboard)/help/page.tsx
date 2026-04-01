@@ -200,7 +200,7 @@ export default function HelpPage() {
             Help Centre
           </h1>
           <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-            Learn how to use Arbor effectively for your HR compliance needs.
+            Learn how to use Central effectively for your HR compliance needs.
           </p>
         </div>
       </div>
@@ -321,17 +321,17 @@ export default function HelpPage() {
             Still need help?
           </h3>
           <p className="text-sm text-[var(--color-gray-600)] mb-4">
-            If you cannot find what you are looking for, ask Arbor directly in
+            If you cannot find what you are looking for, ask Central directly in
             the Advisory chat or contact our support team.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link href="/advisory">
               <AppButton variant="primary" size="md">
                 <MessageSquare className="h-4 w-4" />
-                Ask Arbor
+                Ask Central
               </AppButton>
             </Link>
-            <a href="mailto:support@arbor.sg">
+            <a href="mailto:support@arbor.terrene.dev">
               <AppButton variant="outlined" size="md">
                 Contact Support
               </AppButton>

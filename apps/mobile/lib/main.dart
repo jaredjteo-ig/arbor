@@ -13,25 +13,25 @@ void main() {
 
   runApp(
     ProviderScope(
-      child: AiteApp(lifecycleObserver: lifecycleObserver),
+      child: ArborApp(lifecycleObserver: lifecycleObserver),
     ),
   );
 }
 
-/// Root widget for the AITE mobile application.
+/// Root widget for the Arbor mobile application.
 ///
 /// Uses [MaterialApp.router] with GoRouter for declarative navigation,
-/// Riverpod for state management, and the AITE design system theme.
-class AiteApp extends ConsumerStatefulWidget {
-  const AiteApp({super.key, required this.lifecycleObserver});
+/// Riverpod for state management, and the Arbor design system theme.
+class ArborApp extends ConsumerStatefulWidget {
+  const ArborApp({super.key, required this.lifecycleObserver});
 
   final AppLifecycleObserver lifecycleObserver;
 
   @override
-  ConsumerState<AiteApp> createState() => _AiteAppState();
+  ConsumerState<ArborApp> createState() => _ArborAppState();
 }
 
-class _AiteAppState extends ConsumerState<AiteApp> {
+class _ArborAppState extends ConsumerState<ArborApp> {
   @override
   void dispose() {
     widget.lifecycleObserver.unregister();
@@ -43,7 +43,7 @@ class _AiteAppState extends ConsumerState<AiteApp> {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'AITE',
+      title: 'Central',
       theme: buildAppTheme(),
       debugShowCheckedModeBanner: false,
       routerConfig: router,

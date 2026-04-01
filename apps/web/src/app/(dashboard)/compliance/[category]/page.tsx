@@ -337,7 +337,7 @@ export default function ComplianceCategoryPage({
               </h3>
             </div>
             <p className="text-xs text-[var(--color-gray-500)]">
-              Ask Arbor about {displayName.toLowerCase()} compliance:
+              Ask Central about {displayName.toLowerCase()} compliance:
             </p>
             <div className="flex flex-wrap gap-2">
               {advisoryQuestions.map((q) => (

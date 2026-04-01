@@ -81,6 +81,25 @@ export function ShadowMargin({
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  // Publish current margin width as a CSS custom property so sibling
+  // components (ShadowWidget) can position themselves dynamically.
+  useEffect(() => {
+    if (!isDesktop) {
+      document.documentElement.style.removeProperty("--shadow-margin-current");
+      return;
+    }
+    const width = isExpanded
+      ? "var(--shadow-margin-expanded)"
+      : "var(--shadow-margin-collapsed)";
+    document.documentElement.style.setProperty(
+      "--shadow-margin-current",
+      width,
+    );
+    return () => {
+      document.documentElement.style.removeProperty("--shadow-margin-current");
+    };
+  }, [isExpanded, isDesktop]);
+
   if (!isDesktop || (!hasInsights && !isLoading)) return null;
 
   const dismissInsight = (id: string) => {
@@ -181,7 +200,7 @@ export function ShadowMargin({
                 />
               </svg>
               <span className="text-sm font-medium text-[var(--foreground)]">
-                Arbor Insights
+                Central Insights
               </span>
               <span className="text-[10px] text-[var(--color-gray-400)]">
                 {visibleInsights.length}
@@ -307,35 +326,11 @@ export function ShadowMargin({
               )}
           </div>
 
-          {/* Quick command bar at bottom */}
-          <div className="px-3 py-2 border-t border-[var(--color-gray-200)]">
-            <button
-              type="button"
-              onClick={() => {
-                setIsExpanded(false);
-                openCommand();
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-gray-100)] text-sm text-[var(--color-gray-500)] hover:bg-[var(--color-gray-200)] transition-colors"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 18 18"
-                fill="none"
-                aria-hidden="true"
-              >
-                <circle cx="7" cy="9" r="5" fill="currentColor" opacity="0.4" />
-                <ellipse
-                  cx="12"
-                  cy="9"
-                  rx="4"
-                  ry="3.5"
-                  fill="currentColor"
-                  opacity="0.15"
-                />
-              </svg>
-              Ask Arbor...
-            </button>
+          {/* Insights-only footer */}
+          <div className="px-3 py-2 border-t border-[var(--color-gray-100)]">
+            <p className="text-[10px] text-[var(--color-gray-400)] text-center">
+              Central Insights
+            </p>
           </div>
         </div>
       )}

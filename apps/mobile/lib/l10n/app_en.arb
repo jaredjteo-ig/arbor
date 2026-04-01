@@ -1,6 +1,6 @@
 {
   "@@locale": "en",
-  "appName": "AITE",
+  "appName": "Central",
   "@appName": { "description": "Application name" },
   "appTagline": "AI-powered HR Advisory for Singapore SMEs",
   "@appTagline": { "description": "Application tagline" },
