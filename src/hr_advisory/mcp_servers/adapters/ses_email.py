@@ -47,7 +47,7 @@ class SESAdapter:
             to="employee@example.com",
             subject="Your March 2026 Payslip",
             html="<p>Your payslip is ready. View it in Arbor.</p>",
-            from_email="notifications@arbor.sg",
+            from_email="notifications@arbor.terrene.dev",
         )
     """
 
@@ -57,7 +57,7 @@ class SESAdapter:
         from_email: Optional[str] = None,
     ):
         self._region = region
-        self._from_email = from_email or os.environ.get("SES_FROM_EMAIL", "notifications@arbor.sg")
+        self._from_email = from_email or os.environ.get("SES_FROM_EMAIL", "notifications@arbor.terrene.dev")
         self._circuit = get_circuit("ses")
 
         # Try to import boto3 for native SES support

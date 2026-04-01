@@ -178,7 +178,7 @@ class MOMSitemapAdapter:
         return {
             "User-Agent": (
                 "Mozilla/5.0 (compatible; Arbor-Regulatory-Monitor/1.0; "
-                "+https://arbor.sg; legal-compliance-monitoring)"
+                "+https://central.kailash.ai; legal-compliance-monitoring)"
             ),
             "Accept": "application/xml, text/xml, */*",
         }

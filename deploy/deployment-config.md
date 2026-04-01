@@ -1,14 +1,14 @@
-# Arbor Deployment Configuration
+# Central Deployment Configuration
 
 ## Decision Summary
 
 | Decision       | Choice                                   | Rationale                                                    |
 | -------------- | ---------------------------------------- | ------------------------------------------------------------ |
-| Cloud provider | GCP (asia-southeast1)                    | Terrene Foundation GCP account (terrene-care project)        |
-| Instance type  | e2-medium                                | Cost-effective for current scale                             |
+| Cloud provider | AWS (ap-southeast-1, Singapore)          | Available infrastructure                                     |
+| Instance type  | t3.medium (2 vCPU, 4GB RAM)              | Cost-effective for current scale                             |
 | Orchestration  | Docker Compose                           | Single-server deployment, simpler than K8s for current scale |
 | Reverse proxy  | Caddy                                    | Zero-config automatic HTTPS with Let's Encrypt               |
-| Domain         | arbor.terrene.foundation                 | DNS A record to GCE static IP                                |
+| Domain         | central.kailash.ai                       | DNS A record to EC2 Elastic IP                               |
 | Database       | PostgreSQL 16 + pgvector (containerized) | Vector search for KB embeddings                              |
 | Cache          | Redis 7 (containerized)                  | Session management                                           |
 
@@ -19,8 +19,8 @@ Internet
   │
   ▼
 ┌──────────────────────────────────────────────────────────┐
-│  GCE e2-medium (arbor-prod)                              │
-│  Container-Optimized OS │ Static IP: 34.87.60.241        │
+│  EC2 t3.medium (central-prod)                            │
+│  Ubuntu 22.04 LTS │ Elastic IP: TBD (after provision)   │
 │                                                          │
 │  ┌─────────────────────────────────────────────┐         │
 │  │ Caddy (arbor-caddy)         ports 80, 443    │         │
@@ -44,26 +44,24 @@ Internet
 └──────────────────────────────────────────────────────────┘
 ```
 
-## GCP Infrastructure
+## AWS Infrastructure
 
-| Resource     | ID / Value                                             |
-| ------------ | ------------------------------------------------------ |
-| GCE Instance | `arbor-prod`                                           |
-| Machine Type | `e2-medium`                                            |
-| OS           | Container-Optimized OS (cos-stable)                    |
-| Zone         | `asia-southeast1-b`                                    |
-| Static IP    | `34.87.60.241`                                         |
-| Firewall     | `allow-http-https` (tcp:80,443)                        |
-| GCP Project  | `terrene-care`                                         |
-| GCP Account  | `jack@terrene.foundation`                              |
-| DNS Record   | `arbor.terrene.foundation` → `34.87.60.241` (A record) |
-| Region       | `asia-southeast1` (Singapore)                          |
+| Resource       | ID / Value                               |
+| -------------- | ---------------------------------------- |
+| EC2 Instance   | `central-prod`                           |
+| Instance Type  | `t3.medium` (2 vCPU, 4 GB RAM)           |
+| AMI            | Ubuntu 22.04 LTS                         |
+| Region         | `ap-southeast-1` (Singapore)             |
+| Elastic IP     | TBD (after provisioning)                 |
+| Security Group | `central-sg` (tcp:22,80,443)             |
+| Key Pair       | `central-prod` (~/.ssh/central-prod.pem) |
+| DNS Record     | `central.kailash.ai` → Elastic IP        |
 
 ### Security Group Rules
 
 | Port | Protocol | Source    | Purpose                   |
 | ---- | -------- | --------- | ------------------------- |
-| 22   | TCP      | 0.0.0.0/0 | SSH                       |
+| 22   | TCP      | Your IP   | SSH (restrict to your IP) |
 | 80   | TCP      | 0.0.0.0/0 | HTTP (redirects to HTTPS) |
 | 443  | TCP      | 0.0.0.0/0 | HTTPS                     |
 
@@ -98,53 +96,26 @@ Internet
 | `REDIS_URL`              | Redis connection string                            |
 | `REDIS_PASSWORD`         | Redis password                                     |
 | `JWT_SECRET_KEY`         | JWT signing key                                    |
-| `OPENAI_API_KEY`         | Server default OpenAI key (optional with BYOK)     |
+| `GOOGLE_API_KEY`         | Server default Google API key (optional with BYOK) |
 | `LLM_KEY_ENCRYPTION_KEY` | Fernet key for encrypting user API keys (REQUIRED) |
 
 ### Optional
 
-| Variable            | Default                            | Description          |
-| ------------------- | ---------------------------------- | -------------------- |
-| `ANTHROPIC_API_KEY` | —                                  | Anthropic API key    |
-| `DEFAULT_LLM_MODEL` | `gpt-5-mini-2025-08-07`            | Default LLM model    |
-| `OPENAI_PROD_MODEL` | `gpt-5-mini-2025-08-07`            | Production model     |
-| `OLLAMA_BASE_URL`   | `http://localhost:11434`           | Ollama endpoint      |
-| `OLLAMA_MODEL`      | —                                  | Ollama model name    |
-| `LOG_LEVEL`         | `INFO`                             | Logging level        |
-| `APP_ENV`           | `production`                       | Environment name     |
-| `CORS_ORIGINS`      | `https://arbor.terrene.foundation` | Allowed CORS origins |
-
-### Integration Layer (MCP Servers — all optional, enable as needed)
-
-| Variable                     | Default       | Description                                                    |
-| ---------------------------- | ------------- | -------------------------------------------------------------- |
-| `INTEGRATION_ENCRYPTION_KEY` | —             | Fernet key for OAuth token encryption (REQUIRED in production) |
-| `ENVIRONMENT`                | `development` | Set to `production` to enforce encryption key                  |
-| `DATA_GOV_SG_API_KEY`        | —             | data.gov.sg API key (free, self-service)                       |
-| `RESEND_API_KEY`             | —             | Resend email delivery                                          |
-| `TELEGRAM_BOT_TOKEN`         | —             | Telegram notification bot                                      |
-| `TELEGRAM_MONITOR_BOT_TOKEN` | —             | Telegram regulatory monitoring bot                             |
-| `WHATSAPP_ACCESS_TOKEN`      | —             | WhatsApp Cloud API token                                       |
-| `WHATSAPP_PHONE_NUMBER_ID`   | —             | WhatsApp phone number ID                                       |
-| `SLACK_BOT_TOKEN`            | —             | Slack bot token                                                |
-| `AWS_S3_BUCKET`              | —             | S3 bucket for document storage                                 |
-| `XERO_CLIENT_ID`             | —             | Xero OAuth app client ID                                       |
-| `XERO_CLIENT_SECRET`         | —             | Xero OAuth app client secret                                   |
-| `QBO_CLIENT_ID`              | —             | QuickBooks OAuth client ID                                     |
-| `QBO_CLIENT_SECRET`          | —             | QuickBooks OAuth client secret                                 |
-| `ZOHO_CLIENT_ID`             | —             | Zoho Books OAuth client ID                                     |
-| `ZOHO_CLIENT_SECRET`         | —             | Zoho Books OAuth client secret                                 |
-| `ASPIRE_CLIENT_ID`           | —             | Aspire API client ID                                           |
-| `ASPIRE_API_KEY`             | —             | Aspire API key                                                 |
-| `WISE_API_KEY`               | —             | Wise Business API key                                          |
-| `SSG_API_KEY`                | —             | SkillsFuture SSG developer portal key                          |
-
-**Note**: Integration env vars are only needed when enabling specific connectors. The platform starts and runs without them — connectors gracefully degrade to "not configured" status.
+| Variable            | Default                      | Description          |
+| ------------------- | ---------------------------- | -------------------- |
+| `ANTHROPIC_API_KEY` | —                            | Anthropic API key    |
+| `DEFAULT_LLM_MODEL` | `gemini-2.5-flash`           | Default LLM model    |
+| `GEMINI_MODEL`      | `gemini-2.5-flash`           | Production model     |
+| `OLLAMA_BASE_URL`   | `http://localhost:11434`     | Ollama endpoint      |
+| `OLLAMA_MODEL`      | —                            | Ollama model name    |
+| `LOG_LEVEL`         | `INFO`                       | Logging level        |
+| `APP_ENV`           | `production`                 | Environment name     |
+| `CORS_ORIGINS`      | `https://central.kailash.ai` | Allowed CORS origins |
 
 ## SSL/TLS
 
 - Provider: Let's Encrypt (automated via Caddy)
-- Certificate CN: `arbor.terrene.foundation`
+- Certificate CN: `central.kailash.ai`
 - Renewal: Automatic (Caddy handles renewal before expiry)
 - HSTS: Enabled (`max-age=31536000; includeSubDomains`)
 - Security headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
@@ -153,54 +124,75 @@ Internet
 
 ### Prerequisites
 
-- `gcloud` CLI authenticated with `jack@terrene.foundation`
-- SSH access to `arbor-prod` instance via `gcloud compute ssh`
+- AWS CLI configured (`aws configure`)
+- SSH key `~/.ssh/central-prod.pem` (or ssh-agent)
+- `CENTRAL_INSTANCE_IP` exported in your shell
 
-### Deploy New Version
+### Quick Deploy (from local machine)
 
 ```bash
-# 1. Sync code to server (from local machine)
-rsync -avz --exclude='.git' --exclude='node_modules' --exclude='.venv' \
-  --exclude='__pycache__' --exclude='.next' --exclude='*.pyc' \
-  -e "gcloud compute ssh arbor-prod --zone=asia-southeast1-b --project=terrene-care --" \
-  . :/opt/arbor/
+export CENTRAL_INSTANCE_IP=<your-ec2-elastic-ip>
+./deploy/ship.sh
+```
 
-# 2. SSH into server
-gcloud compute ssh arbor-prod --zone=asia-southeast1-b --project=terrene-care
+### Manual Deploy
 
-# 3. On server: rebuild and restart
-cd /opt/arbor/deploy
+```bash
+# 1. SSH into server
+ssh -i ~/.ssh/central-prod.pem ubuntu@<elastic-ip>
+
+# 2. Pull latest code
+cd /opt/arbor
+git pull origin main
+
+# 3. Rebuild and restart
+cd deploy
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 # 4. Verify
 docker ps  # all 5 containers healthy
-curl -f https://arbor.terrene.foundation/health  # 200 OK
+curl -f https://central.kailash.ai/api/health  # 200 OK
 ```
 
 ### Rollback
 
 ```bash
-# SSH into server
-gcloud compute ssh arbor-prod --zone=asia-southeast1-b --project=terrene-care
-
-# Roll back to previous code
+ssh -i ~/.ssh/central-prod.pem ubuntu@<elastic-ip>
 cd /opt/arbor
 git checkout <previous-commit>
-
-# Rebuild
 cd deploy
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-
-# Verify
-curl -f https://arbor.terrene.foundation/health
+curl -f https://central.kailash.ai/api/health
 ```
 
-### Server Setup (fresh instance)
+### Fresh EC2 Setup
 
 ```bash
-# From local machine — provision a fresh Container-Optimized OS instance
-gcloud compute ssh arbor-prod --zone=asia-southeast1-b --project=terrene-care \
-  -- 'bash -s' < deploy/setup-server.sh
+# 1. Launch EC2 instance (Ubuntu 22.04, t3.medium, ap-southeast-1)
+# 2. Allocate and associate Elastic IP
+# 3. SSH in:
+ssh -i ~/.ssh/central-prod.pem ubuntu@<elastic-ip>
+
+# 4. Install Docker
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 git
+sudo usermod -aG docker ubuntu
+# Log out and back in for group to take effect
+
+# 5. Clone repo
+sudo mkdir -p /opt/arbor && sudo chown ubuntu:ubuntu /opt/arbor
+git clone https://github.com/terrene-foundation/arbor.git /opt/arbor
+
+# 6. Create production env file
+cp /opt/arbor/deploy/.env.prod.example /opt/arbor/deploy/.env.prod
+nano /opt/arbor/deploy/.env.prod  # Fill in real values
+
+# 7. Start everything
+cd /opt/arbor/deploy
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+
+# 8. Verify
+docker ps
+curl -f https://central.kailash.ai/api/health
 ```
 
 ## Health Check Endpoints
@@ -229,18 +221,10 @@ gcloud compute ssh arbor-prod --zone=asia-southeast1-b --project=terrene-care \
 5. Run health checks
 6. Verify advisory responses
 
-## Monitoring (TODO)
-
-Not yet configured. When ready:
-
-- Health check: `GET /health` (Caddy handles basic uptime)
-- Consider: GCP Cloud Monitoring, Uptime Robot, or similar
-- Alert on: container restarts, 5xx errors, disk usage > 80%
-
 ## Cost
 
-- GCE e2-medium: ~$25/month (on-demand, asia-southeast1)
-- Static IP: $0 (attached to running instance)
-- DNS: Managed externally (terrene.foundation)
-- Data transfer: Variable (~$0.12/GB outbound)
-- **Estimated monthly: ~$30**
+- EC2 t3.medium: ~$30/month (on-demand, ap-southeast-1)
+- Elastic IP: $0 (attached to running instance)
+- DNS: Managed externally (kailash.ai)
+- Data transfer: Variable (~$0.09/GB outbound)
+- **Estimated monthly: ~$35**

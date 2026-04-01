@@ -289,7 +289,7 @@ class ChangeDetectionEngine:
         return {
             "User-Agent": (
                 "Mozilla/5.0 (compatible; Arbor-Regulatory-Monitor/1.0; "
-                "+https://arbor.sg; legal-compliance-monitoring)"
+                "+https://central.kailash.ai; legal-compliance-monitoring)"
             ),
             "Accept": "text/html, application/xhtml+xml, */*",
             "Accept-Language": "en-SG,en;q=0.9",

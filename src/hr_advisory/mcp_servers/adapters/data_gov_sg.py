@@ -76,7 +76,7 @@ class DataGovSGAdapter:
 
     def _headers(self) -> dict[str, str]:
         headers = {
-            "User-Agent": "Arbor-HR-Advisory/1.0 (+https://arbor.sg)",
+            "User-Agent": "Arbor-HR-Advisory/1.0 (+https://central.kailash.ai)",
             "Accept": "application/json",
         }
         if self._api_key:

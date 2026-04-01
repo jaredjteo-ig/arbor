@@ -25,18 +25,19 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_PROD_MODEL=${OPENAI_PROD_MODEL:-gpt-5-mini-2025-08-07}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL:-gpt-5-mini-2025-08-07}
+      - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL:-gemini-2.5-flash}
       - LLM_KEY_ENCRYPTION_KEY=${LLM_KEY_ENCRYPTION_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - APP_ENV=production
       - DEBUG=false
-      - CORS_ORIGINS=https://arbor.terrene.foundation
+      - CORS_ORIGINS=https://central.kailash.ai
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
-      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-https://arbor.terrene.foundation/api/auth/google/callback}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-https://central.kailash.ai/api/auth/google/callback}
       - KAILASH_RUNTIME=async
     depends_on:
       postgres:
@@ -55,11 +56,11 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.frontend
       args:
-        NEXT_PUBLIC_API_URL: https://arbor.terrene.foundation/api
+        NEXT_PUBLIC_API_URL: https://central.kailash.ai/api
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
     container_name: arbor-frontend
     environment:
-      - NEXT_PUBLIC_API_URL=https://arbor.terrene.foundation/api
+      - NEXT_PUBLIC_API_URL=https://central.kailash.ai/api
       - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
     restart: unless-stopped
 

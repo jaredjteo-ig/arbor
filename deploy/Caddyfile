@@ -1,4 +1,4 @@
-arbor.terrene.foundation {
+central.kailash.ai {
 	# API backend — proxy /api/* to FastAPI
 	handle /api/* {
 		uri strip_prefix /api

@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: central-postgres
+    environment:
+      POSTGRES_USER: arbor
+      POSTGRES_PASSWORD: arbor
+      POSTGRES_DB: arbor
+    ports:
+      - "5433:5432"
+    volumes:
+      - central_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arbor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: central-redis
+    ports:
+      - "6381:6379"
+    volumes:
+      - central_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  central_pgdata:
+  central_redis:

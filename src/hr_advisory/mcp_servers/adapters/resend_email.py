@@ -251,7 +251,7 @@ class ResendAdapter:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        default_from: str = "Arbor HR Platform <noreply@arbor.sg>",
+        default_from: str = "Arbor HR Platform <noreply@arbor.terrene.dev>",
     ):
         self._api_key = api_key or os.environ.get("RESEND_API_KEY", "")
         self._default_from = default_from
