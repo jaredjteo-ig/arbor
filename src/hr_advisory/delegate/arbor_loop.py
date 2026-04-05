@@ -178,11 +178,13 @@ def run_delegate_sync(
     usage_data: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
 
     async def _run() -> None:
+        from kaizen_agents.delegate.loop import ToolCallStart
+
         async for event in delegate.run(full_prompt):
             if isinstance(event, TextDelta):
                 text_parts.append(event.text)
-            elif hasattr(event, "tool_name"):
-                tools_called.append(event.tool_name)
+            elif isinstance(event, ToolCallStart):
+                tools_called.append(event.name)
             elif hasattr(event, "usage"):
                 u = event.usage
                 if hasattr(u, "prompt_tokens"):
