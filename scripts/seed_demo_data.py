@@ -1025,6 +1025,185 @@ def seed_employees(
     return created_employees
 
 
+# ---------------------------------------------------------------------------
+# Employee profile enrichment (addresses, contacts, family, statutory)
+# ---------------------------------------------------------------------------
+
+_SG_ADDRESSES = [
+    ("Blk 123 Ang Mo Kio Ave 3 #08-456 Singapore 560123", "560123"),
+    ("Blk 456 Bedok North St 1 #12-789 Singapore 460456", "460456"),
+    ("Blk 789 Clementi Ave 2 #05-234 Singapore 120789", "120789"),
+    ("32 Dover Rd #03-01 Singapore 130032", "130032"),
+    ("Blk 234 Eunos Rd 5 #10-567 Singapore 400234", "400234"),
+    ("Blk 567 Geylang East Ave 1 #07-890 Singapore 380567", "380567"),
+    ("15 Holland Ave #04-12 Singapore 278989", "278989"),
+    ("Blk 890 Jalan Bukit Merah #15-345 Singapore 150890", "150890"),
+    ("Blk 345 Kallang Way #09-678 Singapore 330345", "330345"),
+    ("Blk 678 Marine Parade Rd #11-901 Singapore 440678", "440678"),
+    ("Blk 901 Pasir Ris St 21 #06-234 Singapore 510901", "510901"),
+    ("Blk 112 Serangoon North Ave 1 #14-567 Singapore 550112", "550112"),
+    ("Blk 223 Tampines St 21 #02-890 Singapore 520223", "520223"),
+    ("Blk 334 Woodlands Ave 5 #16-123 Singapore 730334", "730334"),
+    ("Blk 445 Yishun Ring Rd #08-456 Singapore 760445", "760445"),
+    ("Blk 556 Toa Payoh Lorong 4 #13-789 Singapore 310556", "310556"),
+    ("Blk 667 Bukit Batok West Ave 8 #04-012 Singapore 650667", "650667"),
+    ("Blk 778 Jurong West St 42 #10-345 Singapore 640778", "640778"),
+    ("22 Sengkang East Way #07-08 Singapore 541022", "541022"),
+    ("Blk 889 Upper Thomson Rd #15-678 Singapore 574889", "574889"),
+    ("Blk 100 Redhill Close #03-901 Singapore 150100", "150100"),
+    ("Blk 211 Farrer Park Rd #11-234 Singapore 210211", "210211"),
+    ("Blk 322 Queen St #06-567 Singapore 180322", "180322"),
+    ("Blk 433 Victoria St #09-890 Singapore 190433", "190433"),
+    ("Blk 544 Novena Rise #14-123 Singapore 307544", "307544"),
+    ("Blk 655 Lorong Ah Soo #02-456 Singapore 530655", "530655"),
+    ("18 Zion Rd #08-03 Singapore 247726", "247726"),
+    ("Blk 766 Orchard Blvd #12-789 Singapore 248649", "248649"),
+]
+
+_EC_NAMES = [
+    "Lim Ah Huat", "Tan Siew Lan", "Kumar Rajan", "Siti Nurhaliza", "Tanaka Yuki",
+    "Sarah Ng", "Deepa Nair", "Jason Lim", "Grace Tan", "Nurul Aisyah",
+    "Chen Guowei", "Angela Ong", "Ravi Kumar", "Fatimah Ali", "Kevin Tay",
+    "Priya Devi", "David Ng", "Jessica Lim", "Faizal Ibrahim", "Samuel Tan",
+]
+
+_CHILD_NAMES = ["Ethan", "Chloe", "Lucas", "Sophie", "Ryan", "Olivia", "Noah", "Emma"]
+
+_RELIGIONS = ["Buddhism", "Christianity", "Islam", "Hinduism", "Taoism", "Free Thinker", "Free Thinker"]
+
+
+def seed_employee_profiles(client: ArborClient, employees: list[dict]) -> None:
+    """Step 3b: Enrich employee profiles with addresses, contacts, family, statutory fields."""
+    _print("\n--- Step 3b: Employee Profile Enrichment ---")
+
+    import random
+    random.seed(42)  # Deterministic for consistent demo data
+
+    profiles_by_email = {p["email"].lower(): p for p in EMPLOYEE_PROFILES}
+    ok_patch = ok_ec = ok_fam = 0
+
+    for i, emp in enumerate(employees):
+        eid = emp.get("id")
+        if not eid:
+            continue
+
+        email = emp.get("email", "").lower()
+        profile = profiles_by_email.get(email, {})
+        pass_type = profile.get("pass_type", emp.get("pass_type", "citizen"))
+        gender = profile.get("gender", emp.get("gender", "male"))
+
+        # --- Patch full profile fields ---
+        addr, postal = _SG_ADDRESSES[i % len(_SG_ADDRESSES)]
+        dob_year = random.randint(1971, 2001)
+        dob = f"{dob_year}-{random.randint(1,12):02d}-{random.randint(1,28):02d}"
+        nric_prefix = random.choice("ST")
+        nric = f"{nric_prefix}{random.randint(1000000,9999999)}{random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ')}"
+        phone = f"+65 {random.choice(['8','9'])}{random.randint(100,999)} {random.randint(1000,9999)}"
+        bank = random.choice(["DBS", "OCBC", "UOB", "Standard Chartered", "HSBC"])
+        bank_codes = {"DBS": "7171", "OCBC": "7339", "UOB": "7375", "Standard Chartered": "9496", "HSBC": "7232"}
+
+        fields: dict[str, Any] = {
+            "residential_address": addr,
+            "postal_code": postal,
+            "date_of_birth": dob,
+            "phone": phone,
+            "nric_fin": nric,
+            "religion": random.choice(_RELIGIONS),
+            "marital_status": random.choice(["single", "married", "married", "single", "married"]),
+            "bank_name": bank,
+            "bank_code": bank_codes.get(bank, "7171"),
+            "bank_account_number": f"{random.randint(100,999)}-{random.randint(100000,999999)}-{random.randint(0,9)}",
+            "notice_period_days": random.choice([14, 30, 30, 30, 60]),
+            "employee_id_internal": f"CS-{eid:04d}",
+            "iras_auto_inclusion": True,
+            "tax_reference": f"TAX-{random.randint(100000,999999)}",
+            "cpf_status": "include" if pass_type in ("citizen", "pr") else "exclude",
+        }
+
+        # Include profile fields that the initial PATCH might have missed
+        for field in ["department", "designation", "employment_type", "start_date",
+                      "nationality", "pass_type", "salary_monthly", "gender", "race",
+                      "immigration_status", "work_pass_expiry", "confirmation_status"]:
+            if field in profile and profile[field]:
+                fields[field] = profile[field]
+
+        resp = client.patch(f"/employees/{eid}", json=fields)
+        if resp.status_code in (200, 201):
+            ok_patch += 1
+
+        # --- Emergency contacts (1-2 per employee) ---
+        ec_check = client.get(f"/employees/{eid}/emergency-contacts")
+        existing_ecs = ec_check.json().get("contacts", []) if ec_check.status_code == 200 else []
+        if not existing_ecs:
+            for _ in range(random.choice([1, 1, 2])):
+                rel = random.choice(["spouse", "parent", "sibling", "spouse", "parent"])
+                ec_phone = f"+65 {random.choice(['8','9'])}{random.randint(100,999)} {random.randint(1000,9999)}"
+                ec_resp = client.post(f"/employees/{eid}/emergency-contacts", {
+                    "name": random.choice(_EC_NAMES),
+                    "relationship": rel,
+                    "phone_primary": ec_phone,
+                })
+                if ec_resp.status_code in (200, 201):
+                    ok_ec += 1
+
+        # --- Family members (for married employees) ---
+        fm_check = client.get(f"/employees/{eid}/family-members")
+        existing_fms = fm_check.json().get("family_members", []) if fm_check.status_code == 200 else []
+        marital = fields.get("marital_status", "single")
+        if not existing_fms and marital == "married":
+            # Spouse
+            spouse_name = random.choice(_EC_NAMES)
+            spouse_dob = f"{random.randint(1975,1998)}-{random.randint(1,12):02d}-{random.randint(1,28):02d}"
+            fm_resp = client.post(f"/employees/{eid}/family-members", {
+                "name": spouse_name,
+                "relationship": "spouse",
+                "date_of_birth": spouse_dob,
+                "gender": "female" if gender == "male" else "male",
+                "citizenship_status": random.choice(["citizen", "citizen", "pr"]),
+            })
+            if fm_resp.status_code in (200, 201):
+                ok_fam += 1
+            # Children (0-2)
+            for _ in range(random.choice([0, 0, 1, 1, 2])):
+                child_gender = random.choice(["male", "female"])
+                surname = emp.get("name", "").split()[-1] if emp.get("name") else "Tan"
+                child_dob = f"{random.randint(2015,2024)}-{random.randint(1,12):02d}-{random.randint(1,28):02d}"
+                fm_resp = client.post(f"/employees/{eid}/family-members", {
+                    "name": f"{random.choice(_CHILD_NAMES)} {surname}",
+                    "relationship": "child",
+                    "date_of_birth": child_dob,
+                    "gender": child_gender,
+                    "citizenship_status": "citizen",
+                })
+                if fm_resp.status_code in (200, 201):
+                    ok_fam += 1
+
+    _ok("Profile enrichment", f"patched={ok_patch}, emergency_contacts={ok_ec}, family_members={ok_fam}")
+
+
+def seed_role_promotions(client: ArborClient, employees: list[dict]) -> None:
+    """Step 3c: Promote specific employees to HR manager role."""
+    _print("\n--- Step 3c: Role Promotions ---")
+
+    # Grace Koh → HR Manager
+    for emp in employees:
+        if emp.get("email", "").lower() == "grace.koh@central-solutions.sg":
+            # The PATCH /employees endpoint updates employee fields but not user role.
+            # We need to use a different approach — check if there's an admin endpoint.
+            resp = client.patch(f"/employees/{emp['id']}", json={"designation": "HR Manager"})
+            if resp.status_code in (200, 201):
+                _ok("Grace Koh", "designation set to HR Manager")
+            # Role promotion requires admin user update — try /admin/users endpoint
+            user_id = emp.get("user_id")
+            if user_id:
+                role_resp = client.patch(f"/admin/users/{user_id}/role", json={"role": "hr_manager"})
+                if role_resp.status_code in (200, 201):
+                    _ok("Grace Koh", "role promoted to hr_manager")
+                else:
+                    _fail("Grace Koh role", f"admin endpoint returned {role_resp.status_code} — may need manual SQL: UPDATE users SET role='hr_manager' WHERE email='grace.koh@central-solutions.sg'")
+            break
+
+
 def seed_salary_components(client: ArborClient, employees: list[dict]) -> int:
     """Step 4: Create salary components for each employee."""
     _print("\n--- Step 4: Salary Components ---")
@@ -1711,6 +1890,18 @@ def main() -> None:
         # Re-login as admin (employee creation may have switched tokens)
         client.login(args.email, args.password)
 
+        # Step 3b: Enrich employee profiles
+        seed_employee_profiles(client, employees)
+
+        # Re-login as admin
+        client.login(args.email, args.password)
+
+        # Step 3c: Role promotions
+        seed_role_promotions(client, employees)
+
+        # Re-login as admin
+        client.login(args.email, args.password)
+
         # Step 4: Salary components
         seed_salary_components(client, employees)
 
@@ -1743,10 +1934,12 @@ def main() -> None:
         _print("\n" + "=" * 60)
         _print("Demo data seeding complete.")
         _print("=" * 60)
-        _print(f"\nAdmin login:    {args.email} / {args.password}")
-        _print(f"Employee login: (any employee email) / Employee2026!")
-        _print(f"Company:        {args.company_name}")
-        _print(f"API URL:        {args.api_url}")
+        _print(f"\nDemo accounts:")
+        _print(f"  Owner:      {args.email} / {args.password}")
+        _print(f"  HR Manager: grace.koh@central-solutions.sg / Employee2026!")
+        _print(f"  Employee:   lily.phang@central-solutions.sg / Employee2026!")
+        _print(f"  Company:    {args.company_name}")
+        _print(f"  API URL:    {args.api_url}")
         _print("")
 
     except httpx.HTTPStatusError as exc:
