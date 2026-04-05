@@ -203,6 +203,25 @@ def run_delegate_sync(
 
     response_text = "".join(text_parts)
 
+    # Strip leaked tool call JSON from response text.
+    # The LLM sometimes emits tool call arguments as text before the actual
+    # tool call event. These appear as JSON objects at the start of the response.
+    stripped = response_text.lstrip()
+    if stripped.startswith("{"):
+        # Find the end of the JSON object and strip it
+        brace_depth = 0
+        end_idx = 0
+        for i, ch in enumerate(stripped):
+            if ch == "{":
+                brace_depth += 1
+            elif ch == "}":
+                brace_depth -= 1
+                if brace_depth == 0:
+                    end_idx = i + 1
+                    break
+        if end_idx > 0:
+            response_text = stripped[end_idx:].lstrip()
+
     # Extract confidence/risk markers if present
     confidence = 0.7
     risk_tier = "amber"
