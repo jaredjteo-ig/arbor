@@ -634,7 +634,7 @@ export default function PayrollRunDetailPage({
                     <tbody>
                       {run.payslips.map((payslip, idx) => (
                         <PayslipRow
-                          key={payslip.payslip_id || payslip.id || idx}
+                          key={payslip.payslip_id || idx}
                           payslip={payslip}
                           runId={runId}
                         />
