@@ -11,29 +11,7 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# DataFlow helpers (same pattern used across the codebase)
-# ---------------------------------------------------------------------------
-
-
-def _execute_node(node_type: str, node_id: str, params: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, node_id, params)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results[node_id]
-
-
-def _extract_records(result) -> list[dict]:
-    if isinstance(result, list):
-        return result
-    if isinstance(result, dict) and "records" in result:
-        return result["records"]
-    return []
+from hr_advisory.services import dataflow_crud
 
 
 # ---------------------------------------------------------------------------
@@ -119,22 +97,15 @@ DEFAULT_POLICIES = [
 
 
 def _seed_policies(company_id: int) -> dict:
-    existing = _extract_records(
-        _execute_node(
-            "CompanyPolicyListNode",
-            "check_policies",
-            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-        )
-    )
+    existing = dataflow_crud.list_records("CompanyPolicy", {"company_id": company_id}, limit=1)
     if existing:
         return {"skipped": True, "reason": "policies already exist"}
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     count = 0
     for policy in DEFAULT_POLICIES:
-        _execute_node(
-            "CompanyPolicyCreateNode",
-            "create_policy",
+        dataflow_crud.create(
+            "CompanyPolicy",
             {
                 "company_id": company_id,
                 "policy_type": policy["policy_type"],
@@ -190,23 +161,13 @@ DEFAULT_CLAIM_CATEGORIES = [
 
 
 def _seed_claim_categories(company_id: int) -> dict:
-    existing = _extract_records(
-        _execute_node(
-            "ClaimCategoryListNode",
-            "check_categories",
-            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-        )
-    )
+    existing = dataflow_crud.list_records("ClaimCategory", {"company_id": company_id}, limit=1)
     if existing:
         return {"skipped": True, "reason": "claim categories already exist"}
 
     count = 0
     for cat in DEFAULT_CLAIM_CATEGORIES:
-        _execute_node(
-            "ClaimCategoryCreateNode",
-            "create_category",
-            {"company_id": company_id, "is_active": True, **cat},
-        )
+        dataflow_crud.create("ClaimCategory", {"company_id": company_id, "is_active": True, **cat})
         count += 1
     return {"created": count}
 
@@ -217,19 +178,12 @@ def _seed_claim_categories(company_id: int) -> dict:
 
 
 def _seed_attendance_settings(company_id: int) -> dict:
-    existing = _extract_records(
-        _execute_node(
-            "AttendanceSettingsListNode",
-            "check_settings",
-            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-        )
-    )
+    existing = dataflow_crud.list_records("AttendanceSettings", {"company_id": company_id}, limit=1)
     if existing:
         return {"skipped": True, "reason": "attendance settings already exist"}
 
-    _execute_node(
-        "AttendanceSettingsCreateNode",
-        "create_settings",
+    dataflow_crud.create(
+        "AttendanceSettings",
         {
             "company_id": company_id,
             "work_start_time": "09:00",
@@ -255,23 +209,13 @@ DEFAULT_COST_CENTRES = [
 
 
 def _seed_demo_cost_centres(company_id: int) -> dict:
-    existing = _extract_records(
-        _execute_node(
-            "CostCentreListNode",
-            "check_cost_centres",
-            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-        )
-    )
+    existing = dataflow_crud.list_records("CostCentre", {"company_id": company_id}, limit=1)
     if existing:
         return {"skipped": True, "reason": "cost centres already exist"}
 
     count = 0
     for cc in DEFAULT_COST_CENTRES:
-        _execute_node(
-            "CostCentreCreateNode",
-            "create_cost_centre",
-            {"company_id": company_id, "is_active": True, **cc},
-        )
+        dataflow_crud.create("CostCentre", {"company_id": company_id, "is_active": True, **cc})
         count += 1
     return {"created": count}
 
@@ -349,23 +293,13 @@ DEFAULT_PAY_ITEMS = [
 
 
 def _seed_demo_pay_items(company_id: int) -> dict:
-    existing = _extract_records(
-        _execute_node(
-            "PayItemListNode",
-            "check_pay_items",
-            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-        )
-    )
+    existing = dataflow_crud.list_records("PayItem", {"company_id": company_id}, limit=1)
     if existing:
         return {"skipped": True, "reason": "pay items already exist"}
 
     count = 0
     for item in DEFAULT_PAY_ITEMS:
-        _execute_node(
-            "PayItemCreateNode",
-            "create_pay_item",
-            {"company_id": company_id, **item},
-        )
+        dataflow_crud.create("PayItem", {"company_id": company_id, **item})
         count += 1
     return {"created": count}
 
@@ -393,23 +327,13 @@ DEFAULT_PROJECTS = [
 
 
 def _seed_demo_projects(company_id: int) -> dict:
-    existing = _extract_records(
-        _execute_node(
-            "ProjectListNode",
-            "check_projects",
-            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-        )
-    )
+    existing = dataflow_crud.list_records("Project", {"company_id": company_id}, limit=1)
     if existing:
         return {"skipped": True, "reason": "projects already exist"}
 
     count = 0
     for proj in DEFAULT_PROJECTS:
-        _execute_node(
-            "ProjectCreateNode",
-            "create_project",
-            {"company_id": company_id, **proj},
-        )
+        dataflow_crud.create("Project", {"company_id": company_id, **proj})
         count += 1
     return {"created": count}
 
@@ -426,23 +350,13 @@ DEFAULT_PROJECT_ROLES = [
 
 
 def _seed_demo_project_roles(company_id: int) -> dict:
-    existing = _extract_records(
-        _execute_node(
-            "ProjectRoleListNode",
-            "check_project_roles",
-            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-        )
-    )
+    existing = dataflow_crud.list_records("ProjectRole", {"company_id": company_id}, limit=1)
     if existing:
         return {"skipped": True, "reason": "project roles already exist"}
 
     count = 0
     for role in DEFAULT_PROJECT_ROLES:
-        _execute_node(
-            "ProjectRoleCreateNode",
-            "create_project_role",
-            {"company_id": company_id, **role},
-        )
+        dataflow_crud.create("ProjectRole", {"company_id": company_id, **role})
         count += 1
     return {"created": count}
 
@@ -453,28 +367,20 @@ def _seed_demo_project_roles(company_id: int) -> dict:
 
 
 def _seed_demo_inventory(company_id: int) -> dict:
-    existing = _extract_records(
-        _execute_node(
-            "InventoryLocationListNode",
-            "check_inv_locations",
-            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-        )
-    )
+    existing = dataflow_crud.list_records("InventoryLocation", {"company_id": company_id}, limit=1)
     if existing:
         return {"skipped": True, "reason": "inventory already exists"}
 
     # 1. Create location
-    loc_result = _execute_node(
-        "InventoryLocationCreateNode",
-        "create_location",
+    loc_result = dataflow_crud.create(
+        "InventoryLocation",
         {"company_id": company_id, "name": "Main Office", "organization_scope": "all"},
     )
     location_id = loc_result["id"]
 
     # 2. Create categories
-    it_cat_result = _execute_node(
-        "InventoryCategoryCreateNode",
-        "create_it_category",
+    it_cat_result = dataflow_crud.create(
+        "InventoryCategory",
         {
             "company_id": company_id,
             "location_id": location_id,
@@ -485,9 +391,8 @@ def _seed_demo_inventory(company_id: int) -> dict:
     )
     it_cat_id = it_cat_result["id"]
 
-    office_cat_result = _execute_node(
-        "InventoryCategoryCreateNode",
-        "create_office_category",
+    office_cat_result = dataflow_crud.create(
+        "InventoryCategory",
         {
             "company_id": company_id,
             "location_id": location_id,
@@ -547,9 +452,8 @@ def _seed_demo_inventory(company_id: int) -> dict:
 
     count = 0
     for item in items:
-        _execute_node(
-            "InventoryItemCreateNode",
-            "create_inv_item",
+        dataflow_crud.create(
+            "InventoryItem",
             {"company_id": company_id, "location_id": location_id, **item},
         )
         count += 1
@@ -614,19 +518,12 @@ DEFAULT_APPRAISAL_SECTIONS = [
 
 
 def _seed_demo_appraisal_template(company_id: int) -> dict:
-    existing = _extract_records(
-        _execute_node(
-            "AppraisalTemplateListNode",
-            "check_appraisal_templates",
-            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-        )
-    )
+    existing = dataflow_crud.list_records("AppraisalTemplate", {"company_id": company_id}, limit=1)
     if existing:
         return {"skipped": True, "reason": "appraisal templates already exist"}
 
-    _execute_node(
-        "AppraisalTemplateCreateNode",
-        "create_appraisal_template",
+    dataflow_crud.create(
+        "AppraisalTemplate",
         {
             "company_id": company_id,
             "name": "Annual Performance Review",
@@ -686,22 +583,12 @@ DEFAULT_JOB_LISTINGS = [
 
 
 def _seed_demo_job_listings(company_id: int) -> dict:
-    existing = _extract_records(
-        _execute_node(
-            "JobListingListNode",
-            "check_job_listings",
-            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-        )
-    )
+    existing = dataflow_crud.list_records("JobListing", {"company_id": company_id}, limit=1)
     if existing:
         return {"skipped": True, "reason": "job listings already exist"}
 
     count = 0
     for listing in DEFAULT_JOB_LISTINGS:
-        _execute_node(
-            "JobListingCreateNode",
-            "create_job_listing",
-            {"company_id": company_id, **listing},
-        )
+        dataflow_crud.create("JobListing", {"company_id": company_id, **listing})
         count += 1
     return {"created": count}

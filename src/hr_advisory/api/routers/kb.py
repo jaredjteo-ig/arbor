@@ -2,7 +2,6 @@
 
 Handles queries to the regulatory knowledge base including
 provisions, acts, domains, and cross-references.
-All database operations use DataFlow workflow nodes via Kailash runtime.
 """
 
 import logging
@@ -11,46 +10,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
 from hr_advisory.security.validation import sanitise_input, validate_query_length
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-def _execute_node(node_type: str, node_id: str, params: dict) -> dict:
-    """Run a single DataFlow workflow node and return the result."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, node_id, params)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results[node_id]
-
-
-def _extract_records(result) -> list[dict]:
-    """Extract the record list from a DataFlow ListNode result.
-
-    DataFlow ListNode returns either a plain list or
-    ``{"records": [...], "count": N, ...}``.
-    """
-    if isinstance(result, list):
-        return result
-    if isinstance(result, dict) and "records" in result:
-        return result["records"]
-    return []
-
-
 @router.get("/acts")
 async def list_acts(current_user: dict = Depends(get_current_user)) -> dict:
     """List all legislative acts in the knowledge base."""
     try:
-        result = _execute_node(
-            "ActListNode",
-            "list_acts",
-            {"filter": {}, "enable_cache": False, "limit": 1000},
-        )
+        records = dataflow_crud.list_records("Act", {}, limit=1000)
     except Exception as exc:
         logger.error("Failed to query acts from knowledge base: %s", exc)
         raise HTTPException(
@@ -58,7 +29,6 @@ async def list_acts(current_user: dict = Depends(get_current_user)) -> dict:
             detail="Failed to retrieve acts. Please try again later.",
         ) from exc
 
-    records = _extract_records(result)
     return {
         "acts": records,
         "total": len(records),
@@ -69,11 +39,7 @@ async def list_acts(current_user: dict = Depends(get_current_user)) -> dict:
 async def list_domains(current_user: dict = Depends(get_current_user)) -> dict:
     """List all HR knowledge domains."""
     try:
-        result = _execute_node(
-            "DomainListNode",
-            "list_domains",
-            {"filter": {}, "enable_cache": False, "limit": 1000},
-        )
+        records = dataflow_crud.list_records("Domain", {}, limit=1000)
     except Exception as exc:
         logger.error("Failed to query domains from knowledge base: %s", exc)
         raise HTTPException(
@@ -81,7 +47,6 @@ async def list_domains(current_user: dict = Depends(get_current_user)) -> dict:
             detail="Failed to retrieve domains. Please try again later.",
         ) from exc
 
-    records = _extract_records(result)
     return {
         "domains": records,
         "total": len(records),
@@ -101,19 +66,13 @@ async def get_provision_by_reference(
     """
     # Search all provisions for one whose section matches the reference
     try:
-        result = _execute_node(
-            "ProvisionListNode",
-            "lookup_by_ref",
-            {"filter": {}, "enable_cache": False, "limit": 5000},
-        )
+        records = dataflow_crud.list_records("Provision", {}, limit=5000)
     except Exception as exc:
         logger.error("Failed to query provisions for reference lookup: %s", exc)
         raise HTTPException(
             status_code=500,
             detail="Failed to search provisions. Please try again later.",
         ) from exc
-
-    records = _extract_records(result)
 
     # Try exact match on section first, then partial match
     ref_lower = reference.lower()
@@ -147,16 +106,9 @@ async def get_provision_by_reference(
     practical_examples: list[dict] = []
 
     try:
-        xref_result = _execute_node(
-            "CrossReferenceListNode",
-            "list_xrefs_ref",
-            {
-                "filter": {"source_provision_id": provision_id},
-                "enable_cache": False,
-                "limit": 1000,
-            },
+        cross_references = dataflow_crud.list_records(
+            "CrossReference", {"source_provision_id": provision_id}, limit=1000
         )
-        cross_references = _extract_records(xref_result)
     except Exception as exc:
         logger.warning(
             "Failed to fetch cross-references for provision ref=%s: %s",
@@ -165,16 +117,9 @@ async def get_provision_by_reference(
         )
 
     try:
-        rules_result = _execute_node(
-            "ApplicabilityRuleListNode",
-            "list_rules_ref",
-            {
-                "filter": {"provision_id": provision_id},
-                "enable_cache": False,
-                "limit": 1000,
-            },
+        applicability_rules = dataflow_crud.list_records(
+            "ApplicabilityRule", {"provision_id": provision_id}, limit=1000
         )
-        applicability_rules = _extract_records(rules_result)
     except Exception as exc:
         logger.warning(
             "Failed to fetch applicability rules for provision ref=%s: %s",
@@ -183,16 +128,9 @@ async def get_provision_by_reference(
         )
 
     try:
-        examples_result = _execute_node(
-            "PracticalExampleListNode",
-            "list_examples_ref",
-            {
-                "filter": {"provision_id": provision_id},
-                "enable_cache": False,
-                "limit": 1000,
-            },
+        practical_examples = dataflow_crud.list_records(
+            "PracticalExample", {"provision_id": provision_id}, limit=1000
         )
-        practical_examples = _extract_records(examples_result)
     except Exception as exc:
         logger.warning(
             "Failed to fetch practical examples for provision ref=%s: %s",
@@ -215,11 +153,7 @@ async def get_provision(
     """Get a specific provision by ID with related cross-references."""
     # Read the provision
     try:
-        provision = _execute_node(
-            "ProvisionReadNode",
-            "read_provision",
-            {"id": provision_id},
-        )
+        provision = dataflow_crud.read("Provision", provision_id)
     except Exception as exc:
         logger.error("Failed to read provision id=%s: %s", provision_id, exc)
         raise HTTPException(
@@ -227,7 +161,7 @@ async def get_provision(
             detail="Failed to retrieve provision. Please try again later.",
         ) from exc
 
-    if not provision or provision.get("error") or provision.get("failed"):
+    if not provision:
         raise HTTPException(
             status_code=404,
             detail=f"Provision with id={provision_id} not found",
@@ -239,16 +173,9 @@ async def get_provision(
     practical_examples: list[dict] = []
 
     try:
-        xref_result = _execute_node(
-            "CrossReferenceListNode",
-            "list_xrefs",
-            {
-                "filter": {"source_provision_id": provision_id},
-                "enable_cache": False,
-                "limit": 1000,
-            },
+        cross_references = dataflow_crud.list_records(
+            "CrossReference", {"source_provision_id": provision_id}, limit=1000
         )
-        cross_references = _extract_records(xref_result)
     except Exception as exc:
         logger.warning(
             "Failed to fetch cross-references for provision id=%s: %s",
@@ -257,16 +184,9 @@ async def get_provision(
         )
 
     try:
-        rules_result = _execute_node(
-            "ApplicabilityRuleListNode",
-            "list_rules",
-            {
-                "filter": {"provision_id": provision_id},
-                "enable_cache": False,
-                "limit": 1000,
-            },
+        applicability_rules = dataflow_crud.list_records(
+            "ApplicabilityRule", {"provision_id": provision_id}, limit=1000
         )
-        applicability_rules = _extract_records(rules_result)
     except Exception as exc:
         logger.warning(
             "Failed to fetch applicability rules for provision id=%s: %s",
@@ -275,16 +195,9 @@ async def get_provision(
         )
 
     try:
-        examples_result = _execute_node(
-            "PracticalExampleListNode",
-            "list_examples",
-            {
-                "filter": {"provision_id": provision_id},
-                "enable_cache": False,
-                "limit": 1000,
-            },
+        practical_examples = dataflow_crud.list_records(
+            "PracticalExample", {"provision_id": provision_id}, limit=1000
         )
-        practical_examples = _extract_records(examples_result)
     except Exception as exc:
         logger.warning(
             "Failed to fetch practical examples for provision id=%s: %s",
@@ -330,11 +243,7 @@ async def query_provisions(
         df_filter["source_act_id"] = act_id
 
     try:
-        result = _execute_node(
-            "ProvisionListNode",
-            "query_provisions",
-            {"filter": df_filter, "enable_cache": False, "limit": limit},
-        )
+        records = dataflow_crud.list_records("Provision", df_filter, limit=limit)
     except Exception as exc:
         logger.error(
             "Failed to query provisions (domain_id=%s, act_id=%s): %s",
@@ -346,8 +255,6 @@ async def query_provisions(
             status_code=500,
             detail="Failed to query provisions. Please try again later.",
         ) from exc
-
-    records = _extract_records(result)
 
     # Apply keyword filter in Python if specified
     if keyword:

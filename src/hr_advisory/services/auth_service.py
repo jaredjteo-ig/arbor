@@ -226,49 +226,25 @@ class AuthService:
     # ------------------------------------------------------------------
 
     def _find_user_by_email(self, email: str) -> dict | None:
-        """Look up a user record by email using DataFlow UserListNode.
+        """Look up a user record by email.
 
         Returns the user dict if found, or None.
-        Cache is disabled to ensure fresh lookups (critical for
-        duplicate-email checks during registration).
         """
-        from kailash.runtime import LocalRuntime
-        from kailash.workflow.builder import WorkflowBuilder
+        from hr_advisory.services import dataflow_crud
 
-        # Ensure models are registered
-        import hr_advisory.models  # noqa: F401
-
-        wf = WorkflowBuilder()
-        wf.add_node(
-            "UserListNode",
-            "find",
-            {"filter": {"email": email}, "limit": 1, "enable_cache": False},
-        )
-        runtime = LocalRuntime()
-        results, _ = runtime.execute(wf.build())
-        records = results["find"].get("records", [])
+        records = dataflow_crud.list_records("User", {"email": email}, limit=1)
         if records:
             return records[0]
         return None
 
     def _find_user_by_id(self, user_id: int) -> dict | None:
-        """Look up a user record by ID using DataFlow UserReadNode.
+        """Look up a user record by ID.
 
         Returns the user dict if found, or None.
         """
-        from kailash.runtime import LocalRuntime
-        from kailash.workflow.builder import WorkflowBuilder
+        from hr_advisory.services import dataflow_crud
 
-        import hr_advisory.models  # noqa: F401
-
-        wf = WorkflowBuilder()
-        wf.add_node("UserReadNode", "read", {"id": user_id})
-        runtime = LocalRuntime()
-        results, _ = runtime.execute(wf.build())
-        result = results.get("read", {})
-        if result.get("error") or result.get("failed"):
-            return None
-        return result
+        return dataflow_crud.read("User", user_id)
 
     def _create_user(
         self,
@@ -278,19 +254,16 @@ class AuthService:
         company_id: int | None = None,
         role: str = "owner",
     ) -> dict:
-        """Create a new user via DataFlow UserCreateNode.
+        """Create a new user via DataFlow.
 
         Returns the created user dict including the database-generated id.
 
         Note: DataFlow's CreateNode returns only the input params and
         rows_affected -- it does NOT return the auto-generated primary key.
-        We therefore follow up with a ListNode lookup by email to retrieve
+        We therefore follow up with a list lookup by email to retrieve
         the full record including the id.
         """
-        from kailash.runtime import LocalRuntime
-        from kailash.workflow.builder import WorkflowBuilder
-
-        import hr_advisory.models  # noqa: F401
+        from hr_advisory.services import dataflow_crud
 
         params: dict = {
             "email": email,
@@ -302,11 +275,7 @@ class AuthService:
         if company_id is not None:
             params["company_id"] = company_id
 
-        wf = WorkflowBuilder()
-        wf.add_node("UserCreateNode", "create", params)
-        runtime = LocalRuntime()
-        results, _ = runtime.execute(wf.build())
-        create_result = results["create"]
+        create_result = dataflow_crud.create("User", params)
 
         # CreateNode doesn't return the auto-generated id, so fetch it.
         if "id" not in create_result:
@@ -318,25 +287,13 @@ class AuthService:
         return create_result
 
     def _update_user(self, user_id: int, updates: dict) -> dict:
-        """Update a user record via DataFlow UserUpdateNode.
+        """Update a user record via DataFlow.
 
-        Uses the v0.6 API: filter + fields.
         Returns the updated user dict.
         """
-        from kailash.runtime import LocalRuntime
-        from kailash.workflow.builder import WorkflowBuilder
+        from hr_advisory.services import dataflow_crud
 
-        import hr_advisory.models  # noqa: F401
-
-        wf = WorkflowBuilder()
-        wf.add_node(
-            "UserUpdateNode",
-            "update",
-            {"filter": {"id": user_id}, "fields": updates},
-        )
-        runtime = LocalRuntime()
-        results, _ = runtime.execute(wf.build())
-        return results["update"]
+        return dataflow_crud.update("User", user_id, updates)
 
     # ------------------------------------------------------------------
     # High-level auth operations
@@ -422,10 +379,7 @@ class AuthService:
         Returns the new company_id, or None on failure. Failures are logged
         but never raised -- the user is still registered without a company.
         """
-        from kailash.runtime import LocalRuntime
-        from kailash.workflow.builder import WorkflowBuilder
-
-        import hr_advisory.models  # noqa: F401
+        from hr_advisory.services import dataflow_crud
 
         try:
             # Step 1: Create the Company
@@ -442,28 +396,14 @@ class AuthService:
                 "profile_completeness_score": 0.0,
             }
 
-            wf = WorkflowBuilder()
-            wf.add_node("CompanyCreateNode", "create_company", create_params)
-            runtime = LocalRuntime()
-            results, _ = runtime.execute(wf.build())
-            create_result = results["create_company"]
+            create_result = dataflow_crud.create("Company", create_params)
 
             # Step 2: Look up the created company to get the ID
             company_id = create_result.get("id")
             if company_id is None:
-                wf2 = WorkflowBuilder()
-                wf2.add_node(
-                    "CompanyListNode",
-                    "find_company",
-                    {
-                        "filter": {"name": company_name.strip()},
-                        "limit": 1,
-                        "enable_cache": False,
-                    },
+                records = dataflow_crud.list_records(
+                    "Company", {"name": company_name.strip()}, limit=1
                 )
-                runtime2 = LocalRuntime()
-                results2, _ = runtime2.execute(wf2.build())
-                records = results2["find_company"].get("records", [])
                 if records:
                     company_id = records[-1].get("id")
 

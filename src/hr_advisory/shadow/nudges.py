@@ -29,30 +29,7 @@ __all__ = [
 _MAX_NUDGES = 3
 
 
-# ── DataFlow helper ───────────────────────────────────────────
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    """Execute a DataFlow ListNode query and return the record list."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    with LocalRuntime() as runtime:
-        results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
+from hr_advisory.services import dataflow_crud
 
 
 # ── Page-specific nudge generators ────────────────────────────
@@ -100,8 +77,8 @@ def _nudges_dashboard(company_id: int, user_role: str) -> list[dict[str, Any]]:
     # Pending leave requests nudge (for admin roles)
     if user_role in ("admin", "hr", "hr_admin", "owner", "manager"):
         try:
-            pending = _dataflow_list(
-                "LeaveApplicationListNode",
+            pending = dataflow_crud.list_records(
+                "LeaveApplication",
                 {"company_id": company_id, "status": "pending"},
                 limit=100,
             )
@@ -130,8 +107,8 @@ def _nudges_employees(company_id: int) -> list[dict[str, Any]]:
 
     # Work pass expiry nudge
     try:
-        employees = _dataflow_list(
-            "EmployeeListNode",
+        employees = dataflow_crud.list_records(
+            "Employee",
             {"company_id": company_id, "is_active": True},
             limit=10000,
         )
@@ -174,8 +151,8 @@ def _nudges_payroll(company_id: int) -> list[dict[str, Any]]:
 
     # Draft payroll runs that haven't been processed
     try:
-        draft_runs = _dataflow_list(
-            "PayrollRunListNode",
+        draft_runs = dataflow_crud.list_records(
+            "PayrollRun",
             {"company_id": company_id, "status": "draft"},
             limit=10,
         )
@@ -229,8 +206,8 @@ def _nudges_leave(company_id: int, user_role: str) -> list[dict[str, Any]]:
     if user_role in ("admin", "hr", "hr_admin", "owner", "manager"):
         # Old pending applications (pending for more than 3 days)
         try:
-            pending = _dataflow_list(
-                "LeaveApplicationListNode",
+            pending = dataflow_crud.list_records(
+                "LeaveApplication",
                 {"company_id": company_id, "status": "pending"},
                 limit=100,
             )
@@ -271,8 +248,8 @@ def _nudges_claims(company_id: int, user_role: str) -> list[dict[str, Any]]:
 
     if user_role in ("admin", "hr", "hr_admin", "owner", "manager"):
         try:
-            pending_claims = _dataflow_list(
-                "ClaimListNode",
+            pending_claims = dataflow_crud.list_records(
+                "Claim",
                 {"company_id": company_id, "status": "submitted"},
                 limit=100,
             )

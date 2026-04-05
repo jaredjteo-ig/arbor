@@ -360,7 +360,7 @@ class TestRecordUsageValidation:
             )
 
     @patch("hr_advisory.services.llm_budget._get_or_create_usage")
-    @patch("hr_advisory.services.llm_budget._execute_node")
+    @patch("hr_advisory.services.dataflow_crud.update")
     def test_record_usage_calculates_cost(self, mock_exec, mock_get_usage) -> None:
         """record_usage() correctly calculates and accumulates cost."""
         mock_get_usage.return_value = _mock_usage(
@@ -388,7 +388,7 @@ class TestRecordUsageValidation:
         assert result["estimated_cost"] == pytest.approx(0.50 + expected_query_cost, abs=1e-6)
 
     @patch("hr_advisory.services.llm_budget._get_or_create_usage")
-    @patch("hr_advisory.services.llm_budget._execute_node")
+    @patch("hr_advisory.services.dataflow_crud.update")
     def test_record_usage_gpt5_chat_latest(self, mock_exec, mock_get_usage) -> None:
         """record_usage() cost for gpt-5-chat-latest at $1.25/$10.00."""
         mock_get_usage.return_value = _mock_usage(usage_id=10)

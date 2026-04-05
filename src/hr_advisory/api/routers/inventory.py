@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 
@@ -33,79 +34,9 @@ def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_L
     return value
 
 
-# --------------------------------------------------------------------------
-# DataFlow helpers
-# --------------------------------------------------------------------------
-
-
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-
-def _dataflow_update(node_type: str, record_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "update", {"filter": {"id": record_id}, "fields": updates})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
-
-
-def _dataflow_read(node_type: str, record_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "read", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
-
-
 def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
     """Resolve the Employee record for a given user_id + company_id."""
-    records = _dataflow_list(
-        "EmployeeListNode",
+    records = dataflow_crud.list_records("Employee",
         {"user_id": user_id, "company_id": company_id},
         limit=1,
     )
@@ -114,7 +45,7 @@ def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
 
 def _verify_item_ownership(item_id: int, company_id: int) -> dict:
     """Load an inventory item and verify tenant ownership. Raises 404 on failure."""
-    item = _dataflow_read("InventoryItemReadNode", item_id)
+    item = dataflow_crud.read("InventoryItem", item_id)
     if not item or item.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Item not found.")
     return item
@@ -129,8 +60,7 @@ def _record_movement(
     notes: str = "",
 ) -> dict:
     """Create an inventory movement audit record."""
-    return _dataflow_create(
-        "InventoryMovementCreateNode",
+    return dataflow_crud.create("InventoryMovement",
         {
             "item_id": item_id,
             "company_id": company_id,
@@ -157,7 +87,7 @@ async def list_locations(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    locations = _dataflow_list("InventoryLocationListNode", {"company_id": company_id})
+    locations = dataflow_crud.list_records("InventoryLocation", {"company_id": company_id})
     return {"locations": locations, "count": len(locations)}
 
 
@@ -179,8 +109,7 @@ async def create_location(
     _validate_text_length(name, "name", MAX_NAME_LENGTH)
     _validate_text_length(body.get("description", ""), "description")
 
-    location = _dataflow_create(
-        "InventoryLocationCreateNode",
+    location = dataflow_crud.create("InventoryLocation",
         {
             "company_id": company_id,
             "name": name,
@@ -205,7 +134,7 @@ async def list_categories(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    categories = _dataflow_list("InventoryCategoryListNode", {"company_id": company_id})
+    categories = dataflow_crud.list_records("InventoryCategory", {"company_id": company_id})
     return {"categories": categories, "count": len(categories)}
 
 
@@ -227,8 +156,7 @@ async def create_category(
     _validate_text_length(name, "name", MAX_NAME_LENGTH)
     _validate_text_length(body.get("description", ""), "description")
 
-    category = _dataflow_create(
-        "InventoryCategoryCreateNode",
+    category = dataflow_crud.create("InventoryCategory",
         {
             "company_id": company_id,
             "name": name,
@@ -263,7 +191,7 @@ async def list_items(
     if status:
         filters["status"] = status
 
-    items = _dataflow_list("InventoryItemListNode", filters)
+    items = dataflow_crud.list_records("InventoryItem", filters)
     return {"items": items, "count": len(items)}
 
 
@@ -290,8 +218,7 @@ async def create_item(
         raise HTTPException(status_code=400, detail="Invalid numeric value.")
 
     actor_id = int(current_user.get("sub", 0))
-    item = _dataflow_create(
-        "InventoryItemCreateNode",
+    item = dataflow_crud.create("InventoryItem",
         {
             "company_id": company_id,
             "name": name,
@@ -340,7 +267,7 @@ async def update_item(
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = _dataflow_update("InventoryItemUpdateNode", item_id, updates)
+    result = dataflow_crud.update("InventoryItem", item_id, updates)
     return {"item": result}
 
 
@@ -370,8 +297,7 @@ async def reserve_item(
         raise HTTPException(status_code=400, detail="employee_id is required.")
 
     actor_id = int(current_user.get("sub", 0))
-    _dataflow_update(
-        "InventoryItemUpdateNode",
+    dataflow_crud.update("InventoryItem",
         item_id,
         {
             "status": "reserved",
@@ -404,8 +330,7 @@ async def issue_item(
         raise HTTPException(status_code=400, detail="employee_id is required.")
 
     actor_id = int(current_user.get("sub", 0))
-    _dataflow_update(
-        "InventoryItemUpdateNode",
+    dataflow_crud.update("InventoryItem",
         item_id,
         {
             "status": "issued",
@@ -437,8 +362,7 @@ async def acknowledge_item(
     if not emp or emp.get("id") != item.get("assigned_to_employee_id"):
         raise HTTPException(status_code=403, detail="Only the assigned employee can acknowledge.")
 
-    _dataflow_update(
-        "InventoryItemUpdateNode",
+    dataflow_crud.update("InventoryItem",
         item_id,
         {
             "status": "acknowledged",
@@ -473,8 +397,7 @@ async def return_item(
             raise HTTPException(status_code=403, detail="Access denied.")
 
     body = await request.json() if True else {}  # body optional
-    _dataflow_update(
-        "InventoryItemUpdateNode",
+    dataflow_crud.update("InventoryItem",
         item_id,
         {
             "status": "available",
@@ -512,8 +435,7 @@ async def dispose_item(
 
     body = await request.json()
     actor_id = int(current_user.get("sub", 0))
-    _dataflow_update(
-        "InventoryItemUpdateNode",
+    dataflow_crud.update("InventoryItem",
         item_id,
         {
             "status": "disposed",
@@ -542,7 +464,7 @@ async def item_history(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     _verify_item_ownership(item_id, company_id)
-    movements = _dataflow_list("InventoryMovementListNode", {"item_id": item_id})
+    movements = dataflow_crud.list_records("InventoryMovement", {"item_id": item_id})
     return {"movements": movements, "count": len(movements)}
 
 
@@ -574,8 +496,7 @@ async def create_item_request(
     _validate_text_length(item_name, "item_name", MAX_NAME_LENGTH)
     _validate_text_length(body.get("reason", ""), "reason")
 
-    req = _dataflow_create(
-        "InventoryRequestCreateNode",
+    req = dataflow_crud.create("InventoryRequest",
         {
             "company_id": company_id,
             "employee_id": emp.get("id"),
@@ -616,7 +537,7 @@ async def list_item_requests(
     if status:
         filters["status"] = status
 
-    requests = _dataflow_list("InventoryRequestListNode", filters)
+    requests = dataflow_crud.list_records("InventoryRequest", filters)
     return {"requests": requests, "count": len(requests)}
 
 
@@ -630,15 +551,14 @@ async def approve_item_request(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("InventoryRequestReadNode", request_id)
+    existing = dataflow_crud.read("InventoryRequest", request_id)
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Request not found.")
 
     if existing.get("status") != "pending":
         raise HTTPException(status_code=400, detail="Request is not pending.")
 
-    result = _dataflow_update(
-        "InventoryRequestUpdateNode",
+    result = dataflow_crud.update("InventoryRequest",
         request_id,
         {
             "status": "approved",
@@ -660,7 +580,7 @@ async def deny_item_request(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("InventoryRequestReadNode", request_id)
+    existing = dataflow_crud.read("InventoryRequest", request_id)
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Request not found.")
 
@@ -668,8 +588,7 @@ async def deny_item_request(
         raise HTTPException(status_code=400, detail="Request is not pending.")
 
     body = await request.json()
-    result = _dataflow_update(
-        "InventoryRequestUpdateNode",
+    result = dataflow_crud.update("InventoryRequest",
         request_id,
         {
             "status": "denied",

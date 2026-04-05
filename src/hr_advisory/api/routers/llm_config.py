@@ -24,6 +24,7 @@ from hr_advisory.api.middleware.auth_middleware import require_role
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
 from hr_advisory.security.llm_encryption import encrypt_api_key
 from hr_advisory.services.audit_log import AuditAction, log_audit_event
+from hr_advisory.services import dataflow_crud
 from hr_advisory.services.llm_config import (
     VALID_PROVIDERS,
     delete_llm_config,
@@ -741,18 +742,11 @@ async def get_user_llm_config(
 
     # Query user config directly (not the combined resolver which may return company config)
     try:
-        from hr_advisory.services.llm_config import _execute_node, _extract_records
-
-        result = _execute_node(
-            "UserLLMConfigListNode",
-            "find_user",
-            {
-                "filter": {"user_id": user_id, "is_active": True},
-                "limit": 1,
-                "enable_cache": False,
-            },
+        records = dataflow_crud.list_records(
+            "UserLLMConfig",
+            {"user_id": user_id, "is_active": True},
+            limit=1,
         )
-        records = _extract_records(result)
         if records and records[0].get("status") == "active":
             return {"config": _config_to_response(records[0]), "source": "user"}
     except Exception:

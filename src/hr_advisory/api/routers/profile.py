@@ -2,7 +2,6 @@
 
 Handles company profile CRUD operations, workforce composition
 updates, and profile completeness scoring.
-Uses DataFlow workflow nodes for all data operations.
 """
 
 import logging
@@ -12,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 
@@ -79,29 +79,6 @@ DEFAULT_POLICIES = [
 ]
 
 
-def _execute_node(node_type: str, node_id: str, params: dict) -> dict:
-    """Run a single DataFlow workflow node and return the result."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401 — ensure models are registered
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, node_id, params)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results[node_id]
-
-
-def _extract_records(result) -> list[dict]:
-    """Extract the record list from a DataFlow ListNode result."""
-    if isinstance(result, list):
-        return result
-    if isinstance(result, dict) and "records" in result:
-        return result["records"]
-    return []
-
-
 def _compute_completeness(company: dict) -> float:
     """Compute profile completeness score based on filled fields."""
     import math
@@ -136,32 +113,15 @@ def _seed_default_policies(company_id: int) -> None:
     Only seeds if the company has no existing policies, making this safe
     to call multiple times (idempotent).
     """
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    # Check if policies already exist for this company
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "CompanyPolicyListNode",
-        "check",
-        {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    existing = _extract_records(results["check"])
+    existing = dataflow_crud.list_records("CompanyPolicy", {"company_id": company_id}, limit=1)
     if existing:
         logger.info("Policies already exist for company_id=%s, skipping seed.", company_id)
         return
 
-    # Seed default policies
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for policy in DEFAULT_POLICIES:
-        wf = WorkflowBuilder()
-        wf.add_node(
-            "CompanyPolicyCreateNode",
-            "create_policy",
+        dataflow_crud.create(
+            "CompanyPolicy",
             {
                 "company_id": company_id,
                 "policy_type": policy["policy_type"],
@@ -171,8 +131,6 @@ def _seed_default_policies(company_id: int) -> None:
                 "is_active": True,
             },
         )
-        runtime = LocalRuntime()
-        results, _ = runtime.execute(wf.build())
     logger.info("Seeded %d default policies for company_id=%s", len(DEFAULT_POLICIES), company_id)
 
 
@@ -212,7 +170,7 @@ async def get_company_profile(
     """Get the full company profile including workforce composition."""
     validate_company_access(current_user, requested_company_id=company_id)
     try:
-        result = _execute_node("CompanyReadNode", "read", {"id": company_id})
+        result = dataflow_crud.read("Company", company_id)
     except Exception as exc:
         logger.error("Failed to read company id=%s: %s", company_id, exc)
         raise HTTPException(
@@ -220,7 +178,7 @@ async def get_company_profile(
             detail="Failed to retrieve company profile. Please try again later.",
         ) from exc
 
-    if not result or result.get("error") or result.get("failed"):
+    if not result:
         raise HTTPException(status_code=404, detail=f"Company with id={company_id} not found")
 
     return _company_to_response(result)
@@ -267,7 +225,7 @@ async def create_company_profile(
     create_params["profile_completeness_score"] = _compute_completeness(create_params)
 
     try:
-        result = _execute_node("CompanyCreateNode", "create", create_params)
+        result = dataflow_crud.create("Company", create_params)
     except Exception as exc:
         logger.error("Failed to create company: %s", exc)
         raise HTTPException(
@@ -276,16 +234,11 @@ async def create_company_profile(
         ) from exc
 
     # DataFlow CreateNode doesn't return the auto-generated id.
-    # Fetch the created record by name+UEN to get the id.
+    # Fetch the created record by name to get the id.
     company_id = result.get("id")
     if company_id is None:
         try:
-            lookup = _execute_node(
-                "CompanyListNode",
-                "find_created",
-                {"filter": {"name": name.strip()}, "limit": 1, "enable_cache": False},
-            )
-            records = _extract_records(lookup)
+            records = dataflow_crud.list_records("Company", {"name": name.strip()}, limit=1)
             if records:
                 company_id = records[-1].get("id")
         except Exception:
@@ -295,11 +248,7 @@ async def create_company_profile(
     user_id = current_user.get("sub")
     if company_id is not None and user_id is not None:
         try:
-            _execute_node(
-                "UserUpdateNode",
-                "link_company",
-                {"filter": {"id": int(user_id)}, "fields": {"company_id": company_id}},
-            )
+            dataflow_crud.update("User", int(user_id), {"company_id": company_id})
             logger.info("Linked company_id=%s to user_id=%s", company_id, user_id)
         except Exception as exc:
             logger.warning(
@@ -347,7 +296,7 @@ async def update_company_profile(
 
     # Verify company exists first
     try:
-        existing = _execute_node("CompanyReadNode", "read_check", {"id": company_id})
+        existing = dataflow_crud.read("Company", company_id)
     except Exception as exc:
         logger.error("Failed to read company id=%s for update: %s", company_id, exc)
         raise HTTPException(
@@ -355,7 +304,7 @@ async def update_company_profile(
             detail="Failed to verify company. Please try again later.",
         ) from exc
 
-    if not existing or existing.get("error") or existing.get("failed"):
+    if not existing:
         raise HTTPException(status_code=404, detail=f"Company with id={company_id} not found")
 
     # Only allow updating known fields
@@ -385,11 +334,7 @@ async def update_company_profile(
     updates["profile_completeness_score"] = _compute_completeness(merged)
 
     try:
-        _execute_node(
-            "CompanyUpdateNode",
-            "update",
-            {"filter": {"id": company_id}, "fields": updates},
-        )
+        dataflow_crud.update("Company", company_id, updates)
     except Exception as exc:
         logger.error("Failed to update company id=%s: %s", company_id, exc)
         raise HTTPException(
@@ -413,7 +358,7 @@ async def get_workforce_composition(
     """Get detailed workforce composition breakdown."""
     validate_company_access(current_user, requested_company_id=company_id)
     try:
-        result = _execute_node("CompanyReadNode", "read", {"id": company_id})
+        result = dataflow_crud.read("Company", company_id)
     except Exception as exc:
         logger.error("Failed to read company id=%s for workforce: %s", company_id, exc)
         raise HTTPException(
@@ -421,7 +366,7 @@ async def get_workforce_composition(
             detail="Failed to retrieve workforce composition. Please try again later.",
         ) from exc
 
-    if not result or result.get("error") or result.get("failed"):
+    if not result:
         raise HTTPException(status_code=404, detail=f"Company with id={company_id} not found")
 
     local = result.get("headcount_local", 0)

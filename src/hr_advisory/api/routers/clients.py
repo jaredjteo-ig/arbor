@@ -12,33 +12,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _execute_node(node_type: str, node_id: str, params: dict) -> dict:
-    """Run a single DataFlow workflow node and return the result."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401 -- ensure models are registered
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, node_id, params)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results[node_id]
-
-
-def _extract_records(result) -> list[dict]:
-    """Extract the record list from a DataFlow ListNode result."""
-    if isinstance(result, list):
-        return result
-    if isinstance(result, dict) and "records" in result:
-        return result["records"]
-    return []
 
 
 def _company_to_client(company: dict) -> dict:
@@ -77,16 +55,10 @@ async def list_clients(
 
     try:
         if role in ("platform_admin", "consultant"):
-            result = _execute_node(
-                "CompanyListNode",
-                "list_clients",
-                {"filter": {"is_active": True}, "limit": 200},
-            )
+            records = dataflow_crud.list_records("Company", {"is_active": True}, limit=200)
         elif user_company_id:
-            result = _execute_node(
-                "CompanyListNode",
-                "list_clients",
-                {"filter": {"id": user_company_id, "is_active": True}, "limit": 10},
+            records = dataflow_crud.list_records(
+                "Company", {"id": user_company_id, "is_active": True}, limit=10
             )
         else:
             return {"clients": [], "total": 0}
@@ -97,7 +69,6 @@ async def list_clients(
             detail="Failed to retrieve client list. Please try again later.",
         ) from exc
 
-    records = _extract_records(result)
     clients = [_company_to_client(r) for r in records]
 
     return {"clients": clients, "total": len(clients)}
@@ -139,7 +110,7 @@ async def create_client(
     }
 
     try:
-        result = _execute_node("CompanyCreateNode", "create_client", create_params)
+        result = dataflow_crud.create("Company", create_params)
     except Exception as exc:
         logger.error("Failed to create client: %s", exc)
         raise HTTPException(
@@ -151,12 +122,7 @@ async def create_client(
     company_id = result.get("id")
     if company_id is None:
         try:
-            lookup = _execute_node(
-                "CompanyListNode",
-                "find_created_client",
-                {"filter": {"name": name.strip()}, "limit": 1, "enable_cache": False},
-            )
-            records = _extract_records(lookup)
+            records = dataflow_crud.list_records("Company", {"name": name.strip()}, limit=1)
             if records:
                 company_id = records[-1].get("id")
         except Exception:
@@ -167,11 +133,7 @@ async def create_client(
         user_id = current_user.get("sub") or current_user.get("id")
         if user_id:
             try:
-                _execute_node(
-                    "UserUpdateNode",
-                    "assign_company",
-                    {"filter": {"id": int(user_id)}, "fields": {"company_id": company_id}},
-                )
+                dataflow_crud.update("User", int(user_id), {"company_id": company_id})
                 logger.info("Assigned user %s to company %s", user_id, company_id)
             except Exception as exc:
                 logger.warning(
@@ -211,7 +173,7 @@ async def get_client(
     validate_company_access(current_user, requested_company_id=client_id)
 
     try:
-        result = _execute_node("CompanyReadNode", "read_client", {"id": client_id})
+        result = dataflow_crud.read("Company", client_id)
     except Exception as exc:
         logger.error("Failed to read client id=%s: %s", client_id, exc)
         raise HTTPException(
@@ -219,7 +181,7 @@ async def get_client(
             detail="Failed to retrieve client. Please try again later.",
         ) from exc
 
-    if not result or result.get("error") or result.get("failed"):
+    if not result:
         raise HTTPException(status_code=404, detail=f"Client with id={client_id} not found")
 
     return _company_to_client(result)
@@ -240,7 +202,7 @@ async def update_client(
 
     # Verify client exists
     try:
-        existing = _execute_node("CompanyReadNode", "read_client_check", {"id": client_id})
+        existing = dataflow_crud.read("Company", client_id)
     except Exception as exc:
         logger.error("Failed to read client id=%s for update: %s", client_id, exc)
         raise HTTPException(
@@ -248,7 +210,7 @@ async def update_client(
             detail="Failed to verify client. Please try again later.",
         ) from exc
 
-    if not existing or existing.get("error") or existing.get("failed"):
+    if not existing:
         raise HTTPException(status_code=404, detail=f"Client with id={client_id} not found")
 
     # Map frontend fields to DataFlow fields
@@ -268,11 +230,7 @@ async def update_client(
         )
 
     try:
-        _execute_node(
-            "CompanyUpdateNode",
-            "update_client",
-            {"filter": {"id": client_id}, "fields": updates},
-        )
+        dataflow_crud.update("Company", client_id, updates)
     except Exception as exc:
         logger.error("Failed to update client id=%s: %s", client_id, exc)
         raise HTTPException(

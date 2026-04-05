@@ -33,30 +33,7 @@ VALID_PROVIDERS = frozenset(
 )
 
 
-# ---------------------------------------------------------------------------
-# DataFlow helpers (same pattern used across the codebase)
-# ---------------------------------------------------------------------------
-
-
-def _execute_node(node_type: str, node_id: str, params: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, node_id, params)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results[node_id]
-
-
-def _extract_records(result) -> list[dict]:
-    if isinstance(result, list):
-        return result
-    if isinstance(result, dict) and "records" in result:
-        return result["records"]
-    return []
+from hr_advisory.services import dataflow_crud
 
 
 # ---------------------------------------------------------------------------
@@ -80,20 +57,11 @@ def get_active_llm_config(
     # 1. Check user config first
     if user_id is not None and company_id is not None:
         try:
-            result = _execute_node(
-                "UserLLMConfigListNode",
-                "find_user_config",
-                {
-                    "filter": {
-                        "user_id": user_id,
-                        "company_id": company_id,
-                        "is_active": True,
-                    },
-                    "limit": 1,
-                    "enable_cache": False,
-                },
+            records = dataflow_crud.list_records(
+                "UserLLMConfig",
+                {"user_id": user_id, "company_id": company_id, "is_active": True},
+                limit=1,
             )
-            records = _extract_records(result)
             if records and records[0].get("status") == "active":
                 return records[0]
         except Exception as exc:
@@ -102,19 +70,11 @@ def get_active_llm_config(
     # 2. Check company config
     if company_id is not None:
         try:
-            result = _execute_node(
-                "CompanyLLMConfigListNode",
-                "find_company_config",
-                {
-                    "filter": {
-                        "company_id": company_id,
-                        "is_active": True,
-                    },
-                    "limit": 1,
-                    "enable_cache": False,
-                },
+            records = dataflow_crud.list_records(
+                "CompanyLLMConfig",
+                {"company_id": company_id, "is_active": True},
+                limit=1,
             )
-            records = _extract_records(result)
             if records and records[0].get("status") == "active":
                 return records[0]
         except Exception as exc:
@@ -169,21 +129,16 @@ def save_llm_config(
         "is_active": True,
     }
 
-    result = _execute_node("CompanyLLMConfigCreateNode", "create_config", create_params)
+    result = dataflow_crud.create("CompanyLLMConfig", create_params)
 
     # Fetch back the created record to get its ID
     config_id = result.get("id")
     if config_id is None:
-        lookup = _execute_node(
-            "CompanyLLMConfigListNode",
-            "find_created",
-            {
-                "filter": {"company_id": company_id, "is_active": True},
-                "limit": 1,
-                "enable_cache": False,
-            },
+        records = dataflow_crud.list_records(
+            "CompanyLLMConfig",
+            {"company_id": company_id, "is_active": True},
+            limit=1,
         )
-        records = _extract_records(lookup)
         if records:
             return records[-1]
 
@@ -210,12 +165,7 @@ def delete_llm_config(company_id: int, provider: Optional[str] = None) -> bool:
     if provider is not None:
         filter_params["provider"] = provider
 
-    result = _execute_node(
-        "CompanyLLMConfigListNode",
-        "find_to_delete",
-        {"filter": filter_params, "limit": 10000, "enable_cache": False},
-    )
-    records = _extract_records(result)
+    records = dataflow_crud.list_records("CompanyLLMConfig", filter_params, limit=10000)
     if not records:
         return False
 
@@ -224,17 +174,10 @@ def delete_llm_config(company_id: int, provider: Optional[str] = None) -> bool:
         if record_id is None:
             continue
         # Clear the encrypted key and deactivate
-        _execute_node(
-            "CompanyLLMConfigUpdateNode",
-            "soft_delete",
-            {
-                "filter": {"id": record_id},
-                "fields": {
-                    "encrypted_key": None,
-                    "status": "revoked",
-                    "is_active": False,
-                },
-            },
+        dataflow_crud.update(
+            "CompanyLLMConfig",
+            record_id,
+            {"encrypted_key": None, "status": "revoked", "is_active": False},
         )
     logger.info("Deleted %d company LLM config(s): company_id=%s", len(records), company_id)
     return True
@@ -274,24 +217,15 @@ def save_user_llm_config(
         "is_active": True,
     }
 
-    result = _execute_node("UserLLMConfigCreateNode", "create_user_config", create_params)
+    result = dataflow_crud.create("UserLLMConfig", create_params)
 
     config_id = result.get("id")
     if config_id is None:
-        lookup = _execute_node(
-            "UserLLMConfigListNode",
-            "find_created_user",
-            {
-                "filter": {
-                    "user_id": user_id,
-                    "company_id": company_id,
-                    "is_active": True,
-                },
-                "limit": 1,
-                "enable_cache": False,
-            },
+        records = dataflow_crud.list_records(
+            "UserLLMConfig",
+            {"user_id": user_id, "company_id": company_id, "is_active": True},
+            limit=1,
         )
-        records = _extract_records(lookup)
         if records:
             return records[-1]
 
@@ -306,20 +240,11 @@ def save_user_llm_config(
 
 def delete_user_llm_config(user_id: int, company_id: int) -> bool:
     """Delete user LLM config: hard-delete key, soft-delete row."""
-    result = _execute_node(
-        "UserLLMConfigListNode",
-        "find_user_to_delete",
-        {
-            "filter": {
-                "user_id": user_id,
-                "company_id": company_id,
-                "is_active": True,
-            },
-            "limit": 10000,
-            "enable_cache": False,
-        },
+    records = dataflow_crud.list_records(
+        "UserLLMConfig",
+        {"user_id": user_id, "company_id": company_id, "is_active": True},
+        limit=10000,
     )
-    records = _extract_records(result)
     if not records:
         return False
 
@@ -327,17 +252,10 @@ def delete_user_llm_config(user_id: int, company_id: int) -> bool:
         record_id = record.get("id")
         if record_id is None:
             continue
-        _execute_node(
-            "UserLLMConfigUpdateNode",
-            "soft_delete_user",
-            {
-                "filter": {"id": record_id},
-                "fields": {
-                    "encrypted_key": None,
-                    "status": "revoked",
-                    "is_active": False,
-                },
-            },
+        dataflow_crud.update(
+            "UserLLMConfig",
+            record_id,
+            {"encrypted_key": None, "status": "revoked", "is_active": False},
         )
     logger.info(
         "Deleted %d user LLM config(s): user_id=%s, company_id=%s",
@@ -419,53 +337,29 @@ def build_llm_context(
 
 def _deactivate_company_configs(company_id: int) -> None:
     """Soft-delete all active company LLM configs."""
-    result = _execute_node(
-        "CompanyLLMConfigListNode",
-        "find_active",
-        {
-            "filter": {"company_id": company_id, "is_active": True},
-            "limit": 10000,
-            "enable_cache": False,
-        },
+    records = dataflow_crud.list_records(
+        "CompanyLLMConfig", {"company_id": company_id, "is_active": True}, limit=10000
     )
-    for record in _extract_records(result):
+    for record in records:
         record_id = record.get("id")
         if record_id is None:
             continue
-        _execute_node(
-            "CompanyLLMConfigUpdateNode",
-            "deactivate",
-            {
-                "filter": {"id": record_id},
-                "fields": {"is_active": False, "encrypted_key": None},
-            },
+        dataflow_crud.update(
+            "CompanyLLMConfig", record_id, {"is_active": False, "encrypted_key": None}
         )
 
 
 def _deactivate_user_configs(user_id: int, company_id: int) -> None:
     """Soft-delete all active user LLM configs for a user/company pair."""
-    result = _execute_node(
-        "UserLLMConfigListNode",
-        "find_active_user",
-        {
-            "filter": {
-                "user_id": user_id,
-                "company_id": company_id,
-                "is_active": True,
-            },
-            "limit": 10000,
-            "enable_cache": False,
-        },
+    records = dataflow_crud.list_records(
+        "UserLLMConfig",
+        {"user_id": user_id, "company_id": company_id, "is_active": True},
+        limit=10000,
     )
-    for record in _extract_records(result):
+    for record in records:
         record_id = record.get("id")
         if record_id is None:
             continue
-        _execute_node(
-            "UserLLMConfigUpdateNode",
-            "deactivate_user",
-            {
-                "filter": {"id": record_id},
-                "fields": {"is_active": False, "encrypted_key": None},
-            },
+        dataflow_crud.update(
+            "UserLLMConfig", record_id, {"is_active": False, "encrypted_key": None}
         )

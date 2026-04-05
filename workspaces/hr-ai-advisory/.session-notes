@@ -1,54 +1,48 @@
-# Session Notes — 2026-03-31
+# Session Notes — 2026-03-31 (Session 2)
 
 ### Read These Files First (in order)
 
-1. `deploy/k8s-build/entrypoint.sh` — Toolkit entrypoint: dispatches setup/configure/build/deploy
-2. `deploy/k8s-build/setup.sh` — Creates arbor-build namespace + registry credentials
-3. `deploy/k8s-build/configure.sh` — Creates arbor namespace + all app secrets (auto-gen + prompted)
-4. `deploy/k8s-build/build.sh` — Kaniko build trigger with strict input sanitization
-5. `deploy/k8s-build/deploy.sh` — Applies K8s manifests with config substitution from cluster
-6. `deploy/k8s-build/Dockerfile` — Toolkit image: alpine + kubectl + all scripts
-7. `deploy/k8s-build/app-manifests/` — K8s manifests for postgres, redis, backend, frontend, ingress
-8. `deploy/k8s-build/manifests/` — Build namespace RBAC, NetworkPolicy, ResourceQuota
-9. `deploy/k8s-build/README.md` — Full partner-facing instructions
-10. `workspaces/hr-ai-advisory/journal/0008-DECISION-k8s-build-toolkit-for-partner.md` — Architecture decision
+1. `deploy/k8s-build/configure.sh` — Re-run safe: detects existing secrets, TLS question added
+2. `deploy/k8s-build/build.sh:29` — Kaniko image now digest-pinned (@sha256:9e69fd43...)
+3. `deploy/k8s-build/deploy.sh:80-92` — Reads TLS config from configmap, processes #TLS# markers
+4. `deploy/k8s-build/app-manifests/ingress.yaml` — #TLS# marker system for conditional TLS
+5. `deploy/k8s-build/entrypoint.sh` — Version bumped to v1.2.0
+6. `deploy/k8s-build/README.md` — Updated security table with digest pin, re-run safety, TLS
+7. `workspaces/hr-ai-advisory/journal/0008-DECISION-k8s-build-toolkit-for-partner.md` — ADR updated
 
 ## Accomplished
 
-- **K8s build toolkit created** — 4 commands (setup, configure, build, deploy) for partner's containerd-only cluster
-- **Published to Docker Hub** — `terrenefoundation/arbor-build-toolkit:v1.1.0` + `latest`
-- **Security hardened** — regex input validation (anti-injection), stdin credential reads, NetworkPolicy (443 only), RBAC, ResourceQuota, unprivileged Kaniko
-- **Auto-generated crypto** — DB/Redis/JWT/Fernet keys via OpenSSL; partner only enters external creds
-- **Full K8s manifests** — Postgres+pgvector, Redis, backend, frontend, nginx ingress with SSE
-- **Tested on real K8s** — kind v0.31.0 (K8s v1.35.0): setup/configure/deploy pass, backend health check passes
-- **Bug found + fixed** — unbound variable in configure.sh summary after secret cleanup
-- **Docker Hub overview markdown written** — ready to paste into Docker Hub UI
+- **Re-run safety** — configure.sh detects existing K8s secrets, reads current DB/Redis/JWT/encryption values via base64 decode, asks "Keep existing? [Y/n]" before regenerating
+- **Kaniko digest-pinned** — `@sha256:9e69fd4330ec887829c780f5126dd80edc663df6def362cd22e79bcdf00ac53f` verified live against gcr.io registry API
+- **TLS support** — configure.sh asks about cert-manager, stores tls-enabled + cert-issuer in configmap, deploy.sh uses `#TLS#` marker system (strips markers when enabled, deletes lines when disabled)
+- **Version bumped to v1.2.0** — entrypoint + configure.sh references updated
+- **PR created** — terrene-foundation/arbor#12 on branch `feat/k8s-build-toolkit` (18 files, 1,991 lines)
+- **Docker Hub overview pasted** — manual action completed by user
 
 ## Outstanding
 
-- [ ] **configure.sh re-run overwrites DB password** — partner re-configuring after data exists gets mismatched password. Add detect-existing-secret logic.
-- [ ] **Kaniko image not digest-pinned** — `v1.23.2` tag only, no `@sha256:...`
-- [ ] **build.sh untested E2E** — K8s Job creation works, but actual Kaniko clone→build→push needs real registry creds
-- [ ] **No TLS in ingress** — cert-manager annotations commented out. Partner needs cert-manager + uncomment.
-- [ ] **Docker Hub overview not yet pasted** — markdown generated in conversation, needs manual paste
-- [ ] **Nothing committed to git** — all `deploy/k8s-build/` files untracked
-- [ ] **Previous session outstanding still open** — PACE governance, Google SSO E2E, unbounded stores, company race condition, 50 pre-existing test failures
+- [ ] **Merge PR #12** — needs admin merge: `gh pr merge 12 --admin --merge --delete-branch`
+- [ ] **Rebuild Docker Hub image** — `docker build -t terrenefoundation/arbor-build-toolkit:v1.2.0 deploy/k8s-build/ && docker push`
+- [ ] **build.sh E2E test** — Kaniko Job creation works but actual clone→build→push needs real registry creds
+- [ ] **PACE governance into Delegate** — trust levels still in frozensets, not GovernanceContext (blocked on pact-core)
+- [ ] **50 pre-existing test failures** — compliance router, QA API, feedback pipeline (from session 3)
+- [ ] **Close kailash-py#171** — fixed in DataFlow 1.3.0, GitHub issue can be closed
 
 ### Oversight — Verify Before Starting
 
-- [ ] `docker run --rm terrenefoundation/arbor-build-toolkit:v1.1.0 version` — prints v1.1.0
-- [ ] `docker run --rm terrenefoundation/arbor-build-toolkit:v1.1.0 help` — shows all 4 commands
-- [ ] `ls deploy/k8s-build/` — 5 scripts + Dockerfile + README + 2 manifest dirs present
-- [ ] `git status` — k8s-build files show as untracked (not yet committed)
+- [ ] `git log --oneline -3` — shows k8s-build commit on feat/k8s-build-toolkit
+- [ ] `gh pr view 12 --json state` — PR exists and is open (or merged)
+- [ ] `bash -n deploy/k8s-build/configure.sh` — syntax still valid
+- [ ] `curl -sf https://arbor.terrene.foundation/api/health` — production still healthy
 
 ### Oversight — Verify After Completing
 
-- [ ] If committed: `git log --oneline -3` shows k8s-build commit
-- [ ] If rebuilt: `docker run --rm terrenefoundation/arbor-build-toolkit:latest help` — 4 commands
-- [ ] `curl -sf https://arbor.terrene.foundation/api/health` — production still healthy
+- [ ] If merged: `git log --oneline main -3` shows k8s-build commit
+- [ ] If rebuilt: `docker run --rm terrenefoundation/arbor-build-toolkit:v1.2.0 version` prints v1.2.0
+- [ ] TLS test: `cat deploy/k8s-build/app-manifests/ingress.yaml | sed 's|#TLS# ||' | grep cert-manager` shows annotation
 
 ## Blockers
 
-- **Docker Hub overview paste** — manual action in Docker Hub web UI
-- **E2E build test** — needs cluster with real registry creds + outbound HTTPS to GitHub/Docker Hub
-- **PACT governance** — still blocked on kailash-pact GovernanceContext (care repo dependency)
+- **Docker Hub image rebuild** — requires `docker push` with Docker Hub credentials (manual)
+- **E2E build test** — needs cluster with real registry creds + outbound HTTPS
+- **PACT governance** — blocked on kailash-pact GovernanceContext (care repo dependency)

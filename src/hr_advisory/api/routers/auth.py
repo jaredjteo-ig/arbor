@@ -525,15 +525,10 @@ async def register_employee(
     user_id = user["id"]
 
     # --- Create Employee record ---
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeCreateNode",
-        "create_emp",
+    employee_result = dataflow_crud.create(
+        "Employee",
         {
             "user_id": user_id,
             "company_id": company_id,
@@ -542,27 +537,14 @@ async def register_employee(
             "is_active": True,
         },
     )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    employee_result = results["create_emp"]
 
     # Retrieve the employee ID — CreateNode may not return it directly
     employee_id = employee_result.get("id")
     if employee_id is None:
         # Look up the employee we just created
-        wf2 = WorkflowBuilder()
-        wf2.add_node(
-            "EmployeeListNode",
-            "find_emp",
-            {
-                "filter": {"user_id": user_id, "company_id": company_id},
-                "limit": 1,
-                "enable_cache": False,
-            },
+        emp_records = dataflow_crud.list_records(
+            "Employee", {"user_id": user_id, "company_id": company_id}, limit=1
         )
-        runtime2 = LocalRuntime()
-        results2, _ = runtime2.execute(wf2.build())
-        emp_records = results2["find_emp"].get("records", [])
         if emp_records:
             employee_id = emp_records[0]["id"]
         else:
