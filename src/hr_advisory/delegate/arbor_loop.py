@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator
 
 from kaizen_agents.delegate import Delegate, DelegateEvent, TextDelta, ErrorEvent
@@ -38,7 +38,7 @@ class DelegateConfig:
     """Configuration for the Arbor Delegate."""
 
     model: str = ""
-    api_key: str = ""
+    api_key: str = field(default="", repr=False)
     base_url: str | None = None
     max_turns: int = 30
     budget_usd: float | None = None
@@ -208,7 +208,10 @@ def run_delegate_sync(
     match = re.search(pattern, response_text)
     if match:
         try:
-            confidence = max(0.0, min(1.0, float(match.group(1))))
+            import math
+
+            raw = float(match.group(1))
+            confidence = max(0.0, min(1.0, raw)) if math.isfinite(raw) else 0.7
         except ValueError:
             confidence = 0.7
         risk_tier = match.group(2)

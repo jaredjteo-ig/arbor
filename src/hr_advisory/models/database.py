@@ -10,10 +10,18 @@ from dataflow import DataFlow, DataFlowConfig
 
 def get_database_url() -> str:
     """Get database URL from environment, never hardcode."""
-    return os.environ.get(
-        "DATABASE_URL",
-        "postgresql://arbor:arbor@localhost:5432/arbor",
-    )
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        import sys
+
+        if "pytest" in sys.modules:
+            url = "sqlite:///:memory:"
+        else:
+            raise ValueError(
+                "DATABASE_URL environment variable is required. "
+                "Set it in .env or your deployment configuration."
+            )
+    return url
 
 
 _url = get_database_url()

@@ -187,7 +187,13 @@ class MutationEngine:
                     if isinstance(event, TextDelta):
                         text_parts.append(event.text)
 
-            asyncio.run(_run())
+            try:
+                asyncio.run(_run())
+            except RuntimeError:
+                import concurrent.futures
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    pool.submit(lambda: asyncio.run(_run())).result(timeout=30)
             return "".join(text_parts)
 
         # Fallback to ollama
