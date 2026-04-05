@@ -159,8 +159,11 @@ export function unwrapNexusResponse(body: any): any {
 
 async function parseErrorBody(response: Response): Promise<string> {
   try {
-    const body = (await response.json()) as { detail?: string };
-    if (body.detail) return body.detail;
+    const body = (await response.json()) as { detail?: unknown };
+    if (body.detail)
+      return typeof body.detail === "string"
+        ? body.detail
+        : JSON.stringify(body.detail);
   } catch {
     /* response body may not be JSON */
   }

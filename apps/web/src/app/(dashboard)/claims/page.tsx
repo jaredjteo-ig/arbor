@@ -518,8 +518,8 @@ function PendingClaims({
                 </p>
                 <p className="text-xs text-[var(--color-gray-500)]">
                   {claim.title} &middot; {formatCurrency(claim.total_amount)}{" "}
-                  &middot; {claim.items.length} item
-                  {claim.items.length !== 1 ? "s" : ""}
+                  &middot; {(claim.items ?? []).length} item
+                  {(claim.items ?? []).length !== 1 ? "s" : ""}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -657,13 +657,13 @@ function ClaimsList({
                     {formatCurrency(claim.total_amount)}
                   </td>
                   <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
-                    {claim.items.length}
+                    {(claim.items ?? []).length}
                   </td>
                   <td className="py-3 px-3 text-center">
                     <StatusBadge status={claim.status} />
                   </td>
                   <td className="py-3 px-5 text-center text-[var(--color-gray-600)]">
-                    {claim.created_at.split("T")[0]}
+                    {(claim.created_at ?? "").split("T")[0] || "-"}
                   </td>
                 </tr>
                 {expandedId === claim.id && (
@@ -672,12 +672,12 @@ function ClaimsList({
                       colSpan={isAdmin ? 6 : 5}
                       className="px-5 py-3 bg-[var(--color-gray-50)]"
                     >
-                      {claim.items.length > 0 ? (
+                      {(claim.items ?? []).length > 0 ? (
                         <div className="space-y-2">
                           <p className="text-xs font-medium text-[var(--color-gray-500)] mb-2">
                             Expense Items
                           </p>
-                          {claim.items.map((item) => (
+                          {(claim.items ?? []).map((item) => (
                             <div
                               key={item.id}
                               className="flex items-center justify-between text-sm p-2 rounded-lg bg-white border border-[var(--color-gray-200)]"

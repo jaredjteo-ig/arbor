@@ -380,7 +380,21 @@ function ReportViewer({
         const result = (await apiFn(params)) as Record<string, unknown>;
         const key = dataKeyMap[report.id] ?? "rows";
         const rows = result[key];
-        setData(Array.isArray(rows) ? (rows as Record<string, unknown>[]) : []);
+        let tableRows = Array.isArray(rows)
+          ? (rows as Record<string, unknown>[])
+          : [];
+        if (report.id === "employees" && tableRows.length > 0) {
+          /* Sort alphabetically by name */
+          tableRows = [...tableRows].sort((a, b) =>
+            String(a.name ?? "").localeCompare(String(b.name ?? "")),
+          );
+          /* Move name to the first column */
+          tableRows = tableRows.map((row) => {
+            const { name, ...rest } = row;
+            return { name, ...rest };
+          });
+        }
+        setData(tableRows);
       }
     } catch (err: unknown) {
       const message =
