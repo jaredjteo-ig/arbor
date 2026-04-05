@@ -10,11 +10,14 @@ Provides:
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+
+from kaizen_agents.delegate import Delegate, TextDelta
 
 
 class ScreeningResult(str, Enum):
@@ -481,40 +484,49 @@ def screen_scope(query: str) -> ScreeningOutput:
         )
 
     try:
-        import os
+        import asyncio
 
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            # No API key — can't classify, fail open
+        model = os.environ.get(
+            "OPENAI_DEV_MODEL",
+            os.environ.get("OPENAI_PROD_MODEL", os.environ.get("DEFAULT_LLM_MODEL", "")),
+        )
+        if not model:
             return ScreeningOutput(
                 result=ScreeningResult.PASS,
-                reason="Scope classifier unavailable (no API key) — allowing through.",
+                reason="Scope classifier unavailable (no model configured) — allowing through.",
                 matched_patterns=[],
             )
 
-        import openai
-
-        client = openai.OpenAI(api_key=api_key)
-        model = os.environ.get(
-            "OPENAI_DEV_MODEL", os.environ.get("OPENAI_PROD_MODEL", "gpt-5-mini-2025-08-07")
-        )
-
-        response = client.chat.completions.create(
+        classifier = Delegate(
             model=model,
-            messages=[
-                {"role": "user", "content": _SCOPE_CLASSIFICATION_PROMPT.format(query=query)},
-            ],
-            max_tokens=3,
-            temperature=0,
+            system_prompt=(
+                "You are a scope classifier. Answer only YES or NO. "
+                "Is this query about Singapore HR, employment law, CPF, "
+                "workplace regulations, or payroll?"
+            ),
+            max_turns=1,
         )
 
-        raw_content = response.choices[0].message.content or ""
-        answer = raw_content.strip().upper()
+        text_parts: list[str] = []
+
+        async def _classify() -> None:
+            async for event in classifier.run(query):
+                if isinstance(event, TextDelta):
+                    text_parts.append(event.text)
+
+        try:
+            asyncio.run(_classify())
+        except RuntimeError:
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                pool.submit(lambda: asyncio.run(_classify())).result(timeout=10)
+
+        answer = "".join(text_parts).strip().upper()
 
         if answer.startswith("NO"):
             return _SCOPE_BLOCK_RESPONSE
 
-        # YES or ambiguous → allow through
         return ScreeningOutput(
             result=ScreeningResult.PASS,
             reason=f"LLM scope classifier: {answer}",
@@ -697,12 +709,10 @@ def _log_flagged_query(
     )
     # Persist to database (best-effort)
     try:
-        from kailash import LocalRuntime, WorkflowBuilder
+        from hr_advisory.services import dataflow_crud
 
-        wf = WorkflowBuilder()
-        wf.add_node(
-            "FlaggedQueryRecordCreateNode",
-            "create_flagged",
+        dataflow_crud.create(
+            "FlaggedQueryRecord",
             {
                 "query_hash": query_hash,
                 "user_id": int(user_id) if user_id and user_id.isdigit() else 0,
@@ -712,8 +722,6 @@ def _log_flagged_query(
                 "matched_patterns": json.dumps(output.matched_patterns),
             },
         )
-        runtime = LocalRuntime()
-        runtime.execute(wf.build())
     except Exception as exc:
         logger.warning("Failed to persist flagged query: %s", exc)
 
