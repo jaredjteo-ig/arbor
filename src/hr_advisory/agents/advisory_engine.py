@@ -546,20 +546,11 @@ def _execute_tool_call(name: str, arguments: dict) -> str:
             company_id = arguments.get("company_id")
             if company_id is not None:
                 try:
-                    from kailash import LocalRuntime, WorkflowBuilder
+                    from hr_advisory.models.database import db
 
-                    wf = WorkflowBuilder()
-                    wf.add_node(
-                        "CompanyListNode",
-                        "find",
-                        {"filter": {"id": int(company_id)}, "limit": 1, "enable_cache": False},
-                    )
-                    runtime = LocalRuntime()
-                    results, _ = runtime.execute(wf.build())
-                    records = results.get("find", {})
-                    items = records.get("records", []) if isinstance(records, dict) else []
-                    if items:
-                        return json.dumps(items[0], default=str)
+                    result = db.express_sync.read("Company", str(int(company_id)))
+                    if result:
+                        return json.dumps(result, default=str)
                     return json.dumps({"error": "Company not found"})
                 except Exception as fetch_exc:
                     return json.dumps({"error": f"Failed to fetch company: {fetch_exc}"})
