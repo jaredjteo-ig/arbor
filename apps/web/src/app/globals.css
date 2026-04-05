@@ -113,6 +113,76 @@
   --z-shadow-command: 50;
 }
 
+/* ── Dark Mode ────────────────────────────────────────────── */
+
+html.dark {
+  /* Primary — slightly lighter for dark backgrounds */
+  --color-primary: #5B8DBF;
+  --color-primary-light: #7AABDA;
+  --color-primary-dark: #3D6F9F;
+
+  /* Neutrals — inverted */
+  --color-gray-50: #0F172A;
+  --color-gray-100: #1E293B;
+  --color-gray-200: #334155;
+  --color-gray-300: #475569;
+  --color-gray-400: #64748B;
+  --color-gray-500: #94A3B8;
+  --color-gray-600: #CBD5E1;
+  --color-gray-700: #E2E8F0;
+  --color-gray-800: #F1F5F9;
+  --color-gray-900: #F8FAFC;
+
+  /* Risk tiers — keep hues, adjust for dark bg */
+  --color-risk-green-bg: #052e16;
+  --color-risk-green-border: #166534;
+  --color-risk-amber-bg: #451a03;
+  --color-risk-amber-border: #92400e;
+  --color-risk-red-bg: #450a0a;
+  --color-risk-red-border: #991b1b;
+
+  /* Authority badges — darker backgrounds */
+  --color-authority-statutory-bg: #1e3a5f;
+  --color-authority-guideline-bg: #451a03;
+  --color-authority-best-practice-bg: #052e16;
+  --color-authority-company-policy-bg: #2e1065;
+
+  /* Semantic — darker backgrounds */
+  --color-info-bg: #1e3a5f;
+  --color-success-bg: #052e16;
+  --color-warning-bg: #451a03;
+  --color-error-bg: #450a0a;
+
+  /* Surfaces */
+  --background: #0F172A;
+  --foreground: #F1F5F9;
+  --color-surface-card: #1E293B;
+  --color-surface-sidebar: #0F172A;
+  --color-surface-sidebar-hover: #1E293B;
+  --color-surface-input: #1E293B;
+  --color-surface-input-border: #475569;
+  --color-surface-input-focus: #5B8DBF;
+
+  /* Derived */
+  --color-primary-bg: #1E293B;
+
+  /* Shadows — stronger for dark mode */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-raised: 0 4px 6px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-dropdown: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-modal: 0 20px 25px rgba(0, 0, 0, 0.4), 0 8px 10px rgba(0, 0, 0, 0.2);
+
+  /* Shadow Agent */
+  --shadow-glow: rgba(91, 141, 191, 0.15);
+  --shadow-accent: #5B8DBF;
+  --shadow-pulse-color: #7AABDA;
+  --shadow-border: rgba(91, 141, 191, 0.3);
+  --shadow-text: var(--foreground);
+  --shadow-surface: rgba(91, 141, 191, 0.08);
+  --shadow-surface-hover: rgba(91, 141, 191, 0.12);
+  --shadow-mark-bg: var(--color-primary-bg);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -140,6 +210,31 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Override hardcoded bg-white in dark mode */
+html.dark .bg-white {
+  background-color: var(--color-surface-card) !important;
+}
+html.dark .bg-gray-50,
+html.dark .bg-slate-50 {
+  background-color: var(--color-gray-50) !important;
+}
+html.dark .border-gray-200,
+html.dark .border-slate-200 {
+  border-color: var(--color-gray-200) !important;
+}
+html.dark .text-gray-900,
+html.dark .text-slate-900 {
+  color: var(--color-gray-900) !important;
+}
+html.dark .text-gray-700,
+html.dark .text-slate-700 {
+  color: var(--color-gray-700) !important;
+}
+html.dark .text-gray-500,
+html.dark .text-slate-500 {
+  color: var(--color-gray-500) !important;
 }
 
 /* ── Text size accessibility ──────────────────────────────── */
