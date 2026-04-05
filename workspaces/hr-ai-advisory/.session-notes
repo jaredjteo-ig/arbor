@@ -1,48 +1,51 @@
-# Session Notes — 2026-03-31 (Session 2)
+# Session Notes — 2026-04-05
 
 ### Read These Files First (in order)
 
-1. `deploy/k8s-build/configure.sh` — Re-run safe: detects existing secrets, TLS question added
-2. `deploy/k8s-build/build.sh:29` — Kaniko image now digest-pinned (@sha256:9e69fd43...)
-3. `deploy/k8s-build/deploy.sh:80-92` — Reads TLS config from configmap, processes #TLS# markers
-4. `deploy/k8s-build/app-manifests/ingress.yaml` — #TLS# marker system for conditional TLS
-5. `deploy/k8s-build/entrypoint.sh` — Version bumped to v1.2.0
-6. `deploy/k8s-build/README.md` — Updated security table with digest pin, re-run safety, TLS
-7. `workspaces/hr-ai-advisory/journal/0008-DECISION-k8s-build-toolkit-for-partner.md` — ADR updated
+1. `src/hr_advisory/delegate/arbor_loop.py` — Delegate engine: run_delegate_sync() + create_delegate() + system prompt wiring
+2. `src/hr_advisory/delegate/system_prompt.py` — Mandatory tool use prompt (208 tools, MUST call tools before answering)
+3. `src/hr_advisory/services/dataflow_crud.py` — Shared CRUD module: all single-record ops use db.express_sync (588 calls)
+4. `src/hr_advisory/models/database.py` — Pool config: env-driven DATAFLOW_MAX_CONNECTIONS, 5s timeout, sqlite fallback
+5. `src/hr_advisory/api/routers/advisory.py:363-393` — /advisory/query now uses Delegate (was AdvisoryEngine)
+6. `src/hr_advisory/workflows/guardrails.py:483-540` — Scope classifier uses Delegate (was raw openai.OpenAI)
+7. `.claude/VERSION` — COC v2.5.0, SDK build_version 2.5.1
 
 ## Accomplished
 
-- **Re-run safety** — configure.sh detects existing K8s secrets, reads current DB/Redis/JWT/encryption values via base64 decode, asks "Keep existing? [Y/n]" before regenerating
-- **Kaniko digest-pinned** — `@sha256:9e69fd4330ec887829c780f5126dd80edc663df6def362cd22e79bcdf00ac53f` verified live against gcr.io registry API
-- **TLS support** — configure.sh asks about cert-manager, stores tls-enabled + cert-issuer in configmap, deploy.sh uses `#TLS#` marker system (strips markers when enabled, deletes lines when disabled)
-- **Version bumped to v1.2.0** — entrypoint + configure.sh references updated
-- **PR created** — terrene-foundation/arbor#12 on branch `feat/k8s-build-toolkit` (18 files, 1,991 lines)
-- **Docker Hub overview pasted** — manual action completed by user
+- **COC synced v1.2.0 → v2.5.0** (10 releases, 468 files). 17 stale artifacts removed. CC audit converged.
+- **144 WorkflowBuilder CRUD → db.express_sync** via shared dataflow_crud.py. 29 files migrated. 12 WFB remain (all multi-step).
+- **Advisory engine → Kaizen Delegate** for /advisory/query. 208 tools, autonomous multi-tool orchestration verified.
+- **Guardrails + QA tools → Delegate**. Raw OpenAI eliminated from production path (1 remains: embeddings API).
+- **All hardcoded model defaults removed** (11→0). All hardcoded DB credentials removed (5→0).
+- **Security fixes**: NaN confidence guard, async ThreadPoolExecutor fallback, API key repr=False, DB URL fail-fast.
+- **Performance**: search caching (5-min TTL), compliance batch queries, advisory 60s timeout, pool env config.
+- **Tool call tracking fixed**: ToolCallStart.name (not .tool_name). JSON leakage stripped from response text.
+- **Quality audit**: 5 queries tested — CPF calc, leave, multi-tool quota+CPF, termination, maternity. All correct.
+- **PR #12 merged**, v0.3.0 released, v0.3.2 deployed to GCE arbor-prod. Production healthy.
 
 ## Outstanding
 
-- [ ] **Merge PR #12** — needs admin merge: `gh pr merge 12 --admin --merge --delete-branch`
-- [ ] **Rebuild Docker Hub image** — `docker build -t terrenefoundation/arbor-build-toolkit:v1.2.0 deploy/k8s-build/ && docker push`
-- [ ] **build.sh E2E test** — Kaniko Job creation works but actual clone→build→push needs real registry creds
-- [ ] **PACE governance into Delegate** — trust levels still in frozensets, not GovernanceContext (blocked on pact-core)
-- [ ] **50 pre-existing test failures** — compliance router, QA API, feedback pipeline (from session 3)
-- [ ] **Close kailash-py#171** — fixed in DataFlow 1.3.0, GitHub issue can be closed
+- [ ] `kb/embeddings.py:79` — raw `openai.OpenAI` for embeddings API (no Delegate equivalent; acceptable)
+- [ ] `advisory_engine.py` — deprecated but still importable. Remove entirely when all consumers migrated
+- [ ] kailash-rs issues #186-190 open (5 issues on esperie-enterprise/kailash-rs)
+- [ ] kailash-py #283 (Nexus handler validation) — partially fixed, stays open
+- [ ] PACT governance integration (M60) — blocked on kailash-pact GovernanceContext
+- [ ] Production .env persistence — credentials in /opt/arbor/.db-password etc. Deploy must source them.
 
 ### Oversight — Verify Before Starting
 
-- [ ] `git log --oneline -3` — shows k8s-build commit on feat/k8s-build-toolkit
-- [ ] `gh pr view 12 --json state` — PR exists and is open (or merged)
-- [ ] `bash -n deploy/k8s-build/configure.sh` — syntax still valid
-- [ ] `curl -sf https://arbor.terrene.foundation/api/health` — production still healthy
+- [ ] `curl -sf https://arbor.terrene.foundation/api/health` — production healthy (was: 200 OK)
+- [ ] `uv pip show kailash | grep Version` — should be 2.5.1
+- [ ] `git log --oneline -3` — latest is fix(delegate) on main
+- [ ] `grep -r 'WorkflowBuilder()' src/hr_advisory/ --include='*.py' | grep -v __pycache__ | wc -l` — should be 12
 
 ### Oversight — Verify After Completing
 
-- [ ] If merged: `git log --oneline main -3` shows k8s-build commit
-- [ ] If rebuilt: `docker run --rm terrenefoundation/arbor-build-toolkit:v1.2.0 version` prints v1.2.0
-- [ ] TLS test: `cat deploy/k8s-build/app-manifests/ingress.yaml | sed 's|#TLS# ||' | grep cert-manager` shows annotation
+- [ ] `uv run pytest tests/unit/ -x -q -p no:warnings` — 1,155+ tests pass
+- [ ] `grep -r 'dataflow_crud\.' src/hr_advisory/ --include='*.py' | grep -v __pycache__ | wc -l` — should be 588+
+- [ ] No hardcoded models: `grep -rn '"gpt-' src/hr_advisory/ --include='*.py' | grep -v llm_budget | grep -v '#\|"""' | wc -l` — should be 0
 
 ## Blockers
 
-- **Docker Hub image rebuild** — requires `docker push` with Docker Hub credentials (manual)
-- **E2E build test** — needs cluster with real registry creds + outbound HTTPS
-- **PACT governance** — blocked on kailash-pact GovernanceContext (care repo dependency)
+- **PACT GovernanceContext** — requires kailash-pact integration (M60, not started)
+- **Embeddings API** — no Kaizen Delegate equivalent for `client.embeddings.create()`; raw OpenAI is correct here
