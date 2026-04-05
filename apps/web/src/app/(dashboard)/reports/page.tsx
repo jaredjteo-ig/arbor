@@ -203,7 +203,7 @@ function ReportsDashboardCharts() {
     );
   }
 
-  const activeEmployees = employees.filter((e) => e.status === "active");
+  const activeEmployees = employees.filter((e) => e.is_active !== false);
 
   /* Headcount by department */
   const deptCounts: Record<string, number> = {};
@@ -398,38 +398,33 @@ function ReportViewer({
         let tableRows = Array.isArray(rows)
           ? (rows as Record<string, unknown>[])
           : [];
-        if (tableRows.length > 0) {
-          /* Inject employee name from lookup for reports that only have employee_id */
-          if (
-            report.id !== "employees" &&
-            report.id !== "payroll" &&
-            report.id !== "projects"
-          ) {
-            tableRows = tableRows.map((row) => {
-              const empId = row.employee_id as number | undefined;
-              const empName = empId ? employeeMap[empId] : undefined;
-              if (empName) {
-                const { employee_id, ...rest } = row;
-                return { employee_name: empName, ...rest };
-              }
-              return row;
-            });
-          }
-          /* Sort alphabetically by name/employee_name */
-          const nameKey = tableRows[0]?.employee_name
-            ? "employee_name"
-            : "name";
-          if (tableRows[0]?.[nameKey]) {
+        if (
+          tableRows.length > 0 &&
+          report.id !== "payroll" &&
+          report.id !== "projects"
+        ) {
+          /* Inject employee name from lookup map.
+             - "employees" report has `id` as the employee ID
+             - other reports have `employee_id` */
+          tableRows = tableRows.map((row) => {
+            const empId = (
+              report.id === "employees" ? row.id : row.employee_id
+            ) as number | undefined;
+            const empName = empId ? employeeMap[empId] : undefined;
+            if (empName) {
+              const { id, employee_id, ...rest } = row as Record<
+                string,
+                unknown
+              > & { id?: unknown; employee_id?: unknown };
+              return { name: empName, ...rest };
+            }
+            return row;
+          });
+          /* Sort alphabetically by name */
+          if (tableRows[0]?.name) {
             tableRows = [...tableRows].sort((a, b) =>
-              String(a[nameKey] ?? "").localeCompare(String(b[nameKey] ?? "")),
+              String(a.name ?? "").localeCompare(String(b.name ?? "")),
             );
-          }
-          /* Move name column to first position */
-          if (report.id === "employees") {
-            tableRows = tableRows.map((row) => {
-              const { name, ...rest } = row;
-              return { name, ...rest };
-            });
           }
         }
         setData(tableRows);
