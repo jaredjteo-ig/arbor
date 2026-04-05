@@ -50,10 +50,20 @@ export const appraisalsApi = {
     ),
   getTemplate: (id: number) =>
     apiClient.get<AppraisalTemplate>(`/appraisals/templates/${id}`),
-  createTemplate: (data: Partial<AppraisalTemplate>) =>
-    apiClient.post<AppraisalTemplate>("/appraisals/templates", data),
+  createTemplate: async (
+    data: Partial<AppraisalTemplate>,
+  ): Promise<AppraisalTemplate> => {
+    const resp = await apiClient.post<{ template: AppraisalTemplate }>(
+      "/appraisals/templates",
+      data,
+    );
+    return (
+      (resp as { template: AppraisalTemplate }).template ??
+      (resp as unknown as AppraisalTemplate)
+    );
+  },
   updateTemplate: (id: number, data: Partial<AppraisalTemplate>) =>
-    apiClient.put<AppraisalTemplate>(`/appraisals/templates/${id}`, data),
+    apiClient.patch<AppraisalTemplate>(`/appraisals/templates/${id}`, data),
 
   /* Periods */
   listPeriods: () =>

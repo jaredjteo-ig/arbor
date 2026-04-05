@@ -824,7 +824,7 @@ export default function PolicyDetailPage({
       .complianceCheck(policy.id)
       .then((result) => {
         if (!cancelled) {
-          setComplianceWarnings(result.warnings ?? []);
+          setComplianceWarnings(result.findings ?? []);
         }
       })
       .catch(() => {

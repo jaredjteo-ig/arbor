@@ -137,7 +137,7 @@ def _verify_project_ownership(project_id: int, company_id: int) -> dict:
 # --------------------------------------------------------------------------
 
 
-@router.get("/")
+@router.get("")
 async def list_projects(
     status: str | None = Query(None),
     current_user: dict = Depends(get_current_user),
@@ -176,7 +176,7 @@ async def list_projects(
     return {"projects": projects, "count": len(projects)}
 
 
-@router.post("/")
+@router.post("")
 async def create_project(
     request: Request,
     current_user: dict = Depends(require_role("owner", "hr_manager")),

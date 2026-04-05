@@ -56,7 +56,7 @@ export default function ClientsPage() {
     clientsApi
       .list()
       .then((data) => {
-        setClients(data.clients);
+        setClients(data.clients ?? []);
       })
       .catch((err) => {
         setFetchError(

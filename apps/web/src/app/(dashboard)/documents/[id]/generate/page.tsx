@@ -45,7 +45,11 @@ export default function DocumentGeneratePage() {
         setLoading(false);
       })
       .catch((err) => {
-        setError(err.detail || "Failed to load template");
+        setError(
+          err instanceof Error
+            ? err.message
+            : String((err as any)?.detail ?? "Failed to load template"),
+        );
         setLoading(false);
       });
   }, [templateId]);
@@ -84,14 +88,14 @@ export default function DocumentGeneratePage() {
   };
 
   const handleCopy = () => {
-    if (!result) return;
+    if (!result?.document?.content) return;
     navigator.clipboard.writeText(result.document.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownload = () => {
-    if (!result) return;
+    if (!result?.document?.content) return;
     const blob = new Blob([result.document.content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

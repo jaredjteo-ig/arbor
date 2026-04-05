@@ -78,11 +78,19 @@ export const recruitmentApi = {
   /* Job Listings */
   listJobs: () =>
     apiClient.get<{ jobs: JobListing[]; count: number }>("/recruitment/jobs"),
-  getJob: (id: number) => apiClient.get<JobListing>(`/recruitment/jobs/${id}`),
+  getJob: async (id: number): Promise<JobListing> => {
+    const resp = await apiClient.get<{ jobs: JobListing[]; count: number }>(
+      "/recruitment/jobs",
+    );
+    const jobs = (resp as { jobs: JobListing[]; count: number }).jobs ?? [];
+    const found = jobs.find((j) => j.id === id);
+    if (!found) throw new Error(`Job ${id} not found`);
+    return found;
+  },
   createJob: (data: Partial<JobListing>) =>
     apiClient.post<JobListing>("/recruitment/jobs", data),
   updateJob: (id: number, data: Partial<JobListing>) =>
-    apiClient.put<JobListing>(`/recruitment/jobs/${id}`, data),
+    apiClient.patch<JobListing>(`/recruitment/jobs/${id}`, data),
   publishJob: (id: number) =>
     apiClient.post<{ message: string }>(`/recruitment/jobs/${id}/publish`),
   closeJob: (id: number) =>
@@ -105,17 +113,26 @@ export const recruitmentApi = {
       params,
     );
   },
-  getCandidate: (id: number) =>
-    apiClient.get<Candidate>(`/recruitment/candidates/${id}`),
+  getCandidate: async (id: number): Promise<Candidate> => {
+    const resp = await apiClient.get<{
+      candidates: Candidate[];
+      count: number;
+    }>("/recruitment/candidates");
+    const candidates =
+      (resp as { candidates: Candidate[]; count: number }).candidates ?? [];
+    const found = candidates.find((c) => c.id === id);
+    if (!found) throw new Error(`Candidate ${id} not found`);
+    return found;
+  },
   createCandidate: (data: Partial<Candidate>) =>
     apiClient.post<Candidate>(
       `/recruitment/jobs/${data.job_listing_id}/candidates`,
       data,
     ),
   updateCandidate: (id: number, data: Partial<Candidate>) =>
-    apiClient.put<Candidate>(`/recruitment/candidates/${id}`, data),
+    apiClient.patch<Candidate>(`/recruitment/candidates/${id}`, data),
   moveStage: (id: number, stage: CandidateStage) =>
-    apiClient.put<{ candidate: Candidate }>(`/recruitment/candidates/${id}`, {
+    apiClient.patch<{ candidate: Candidate }>(`/recruitment/candidates/${id}`, {
       stage,
     }),
 
@@ -135,11 +152,17 @@ export const recruitmentApi = {
       data,
     ),
   cancelInterview: (id: number) =>
-    apiClient.post<{ message: string }>(`/recruitment/interviews/${id}/cancel`),
+    apiClient.patch<{ interview: InterviewSchedule }>(
+      `/recruitment/interviews/${id}`,
+      { status: "cancelled" },
+    ),
 
   /* Feedback */
-  submitFeedback: (data: Partial<InterviewFeedback>) =>
-    apiClient.post<InterviewFeedback>("/recruitment/interviews/feedback", data),
+  submitFeedback: (interviewId: number, data: Partial<InterviewFeedback>) =>
+    apiClient.post<InterviewFeedback>(
+      `/recruitment/interviews/${interviewId}/feedback`,
+      data,
+    ),
 
   /* Hiring */
   hireCandidate: (

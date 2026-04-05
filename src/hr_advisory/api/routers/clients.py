@@ -63,7 +63,7 @@ def _company_to_client(company: dict) -> dict:
     }
 
 
-@router.get("/")
+@router.get("")
 async def list_clients(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
@@ -89,7 +89,7 @@ async def list_clients(
                 {"filter": {"id": user_company_id, "is_active": True}, "limit": 10},
             )
         else:
-            return {"clients": [], "total": 0}
+            return {"clients": [], "count": 0}
     except Exception as exc:
         logger.error("Failed to list clients: %s", exc)
         raise HTTPException(
@@ -100,10 +100,10 @@ async def list_clients(
     records = _extract_records(result)
     clients = [_company_to_client(r) for r in records]
 
-    return {"clients": clients, "total": len(clients)}
+    return {"clients": clients, "count": len(clients)}
 
 
-@router.post("/")
+@router.post("")
 async def create_client(
     request: Request,
     current_user: dict = Depends(get_current_user),

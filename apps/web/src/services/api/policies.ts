@@ -46,7 +46,7 @@ export const policiesApi = {
   /** Admin: list all policies for the current company. */
   list(): Promise<{ policies: PolicyRecord[]; count: number }> {
     return apiClient.get<{ policies: PolicyRecord[]; count: number }>(
-      "/policies/",
+      "/policies",
     );
   },
 
@@ -69,7 +69,7 @@ export const policiesApi = {
     const resp = await apiClient.post<{
       policy: PolicyRecord;
       statutory_floor_warnings?: StatutoryFloorWarning[];
-    }>("/policies/", data);
+    }>("/policies", data);
     const raw = resp as {
       policy: PolicyRecord;
       statutory_floor_warnings?: StatutoryFloorWarning[];
@@ -101,7 +101,7 @@ export const policiesApi = {
 
   /** Admin: update policy metadata. */
   async update(id: number, data: Partial<PolicyRecord>): Promise<PolicyRecord> {
-    const resp = await apiClient.patch<{ policy: PolicyRecord }>(
+    const resp = await apiClient.put<{ policy: PolicyRecord }>(
       `/policies/${id}`,
       data,
     );
@@ -171,13 +171,13 @@ export const policiesApi = {
   /** Admin: run statutory floor compliance check for a policy. */
   complianceCheck(id: number): Promise<{
     policy_id: number;
-    warnings: StatutoryFloorWarning[];
-    compliant: boolean;
+    findings: StatutoryFloorWarning[];
+    findings_count: number;
   }> {
     return apiClient.get<{
       policy_id: number;
-      warnings: StatutoryFloorWarning[];
-      compliant: boolean;
+      findings: StatutoryFloorWarning[];
+      findings_count: number;
     }>(`/policies/${id}/compliance-check`);
   },
 };

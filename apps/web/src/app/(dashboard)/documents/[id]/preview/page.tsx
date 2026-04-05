@@ -29,7 +29,11 @@ export default function TemplatePreviewPage() {
         setLoading(false);
       })
       .catch((err) => {
-        setError(err.detail || "Failed to load template");
+        setError(
+          err instanceof Error
+            ? err.message
+            : String((err as any)?.detail ?? "Failed to load template"),
+        );
         setLoading(false);
       });
   }, [templateId]);

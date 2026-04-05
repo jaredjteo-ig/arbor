@@ -94,8 +94,16 @@ export const inventoryApi = {
       "/inventory/items",
       params,
     ),
-  getItem: (id: number) =>
-    apiClient.get<InventoryItem>(`/inventory/items/${id}`),
+  getItem: async (id: number): Promise<InventoryItem> => {
+    const resp = await apiClient.get<{ items: InventoryItem[]; count: number }>(
+      "/inventory/items",
+    );
+    const items =
+      (resp as { items: InventoryItem[]; count: number }).items ?? [];
+    const found = items.find((i) => i.id === id);
+    if (!found) throw new Error(`Item ${id} not found`);
+    return found;
+  },
   createItem: (data: Partial<InventoryItem>) =>
     apiClient.post<InventoryItem>("/inventory/items", data),
   updateItem: (id: number, data: Partial<InventoryItem>) =>
@@ -111,18 +119,20 @@ export const inventoryApi = {
 
   /* Movements */
   listMovements: (itemId?: number) =>
-    apiClient.get<{ movements: InventoryMovement[]; count: number }>(
-      "/inventory/movements",
-      itemId ? { item_id: String(itemId) } : undefined,
-    ),
+    itemId
+      ? apiClient.get<{ movements: InventoryMovement[]; count: number }>(
+          `/inventory/items/${itemId}/history`,
+        )
+      : Promise.resolve({ movements: [], count: 0 }),
 
   /* Requests */
   listRequests: () =>
     apiClient.get<{ requests: InventoryRequest[]; count: number }>(
       "/inventory/requests",
     ),
-  createRequest: (data: Partial<InventoryRequest>) =>
-    apiClient.post<InventoryRequest>("/inventory/requests", data),
+  createRequest: (
+    data: Omit<Partial<InventoryRequest>, "item_id"> & { item_name: string },
+  ) => apiClient.post<InventoryRequest>("/inventory/requests", data),
   approveRequest: (id: number) =>
     apiClient.put<{ message: string }>(`/inventory/requests/${id}/approve`),
   rejectRequest: (id: number, reason: string) =>

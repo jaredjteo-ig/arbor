@@ -56,7 +56,7 @@ export default function DocumentsPage() {
     documentsApi
       .listTemplates()
       .then((data) => {
-        setTemplates(data.templates);
+        setTemplates(data.templates ?? []);
       })
       .catch((err) => {
         setError(
@@ -82,7 +82,7 @@ export default function DocumentsPage() {
       results = results.filter(
         (t) =>
           t.name.toLowerCase().includes(q) ||
-          t.description.toLowerCase().includes(q),
+          (t.description ?? "").toLowerCase().includes(q),
       );
     }
     return results;

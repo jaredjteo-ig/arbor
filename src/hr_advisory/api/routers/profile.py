@@ -226,7 +226,7 @@ async def get_company_profile(
     return _company_to_response(result)
 
 
-@router.post("/")
+@router.post("")
 async def create_company_profile(
     request: Request,
     current_user: dict = Depends(get_current_user),

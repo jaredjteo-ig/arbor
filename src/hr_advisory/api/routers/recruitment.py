@@ -179,6 +179,20 @@ async def create_job(
     return {"job": job}
 
 
+@router.get("/jobs/{job_id}")
+async def get_job(
+    job_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get a single job listing by ID."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    job = _verify_job_ownership(job_id, company_id)
+    return {"job": job}
+
+
 @router.patch("/jobs/{job_id}")
 async def update_job(
     job_id: int,
@@ -383,6 +397,20 @@ async def add_candidate(
     return {"candidate": candidate}
 
 
+@router.get("/candidates/{candidate_id}")
+async def get_candidate(
+    candidate_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get a single candidate by ID."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    candidate = _verify_candidate_ownership(candidate_id, company_id)
+    return {"candidate": candidate}
+
+
 @router.patch("/candidates/{candidate_id}")
 async def update_candidate(
     candidate_id: int,
@@ -397,7 +425,7 @@ async def update_candidate(
     _verify_candidate_ownership(candidate_id, company_id)
 
     body = await request.json()
-    allowed = {"name", "email", "phone", "notes", "resume_url", "source"}
+    allowed = {"name", "email", "phone", "notes", "resume_url", "source", "stage"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")

@@ -71,8 +71,8 @@ export interface ApplyLeaveData {
   leave_type_id: number;
   start_date: string;
   end_date: string;
-  half_day_start?: boolean;
-  half_day_end?: boolean;
+  start_half?: "full_day" | "am" | "pm";
+  end_half?: "full_day" | "am" | "pm";
   reason: string;
 }
 
@@ -85,8 +85,15 @@ export const leaveApi = {
   },
 
   /** Apply for leave. */
-  applyLeave(data: ApplyLeaveData): Promise<LeaveApplication> {
-    return apiClient.post<LeaveApplication>("/leave/applications", data);
+  async applyLeave(data: ApplyLeaveData): Promise<LeaveApplication> {
+    const resp = await apiClient.post<{ application: LeaveApplication }>(
+      "/leave/apply",
+      data,
+    );
+    return (
+      (resp as { application: LeaveApplication }).application ??
+      (resp as unknown as LeaveApplication)
+    );
   },
 
   /** Upload an attachment (e.g. medical certificate) for a leave application. */

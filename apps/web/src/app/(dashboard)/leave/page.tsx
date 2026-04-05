@@ -233,8 +233,8 @@ function ApplyLeaveModal({
         leave_type_id: Number(leaveTypeId),
         start_date: startDate,
         end_date: endDate,
-        half_day_start: halfDayStart,
-        half_day_end: halfDayEnd,
+        start_half: halfDayStart ? "am" : "full_day",
+        end_half: halfDayEnd ? "pm" : "full_day",
         reason,
       });
       toast.success("Leave application submitted successfully");

@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   BarChart3,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { OverviewTab } from "./elements/OverviewTab";
 import { RegulatoryUpdatesTab } from "./elements/RegulatoryUpdatesTab";
 import { KbManagementTab } from "./elements/KbManagementTab";
@@ -60,8 +61,19 @@ const TAB_PANELS: Record<TabId, () => React.JSX.Element | null> = {
 /* ── Page ─────────────────────────────────────────────────── */
 
 export default function AdminPage() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const ActivePanel = TAB_PANELS[activeTab];
+
+  if (user?.role !== "owner" && user?.role !== "hr_manager") {
+    return (
+      <div className="max-w-6xl mx-auto py-12 text-center">
+        <p className="text-[var(--color-gray-500)]">
+          Access Denied. You do not have permission to view this page.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-8">

@@ -1704,7 +1704,7 @@ async def get_my_employee_record(
                 "name": user.get("name", ""),
                 "email": user.get("email", ""),
                 "department": "",
-                "job_title": role.replace("_", " ").title() if role else "Employee",
+                "designation": role.replace("_", " ").title() if role else "Employee",
                 "start_date": "",
                 "employment_type": "full_time",
             }
@@ -1749,7 +1749,7 @@ async def get_my_employee_record(
                 "name": user.get("name", ""),
                 "email": user.get("email", ""),
                 "department": "",
-                "job_title": role.replace("_", " ").title() if role else "Employee",
+                "designation": role.replace("_", " ").title() if role else "Employee",
                 "start_date": "",
                 "employment_type": "full_time",
             }

@@ -139,6 +139,7 @@ export const projectsApi = {
   /* Allocations */
   listAllocations: (projectId: number) =>
     apiClient.get<{ allocations: ProjectAllocation[]; count: number }>(
-      `/projects/${projectId}/allocations`,
+      `/projects/allocations`,
+      { project_id: String(projectId) },
     ),
 };

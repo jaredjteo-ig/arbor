@@ -304,6 +304,20 @@ async def create_item(
     return {"item": item}
 
 
+@router.get("/items/{item_id}")
+async def get_item(
+    item_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get a single inventory item by ID."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    item = _verify_item_ownership(item_id, company_id)
+    return {"item": item}
+
+
 @router.patch("/items/{item_id}")
 async def update_item(
     item_id: int,
@@ -394,7 +408,7 @@ async def reserve_item(
         },
     )
     _record_movement(item_id, "reserved", actor_id, employee_id=employee_id)
-    return {"detail": "Item reserved.", "item_id": item_id, "employee_id": employee_id}
+    return {"message": "Item reserved.", "item_id": item_id, "employee_id": employee_id}
 
 
 @router.post("/items/{item_id}/issue")
@@ -429,7 +443,7 @@ async def issue_item(
         },
     )
     _record_movement(item_id, "issued", actor_id, employee_id=employee_id)
-    return {"detail": "Item issued.", "item_id": item_id, "employee_id": employee_id}
+    return {"message": "Item issued.", "item_id": item_id, "employee_id": employee_id}
 
 
 @router.post("/items/{item_id}/acknowledge")
@@ -463,7 +477,7 @@ async def acknowledge_item(
         },
     )
     _record_movement(item_id, "acknowledged", user_id, employee_id=emp.get("id"))
-    return {"detail": "Item acknowledged."}
+    return {"message": "Item acknowledged."}
 
 
 @router.post("/items/{item_id}/return")
@@ -504,7 +518,7 @@ async def return_item(
     _record_movement(
         item_id, "returned", user_id, condition=body.get("condition", "good")
     )
-    return {"detail": "Item returned."}
+    return {"message": "Item returned."}
 
 
 @router.post("/items/{item_id}/dispose")
@@ -535,7 +549,7 @@ async def dispose_item(
         },
     )
     _record_movement(item_id, "disposed", actor_id, reason=body.get("reason", ""))
-    return {"detail": "Item disposed."}
+    return {"message": "Item disposed."}
 
 
 # --------------------------------------------------------------------------

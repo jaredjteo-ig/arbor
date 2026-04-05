@@ -6,7 +6,7 @@ Tracks per-user read/dismissed status separately from the admin update workflow.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 
@@ -277,7 +277,7 @@ class AlertResponse(BaseModel):
 
 class AlertListResponse(BaseModel):
     alerts: list[AlertResponse]
-    total: int
+    count: int
     unread_count: int
 
 
@@ -313,7 +313,7 @@ def _to_alert_response(alert_data: dict, user_id: str) -> AlertResponse:
         severity=severity,
         status=_alert_status_for_user(user_id, alert_data["id"]),
         domain=domain,
-        created_at=alert_data.get("created_at", datetime.now().isoformat()),
+        created_at=alert_data.get("created_at", datetime.now(timezone.utc).isoformat()),
         impact_summary=alert_data.get("impact_summary", ""),
         actions=alert_data.get("actions", []),
         effective_date=alert_data.get("effective_date", ""),
@@ -357,7 +357,7 @@ async def list_alerts(
 
     return AlertListResponse(
         alerts=responses,
-        total=len(responses),
+        count=len(responses),
         unread_count=unread_count,
     )
 

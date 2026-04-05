@@ -192,6 +192,10 @@ export default function PayrollPage() {
       toast.success("Payroll calculated successfully");
       // Backend returns { payroll_run: {...}, payslips: [...] }
       const runId = result.id || (result as any).payroll_run?.id;
+      if (!runId) {
+        toast.error("Could not create payroll run");
+        return;
+      }
       router.push(`/payroll/${runId}`);
     } catch (err: unknown) {
       const message =

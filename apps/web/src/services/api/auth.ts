@@ -134,10 +134,10 @@ export const authApi = {
   },
 
   resetPassword(token: string, password: string): Promise<{ message: string }> {
-    return fetch(`${API_BASE}/auth/reset-password`, {
+    return fetch(`${API_BASE}/auth/password-reset`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, password }),
+      body: JSON.stringify({ token, new_password: password }),
     }).then((res) => handleResponse<{ message: string }>(res));
   },
 

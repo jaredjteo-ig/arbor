@@ -208,7 +208,7 @@ def _validate_date(date_str: str) -> bool:
 # --------------------------------------------------------------------------
 
 
-@router.get("/")
+@router.get("")
 async def list_policies(
     category: str = "",
     status: str = "",
@@ -393,7 +393,7 @@ async def get_policy(
 # --------------------------------------------------------------------------
 
 
-@router.post("/")
+@router.post("")
 async def create_policy(
     request: Request,
     current_user: dict = Depends(require_role("owner", "hr_manager")),
