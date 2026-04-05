@@ -13,10 +13,7 @@ VECTOR_DIMENSIONS = 1536  # OpenAI text-embedding-3-small
 
 def get_vector_adapter() -> PostgreSQLVectorAdapter:
     """Create the pgvector adapter for provision embeddings."""
-    database_url = os.environ.get(
-        "DATABASE_URL",
-        "postgresql://arbor:arbor@localhost:5432/arbor",
-    )
+    database_url = os.environ.get("DATABASE_URL", "")
     return PostgreSQLVectorAdapter(
         database_url,
         vector_dimensions=VECTOR_DIMENSIONS,

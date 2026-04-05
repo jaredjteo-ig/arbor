@@ -1,6 +1,6 @@
 ---
 name: arbor-web-specialist
-description: Arbor web frontend specialist (Next.js/React). Use when working on the web app in apps/web/, including components, pages, API service layer, hooks, contexts, design system, onboarding flows, or advisory chat interface.
+description: "Next.js/React web specialist. Use when working on apps/web/ — pages, components, hooks, API layer."
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 

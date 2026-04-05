@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator
 
 from kaizen_agents.delegate import Delegate, DelegateEvent, TextDelta, ErrorEvent
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "DelegateConfig",
     "create_delegate",
+    "run_delegate_sync",
     "stream_delegate",
 ]
 
@@ -37,7 +38,7 @@ class DelegateConfig:
     """Configuration for the Arbor Delegate."""
 
     model: str = ""
-    api_key: str = ""
+    api_key: str = field(default="", repr=False)
     base_url: str | None = None
     max_turns: int = 30
     budget_usd: float | None = None
@@ -57,7 +58,7 @@ def _resolve_llm_settings(config: DelegateConfig) -> tuple[str, str, str | None]
         or os.environ.get("LLM_MODEL")
         or os.environ.get("DEFAULT_LLM_MODEL")
         or os.environ.get("OPENAI_PROD_MODEL")
-        or "gpt-5-chat-latest"
+        or ""
     )
 
     api_key = (
@@ -136,6 +137,103 @@ def create_delegate(config: DelegateConfig | None = None) -> Delegate:
         delegate.loop._hydrator.base_tool_names = _ALWAYS_ACTIVE
 
     return delegate
+
+
+def run_delegate_sync(
+    prompt: str,
+    config: DelegateConfig | None = None,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Run the Delegate synchronously and return a result dict.
+
+    Collects the full streamed response into a dict matching the format
+    expected by /advisory/query:
+        {response_text, risk_tier, confidence, domains, citations,
+         tools_called, usage, degraded}
+
+    Conversation history is prepended to the prompt as context.
+    """
+    import asyncio
+    import re
+
+    delegate = create_delegate(config)
+
+    # Build the full prompt with conversation context
+    full_prompt = prompt
+    if conversation_history:
+        context_parts = []
+        for msg in conversation_history:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if content:
+                context_parts.append(f"[{role}]: {content}")
+        if context_parts:
+            full_prompt = (
+                "Previous conversation:\n" + "\n".join(context_parts) + f"\n\n[user]: {prompt}"
+            )
+
+    # Collect full response
+    text_parts: list[str] = []
+    tools_called: list[str] = []
+    usage_data: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
+
+    async def _run() -> None:
+        async for event in delegate.run(full_prompt):
+            if isinstance(event, TextDelta):
+                text_parts.append(event.text)
+            elif hasattr(event, "tool_name"):
+                tools_called.append(event.tool_name)
+            elif hasattr(event, "usage"):
+                u = event.usage
+                if hasattr(u, "prompt_tokens"):
+                    usage_data["input_tokens"] += u.prompt_tokens
+                if hasattr(u, "completion_tokens"):
+                    usage_data["output_tokens"] += u.completion_tokens
+
+    try:
+        asyncio.run(_run())
+    except RuntimeError:
+        # Already in an async context — use a new event loop in a thread
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(lambda: asyncio.run(_run())).result(timeout=60)
+
+    response_text = "".join(text_parts)
+
+    # Extract confidence/risk markers if present
+    confidence = 0.7
+    risk_tier = "amber"
+    pattern = r"\[CONFIDENCE:\s*([\d.]+)\]\s*\[RISK:\s*(green|amber|red)\]"
+    match = re.search(pattern, response_text)
+    if match:
+        try:
+            import math
+
+            raw = float(match.group(1))
+            confidence = max(0.0, min(1.0, raw)) if math.isfinite(raw) else 0.7
+        except ValueError:
+            confidence = 0.7
+        risk_tier = match.group(2)
+        response_text = response_text[: match.start()].rstrip()
+
+    # Extract domains from tools called
+    domains = ["general"]
+    if any(t == "search_kb" for t in tools_called):
+        domains = ["employment_law"]
+    if any(t == "calculate_cpf" for t in tools_called):
+        domains = ["cpf"] if domains == ["general"] else domains + ["cpf"]
+
+    return {
+        "response_text": response_text,
+        "risk_tier": risk_tier,
+        "confidence": confidence,
+        "domains": domains,
+        "citations": [],
+        "tools_called": tools_called,
+        "usage": usage_data,
+        "degraded": not bool(response_text),
+    }
 
 
 async def stream_delegate(

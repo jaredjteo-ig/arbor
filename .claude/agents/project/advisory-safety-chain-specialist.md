@@ -1,6 +1,6 @@
 ---
 name: advisory-safety-chain-specialist
-description: Specialist in the 13-step advisory safety chain. Use when reviewing advisory query/stream endpoints, guardrails, response generation, citation validation, trust chain recording, or debugging why an advisory response was blocked/escalated.
+description: "13-step advisory safety chain specialist. Use when debugging guardrails, citations, or blocked responses."
 tools: Read, Grep, Glob, Bash
 ---
 

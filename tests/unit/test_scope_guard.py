@@ -91,9 +91,14 @@ class TestScopeBlocksOffTopic:
             "Help me with my homework assignment",
         ],
     )
-    @patch("openai.OpenAI")
-    def test_off_topic_blocked(self, mock_openai_cls, query: str) -> None:
-        mock_openai_cls.return_value.chat.completions.create = _mock_scope_no
+    @patch("hr_advisory.workflows.guardrails.Delegate")
+    def test_off_topic_blocked(self, mock_delegate_cls, query: str) -> None:
+        from kaizen_agents.delegate import TextDelta
+
+        async def _mock_run(prompt):
+            yield TextDelta(text="NO")
+
+        mock_delegate_cls.return_value.run = _mock_run
         result = screen_scope(query)
         assert result.result == ScreeningResult.BLOCK, f"Off-topic query passed: {query!r}"
 
@@ -109,24 +114,33 @@ class TestScopeEdgeCases:
         result = screen_scope("hi")
         assert result.result == ScreeningResult.PASS
 
-    @patch.dict("os.environ", {"OPENAI_API_KEY": ""})
-    def test_no_api_key_fails_open(self) -> None:
+    @patch.dict(
+        "os.environ",
+        {"OPENAI_DEV_MODEL": "", "OPENAI_PROD_MODEL": "", "DEFAULT_LLM_MODEL": ""},
+    )
+    def test_no_model_fails_open(self) -> None:
         result = screen_scope("Write me a poem about the ocean")
         assert result.result == ScreeningResult.PASS
 
-    @patch("openai.OpenAI")
-    def test_llm_error_fails_open(self, mock_openai_cls) -> None:
-        mock_openai_cls.return_value.chat.completions.create.side_effect = Exception("API error")
+    @patch("hr_advisory.workflows.guardrails.Delegate")
+    def test_llm_error_fails_open(self, mock_delegate_cls) -> None:
+        async def _mock_run(prompt):
+            raise Exception("API error")
+            yield  # make it an async generator  # noqa: E711
+
+        mock_delegate_cls.return_value.run = _mock_run
         result = screen_scope("Write me a poem about the ocean")
         assert result.result == ScreeningResult.PASS
 
-    @patch("openai.OpenAI")
-    def test_llm_ambiguous_answer_passes(self, mock_openai_cls) -> None:
+    @patch("hr_advisory.workflows.guardrails.Delegate")
+    def test_llm_ambiguous_answer_passes(self, mock_delegate_cls) -> None:
         """If LLM returns something other than NO, allow through."""
-        mock_resp = MagicMock()
-        mock_resp.choices = [MagicMock()]
-        mock_resp.choices[0].message.content = "MAYBE"
-        mock_openai_cls.return_value.chat.completions.create.return_value = mock_resp
+        from kaizen_agents.delegate import TextDelta
+
+        async def _mock_run(prompt):
+            yield TextDelta(text="MAYBE")
+
+        mock_delegate_cls.return_value.run = _mock_run
         result = screen_scope("Something ambiguous about work life balance")
         assert result.result == ScreeningResult.PASS
 

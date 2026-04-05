@@ -364,31 +364,14 @@ def _resolve_authority(entry: dict) -> AuthorityLevel:
 def _fetch_provisions_from_db() -> list[dict]:
     """Query all active provisions from the DataFlow KB.
 
-    Uses the same ProvisionListNode pattern as ``kb.admin.search_provisions``.
     Returns a list of provision dicts.
 
     Raises:
-        Any exception from the Kailash runtime or DataFlow layer.
+        Any exception from the DataFlow layer.
     """
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    runtime = LocalRuntime()
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "ProvisionListNode",
-        "all_active",
-        {"filter": {"is_active": True}, "enable_cache": False, "limit": 10000},
-    )
-    results, _ = runtime.execute(wf.build())
-    raw = results["all_active"]
-
-    # Normalise ListNode result format
-    if isinstance(raw, list):
-        return raw
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    return []
+    return dataflow_crud.list_records("Provision", {"is_active": True}, limit=10000)
 
 
 # ── Public API: dynamic provision lookup ─────────────────────

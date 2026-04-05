@@ -13,83 +13,15 @@ from fastapi.responses import Response
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-# --------------------------------------------------------------------------
-# DataFlow helpers
-# --------------------------------------------------------------------------
-
-
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-
-def _dataflow_update(node_type: str, record_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "update", {"filter": {"id": record_id}, "fields": updates})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
-
-
-def _dataflow_read(node_type: str, record_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "read", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
-
-
 def _find_user_by_id(user_id: int) -> dict | None:
-    return _dataflow_read("UserReadNode", user_id)
+    return dataflow_crud.read("User", user_id)
 
 
 # --------------------------------------------------------------------------
@@ -130,8 +62,7 @@ async def calculate_payroll(
     actor_id = int(current_user.get("sub", 0))
 
     # Fetch active employees
-    employees = _dataflow_list(
-        "EmployeeListNode",
+    employees = dataflow_crud.list_records("Employee",
         {
             "company_id": company_id,
             "is_active": True,
@@ -141,8 +72,7 @@ async def calculate_payroll(
         raise HTTPException(status_code=400, detail="No active employees found.")
 
     # Prevent duplicate payroll runs for the same period
-    existing_runs = _dataflow_list(
-        "PayrollRunListNode",
+    existing_runs = dataflow_crud.list_records("PayrollRun",
         {
             "company_id": company_id,
             "period_start": period_start,
@@ -154,8 +84,7 @@ async def calculate_payroll(
         raise HTTPException(status_code=400, detail="A payroll run already exists for this period.")
 
     # Create payroll run
-    run = _dataflow_create(
-        "PayrollRunCreateNode",
+    run = dataflow_crud.create("PayrollRun",
         {
             "company_id": company_id,
             "period_start": period_start,
@@ -189,8 +118,7 @@ async def calculate_payroll(
         emp_id = emp.get("id")
 
         # Fetch salary components
-        components = _dataflow_list(
-            "SalaryComponentListNode",
+        components = dataflow_crud.list_records("SalaryComponent",
             {
                 "employee_id": emp_id,
                 "is_active": True,
@@ -199,8 +127,7 @@ async def calculate_payroll(
 
         # Fetch CPF YTD for ceiling tracking
         try:
-            ytd_records = _dataflow_list(
-                "CpfYtdRecordListNode",
+            ytd_records = dataflow_crud.list_records("CpfYtdRecord",
                 {
                     "employee_id": emp_id,
                     "year": period_date.year,
@@ -217,8 +144,7 @@ async def calculate_payroll(
         # 1. Unpaid leave deductions
         leave_deduction_days = 0.0
         try:
-            leave_apps = _dataflow_list(
-                "LeaveApplicationListNode",
+            leave_apps = dataflow_crud.list_records("LeaveApplication",
                 {
                     "employee_id": emp_id,
                     "status": "approved",
@@ -237,8 +163,7 @@ async def calculate_payroll(
         # 2. Overtime hours from approved timesheets
         overtime_hours = 0.0
         try:
-            timesheets = _dataflow_list(
-                "TimesheetApprovalListNode",
+            timesheets = dataflow_crud.list_records("TimesheetApproval",
                 {
                     "employee_id": emp_id,
                     "status": "approved",
@@ -253,8 +178,7 @@ async def calculate_payroll(
         # 3. Approved claims not yet paid
         approved_claims_total = 0.0
         try:
-            emp_claims = _dataflow_list(
-                "ClaimListNode",
+            emp_claims = dataflow_crud.list_records("Claim",
                 {
                     "employee_id": emp_id,
                     "status": "approved",
@@ -280,8 +204,7 @@ async def calculate_payroll(
         )
 
         # Create Payslip record
-        payslip = _dataflow_create(
-            "PayslipCreateNode",
+        payslip = dataflow_crud.create("Payslip",
             {
                 "payroll_run_id": run_id,
                 "employee_id": emp_id,
@@ -306,8 +229,7 @@ async def calculate_payroll(
 
         # Create PayslipItems
         for item in result.get("items", []):
-            _dataflow_create(
-                "PayslipItemCreateNode",
+            dataflow_crud.create("PayslipItem",
                 {
                     "payslip_id": payslip_id,
                     "company_id": company_id,
@@ -323,8 +245,7 @@ async def calculate_payroll(
         # Create CPF YTD record
         try:
             period_date = date.fromisoformat(period_start)
-            _dataflow_create(
-                "CpfYtdRecordCreateNode",
+            dataflow_crud.create("CpfYtdRecord",
                 {
                     "employee_id": emp_id,
                     "company_id": company_id,
@@ -367,8 +288,7 @@ async def calculate_payroll(
         )
 
     # Update run with totals
-    _dataflow_update(
-        "PayrollRunUpdateNode",
+    dataflow_crud.update("PayrollRun",
         run_id,
         {
             "total_gross": round(total_gross, 2),
@@ -413,7 +333,7 @@ async def list_payroll_runs(
 ) -> dict:
     """List all payroll runs for the current company."""
     company_id = get_current_company_id(current_user)
-    runs = _dataflow_list("PayrollRunListNode", {"company_id": company_id})
+    runs = dataflow_crud.list_records("PayrollRun", {"company_id": company_id})
     runs.sort(key=lambda r: r.get("period_start", ""), reverse=True)
     return {"runs": runs, "count": len(runs)}
 
@@ -430,17 +350,17 @@ async def get_payroll_run(
 ) -> dict:
     """Get a payroll run with all payslips."""
     company_id = get_current_company_id(current_user)
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
-    payslips = _dataflow_list("PayslipListNode", {"payroll_run_id": run_id})
+    payslips = dataflow_crud.list_records("Payslip", {"payroll_run_id": run_id})
 
     # Enrich payslips with employee names
     enriched = []
     for ps in payslips:
         emp_id = ps.get("employee_id")
-        emp_records = _dataflow_list("EmployeeListNode", {"id": emp_id}, limit=1)
+        emp_records = dataflow_crud.list_records("Employee", {"id": emp_id}, limit=1)
         emp = emp_records[0] if emp_records else {}
         user = _find_user_by_id(emp.get("user_id")) if emp else None
         enriched.append(
@@ -467,14 +387,14 @@ async def get_payslip_detail(
 ) -> dict:
     """Get a single payslip with all line items."""
     company_id = get_current_company_id(current_user)
-    payslip = _dataflow_read("PayslipReadNode", payslip_id)
+    payslip = dataflow_crud.read("Payslip", payslip_id)
     if payslip is None or payslip.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payslip not found.")
 
-    items = _dataflow_list("PayslipItemListNode", {"payslip_id": payslip_id})
+    items = dataflow_crud.list_records("PayslipItem", {"payslip_id": payslip_id})
 
     # Get employee name
-    emp_records = _dataflow_list("EmployeeListNode", {"id": payslip.get("employee_id")}, limit=1)
+    emp_records = dataflow_crud.list_records("Employee", {"id": payslip.get("employee_id")}, limit=1)
     emp = emp_records[0] if emp_records else {}
     user = _find_user_by_id(emp.get("user_id")) if emp else None
 
@@ -499,7 +419,7 @@ async def approve_payroll_run(
 ) -> dict:
     """Approve a payroll run. Owner only."""
     company_id = get_current_company_id(current_user)
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
@@ -509,8 +429,7 @@ async def approve_payroll_run(
     actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
-    _dataflow_update(
-        "PayrollRunUpdateNode",
+    dataflow_crud.update("PayrollRun",
         run_id,
         {
             "status": "approved",
@@ -534,30 +453,29 @@ async def mark_payroll_paid(
 ) -> dict:
     """Mark a payroll run as paid."""
     company_id = get_current_company_id(current_user)
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
     if run.get("status") != "approved":
         raise HTTPException(status_code=400, detail="Only approved runs can be marked as paid.")
 
-    _dataflow_update("PayrollRunUpdateNode", run_id, {"status": "paid"})
+    dataflow_crud.update("PayrollRun", run_id, {"status": "paid"})
 
     # Update all payslips in this run to paid
-    payslips = _dataflow_list("PayslipListNode", {"payroll_run_id": run_id})
+    payslips = dataflow_crud.list_records("Payslip", {"payroll_run_id": run_id})
     for ps in payslips:
-        _dataflow_update("PayslipUpdateNode", ps["id"], {"status": "paid"})
+        dataflow_crud.update("Payslip", ps["id"], {"status": "paid"})
 
     # Mark approved claims as paid in this payroll run
     from datetime import date as _date
 
     period_month = _date.fromisoformat(run["period_start"]).strftime("%Y-%m")
-    employees = _dataflow_list("EmployeeListNode", {"company_id": company_id, "is_active": True})
+    employees = dataflow_crud.list_records("Employee", {"company_id": company_id, "is_active": True})
     for emp in employees:
         emp_id = emp.get("id")
         try:
-            emp_claims = _dataflow_list(
-                "ClaimListNode",
+            emp_claims = dataflow_crud.list_records("Claim",
                 {
                     "employee_id": emp_id,
                     "status": "approved",
@@ -566,8 +484,7 @@ async def mark_payroll_paid(
             )
             for cl in emp_claims:
                 if cl.get("paid_in_payroll_run_id") is None:
-                    _dataflow_update(
-                        "ClaimUpdateNode",
+                    dataflow_crud.update("Claim",
                         cl["id"],
                         {
                             "status": "paid",
@@ -596,7 +513,7 @@ async def cancel_payroll_run(
 ) -> dict:
     """Cancel a payroll run (only if not yet paid)."""
     company_id = get_current_company_id(current_user)
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
@@ -606,7 +523,7 @@ async def cancel_payroll_run(
     if run.get("status") == "approved" and current_user.get("role") != "owner":
         raise HTTPException(status_code=403, detail="Only owners can cancel approved payroll runs.")
 
-    _dataflow_update("PayrollRunUpdateNode", run_id, {"status": "cancelled"})
+    dataflow_crud.update("PayrollRun", run_id, {"status": "cancelled"})
     return {"message": "Payroll run cancelled.", "status": "cancelled"}
 
 
@@ -627,8 +544,7 @@ async def get_my_payslips(
         return {"payslips": []}
 
     # Find employee record
-    emp_records = _dataflow_list(
-        "EmployeeListNode",
+    emp_records = dataflow_crud.list_records("Employee",
         {
             "user_id": user_id,
             "company_id": company_id,
@@ -639,7 +555,7 @@ async def get_my_payslips(
         return {"payslips": []}
 
     emp_id = emp_records[0].get("id")
-    payslips = _dataflow_list("PayslipListNode", {"employee_id": emp_id})
+    payslips = dataflow_crud.list_records("Payslip", {"employee_id": emp_id})
 
     # Only show paid/confirmed payslips to employees
     visible = [ps for ps in payslips if ps.get("status") in ("confirmed", "paid")]
@@ -662,13 +578,12 @@ async def get_my_payslip_detail(
     user_id = int(current_user.get("sub", 0))
     company_id = current_user.get("company_id")
 
-    payslip = _dataflow_read("PayslipReadNode", payslip_id)
+    payslip = dataflow_crud.read("Payslip", payslip_id)
     if payslip is None:
         raise HTTPException(status_code=404, detail="Payslip not found.")
 
     # Verify this payslip belongs to the current user
-    emp_records = _dataflow_list(
-        "EmployeeListNode",
+    emp_records = dataflow_crud.list_records("Employee",
         {
             "user_id": user_id,
             "company_id": company_id,
@@ -678,7 +593,7 @@ async def get_my_payslip_detail(
     if not emp_records or emp_records[0].get("id") != payslip.get("employee_id"):
         raise HTTPException(status_code=403, detail="Access denied.")
 
-    items = _dataflow_list("PayslipItemListNode", {"payslip_id": payslip_id})
+    items = dataflow_crud.list_records("PayslipItem", {"payslip_id": payslip_id})
 
     return {"payslip": payslip, "items": items}
 
@@ -699,8 +614,7 @@ async def get_cpf_ytd(
     if year == 0:
         year = datetime.now(timezone.utc).year
 
-    records = _dataflow_list(
-        "CpfYtdRecordListNode",
+    records = dataflow_crud.list_records("CpfYtdRecord",
         {
             "employee_id": employee_id,
             "year": year,
@@ -708,7 +622,7 @@ async def get_cpf_ytd(
     )
 
     # Verify employee belongs to company
-    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    emp_records = dataflow_crud.list_records("Employee", {"id": employee_id}, limit=1)
     if not emp_records or emp_records[0].get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Employee not found.")
 
@@ -728,16 +642,16 @@ async def payroll_summary_report(
 ) -> dict:
     """Generate payroll summary report for a run."""
     company_id = get_current_company_id(current_user)
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
-    payslips = _dataflow_list("PayslipListNode", {"payroll_run_id": run_id})
+    payslips = dataflow_crud.list_records("Payslip", {"payroll_run_id": run_id})
 
     # Group by department
     by_department: dict[str, dict] = {}
     for ps in payslips:
-        emp_records = _dataflow_list("EmployeeListNode", {"id": ps.get("employee_id")}, limit=1)
+        emp_records = dataflow_crud.list_records("Employee", {"id": ps.get("employee_id")}, limit=1)
         dept = emp_records[0].get("department", "Unassigned") if emp_records else "Unassigned"
         if dept not in by_department:
             by_department[dept] = {
@@ -775,8 +689,7 @@ async def ytd_report(
     if year == 0:
         year = datetime.now(timezone.utc).year
 
-    employees = _dataflow_list(
-        "EmployeeListNode",
+    employees = dataflow_crud.list_records("Employee",
         {
             "company_id": company_id,
             "is_active": True,
@@ -789,7 +702,7 @@ async def ytd_report(
         user = _find_user_by_id(emp.get("user_id"))
 
         # Get all payslips for this employee in the year
-        payslips = _dataflow_list("PayslipListNode", {"employee_id": emp_id})
+        payslips = dataflow_crud.list_records("Payslip", {"employee_id": emp_id})
         year_payslips = [ps for ps in payslips if ps.get("period_start", "").startswith(str(year))]
 
         ytd_gross = sum(ps.get("gross_salary", 0.0) for ps in year_payslips)
@@ -826,17 +739,17 @@ def _fetch_run_payslips_employees(
     Raises HTTPException if the run is not found or does not belong to the company.
     Returns (run, payslips, employees).
     """
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
-    payslips = _dataflow_list("PayslipListNode", {"payroll_run_id": run_id})
+    payslips = dataflow_crud.list_records("Payslip", {"payroll_run_id": run_id})
 
     # Collect unique employee IDs and fetch employee records
     emp_ids = {ps.get("employee_id") for ps in payslips}
     employees: list[dict] = []
     for eid in emp_ids:
-        emp_records = _dataflow_list("EmployeeListNode", {"id": eid}, limit=1)
+        emp_records = dataflow_crud.list_records("Employee", {"id": eid}, limit=1)
         if emp_records:
             emp = emp_records[0]
             # Enrich with user name
@@ -930,29 +843,29 @@ async def generate_payslip_pdf(
     company_id = get_current_company_id(current_user)
 
     # Verify run ownership
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
     # Fetch payslip
-    payslip = _dataflow_read("PayslipReadNode", payslip_id)
+    payslip = dataflow_crud.read("Payslip", payslip_id)
     if payslip is None or payslip.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payslip not found.")
     if payslip.get("payroll_run_id") != run_id:
         raise HTTPException(status_code=400, detail="Payslip does not belong to this run.")
 
     # Fetch payslip items
-    items = _dataflow_list("PayslipItemListNode", {"payslip_id": payslip_id})
+    items = dataflow_crud.list_records("PayslipItem", {"payslip_id": payslip_id})
 
     # Fetch employee + user name
-    emp_records = _dataflow_list("EmployeeListNode", {"id": payslip.get("employee_id")}, limit=1)
+    emp_records = dataflow_crud.list_records("Employee", {"id": payslip.get("employee_id")}, limit=1)
     emp = emp_records[0] if emp_records else {}
     user = _find_user_by_id(emp.get("user_id")) if emp else None
     if user:
         emp["name"] = user.get("name", "")
 
     # Fetch company
-    company = _dataflow_read("CompanyReadNode", company_id) or {}
+    company = dataflow_crud.read("Company", company_id) or {}
 
     # Add pay_date from run to payslip dict for display
     payslip["pay_date"] = run.get("pay_date", "")
@@ -1032,8 +945,7 @@ async def generate_ir8a_all(
     if year == 0:
         year = datetime.now(timezone.utc).year
 
-    employees = _dataflow_list(
-        "EmployeeListNode",
+    employees = dataflow_crud.list_records("Employee",
         {"company_id": company_id, "is_active": True},
     )
     if not employees:
@@ -1050,7 +962,7 @@ async def generate_ir8a_all(
             emp["name"] = user.get("name", "")
 
         # Fetch all payslips for this employee in the year
-        all_payslips = _dataflow_list("PayslipListNode", {"employee_id": emp_id})
+        all_payslips = dataflow_crud.list_records("Payslip", {"employee_id": emp_id})
         year_payslips = [
             ps for ps in all_payslips if ps.get("period_start", "").startswith(str(year))
         ]
@@ -1058,14 +970,13 @@ async def generate_ir8a_all(
         # Fetch all items for those payslips
         all_items: list[dict] = []
         for ps in year_payslips:
-            ps_items = _dataflow_list("PayslipItemListNode", {"payslip_id": ps.get("id")})
+            ps_items = dataflow_crud.list_records("PayslipItem", {"payslip_id": ps.get("id")})
             all_items.extend(ps_items)
 
         ir8a = generate_ir8a_data(emp, year_payslips, all_items, year)
 
         # Create or update TaxFiling record
-        existing = _dataflow_list(
-            "TaxFilingListNode",
+        existing = dataflow_crud.list_records("TaxFiling",
             {
                 "employee_id": emp_id,
                 "tax_year": year,
@@ -1075,15 +986,13 @@ async def generate_ir8a_all(
         )
 
         if existing:
-            _dataflow_update(
-                "TaxFilingUpdateNode",
+            dataflow_crud.update("TaxFiling",
                 existing[0]["id"],
                 {"data": ir8a, "status": "draft"},
             )
             filing_id = existing[0]["id"]
         else:
-            result = _dataflow_create(
-                "TaxFilingCreateNode",
+            result = dataflow_crud.create("TaxFiling",
                 {
                     "company_id": company_id,
                     "employee_id": emp_id,
@@ -1131,7 +1040,7 @@ async def get_ir8a(
         year = datetime.now(timezone.utc).year
 
     # Verify employee belongs to company
-    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    emp_records = dataflow_crud.list_records("Employee", {"id": employee_id}, limit=1)
     if not emp_records or emp_records[0].get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Employee not found.")
 
@@ -1141,8 +1050,7 @@ async def get_ir8a(
         emp["name"] = user.get("name", "")
 
     # Check if a TaxFiling already exists
-    existing = _dataflow_list(
-        "TaxFilingListNode",
+    existing = dataflow_crud.list_records("TaxFiling",
         {
             "employee_id": employee_id,
             "tax_year": year,
@@ -1159,12 +1067,12 @@ async def get_ir8a(
         }
 
     # Generate on-the-fly
-    all_payslips = _dataflow_list("PayslipListNode", {"employee_id": employee_id})
+    all_payslips = dataflow_crud.list_records("Payslip", {"employee_id": employee_id})
     year_payslips = [ps for ps in all_payslips if ps.get("period_start", "").startswith(str(year))]
 
     all_items: list[dict] = []
     for ps in year_payslips:
-        ps_items = _dataflow_list("PayslipItemListNode", {"payslip_id": ps.get("id")})
+        ps_items = dataflow_crud.list_records("PayslipItem", {"payslip_id": ps.get("id")})
         all_items.extend(ps_items)
 
     ir8a = generate_ir8a_data(emp, year_payslips, all_items, year)
@@ -1190,7 +1098,7 @@ async def list_pay_items(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    items = _dataflow_list("PayItemListNode", {"company_id": company_id, "is_active": True})
+    items = dataflow_crud.list_records("PayItem", {"company_id": company_id, "is_active": True})
     return {"pay_items": items, "count": len(items)}
 
 
@@ -1216,8 +1124,7 @@ async def create_pay_item(
             detail="item_type must be one of: allowance, deduction, contribution.",
         )
 
-    pay_item = _dataflow_create(
-        "PayItemCreateNode",
+    pay_item = dataflow_crud.create("PayItem",
         {
             "company_id": company_id,
             "name": name,
@@ -1240,7 +1147,7 @@ async def update_pay_item(
 ) -> dict:
     """Update a pay item."""
     company_id = get_current_company_id(current_user)
-    item = _dataflow_read("PayItemReadNode", pay_item_id)
+    item = dataflow_crud.read("PayItem", pay_item_id)
     if item is None or item.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Pay item not found.")
 
@@ -1253,8 +1160,8 @@ async def update_pay_item(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    _dataflow_update("PayItemUpdateNode", pay_item_id, updates)
-    updated = _dataflow_read("PayItemReadNode", pay_item_id)
+    dataflow_crud.update("PayItem", pay_item_id, updates)
+    updated = dataflow_crud.read("PayItem", pay_item_id)
     return {"pay_item": updated}
 
 
@@ -1265,11 +1172,11 @@ async def archive_pay_item(
 ) -> dict:
     """Archive (soft-delete) a pay item."""
     company_id = get_current_company_id(current_user)
-    item = _dataflow_read("PayItemReadNode", pay_item_id)
+    item = dataflow_crud.read("PayItem", pay_item_id)
     if item is None or item.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Pay item not found.")
 
-    _dataflow_update("PayItemUpdateNode", pay_item_id, {"is_active": False})
+    dataflow_crud.update("PayItem", pay_item_id, {"is_active": False})
     return {"message": "Pay item archived."}
 
 
@@ -1287,8 +1194,7 @@ async def list_pay_schemes(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    schemes = _dataflow_list(
-        "PaySchemeListNode", {"company_id": company_id, "is_active": True}
+    schemes = dataflow_crud.list_records("PayScheme", {"company_id": company_id, "is_active": True}
     )
     return {"pay_schemes": schemes, "count": len(schemes)}
 
@@ -1308,8 +1214,7 @@ async def create_pay_scheme(
     if not name:
         raise HTTPException(status_code=400, detail="name is required.")
 
-    scheme = _dataflow_create(
-        "PaySchemeCreateNode",
+    scheme = dataflow_crud.create("PayScheme",
         {
             "company_id": company_id,
             "name": name,
@@ -1330,7 +1235,7 @@ async def update_pay_scheme(
 ) -> dict:
     """Update a pay scheme."""
     company_id = get_current_company_id(current_user)
-    scheme = _dataflow_read("PaySchemeReadNode", scheme_id)
+    scheme = dataflow_crud.read("PayScheme", scheme_id)
     if scheme is None or scheme.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Pay scheme not found.")
 
@@ -1340,8 +1245,8 @@ async def update_pay_scheme(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    _dataflow_update("PaySchemeUpdateNode", scheme_id, updates)
-    updated = _dataflow_read("PaySchemeReadNode", scheme_id)
+    dataflow_crud.update("PayScheme", scheme_id, updates)
+    updated = dataflow_crud.read("PayScheme", scheme_id)
     return {"pay_scheme": updated}
 
 
@@ -1352,11 +1257,11 @@ async def archive_pay_scheme(
 ) -> dict:
     """Archive (soft-delete) a pay scheme."""
     company_id = get_current_company_id(current_user)
-    scheme = _dataflow_read("PaySchemeReadNode", scheme_id)
+    scheme = dataflow_crud.read("PayScheme", scheme_id)
     if scheme is None or scheme.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Pay scheme not found.")
 
-    _dataflow_update("PaySchemeUpdateNode", scheme_id, {"is_active": False})
+    dataflow_crud.update("PayScheme", scheme_id, {"is_active": False})
     return {"message": "Pay scheme archived."}
 
 
@@ -1411,7 +1316,7 @@ async def create_adhoc_payroll(
     # Validate and fetch selected employees
     employees = []
     for eid in employee_ids:
-        emp_records = _dataflow_list("EmployeeListNode", {"id": eid}, limit=1)
+        emp_records = dataflow_crud.list_records("Employee", {"id": eid}, limit=1)
         if emp_records and emp_records[0].get("company_id") == company_id:
             employees.append(emp_records[0])
 
@@ -1419,8 +1324,7 @@ async def create_adhoc_payroll(
         raise HTTPException(status_code=400, detail="No valid employees found.")
 
     # Create adhoc payroll run
-    run = _dataflow_create(
-        "PayrollRunCreateNode",
+    run = dataflow_crud.create("PayrollRun",
         {
             "company_id": company_id,
             "period_start": period_start,
@@ -1441,14 +1345,12 @@ async def create_adhoc_payroll(
     for emp in employees:
         emp_id = emp.get("id")
 
-        components = _dataflow_list(
-            "SalaryComponentListNode",
+        components = dataflow_crud.list_records("SalaryComponent",
             {"employee_id": emp_id, "is_active": True},
         )
 
         try:
-            ytd_records = _dataflow_list(
-                "CpfYtdRecordListNode",
+            ytd_records = dataflow_crud.list_records("CpfYtdRecord",
                 {"employee_id": emp_id, "year": period_date.year},
             )
             ytd_ow_total = sum(r.get("ow_subject_to_cpf", 0.0) for r in ytd_records)
@@ -1463,8 +1365,7 @@ async def create_adhoc_payroll(
             ytd_ow_total=ytd_ow_total,
         )
 
-        payslip = _dataflow_create(
-            "PayslipCreateNode",
+        payslip = dataflow_crud.create("Payslip",
             {
                 "payroll_run_id": run_id,
                 "employee_id": emp_id,
@@ -1487,8 +1388,7 @@ async def create_adhoc_payroll(
         )
 
         for item in result.get("items", []):
-            _dataflow_create(
-                "PayslipItemCreateNode",
+            dataflow_crud.create("PayslipItem",
                 {
                     "payslip_id": payslip.get("id"),
                     "company_id": company_id,
@@ -1515,8 +1415,7 @@ async def create_adhoc_payroll(
             }
         )
 
-    _dataflow_update(
-        "PayrollRunUpdateNode",
+    dataflow_crud.update("PayrollRun",
         run_id,
         {
             "total_gross": round(total_gross, 2),
@@ -1551,15 +1450,15 @@ async def payroll_variance(
     """Compare two payroll runs and return per-employee variance."""
     company_id = get_current_company_id(current_user)
 
-    run_a = _dataflow_read("PayrollRunReadNode", run_id_a)
-    run_b = _dataflow_read("PayrollRunReadNode", run_id_b)
+    run_a = dataflow_crud.read("PayrollRun", run_id_a)
+    run_b = dataflow_crud.read("PayrollRun", run_id_b)
     if run_a is None or run_a.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run A not found.")
     if run_b is None or run_b.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run B not found.")
 
-    payslips_a = _dataflow_list("PayslipListNode", {"payroll_run_id": run_id_a})
-    payslips_b = _dataflow_list("PayslipListNode", {"payroll_run_id": run_id_b})
+    payslips_a = dataflow_crud.list_records("Payslip", {"payroll_run_id": run_id_a})
+    payslips_b = dataflow_crud.list_records("Payslip", {"payroll_run_id": run_id_b})
 
     map_a = {ps.get("employee_id"): ps for ps in payslips_a}
     map_b = {ps.get("employee_id"): ps for ps in payslips_b}
@@ -1580,7 +1479,7 @@ async def payroll_variance(
         if gross_a == gross_b and net_a == net_b:
             continue
 
-        emp_records = _dataflow_list("EmployeeListNode", {"id": emp_id}, limit=1)
+        emp_records = dataflow_crud.list_records("Employee", {"id": emp_id}, limit=1)
         emp = emp_records[0] if emp_records else {}
         user = _find_user_by_id(emp.get("user_id")) if emp else None
 
@@ -1614,8 +1513,7 @@ async def payroll_variance(
 
 def _get_payslip_settings(company_id: int) -> dict:
     """Fetch payslip display settings for a company, returning defaults if none exist."""
-    settings = _dataflow_list(
-        "PayslipSettingsListNode",
+    settings = dataflow_crud.list_records("PayslipSettings",
         {"company_id": company_id},
         limit=1,
     )
@@ -1661,17 +1559,16 @@ async def update_payslip_settings(
     }
     fields = {k: v for k, v in body.items() if k in allowed}
 
-    existing = _dataflow_list(
-        "PayslipSettingsListNode",
+    existing = dataflow_crud.list_records("PayslipSettings",
         {"company_id": company_id},
         limit=1,
     )
     if existing:
-        _dataflow_update("PayslipSettingsUpdateNode", existing[0]["id"], fields)
-        updated = _dataflow_read("PayslipSettingsReadNode", existing[0]["id"])
+        dataflow_crud.update("PayslipSettings", existing[0]["id"], fields)
+        updated = dataflow_crud.read("PayslipSettings", existing[0]["id"])
     else:
         fields["company_id"] = company_id
-        updated = _dataflow_create("PayslipSettingsCreateNode", fields)
+        updated = dataflow_crud.create("PayslipSettings", fields)
 
     return {"settings": updated}
 
@@ -1688,15 +1585,15 @@ async def list_run_line_items(
 ) -> dict:
     """List all payslip items (line items) for a payroll run."""
     company_id = get_current_company_id(current_user)
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
-    payslips = _dataflow_list("PayslipListNode", {"payroll_run_id": run_id})
+    payslips = dataflow_crud.list_records("Payslip", {"payroll_run_id": run_id})
 
     all_items = []
     for ps in payslips:
-        items = _dataflow_list("PayslipItemListNode", {"payslip_id": ps.get("id")})
+        items = dataflow_crud.list_records("PayslipItem", {"payslip_id": ps.get("id")})
         for item in items:
             item["payslip_id"] = ps.get("id")
             item["employee_id"] = ps.get("employee_id")
@@ -1713,7 +1610,7 @@ async def add_run_line_item(
 ) -> dict:
     """Add a manual line item to a payslip within a payroll run."""
     company_id = get_current_company_id(current_user)
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
@@ -1725,7 +1622,7 @@ async def add_run_line_item(
     if not payslip_id:
         raise HTTPException(status_code=400, detail="payslip_id is required.")
 
-    payslip = _dataflow_read("PayslipReadNode", payslip_id)
+    payslip = dataflow_crud.read("Payslip", payslip_id)
     if payslip is None or payslip.get("payroll_run_id") != run_id:
         raise HTTPException(status_code=404, detail="Payslip not found in this run.")
 
@@ -1739,8 +1636,7 @@ async def add_run_line_item(
     if not math.isfinite(amount):
         raise HTTPException(status_code=400, detail="Invalid amount value.")
 
-    item = _dataflow_create(
-        "PayslipItemCreateNode",
+    item = dataflow_crud.create("PayslipItem",
         {
             "payslip_id": payslip_id,
             "company_id": company_id,
@@ -1764,14 +1660,14 @@ async def update_run_line_item(
 ) -> dict:
     """Update a line item within a payroll run."""
     company_id = get_current_company_id(current_user)
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
     if run.get("status") != "draft":
         raise HTTPException(status_code=400, detail="Line items can only be updated on draft runs.")
 
-    item = _dataflow_read("PayslipItemReadNode", item_id)
+    item = dataflow_crud.read("PayslipItem", item_id)
     if item is None or item.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Line item not found.")
 
@@ -1781,8 +1677,8 @@ async def update_run_line_item(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    _dataflow_update("PayslipItemUpdateNode", item_id, updates)
-    updated = _dataflow_read("PayslipItemReadNode", item_id)
+    dataflow_crud.update("PayslipItem", item_id, updates)
+    updated = dataflow_crud.read("PayslipItem", item_id)
     return {"line_item": updated}
 
 
@@ -1794,20 +1690,19 @@ async def delete_run_line_item(
 ) -> dict:
     """Delete a line item from a payroll run (hard delete via update to zero)."""
     company_id = get_current_company_id(current_user)
-    run = _dataflow_read("PayrollRunReadNode", run_id)
+    run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
 
     if run.get("status") != "draft":
         raise HTTPException(status_code=400, detail="Line items can only be deleted from draft runs.")
 
-    item = _dataflow_read("PayslipItemReadNode", item_id)
+    item = dataflow_crud.read("PayslipItem", item_id)
     if item is None or item.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Line item not found.")
 
     # Soft-delete by zeroing out and marking
-    _dataflow_update(
-        "PayslipItemUpdateNode",
+    dataflow_crud.update("PayslipItem",
         item_id,
         {"amount": 0.0, "name": f"[DELETED] {item.get('name', '')}", "notes": "deleted"},
     )
@@ -1856,12 +1751,11 @@ async def simulate_payroll(
     if employee_ids:
         employees = []
         for eid in employee_ids:
-            emp_records = _dataflow_list("EmployeeListNode", {"id": eid}, limit=1)
+            emp_records = dataflow_crud.list_records("Employee", {"id": eid}, limit=1)
             if emp_records and emp_records[0].get("company_id") == company_id:
                 employees.append(emp_records[0])
     else:
-        employees = _dataflow_list(
-            "EmployeeListNode",
+        employees = dataflow_crud.list_records("Employee",
             {"company_id": company_id, "is_active": True},
         )
 
@@ -1877,14 +1771,12 @@ async def simulate_payroll(
     for emp in employees:
         emp_id = emp.get("id")
 
-        components = _dataflow_list(
-            "SalaryComponentListNode",
+        components = dataflow_crud.list_records("SalaryComponent",
             {"employee_id": emp_id, "is_active": True},
         )
 
         try:
-            ytd_records = _dataflow_list(
-                "CpfYtdRecordListNode",
+            ytd_records = dataflow_crud.list_records("CpfYtdRecord",
                 {"employee_id": emp_id, "year": period_date.year},
             )
             ytd_ow_total = sum(r.get("ow_subject_to_cpf", 0.0) for r in ytd_records)
@@ -1897,8 +1789,7 @@ async def simulate_payroll(
         approved_claims_total = 0.0
 
         try:
-            leave_apps = _dataflow_list(
-                "LeaveApplicationListNode",
+            leave_apps = dataflow_crud.list_records("LeaveApplication",
                 {"employee_id": emp_id, "status": "approved", "leave_type_code": "unpaid"},
             )
             for la in leave_apps:
@@ -1908,8 +1799,7 @@ async def simulate_payroll(
             pass
 
         try:
-            timesheets = _dataflow_list(
-                "TimesheetApprovalListNode",
+            timesheets = dataflow_crud.list_records("TimesheetApproval",
                 {"employee_id": emp_id, "status": "approved", "month": period_month},
             )
             for ts in timesheets:
@@ -1918,8 +1808,7 @@ async def simulate_payroll(
             pass
 
         try:
-            emp_claims = _dataflow_list(
-                "ClaimListNode",
+            emp_claims = dataflow_crud.list_records("Claim",
                 {"employee_id": emp_id, "status": "approved", "claim_month": period_month},
             )
             for cl in emp_claims:
@@ -1998,7 +1887,7 @@ async def generate_ir21(
         raise HTTPException(status_code=400, detail="cessation_date is required.")
 
     # Verify employee belongs to company
-    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    emp_records = dataflow_crud.list_records("Employee", {"id": employee_id}, limit=1)
     if not emp_records or emp_records[0].get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Employee not found.")
 
@@ -2008,11 +1897,11 @@ async def generate_ir21(
         emp["name"] = user.get("name", "")
 
     # Fetch all payslips and items for the employee
-    all_payslips = _dataflow_list("PayslipListNode", {"employee_id": employee_id})
+    all_payslips = dataflow_crud.list_records("Payslip", {"employee_id": employee_id})
 
     all_items: list[dict] = []
     for ps in all_payslips:
-        ps_items = _dataflow_list("PayslipItemListNode", {"payslip_id": ps.get("id")})
+        ps_items = dataflow_crud.list_records("PayslipItem", {"payslip_id": ps.get("id")})
         all_items.extend(ps_items)
 
     ir21 = generate_ir21_data(emp, all_payslips, all_items, cessation_date)
@@ -2024,8 +1913,7 @@ async def generate_ir21(
     except (ValueError, TypeError):
         tax_year = datetime.now(timezone.utc).year
 
-    result = _dataflow_create(
-        "TaxFilingCreateNode",
+    result = dataflow_crud.create("TaxFiling",
         {
             "company_id": company_id,
             "employee_id": employee_id,

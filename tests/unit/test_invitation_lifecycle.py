@@ -18,7 +18,7 @@ and dataflow dependencies to avoid triggering the full SDK import chain.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -494,67 +494,34 @@ class TestResendInvitationEndpoint:
 
 
 class TestFindInvitationById:
-    """Tests for the DataFlow helper that finds an invitation by ID."""
+    """Tests for the helper that finds an invitation by ID via dataflow_crud."""
 
-    def test_finds_existing_invitation(self):
+    @patch("hr_advisory.services.dataflow_crud.read")
+    def test_finds_existing_invitation(self, mock_read):
         """Returns invitation dict when found."""
         inv = _make_invitation(id=7)
-        with (
-            patch("kailash.runtime.LocalRuntime") as MockRT,
-            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
-        ):
-            mock_runtime = MagicMock()
-            mock_runtime.execute.return_value = (
-                {"find_inv": {"records": [inv], "count": 1}},
-                "run-f1",
-            )
-            MockRT.return_value = mock_runtime
-            MockWB.return_value = MagicMock()
+        mock_read.return_value = inv
 
-            result = _employees_mod._find_invitation_by_id(7)
-            assert result is not None
-            assert result["id"] == 7
+        result = _employees_mod._find_invitation_by_id(7)
+        assert result is not None
+        assert result["id"] == 7
 
-    def test_returns_none_for_missing(self):
+    @patch("hr_advisory.services.dataflow_crud.read")
+    def test_returns_none_for_missing(self, mock_read):
         """Returns None when invitation not found."""
-        with (
-            patch("kailash.runtime.LocalRuntime") as MockRT,
-            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
-        ):
-            mock_runtime = MagicMock()
-            mock_runtime.execute.return_value = (
-                {"find_inv": {"records": [], "count": 0}},
-                "run-f2",
-            )
-            MockRT.return_value = mock_runtime
-            MockWB.return_value = MagicMock()
+        mock_read.return_value = None
 
-            result = _employees_mod._find_invitation_by_id(999)
-            assert result is None
+        result = _employees_mod._find_invitation_by_id(999)
+        assert result is None
 
-    def test_filters_by_id(self):
-        """Helper must use InvitationListNode with id filter."""
-        with (
-            patch("kailash.runtime.LocalRuntime") as MockRT,
-            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
-        ):
-            mock_runtime = MagicMock()
-            mock_runtime.execute.return_value = (
-                {"find_inv": {"records": [], "count": 0}},
-                "run-f3",
-            )
-            MockRT.return_value = mock_runtime
-            mock_wf = MagicMock()
-            MockWB.return_value = mock_wf
+    @patch("hr_advisory.services.dataflow_crud.read")
+    def test_filters_by_id(self, mock_read):
+        """Helper must query Invitation model with the given id."""
+        mock_read.return_value = None
 
-            _employees_mod._find_invitation_by_id(42)
+        _employees_mod._find_invitation_by_id(42)
 
-            mock_wf.add_node.assert_called_once()
-            call_args = mock_wf.add_node.call_args
-            node_type = call_args[0][0]
-            params = call_args[0][2]
-            assert node_type == "InvitationListNode"
-            assert params["filter"]["id"] == 42
+        mock_read.assert_called_once_with("Invitation", 42)
 
 
 # ---------------------------------------------------------------------------
@@ -563,66 +530,35 @@ class TestFindInvitationById:
 
 
 class TestListInvitationsForCompanyHelper:
-    """Tests for the DataFlow helper that lists invitations by company."""
+    """Tests for the helper that lists invitations by company via dataflow_crud."""
 
-    def test_returns_list(self):
+    @patch("hr_advisory.services.dataflow_crud.list_records")
+    def test_returns_list(self, mock_list):
         """Helper returns a list of invitation dicts."""
         inv = _make_invitation()
-        with (
-            patch("kailash.runtime.LocalRuntime") as MockRT,
-            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
-        ):
-            mock_runtime = MagicMock()
-            mock_runtime.execute.return_value = (
-                {"list_inv": {"records": [inv], "count": 1}},
-                "run-1",
-            )
-            MockRT.return_value = mock_runtime
-            MockWB.return_value = MagicMock()
+        mock_list.return_value = [inv]
 
-            result = _employees_mod._list_invitations_for_company(10)
-            assert isinstance(result, list)
-            assert len(result) == 1
-            assert result[0]["email"] == "alice@example.com"
+        result = _employees_mod._list_invitations_for_company(10)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["email"] == "alice@example.com"
 
-    def test_returns_empty_list_when_none(self):
+    @patch("hr_advisory.services.dataflow_crud.list_records")
+    def test_returns_empty_list_when_none(self, mock_list):
         """Helper returns empty list when no invitations exist."""
-        with (
-            patch("kailash.runtime.LocalRuntime") as MockRT,
-            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
-        ):
-            mock_runtime = MagicMock()
-            mock_runtime.execute.return_value = (
-                {"list_inv": {"records": [], "count": 0}},
-                "run-2",
-            )
-            MockRT.return_value = mock_runtime
-            MockWB.return_value = MagicMock()
+        mock_list.return_value = []
 
-            result = _employees_mod._list_invitations_for_company(10)
-            assert result == []
+        result = _employees_mod._list_invitations_for_company(10)
+        assert result == []
 
-    def test_passes_company_id_filter(self):
-        """Helper must filter by company_id with caching disabled."""
-        with (
-            patch("kailash.runtime.LocalRuntime") as MockRT,
-            patch("kailash.workflow.builder.WorkflowBuilder") as MockWB,
-        ):
-            mock_runtime = MagicMock()
-            mock_runtime.execute.return_value = (
-                {"list_inv": {"records": [], "count": 0}},
-                "run-3",
-            )
-            MockRT.return_value = mock_runtime
-            mock_wf = MagicMock()
-            MockWB.return_value = mock_wf
+    @patch("hr_advisory.services.dataflow_crud.list_records")
+    def test_passes_company_id_filter(self, mock_list):
+        """Helper must query Invitation model filtered by company_id."""
+        mock_list.return_value = []
 
-            _employees_mod._list_invitations_for_company(42)
+        _employees_mod._list_invitations_for_company(42)
 
-            mock_wf.add_node.assert_called_once()
-            call_args = mock_wf.add_node.call_args
-            node_type = call_args[0][0]
-            params = call_args[0][2]
-            assert node_type == "InvitationListNode"
-            assert params["filter"]["company_id"] == 42
-            assert params["enable_cache"] is False
+        mock_list.assert_called_once()
+        call_args = mock_list.call_args
+        assert call_args[0][0] == "Invitation"
+        assert call_args[0][1]["company_id"] == 42

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 
@@ -33,78 +34,9 @@ def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_L
     return value
 
 
-# --------------------------------------------------------------------------
-# DataFlow helpers
-# --------------------------------------------------------------------------
-
-
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-
-def _dataflow_update(node_type: str, record_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "update", {"filter": {"id": record_id}, "fields": updates})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
-
-
-def _dataflow_read(node_type: str, record_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "read", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
-
-
 def _verify_job_ownership(job_id: int, company_id: int) -> dict:
     """Load a job listing and verify tenant ownership. Raises 404 on failure."""
-    job = _dataflow_read("JobListingReadNode", job_id)
+    job = dataflow_crud.read("JobListing", job_id)
     if not job or job.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Job listing not found.")
     return job
@@ -112,7 +44,7 @@ def _verify_job_ownership(job_id: int, company_id: int) -> dict:
 
 def _verify_candidate_ownership(candidate_id: int, company_id: int) -> dict:
     """Load a candidate and verify tenant ownership. Raises 404 on failure."""
-    candidate = _dataflow_read("CandidateReadNode", candidate_id)
+    candidate = dataflow_crud.read("Candidate", candidate_id)
     if not candidate or candidate.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Candidate not found.")
     return candidate
@@ -137,7 +69,7 @@ async def list_jobs(
     if status:
         filters["status"] = status
 
-    jobs = _dataflow_list("JobListingListNode", filters)
+    jobs = dataflow_crud.list_records("JobListing", filters)
     return {"jobs": jobs, "count": len(jobs)}
 
 
@@ -160,8 +92,7 @@ async def create_job(
     _validate_text_length(body.get("description", ""), "description")
     _validate_text_length(body.get("notes", ""), "notes")
 
-    job = _dataflow_create(
-        "JobListingCreateNode",
+    job = dataflow_crud.create("JobListing",
         {
             "company_id": company_id,
             "title": title,
@@ -208,7 +139,7 @@ async def update_job(
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = _dataflow_update("JobListingUpdateNode", job_id, updates)
+    result = dataflow_crud.update("JobListing", job_id, updates)
     return {"job": result}
 
 
@@ -226,8 +157,7 @@ async def publish_job(
     if job.get("status") not in ("draft",):
         raise HTTPException(status_code=400, detail="Only draft jobs can be published.")
 
-    result = _dataflow_update(
-        "JobListingUpdateNode",
+    result = dataflow_crud.update("JobListing",
         job_id,
         {
             "status": "open",
@@ -252,8 +182,7 @@ async def close_job(
     if job.get("status") == "closed":
         raise HTTPException(status_code=400, detail="Job is already closed.")
 
-    result = _dataflow_update(
-        "JobListingUpdateNode",
+    result = dataflow_crud.update("JobListing",
         job_id,
         {
             "status": "closed",
@@ -282,7 +211,7 @@ async def list_all_candidates(
     if stage:
         filters["stage"] = stage
 
-    candidates = _dataflow_list("CandidateListNode", filters)
+    candidates = dataflow_crud.list_records("Candidate", filters)
     return {"candidates": candidates, "count": len(candidates)}
 
 
@@ -305,7 +234,7 @@ async def list_all_interviews(
     if status:
         filters["status"] = status
 
-    interviews = _dataflow_list("InterviewScheduleListNode", filters)
+    interviews = dataflow_crud.list_records("InterviewSchedule", filters)
     return {"interviews": interviews, "count": len(interviews)}
 
 
@@ -331,7 +260,7 @@ async def list_candidates(
     if stage:
         filters["stage"] = stage
 
-    candidates = _dataflow_list("CandidateListNode", filters)
+    candidates = dataflow_crud.list_records("Candidate", filters)
     return {"candidates": candidates, "count": len(candidates)}
 
 
@@ -358,16 +287,14 @@ async def add_candidate(
     _validate_text_length(body.get("notes", ""), "notes")
 
     # Check for duplicate candidate on same job
-    existing = _dataflow_list(
-        "CandidateListNode",
+    existing = dataflow_crud.list_records("Candidate",
         {"job_listing_id": job_id, "email": email},
         limit=1,
     )
     if existing:
         raise HTTPException(status_code=400, detail="Candidate already exists for this job.")
 
-    candidate = _dataflow_create(
-        "CandidateCreateNode",
+    candidate = dataflow_crud.create("Candidate",
         {
             "company_id": company_id,
             "job_listing_id": job_id,
@@ -404,7 +331,7 @@ async def update_candidate(
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = _dataflow_update("CandidateUpdateNode", candidate_id, updates)
+    result = dataflow_crud.update("Candidate", candidate_id, updates)
     return {"candidate": result}
 
 
@@ -431,8 +358,7 @@ async def schedule_interview(
     if not scheduled_at:
         raise HTTPException(status_code=400, detail="scheduled_at is required.")
 
-    interview = _dataflow_create(
-        "InterviewCreateNode",
+    interview = dataflow_crud.create("Interview",
         {
             "company_id": company_id,
             "candidate_id": candidate_id,
@@ -448,8 +374,7 @@ async def schedule_interview(
     )
 
     # Move candidate to interview stage if not already there
-    _dataflow_update(
-        "CandidateUpdateNode",
+    dataflow_crud.update("Candidate",
         candidate_id,
         {"stage": "interview", "updated_at": datetime.now(timezone.utc).isoformat()},
     )
@@ -469,7 +394,7 @@ async def list_interviews(
 
     _verify_candidate_ownership(candidate_id, company_id)
 
-    interviews = _dataflow_list("InterviewScheduleListNode", {"candidate_id": candidate_id})
+    interviews = dataflow_crud.list_records("InterviewSchedule", {"candidate_id": candidate_id})
     return {"interviews": interviews, "count": len(interviews)}
 
 
@@ -484,7 +409,7 @@ async def update_interview(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("InterviewReadNode", interview_id)
+    existing = dataflow_crud.read("Interview", interview_id)
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Interview not found.")
 
@@ -503,7 +428,7 @@ async def update_interview(
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = _dataflow_update("InterviewUpdateNode", interview_id, updates)
+    result = dataflow_crud.update("Interview", interview_id, updates)
     return {"interview": result}
 
 
@@ -523,7 +448,7 @@ async def add_feedback(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("InterviewReadNode", interview_id)
+    existing = dataflow_crud.read("Interview", interview_id)
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Interview not found.")
 
@@ -532,8 +457,7 @@ async def add_feedback(
     if rating is None:
         raise HTTPException(status_code=400, detail="rating is required.")
 
-    feedback = _dataflow_create(
-        "InterviewFeedbackCreateNode",
+    feedback = dataflow_crud.create("InterviewFeedback",
         {
             "company_id": company_id,
             "interview_id": interview_id,
@@ -561,7 +485,7 @@ async def list_candidate_feedback(
 
     _verify_candidate_ownership(candidate_id, company_id)
 
-    feedback = _dataflow_list("InterviewFeedbackListNode", {"candidate_id": candidate_id})
+    feedback = dataflow_crud.list_records("InterviewFeedback", {"candidate_id": candidate_id})
     return {"feedback": feedback, "count": len(feedback)}
 
 
@@ -593,8 +517,7 @@ async def generate_offer(
     if not math.isfinite(salary):
         raise HTTPException(status_code=400, detail="Invalid numeric value.")
 
-    offer = _dataflow_create(
-        "OfferCreateNode",
+    offer = dataflow_crud.create("Offer",
         {
             "company_id": company_id,
             "candidate_id": candidate_id,
@@ -610,8 +533,7 @@ async def generate_offer(
         },
     )
 
-    _dataflow_update(
-        "CandidateUpdateNode",
+    dataflow_crud.update("Candidate",
         candidate_id,
         {"stage": "offered", "updated_at": datetime.now(timezone.utc).isoformat()},
     )
@@ -649,8 +571,7 @@ async def hire_candidate(
     import secrets
 
     token = secrets.token_urlsafe(32)
-    invitation = _dataflow_create(
-        "InvitationCreateNode",
+    invitation = dataflow_crud.create("Invitation",
         {
             "company_id": company_id,
             "email": candidate.get("email"),
@@ -663,8 +584,7 @@ async def hire_candidate(
     )
 
     # Update candidate stage
-    _dataflow_update(
-        "CandidateUpdateNode",
+    dataflow_crud.update("Candidate",
         candidate_id,
         {
             "stage": "hired",

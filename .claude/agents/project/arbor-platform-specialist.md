@@ -1,6 +1,6 @@
 ---
 name: arbor-platform-specialist
-description: Overall Arbor platform architecture specialist. Use when working on platform setup, router registration, middleware, Nexus integration, multi-channel handlers, session management, or understanding how the system components connect.
+description: "Platform architecture specialist. Use when working on routers, middleware, Nexus, or cross-component wiring."
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 

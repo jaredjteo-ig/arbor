@@ -1,6 +1,6 @@
 ---
 name: pact-specialist
-description: "PACT governance specialist. Use for D/T/R addressing, operating envelopes, or MCP tool policy."
+description: "kailash-pact specialist. Use for governance, D/T/R addressing, envelopes, access enforcement, or knowledge clearance."
 tools: Read, Write, Edit, Bash, Grep, Glob, Task
 model: opus
 ---
@@ -42,8 +42,14 @@ Expert in PACT (Principled Architecture for Constrained Trust) governance framew
 ## Relationship to Other Agents
 
 - **kaizen-specialist**: Peer. Kaizen handles agent execution (signatures, tools, multi-agent). PACT handles organizational governance (who can do what). They compose: a Kaizen agent wrapped in `PactGovernedAgent`.
-- **eatp-expert**: EATP is the underlying trust protocol. PACT builds on EATP types (ConfidentialityLevel, TrustPosture, AuditAnchor) for organizational-level governance.
+- `co-reference` skill: EATP is the underlying trust protocol. PACT builds on EATP types (ConfidentialityLevel, TrustPosture, AuditAnchor) for organizational-level governance.
 - **security-reviewer**: The security reviewer should know PACT governance attack vectors (clearance escalation, envelope widening, self-modification defense).
+
+## Install & Setup
+
+```bash
+pip install kailash-pact
+```
 
 ## Core Concepts
 
@@ -90,6 +96,39 @@ verdict = engine.verify_action("Eng-CTO-Backend-Lead", "deploy", {"cost": 500})
 # GovernanceVerdict(level="auto_approved", reason="...")
 ```
 
+## Python-Specific Features
+
+### GovernanceEngine Implementation
+
+Pure Python, no external dependencies beyond core SDK:
+
+- `compile_org(org_definition)` -- YAML to `CompiledOrg` (MAX_TOTAL_NODES=100_000)
+- `verify_action(role_address, action, context)` -- Primary decision method
+- `check_access(role_address, knowledge_item, posture)` -- 5-step access enforcement
+- `get_context(role_address, posture)` -- Returns frozen `GovernanceContext`
+- `store_backend="sqlite"|"memory"` for persistence
+- `eatp_emitter` parameter for EATP record emission
+
+### ShadowEnforcer Storage
+
+```python
+from kailash.trust.enforce.shadow import ShadowEnforcer
+from kailash.trust.enforce.shadow_store import SqliteShadowStore
+
+store = SqliteShadowStore("shadow.db")
+shadow = ShadowEnforcer(store=store)
+# Records persist across restarts; metrics queryable by time window
+```
+
+### ConstraintEnvelope Ed25519 Signing
+
+```python
+from kailash.trust.pact.envelopes import SignedEnvelope
+
+signed = sign_envelope(envelope, private_key, signed_by="D1-R1")
+valid = signed.verify(public_key)  # Checks signature + 90-day expiry, fail-closed
+```
+
 ## Security Invariants
 
 Per `.claude/rules/pact-governance.md`:
@@ -101,25 +140,26 @@ Per `.claude/rules/pact-governance.md`:
 5. **NaN/Inf validation** -- `math.isfinite()` on all numeric constraints
 6. **Thread safety** -- All engine methods acquire `self._lock`
 
+## Security Invariants (Cross-SDK)
+
+Discovered during kailash-rs red team. Violations are BLOCK-level findings.
+
+### 1. GovernanceContext Must NOT Be Deserializable
+
+`GovernanceContext(frozen=True)` objects must NOT be unpickleable, constructable from `dict`, or loadable from JSON. The only valid construction path is `GovernanceEngine.get_context()`. If code attempts `pickle.loads()`, `GovernanceContext(**some_dict)`, or `GovernanceContext.from_json()`, it is a security violation.
+
+### 2. NaN/Inf Bypass Prevention
+
+`float('nan')` in context dicts bypasses financial comparisons because `NaN < X` and `NaN > X` are both `False`. `verify_action()` must validate with `math.isfinite()` on ALL numeric context values -- including `transaction_amount`, `cost`, `daily_total`, and any cumulative context values.
+
 ## When NOT to Use This Agent
 
-- For EATP protocol questions (trust chains, delegation, signing) -> use **eatp-expert**
+- For EATP protocol questions (trust chains, delegation, signing) -> use `co-reference` skill
 - For AI agent execution patterns (signatures, tools) -> use **kaizen-specialist**
 - For database operations -> use **dataflow-specialist**
 - For API deployment -> use **nexus-specialist**
 
-## Security Invariants (Cross-SDK)
+## Full Documentation
 
-These invariants were discovered during the kailash-rs red team and apply equally to Python. Violations are BLOCK-level findings.
-
-### 1. GovernanceContext Must NOT Be Deserializable
-
-The Rust SDK removed `Deserialize` from `GovernanceContext` after the red team found that deserializable context objects allow agents to forge governance state from crafted payloads. In Python: `GovernanceContext(frozen=True)` objects must NOT be unpickleable, constructable from `dict`, or loadable from JSON. The only valid construction path is `GovernanceEngine.get_context()`. If code attempts `pickle.loads()`, `GovernanceContext(**some_dict)`, or `GovernanceContext.from_json()`, it is a security violation.
-
-### 2. NaN/Inf Bypass Prevention on ALL Numeric Context Values
-
-The Rust red team found that `float('nan')` in context dicts bypasses financial comparisons because `NaN < X` and `NaN > X` are both `False`. Python's `verify_action()` must validate with `math.isfinite()` on ALL numeric context values -- not just at the envelope boundary. This means checking `context.get("transaction_amount")`, `context.get("cost")`, and any other numeric field passed in the action context dict before ANY comparison occurs.
-
-### 3. daily_total Also Needs is_finite Check
-
-The Rust red team found that even when `transaction_amount` was validated, `float('nan')` could slip through `daily_total` and poison cumulative budget checks (`daily_total + amount <= limit` is `False` when `daily_total` is `NaN`, silently passing). Both `evaluate_financial()` and `verify_action()` must check `math.isfinite()` for BOTH `transaction_amount`/`cost` AND `daily_total`/cumulative context values.
+- `.claude/skills/29-pact/` -- Complete PACT skill index
+- `.claude/rules/pact-governance.md` -- PACT governance rules

@@ -121,25 +121,19 @@ class ObservationStore:
         details: dict[str, Any] | None,
         session_id: str,
     ) -> None:
-        """Persist observation to database (best-effort, logs on failure).
-
-        Uses context manager to properly close the runtime and release
-        the connection pool after execution.
-        """
+        """Persist observation to database (best-effort, logs on failure)."""
         try:
             import json
 
-            from kailash import LocalRuntime, WorkflowBuilder
+            from hr_advisory.services import dataflow_crud
 
             # Truncate inputs to prevent oversized DB rows (H1/H2 fix)
             details_json = json.dumps(details or {})
             if len(details_json) > 4000:
                 details_json = json.dumps({"truncated": True})
 
-            wf = WorkflowBuilder()
-            wf.add_node(
-                "UserObservationCreateNode",
-                "create_obs",
+            dataflow_crud.create(
+                "UserObservation",
                 {
                     "user_id": int(user_id) if user_id.isdigit() else 0,
                     "session_id": session_id[:200],
@@ -148,8 +142,6 @@ class ObservationStore:
                     "details": details_json,
                 },
             )
-            with LocalRuntime() as runtime:
-                runtime.execute(wf.build())
         except Exception as exc:
             logger.warning("Failed to persist observation: %s", exc)
 

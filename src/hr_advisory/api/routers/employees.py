@@ -80,15 +80,10 @@ def _create_invitation(
     expires_at: str,
 ) -> dict:
     """Create an Invitation record via DataFlow."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "InvitationCreateNode",
-        "create",
+    return dataflow_crud.create(
+        "Invitation",
         {
             "company_id": company_id,
             "inviter_id": inviter_id,
@@ -99,87 +94,35 @@ def _create_invitation(
             "is_active": True,
         },
     )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
 
 
 def _find_invitation_by_token(token: str) -> dict | None:
     """Look up an invitation by its unique token."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "InvitationListNode",
-        "find",
-        {"filter": {"token": token}, "limit": 1, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    records = results["find"].get("records", [])
+    records = dataflow_crud.list_records("Invitation", {"token": token}, limit=1)
     return records[0] if records else None
 
 
 def _update_invitation(invitation_id: int, updates: dict) -> dict:
     """Update an invitation record."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "InvitationUpdateNode",
-        "update",
-        {"filter": {"id": invitation_id}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
+    return dataflow_crud.update("Invitation", invitation_id, updates)
 
 
 def _find_invitation_by_id(invitation_id: int) -> dict | None:
     """Look up an invitation by its primary key ID."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "InvitationListNode",
-        "find_inv",
-        {"filter": {"id": invitation_id}, "limit": 1, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    records = results["find_inv"].get("records", [])
-    return records[0] if records else None
+    return dataflow_crud.read("Invitation", invitation_id)
 
 
 def _list_invitations_for_company(company_id: int) -> list:
     """List all invitations for a company."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "InvitationListNode",
-        "list_inv",
-        {
-            "filter": {"company_id": company_id},
-            "limit": 10000,
-            "enable_cache": False,
-        },
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list_inv"].get("records", [])
+    return dataflow_crud.list_records("Invitation", {"company_id": company_id})
 
 
 def _compute_invitation_status(invitation: dict) -> str:
@@ -212,421 +155,173 @@ def _compute_invitation_status(invitation: dict) -> str:
 
 def _list_employees_for_company(company_id: int) -> list:
     """List all employees for a company."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeListNode",
-        "list",
-        {
-            "filter": {"company_id": company_id},
-            "limit": 10000,
-            "enable_cache": False,
-        },
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list"].get("records", [])
+    return dataflow_crud.list_records("Employee", {"company_id": company_id})
 
 
 def _find_employee_by_user_id(user_id: int, company_id: int) -> dict | None:
     """Find an employee record by user_id and company_id."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeListNode",
-        "find",
-        {
-            "filter": {"user_id": user_id, "company_id": company_id},
-            "limit": 1,
-            "enable_cache": False,
-        },
+    records = dataflow_crud.list_records(
+        "Employee", {"user_id": user_id, "company_id": company_id}, limit=1
     )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    records = results["find"].get("records", [])
     return records[0] if records else None
 
 
 def _find_user_by_id(user_id: int) -> dict | None:
     """Look up a user by ID."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("UserReadNode", "read", {"id": user_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+    return dataflow_crud.read("User", user_id)
 
 
 def _list_policies_for_company(company_id: int) -> list:
     """List all active policies for a company."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "CompanyPolicyListNode",
-        "list",
-        {
-            "filter": {"company_id": company_id, "is_active": True},
-            "limit": 10000,
-            "enable_cache": False,
-        },
+    return dataflow_crud.list_records(
+        "CompanyPolicy", {"company_id": company_id, "is_active": True}
     )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
 
 
 def _get_leave_balances(employee_id: int, company_id: int) -> list:
     """Get leave balances for an employee in the current year."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
+    from hr_advisory.services import dataflow_crud
 
     current_year = datetime.now(timezone.utc).year
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "LeaveBalanceListNode",
-        "list",
+    return dataflow_crud.list_records(
+        "LeaveBalance",
         {
-            "filter": {
-                "employee_id": employee_id,
-                "company_id": company_id,
-                "year": current_year,
-            },
-            "limit": 10000,
-            "enable_cache": False,
+            "employee_id": employee_id,
+            "company_id": company_id,
+            "year": current_year,
         },
     )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
 
 
 def _update_employee(employee_id: int, updates: dict) -> dict:
     """Update an employee record."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeUpdateNode",
-        "update",
-        {"filter": {"id": employee_id}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
+    return dataflow_crud.update("Employee", employee_id, updates)
 
 
 def _find_employee_by_id(employee_id: int) -> dict | None:
     """Find an employee by ID."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmployeeReadNode", "read", {"id": employee_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+    return dataflow_crud.read("Employee", employee_id)
 
 
 # --- Salary Component helpers ---
 
 
 def _list_salary_components(employee_id: int) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "SalaryComponentListNode",
-        "list",
-        {
-            "filter": {"employee_id": employee_id, "is_active": True},
-            "limit": 10000,
-            "enable_cache": False,
-        },
+    return dataflow_crud.list_records(
+        "SalaryComponent", {"employee_id": employee_id, "is_active": True}
     )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list"].get("records", [])
 
 
 def _create_salary_component(data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("SalaryComponentCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("SalaryComponent", data)
 
 
 def _update_salary_component(component_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "SalaryComponentUpdateNode",
-        "update",
-        {"filter": {"id": component_id}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
+    return dataflow_crud.update("SalaryComponent", component_id, updates)
 
 
 def _read_salary_component(component_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("SalaryComponentReadNode", "read", {"id": component_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+    return dataflow_crud.read("SalaryComponent", component_id)
 
 
 # --- Emergency Contact helpers ---
 
 
 def _list_emergency_contacts(employee_id: int) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmergencyContactListNode",
-        "list",
-        {
-            "filter": {"employee_id": employee_id},
-            "limit": 10,
-            "enable_cache": False,
-        },
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list"].get("records", [])
+    return dataflow_crud.list_records("EmergencyContact", {"employee_id": employee_id}, limit=10)
 
 
 def _create_emergency_contact(data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmergencyContactCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("EmergencyContact", data)
 
 
 def _update_emergency_contact(contact_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmergencyContactUpdateNode",
-        "update",
-        {"filter": {"id": contact_id}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
+    return dataflow_crud.update("EmergencyContact", contact_id, updates)
 
 
 def _read_emergency_contact(contact_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmergencyContactReadNode", "read", {"id": contact_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+    return dataflow_crud.read("EmergencyContact", contact_id)
 
 
 # --- Employment Event helpers ---
 
 
 def _list_employment_events(employee_id: int) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmploymentEventListNode",
-        "list",
-        {
-            "filter": {"employee_id": employee_id},
-            "limit": 10000,
-            "enable_cache": False,
-        },
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list"].get("records", [])
+    return dataflow_crud.list_records("EmploymentEvent", {"employee_id": employee_id})
 
 
 def _create_employment_event(data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmploymentEventCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("EmploymentEvent", data)
 
 
 # --- Employee Document helpers ---
 
 
 def _list_employee_documents(employee_id: int) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeDocumentListNode",
-        "list",
-        {
-            "filter": {"employee_id": employee_id, "is_active": True},
-            "limit": 10000,
-            "enable_cache": False,
-        },
+    return dataflow_crud.list_records(
+        "EmployeeDocument", {"employee_id": employee_id, "is_active": True}
     )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list"].get("records", [])
 
 
 def _create_employee_document(data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmployeeDocumentCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("EmployeeDocument", data)
 
 
 def _update_employee_document(doc_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeDocumentUpdateNode",
-        "update",
-        {"filter": {"id": doc_id}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
+    return dataflow_crud.update("EmployeeDocument", doc_id, updates)
 
 
 def _read_employee_document(doc_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmployeeDocumentReadNode", "read", {"id": doc_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+    return dataflow_crud.read("EmployeeDocument", doc_id)
 
 
 # --- Employee Create helper ---
 
 
 def _create_employee(data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmployeeCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("Employee", data)
 
 
 # --- PDPA Access Log helpers ---
@@ -634,34 +329,16 @@ def _create_employee(data: dict) -> dict:
 
 def _create_pdpa_log(data: dict) -> dict:
     """Create a PdpaAccessLog record via DataFlow."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("PdpaAccessLogCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("PdpaAccessLog", data)
 
 
 def _list_pdpa_logs(filter_dict: dict) -> list:
     """List PdpaAccessLog records matching the given filter."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "PdpaAccessLogListNode",
-        "list",
-        {"filter": filter_dict, "limit": 10000, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list"].get("records", [])
+    return dataflow_crud.list_records("PdpaAccessLog", filter_dict)
 
 
 def _log_pdpa_access(
@@ -703,38 +380,16 @@ def _log_pdpa_access(
 
 def _create_employee_event(data: dict) -> dict:
     """Create an EmployeeEvent timeline record via DataFlow."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmployeeEventCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("EmployeeEvent", data)
 
 
 def _list_employee_events(employee_id: int) -> list:
     """List EmployeeEvent records for an employee."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeEventListNode",
-        "list",
-        {
-            "filter": {"employee_id": employee_id},
-            "limit": 10000,
-            "enable_cache": False,
-        },
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list"].get("records", [])
+    return dataflow_crud.list_records("EmployeeEvent", {"employee_id": employee_id})
 
 
 # --- Family Member helpers ---
@@ -742,69 +397,30 @@ def _list_employee_events(employee_id: int) -> list:
 
 def _list_family_members(employee_id: int) -> list:
     """List family members for an employee."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "FamilyMemberListNode",
-        "list_fm",
-        {"filter": {"employee_id": employee_id}, "limit": 10000, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list_fm"].get("records", [])
+    return dataflow_crud.list_records("FamilyMember", {"employee_id": employee_id})
 
 
 def _create_family_member(data: dict) -> dict:
     """Create a FamilyMember record via DataFlow."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("FamilyMemberCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("FamilyMember", data)
 
 
 def _update_family_member(member_id: int, updates: dict) -> dict:
     """Update a FamilyMember record."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "FamilyMemberUpdateNode",
-        "update",
-        {"filter": {"id": member_id}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
+    return dataflow_crud.update("FamilyMember", member_id, updates)
 
 
 def _read_family_member(member_id: int) -> dict | None:
     """Read a FamilyMember by ID."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("FamilyMemberReadNode", "read", {"id": member_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+    return dataflow_crud.read("FamilyMember", member_id)
 
 
 # --- Employee Note helpers ---
@@ -812,69 +428,30 @@ def _read_family_member(member_id: int) -> dict | None:
 
 def _list_employee_notes(employee_id: int) -> list:
     """List notes for an employee."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeNoteListNode",
-        "list_notes",
-        {"filter": {"employee_id": employee_id}, "limit": 10000, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list_notes"].get("records", [])
+    return dataflow_crud.list_records("EmployeeNote", {"employee_id": employee_id})
 
 
 def _create_employee_note(data: dict) -> dict:
     """Create an EmployeeNote record via DataFlow."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmployeeNoteCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("EmployeeNote", data)
 
 
 def _update_employee_note(note_id: int, updates: dict) -> dict:
     """Update an EmployeeNote record."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeNoteUpdateNode",
-        "update",
-        {"filter": {"id": note_id}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
+    return dataflow_crud.update("EmployeeNote", note_id, updates)
 
 
 def _read_employee_note(note_id: int) -> dict | None:
     """Read an EmployeeNote by ID."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmployeeNoteReadNode", "read", {"id": note_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+    return dataflow_crud.read("EmployeeNote", note_id)
 
 
 # --- Employee Skill helpers ---
@@ -882,69 +459,30 @@ def _read_employee_note(note_id: int) -> dict | None:
 
 def _list_employee_skills(employee_id: int) -> list:
     """List skills/certifications for an employee."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeSkillListNode",
-        "list_skills",
-        {"filter": {"employee_id": employee_id}, "limit": 10000, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list_skills"].get("records", [])
+    return dataflow_crud.list_records("EmployeeSkill", {"employee_id": employee_id})
 
 
 def _create_employee_skill(data: dict) -> dict:
     """Create an EmployeeSkill record via DataFlow."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmployeeSkillCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("EmployeeSkill", data)
 
 
 def _update_employee_skill(skill_id: int, updates: dict) -> dict:
     """Update an EmployeeSkill record."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeSkillUpdateNode",
-        "update",
-        {"filter": {"id": skill_id}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
+    return dataflow_crud.update("EmployeeSkill", skill_id, updates)
 
 
 def _read_employee_skill(skill_id: int) -> dict | None:
     """Read an EmployeeSkill by ID."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("EmployeeSkillReadNode", "read", {"id": skill_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+    return dataflow_crud.read("EmployeeSkill", skill_id)
 
 
 # --- Custom Field Definition helpers ---
@@ -952,73 +490,34 @@ def _read_employee_skill(skill_id: int) -> dict | None:
 
 def _list_custom_field_definitions(company_id: int, applies_to: str = "") -> list:
     """List custom field definitions for a company."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
+    from hr_advisory.services import dataflow_crud
 
     filter_dict: dict = {"company_id": company_id}
     if applies_to:
         filter_dict["applies_to"] = applies_to
 
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "CustomFieldDefinitionListNode",
-        "list_defs",
-        {"filter": filter_dict, "limit": 10000, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list_defs"].get("records", [])
+    return dataflow_crud.list_records("CustomFieldDefinition", filter_dict)
 
 
 def _create_custom_field_definition(data: dict) -> dict:
     """Create a CustomFieldDefinition record via DataFlow."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("CustomFieldDefinitionCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("CustomFieldDefinition", data)
 
 
 def _update_custom_field_definition(field_id: int, updates: dict) -> dict:
     """Update a CustomFieldDefinition record."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "CustomFieldDefinitionUpdateNode",
-        "update",
-        {"filter": {"id": field_id}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
+    return dataflow_crud.update("CustomFieldDefinition", field_id, updates)
 
 
 def _read_custom_field_definition(field_id: int) -> dict | None:
     """Read a CustomFieldDefinition by ID."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("CustomFieldDefinitionReadNode", "read", {"id": field_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+    return dataflow_crud.read("CustomFieldDefinition", field_id)
 
 
 # --- Custom Field Value helpers ---
@@ -1026,77 +525,37 @@ def _read_custom_field_definition(field_id: int) -> dict | None:
 
 def _list_custom_field_values(entity_type: str, entity_id: int, company_id: int) -> list:
     """List custom field values for an entity."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "CustomFieldValueListNode",
-        "list_vals",
+    return dataflow_crud.list_records(
+        "CustomFieldValue",
         {
-            "filter": {
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "company_id": company_id,
-            },
-            "limit": 10000,
-            "enable_cache": False,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "company_id": company_id,
         },
     )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["list_vals"].get("records", [])
 
 
 def _create_custom_field_value(data: dict) -> dict:
     """Create a CustomFieldValue record via DataFlow."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("CustomFieldValueCreateNode", "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+    return dataflow_crud.create("CustomFieldValue", data)
 
 
 def _update_custom_field_value(value_id: int, updates: dict) -> dict:
     """Update a CustomFieldValue record."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "CustomFieldValueUpdateNode",
-        "update",
-        {"filter": {"id": value_id}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
+    return dataflow_crud.update("CustomFieldValue", value_id, updates)
 
 
 def _read_custom_field_value(value_id: int) -> dict | None:
     """Read a CustomFieldValue by ID."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    from hr_advisory.services import dataflow_crud
 
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node("CustomFieldValueReadNode", "read", {"id": value_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+    return dataflow_crud.read("CustomFieldValue", value_id)
 
 
 # --- Serialisation helpers ---
@@ -1261,21 +720,9 @@ async def invite_employee(
         )
 
     # T281: Duplicate invitation guard — check for existing user or active invite
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-    import hr_advisory.models  # noqa: F401
+    from hr_advisory.services import dataflow_crud
 
-    wf_check = WorkflowBuilder()
-    wf_check.add_node(
-        "UserListNode",
-        "check_user",
-        {"filter": {"email": email}, "limit": 10, "enable_cache": False},
-    )
-    rt = LocalRuntime()
-    res, _ = rt.execute(wf_check.build())
-    existing_users = (
-        res["check_user"].get("records", []) if isinstance(res["check_user"], dict) else []
-    )
+    existing_users = dataflow_crud.list_records("User", {"email": email}, limit=10)
     for u in existing_users:
         if u.get("company_id") == company_id:
             raise HTTPException(
@@ -1284,16 +731,8 @@ async def invite_employee(
             )
 
     # Deactivate any existing active invitation for this email + company
-    wf_inv = WorkflowBuilder()
-    wf_inv.add_node(
-        "InvitationListNode",
-        "check_inv",
-        {"filter": {"email": email, "company_id": company_id}, "limit": 100, "enable_cache": False},
-    )
-    rt2 = LocalRuntime()
-    res2, _ = rt2.execute(wf_inv.build())
-    existing_invites = (
-        res2["check_inv"].get("records", []) if isinstance(res2["check_inv"], dict) else []
+    existing_invites = dataflow_crud.list_records(
+        "Invitation", {"email": email, "company_id": company_id}, limit=100
     )
     for inv in existing_invites:
         if inv.get("is_active") and not inv.get("accepted_at"):
@@ -1397,15 +836,10 @@ async def validate_invitation(token: str) -> dict:
     inv_company_id = invitation.get("company_id")
     if inv_company_id:
         try:
-            from kailash.runtime import LocalRuntime as _LR
-            from kailash.workflow.builder import WorkflowBuilder as _WB
-            import hr_advisory.models  # noqa: F401
+            from hr_advisory.services import dataflow_crud
 
-            _wf = _WB()
-            _wf.add_node("CompanyReadNode", "read_co", {"id": inv_company_id})
-            _rt = _LR()
-            _res, _ = _rt.execute(_wf.build())
-            company_name = _res["read_co"].get("name", "") if _res.get("read_co") else ""
+            company = dataflow_crud.read("Company", inv_company_id)
+            company_name = company.get("name", "") if company else ""
         except Exception:
             company_name = ""
 
@@ -1756,18 +1190,9 @@ async def update_my_profile(
     if "bank_account_number" in updates and updates["bank_account_number"]:
         updates["bank_account_last4"] = updates["bank_account_number"][-4:]
 
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-    import hr_advisory.models  # noqa: F401
+    from hr_advisory.services import dataflow_crud
 
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeUpdateNode",
-        "update_me",
-        {"filter": {"id": employee["id"]}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    runtime.execute(wf.build())
+    dataflow_crud.update("Employee", employee["id"], updates)
 
     # PDPA audit log for sensitive field access
     sensitive_accessed = {"nric_fin", "bank_account_number"} & set(updates.keys())

@@ -285,7 +285,7 @@ def _persist_trust_chain(
 
     logger = logging.getLogger(__name__)
     try:
-        from kailash import LocalRuntime, WorkflowBuilder
+        from hr_advisory.services import dataflow_crud
 
         # Validate floats before persistence (C2 fix)
         completeness = chain.genesis.company_profile_completeness
@@ -308,10 +308,8 @@ def _persist_trust_chain(
                 }
             )
 
-        wf = WorkflowBuilder()
-        wf.add_node(
-            "TrustLineageRecordCreateNode",
-            "create_trust",
+        dataflow_crud.create(
+            "TrustLineageRecord",
             {
                 "session_id": chain.genesis.session_id,
                 "user_id": user_id,
@@ -328,8 +326,6 @@ def _persist_trust_chain(
                 "human_reviewer": chain.human_reviewer or "",
             },
         )
-        runtime = LocalRuntime()
-        runtime.execute(wf.build())
     except Exception as exc:
         logger.warning("Failed to persist trust chain %s: %s", chain.genesis.session_id, exc)
 

@@ -31,15 +31,15 @@ class Settings:
     cors_origins: str = "http://localhost:3000"  # Comma-separated list
 
     # Database
-    database_url: str = "postgresql://arbor:arbor@localhost:5432/arbor"
+    database_url: str = ""
     redis_url: str = "redis://localhost:6379/0"
 
     # LLM
     openai_api_key: str = ""
-    openai_prod_model: str = "gpt-4o"
-    openai_dev_model: str = "gpt-4o-mini"
+    openai_prod_model: str = ""
+    openai_dev_model: str = ""
     anthropic_api_key: str = ""
-    default_llm_model: str = "gpt-4o"
+    default_llm_model: str = ""
 
     # Ollama (local LLM fallback)
     ollama_model: str = ""  # e.g. "qwen2.5:32b-instruct-q8_0"
@@ -85,8 +85,8 @@ def get_settings() -> Settings:
         )
 
     # SECURITY: Block startup if production uses the default database credentials
-    database_url = os.environ.get("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
-    if app_env == "production" and "arbor:arbor" in database_url:
+    database_url = os.environ.get("DATABASE_URL", "")
+    if app_env == "production" and (not database_url or "arbor:arbor" in database_url):
         raise RuntimeError(
             "FATAL: DATABASE_URL must not use default credentials (arbor:arbor) in production. "
             "Set DATABASE_URL to a connection string with secure credentials."
@@ -111,10 +111,10 @@ def get_settings() -> Settings:
         database_url=database_url,
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
-        openai_prod_model=os.environ.get("OPENAI_PROD_MODEL", "gpt-5-mini-2025-08-07"),
-        openai_dev_model=os.environ.get("OPENAI_DEV_MODEL", "gpt-5-mini-2025-08-07"),
+        openai_prod_model=os.environ.get("OPENAI_PROD_MODEL", ""),
+        openai_dev_model=os.environ.get("OPENAI_DEV_MODEL", ""),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-        default_llm_model=os.environ.get("DEFAULT_LLM_MODEL", "gpt-5-mini-2025-08-07"),
+        default_llm_model=os.environ.get("DEFAULT_LLM_MODEL", ""),
         ollama_model=os.environ.get("OLLAMA_MODEL", ""),
         ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
         jwt_secret_key=jwt_secret,

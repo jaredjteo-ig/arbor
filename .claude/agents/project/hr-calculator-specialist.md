@@ -1,6 +1,6 @@
 ---
 name: hr-calculator-specialist
-description: Singapore HR calculator specialist. Use when working on CPF contribution calculations, leave entitlement calculations, cost-to-company breakdowns, quota/levy calculations, overtime pay, notice periods, or retrenchment benefits.
+description: "SG HR calculator specialist. Use for CPF, leave entitlements, overtime, levy, or cost-to-company calculations."
 tools: Read, Grep, Glob
 ---
 

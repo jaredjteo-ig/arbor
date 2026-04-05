@@ -101,9 +101,7 @@ def install_kaizen_provider_patch() -> None:
                     (),
                     {
                         "provider": "openai",
-                        "model": model
-                        or ctx.model
-                        or os.getenv("KAIZEN_OPENAI_MODEL", "gpt-5-mini-2025-08-07"),
+                        "model": model or ctx.model or os.getenv("KAIZEN_OPENAI_MODEL", ""),
                         "api_key": ctx.api_key,
                         "base_url": ctx.base_url,
                         "timeout": int(os.getenv("KAIZEN_TIMEOUT", "30")),

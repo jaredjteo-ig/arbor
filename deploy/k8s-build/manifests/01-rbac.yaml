@@ -1,0 +1,43 @@
+# Arbor Build System — RBAC
+# Scoped ServiceAccount for build jobs. Can only read its own
+# registry secret and manage jobs in the arbor-build namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: arbor-builder
+  namespace: arbor-build
+  labels:
+    app.kubernetes.io/part-of: arbor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: build-runner
+  namespace: arbor-build
+rules:
+  # View build job status and logs
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  # Read only the registry credential secret — nothing else
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+    resourceNames: ["registry-credentials"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: build-runner-binding
+  namespace: arbor-build
+subjects:
+  - kind: ServiceAccount
+    name: arbor-builder
+    namespace: arbor-build
+roleRef:
+  kind: Role
+  name: build-runner
+  apiGroup: rbac.authorization.k8s.io

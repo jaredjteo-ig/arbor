@@ -199,21 +199,41 @@ class LLMJudge:
 
         Separated for testability — unit tests can mock this method.
         """
-        from openai import OpenAI
+        import asyncio
+        from kaizen_agents.delegate import Delegate, TextDelta
 
-        client = OpenAI(api_key=self._api_key)
-        return client.chat.completions.create(
+        delegate = Delegate(
             model=self._model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an expert evaluator of HR advisory responses "
-                        "for Singapore employment law. Respond only with valid JSON."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.1,
-            max_tokens=256,
+            system_prompt=(
+                "You are an expert evaluator of HR advisory responses "
+                "for Singapore employment law. Respond only with valid JSON."
+            ),
+            max_turns=1,
         )
+        text_parts: list[str] = []
+
+        async def _run() -> None:
+            async for event in delegate.run(prompt):
+                if isinstance(event, TextDelta):
+                    text_parts.append(event.text)
+
+        try:
+            asyncio.run(_run())
+        except RuntimeError:
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                pool.submit(lambda: asyncio.run(_run())).result(timeout=30)
+
+        # Return a minimal response-like object so callers using .choices[0].message.content
+        # continue to work without modification.
+        class _Msg:
+            content = "".join(text_parts)
+
+        class _Choice:
+            message = _Msg()
+
+        class _Resp:
+            choices = [_Choice()]
+
+        return _Resp()

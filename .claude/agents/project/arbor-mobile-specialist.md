@@ -1,6 +1,6 @@
 ---
 name: arbor-mobile-specialist
-description: Arbor mobile frontend specialist (Flutter). Use when working on the mobile app in apps/mobile/, including features, core services, design system, offline support, routing, state management, or platform-specific behavior.
+description: "Flutter mobile specialist. Use when working on apps/mobile/ — routing, state, offline, design system."
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 

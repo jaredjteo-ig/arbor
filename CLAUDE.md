@@ -29,12 +29,12 @@ See `rules/env-models.md` for full details.
 
 When you discover a missing feature, endpoint, or record — **implement or create it**. Do not note it as a gap and move on. The only acceptable skip is explicit user instruction.
 
-See `rules/no-stubs.md` for details.
+See `rules/zero-tolerance.md` Rule 2 for details.
 
 ### 4. Recommended Reviews
 
-- **Code review** (intermediate-reviewer) after file changes — see `rules/agents.md` Rule 1
-- **Security review** (security-reviewer) before commits — strongly encouraged — see `rules/agents.md` Rule 2
+- **Code review** (reviewer) after file changes — see `rules/agents.md`
+- **Security review** (security-reviewer) before commits — strongly encouraged
 - **Real infrastructure** in integration/E2E tests is recommended — see `rules/testing.md`
 
 ## Workspace Commands
@@ -71,7 +71,7 @@ Phase commands replace the manual copy-paste workflow. Each loads the correspond
 | API keys & model names            | `rules/env-models.md`           | `**/*.py`, `**/*.ts`, `**/*.js`, `.env*`                     |
 | Deployment operations             | `rules/deployment.md`           | Global                                                       |
 | Git commits, branches, PRs        | `rules/git.md`                  | Global                                                       |
-| No stubs or placeholders          | `rules/no-stubs.md`             | Global                                                       |
+| No stubs or placeholders          | `rules/zero-tolerance.md`       | Global                                                       |
 | Kailash SDK execution patterns    | `rules/patterns.md`             | `**/*.py`, `**/*.ts`, `**/*.js`                              |
 | Security (secrets, injection)     | `rules/security.md`             | Global                                                       |
 | 3-tier testing strategy           | `rules/testing.md`              | `tests/**`, `**/*test*`, `**/*spec*`, `conftest.py`          |
@@ -83,57 +83,55 @@ Phase commands replace the manual copy-paste workflow. Each loads the correspond
 
 ## Agents
 
-### Analysis & Planning
+### Analysis — `agents/analysis/`
 
-- **deep-analyst** — Failure analysis, complexity assessment
-- **requirements-analyst** — Requirements breakdown, ADR creation
-- **sdk-navigator** — Find patterns before coding
-- **framework-advisor** — Choose Core SDK, DataFlow, Nexus, or Kaizen
+- **analyst** — Research, failure analysis, requirements breakdown
 
-### Framework Specialists (`agents/frameworks/`)
+### Framework Specialists — `agents/frameworks/`
 
-- **dataflow-specialist** — Database operations, auto-generated nodes
+- **dataflow-specialist** — Database operations, Data Fabric Engine
 - **nexus-specialist** — Multi-channel platform (API/CLI/MCP)
-- **kaizen-specialist** — AI agents, signatures, multi-agent coordination
-- **mcp-specialist** — MCP server implementation
-- **infrastructure-specialist** — Progressive infrastructure (Level 0/1/2), dialect-portable SQL, task queues, idempotency
+- **kaizen-specialist** — AI agents, signatures, structured outputs
+- **mcp-specialist** — MCP server/platform implementation
+- **infrastructure-specialist** — Dialect-portable SQL, task queues
+- **ml-specialist** — ML lifecycle, AutoML, ONNX serving
+- **align-specialist** — LLM fine-tuning, LoRA, evaluation
 
-### Core Implementation
+### Implementation — `agents/implementation/`
 
 - **pattern-expert** — Workflow patterns, nodes, parameters
 - **tdd-implementer** — Test-first development
-- **intermediate-reviewer** — Code review after changes
-- **gold-standards-validator** — Compliance checking
 - **build-fix** — Fix build/type errors with minimal changes
+
+### Quality — `agents/quality/`
+
+- **reviewer** — Code review after changes
+- **gold-standards-validator** — Naming, licensing compliance
 - **security-reviewer** — Security audit before commits
 
-### Frontend & Design (`agents/frontend/`)
+### Frontend — `agents/frontend/`
 
 - **react-specialist** — React/Next.js frontends
 - **flutter-specialist** — Flutter mobile/desktop apps
-- **frontend-developer** — Responsive UI components
 - **uiux-designer** — Enterprise UI/UX design
-- **ai-ux-designer** — AI interaction patterns
 
-### Testing & QA
+### Testing — `agents/testing/`
 
 - **testing-specialist** — 3-tier strategy with real infrastructure
-- **documentation-validator** — Test code examples
-- **e2e-runner** — Playwright E2E test generation
-- **value-auditor** — Enterprise demo QA from buyer perspective
+- **value-auditor** — Enterprise demo QA
 
-### Release & Operations (`agents/management/`)
+### Release — `agents/release/`
 
-- **git-release-specialist** — Git workflows, CI, releases
-- **deployment-specialist** — Deployment onboarding, package/cloud releases, Docker/K8s
+- **release-specialist** — Git workflows, CI, releases, deployment
+
+### Management — `agents/management/`
+
 - **todo-manager** — Project task tracking
 - **gh-manager** — GitHub issue/project management
 
-### Standards (`agents/standards/`)
+### Standards — `skills/co-reference/`
 
-- **care-expert** — CARE governance framework
-- **coc-expert** — COC development methodology
-- **eatp-expert** — EATP trust protocol
+CARE, EATP, CO, COC specs available as skill files (not agents).
 
 ## Skills Navigation
 

@@ -1,55 +1,48 @@
-# Session Notes — 2026-03-31
+# Session Notes — 2026-03-31 (Session 2)
 
 ### Read These Files First (in order)
 
-1. `src/hr_advisory/delegate/arbor_loop.py` — Delegate engine (207 tools, TAOD loop, streaming)
-2. `src/hr_advisory/delegate/tools.py` — ToolHydrator with BM25 search (6 always-active + ~201 discoverable)
-3. `src/hr_advisory/services/auth_service.py:345` — `register_user()` with atomic company creation via `company_name`
-4. `src/hr_advisory/api/routers/auth.py:47` — `/register` endpoint: company_id REMOVED from public registration (security fix)
-5. `src/hr_advisory/api/platform.py` — NexusEngine.builder().preset(Preset.SAAS)
-6. `deploy/.env.production.template` — All required env vars documented
-7. `deploy/docker-compose.prod.yml` — Production compose (Docker Hub pull-based)
-8. `workspaces/hr-ai-advisory/04-validate/round-13-comprehensive-redteam.md` — Full validation results
+1. `deploy/k8s-build/configure.sh` — Re-run safe: detects existing secrets, TLS question added
+2. `deploy/k8s-build/build.sh:29` — Kaniko image now digest-pinned (@sha256:9e69fd43...)
+3. `deploy/k8s-build/deploy.sh:80-92` — Reads TLS config from configmap, processes #TLS# markers
+4. `deploy/k8s-build/app-manifests/ingress.yaml` — #TLS# marker system for conditional TLS
+5. `deploy/k8s-build/entrypoint.sh` — Version bumped to v1.2.0
+6. `deploy/k8s-build/README.md` — Updated security table with digest pin, re-run safety, TLS
+7. `workspaces/hr-ai-advisory/journal/0008-DECISION-k8s-build-toolkit-for-partner.md` — ADR updated
 
 ## Accomplished
 
-- **Registration system fixed** — atomic user + company creation in single API call, frontend has company name field, redirects to /dashboard
-- **CRITICAL security fix** — removed `company_id` from public `/register` (tenant isolation bypass)
-- **NaN/Inf guards** on all 6 calculators (CPF, cost-to-company, retrenchment, overtime, notice period, leave)
-- **Dead code deleted** — PatchRunner (540 lines), HRIS API stub, fixed tool count docstring (600+ → 207)
-- **37 integration test CSRF failures fixed** — root cause: NexusEngine SAAS preset CSRF middleware
-- **SDK pins bumped** — kailash>=2.3.4, dataflow>=1.4.0, kaizen>=2.3.3, nexus>=1.6.1
-- **COC synced** to v1.2.0
-- **Google SSO restored** — credentials were in `deploy/.env.prod`, lost during .env rewrite, now restored
-- **Frontend rebuilt** with correct `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
-- **Production deployed v0.3.0** — backend + frontend on Docker Hub, all 5 containers healthy
-- **13 new tests** (5 unit + 8 E2E), 1,894 total passing
-- **4 red team rounds** (10-13) — Playwright browser + API, converged with 0 CRITICAL remaining
-- **Production .env consolidated** — credentials from flat files + Google OAuth + FRONTEND_URL
+- **Re-run safety** — configure.sh detects existing K8s secrets, reads current DB/Redis/JWT/encryption values via base64 decode, asks "Keep existing? [Y/n]" before regenerating
+- **Kaniko digest-pinned** — `@sha256:9e69fd4330ec887829c780f5126dd80edc663df6def362cd22e79bcdf00ac53f` verified live against gcr.io registry API
+- **TLS support** — configure.sh asks about cert-manager, stores tls-enabled + cert-issuer in configmap, deploy.sh uses `#TLS#` marker system (strips markers when enabled, deletes lines when disabled)
+- **Version bumped to v1.2.0** — entrypoint + configure.sh references updated
+- **PR created** — terrene-foundation/arbor#12 on branch `feat/k8s-build-toolkit` (18 files, 1,991 lines)
+- **Docker Hub overview pasted** — manual action completed by user
 
 ## Outstanding
 
-- [ ] **PACE governance into Delegate** — trust levels still in frozensets, not GovernanceContext (M60+, blocked on pact-core)
-- [ ] **Google SSO full E2E** — redirect to Google works, but callback untested (needs real Google account in Playwright)
-- [ ] **HIGH: Unbounded in-memory stores** — `_sync_history` in hris_adapters.py, `_sessions`/`_evaluations`/`_patches` in qa.py (use deque(maxlen=10000))
-- [ ] **HIGH: Race condition in company lookup** — two simultaneous registrations with same company_name may cross-link
-- [ ] **Invite URL domain** — FRONTEND_URL added to production, but `deploy/docker-compose.prod.yml` doesn't pass it to the container
-- [ ] **50 pre-existing test failures** — compliance router, QA API, feedback pipeline (session 3 era, likely stale)
+- [ ] **Merge PR #12** — needs admin merge: `gh pr merge 12 --admin --merge --delete-branch`
+- [ ] **Rebuild Docker Hub image** — `docker build -t terrenefoundation/arbor-build-toolkit:v1.2.0 deploy/k8s-build/ && docker push`
+- [ ] **build.sh E2E test** — Kaniko Job creation works but actual clone→build→push needs real registry creds
+- [ ] **PACE governance into Delegate** — trust levels still in frozensets, not GovernanceContext (blocked on pact-core)
+- [ ] **50 pre-existing test failures** — compliance router, QA API, feedback pipeline (from session 3)
+- [ ] **Close kailash-py#171** — fixed in DataFlow 1.3.0, GitHub issue can be closed
 
 ### Oversight — Verify Before Starting
 
-- [ ] `curl -sf https://arbor.terrene.foundation/api/health` — production healthy
-- [ ] `pip show kailash kaizen-agents kailash-dataflow | grep Version` — kailash 2.3.4, kaizen-agents 0.6.0, dataflow 1.4.0
-- [ ] `python3 -c "from hr_advisory.delegate import create_delegate; print('OK')"` — delegate imports
-- [ ] `git log --oneline -3` — latest is round 13 redteam commit on main
+- [ ] `git log --oneline -3` — shows k8s-build commit on feat/k8s-build-toolkit
+- [ ] `gh pr view 12 --json state` — PR exists and is open (or merged)
+- [ ] `bash -n deploy/k8s-build/configure.sh` — syntax still valid
+- [ ] `curl -sf https://arbor.terrene.foundation/api/health` — production still healthy
 
 ### Oversight — Verify After Completing
 
-- [ ] `pytest tests/unit/ -q --timeout=30 -p no:warnings` — 1,155+ tests pass
-- [ ] `pytest tests/e2e/ -q --timeout=30 -p no:warnings` — 42+ tests pass (run SEPARATELY from unit)
-- [ ] `docker build -f deploy/Dockerfile.backend -t arbor-backend:test .` — image builds
-- [ ] `curl -sf https://arbor.terrene.foundation/api/health` — production still healthy
+- [ ] If merged: `git log --oneline main -3` shows k8s-build commit
+- [ ] If rebuilt: `docker run --rm terrenefoundation/arbor-build-toolkit:v1.2.0 version` prints v1.2.0
+- [ ] TLS test: `cat deploy/k8s-build/app-manifests/ingress.yaml | sed 's|#TLS# ||' | grep cert-manager` shows annotation
 
 ## Blockers
 
-- **PACT governance** — requires kailash-pact GovernanceContext integration (not started, depends on care repo)
+- **Docker Hub image rebuild** — requires `docker push` with Docker Hub credentials (manual)
+- **E2E build test** — needs cluster with real registry creds + outbound HTTPS
+- **PACT governance** — blocked on kailash-pact GovernanceContext (care repo dependency)

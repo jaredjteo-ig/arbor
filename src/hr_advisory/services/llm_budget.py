@@ -92,30 +92,7 @@ class BudgetCheckResult:
         }
 
 
-# ---------------------------------------------------------------------------
-# DataFlow helpers
-# ---------------------------------------------------------------------------
-
-
-def _execute_node(node_type: str, node_id: str, params: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, node_id, params)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results[node_id]
-
-
-def _extract_records(result) -> list[dict]:
-    if isinstance(result, list):
-        return result
-    if isinstance(result, dict) and "records" in result:
-        return result["records"]
-    return []
+from hr_advisory.services import dataflow_crud
 
 
 def _current_month_key() -> str:
@@ -128,23 +105,17 @@ def _get_or_create_usage(company_id: int) -> dict:
     """Get the current month's usage record, creating one if needed."""
     month_key = _current_month_key()
 
-    result = _execute_node(
-        "CompanyLLMUsageListNode",
-        "find_usage",
-        {
-            "filter": {"company_id": company_id, "month": month_key},
-            "limit": 1,
-            "enable_cache": False,
-        },
+    records = dataflow_crud.list_records(
+        "CompanyLLMUsage",
+        {"company_id": company_id, "month": month_key},
+        limit=1,
     )
-    records = _extract_records(result)
     if records:
         return records[0]
 
     # Create a new usage record for this month
-    create_result = _execute_node(
-        "CompanyLLMUsageCreateNode",
-        "create_usage",
+    create_result = dataflow_crud.create(
+        "CompanyLLMUsage",
         {
             "company_id": company_id,
             "month": month_key,
@@ -158,16 +129,11 @@ def _get_or_create_usage(company_id: int) -> dict:
     # Fetch back to get the ID
     usage_id = create_result.get("id")
     if usage_id is None:
-        lookup = _execute_node(
-            "CompanyLLMUsageListNode",
-            "find_created_usage",
-            {
-                "filter": {"company_id": company_id, "month": month_key},
-                "limit": 1,
-                "enable_cache": False,
-            },
+        records = dataflow_crud.list_records(
+            "CompanyLLMUsage",
+            {"company_id": company_id, "month": month_key},
+            limit=1,
         )
-        records = _extract_records(lookup)
         if records:
             return records[-1]
 
@@ -312,17 +278,14 @@ def record_usage(
         )
         raise ValueError(f"Accumulated cost non-finite: {new_cost}")
 
-    _execute_node(
-        "CompanyLLMUsageUpdateNode",
-        "update_usage",
+    dataflow_crud.update(
+        "CompanyLLMUsage",
+        usage_id,
         {
-            "filter": {"id": usage_id},
-            "fields": {
-                "query_count": new_query_count,
-                "input_tokens": new_input_tokens,
-                "output_tokens": new_output_tokens,
-                "estimated_cost": round(new_cost, 6),
-            },
+            "query_count": new_query_count,
+            "input_tokens": new_input_tokens,
+            "output_tokens": new_output_tokens,
+            "estimated_cost": round(new_cost, 6),
         },
     )
 

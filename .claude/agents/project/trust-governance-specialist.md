@@ -1,6 +1,6 @@
 ---
 name: trust-governance-specialist
-description: EATP trust lineage and CARE governance specialist for Arbor. Use when working on trust chains, genesis records, agent attestations, constraint envelopes, citation validation, anti-amnesia, expert review workflows, or the learning pipeline feedback loop.
+description: "EATP/CARE trust governance specialist. Use for trust chains, constraint envelopes, or citation validation."
 tools: Read, Grep, Glob
 ---
 

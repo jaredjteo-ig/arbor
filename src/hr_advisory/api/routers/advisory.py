@@ -127,29 +127,14 @@ def _escalate_risk_tier(current: str, proposed: str) -> str:
 def _get_company_budget_limit(company_id: int) -> float | None:
     """Fetch the company's custom monthly LLM budget, or None for default."""
     try:
-        from kailash.runtime import LocalRuntime
-        from kailash.workflow.builder import WorkflowBuilder
-        import hr_advisory.models  # noqa: F401
+        import math
 
-        wf = WorkflowBuilder()
-        wf.add_node(
-            "CompanyListNode",
-            "co",
-            {
-                "filter": {"id": company_id},
-                "limit": 1,
-                "enable_cache": False,
-            },
-        )
-        runtime = LocalRuntime()
-        results, _ = runtime.execute(wf.build())
-        raw = results.get("co", {})
-        records = raw.get("records", []) if isinstance(raw, dict) else []
-        if records:
-            val = records[0].get("monthly_llm_budget_usd")
+        from hr_advisory.models.database import db
+
+        result = db.express_sync.read("Company", str(company_id))
+        if result:
+            val = result.get("monthly_llm_budget_usd")
             if val is not None:
-                import math
-
                 fval = float(val)
                 if math.isfinite(fval) and fval > 0:
                     return fval
@@ -164,15 +149,9 @@ def _fetch_company_profile(company_id: int) -> dict | None:
     Returns a dict with company context fields, or None if unavailable.
     """
     try:
-        from kailash.runtime import LocalRuntime
-        from kailash.workflow.builder import WorkflowBuilder
-        import hr_advisory.models  # noqa: F401 -- ensure models are registered
+        from hr_advisory.models.database import db
 
-        wf = WorkflowBuilder()
-        wf.add_node("CompanyReadNode", "read", {"id": company_id})
-        runtime = LocalRuntime()
-        results, _ = runtime.execute(wf.build())
-        result = results.get("read")
+        result = db.express_sync.read("Company", str(company_id))
         if result and not result.get("error"):
             return {
                 "company_name": result.get("name", ""),
@@ -381,28 +360,36 @@ async def advisory_query(
         except Exception:
             logger.warning("Budget check failed — allowing query", exc_info=True)
 
-    # ── Step 4: Run autonomous advisory engine ────────────────────
-    from hr_advisory.agents.advisory_engine import AdvisoryEngine
-
-    engine = AdvisoryEngine(llm_context=llm_context)
+    # ── Step 4: Run Kaizen Delegate engine ─────────────────────────
     import asyncio
 
-    # Build user context for personalisation
+    from hr_advisory.delegate.arbor_loop import DelegateConfig, run_delegate_sync
+
     _user_ctx = {
         "role": current_user.get("role", ""),
         "name": current_user.get("name", ""),
     }
 
+    delegate_config = DelegateConfig(
+        model=getattr(llm_context, "model", "") or "",
+        api_key=getattr(llm_context, "api_key", "") or "",
+        base_url=getattr(llm_context, "base_url", None),
+        company_id=int(effective_company_id) if effective_company_id else None,
+        company_context=company_profile,
+        user_context=_user_ctx,
+    )
+
     loop = asyncio.get_event_loop()
-    engine_result = await loop.run_in_executor(
-        None,
-        lambda: engine.run(
-            query=query,
-            conversation_history=conversation_messages,
-            company_context=company_profile,
-            company_id=int(effective_company_id) if effective_company_id else None,
-            user_context=_user_ctx,
+    engine_result = await asyncio.wait_for(
+        loop.run_in_executor(
+            None,
+            lambda: run_delegate_sync(
+                prompt=query,
+                config=delegate_config,
+                conversation_history=conversation_messages,
+            ),
         ),
+        timeout=60.0,
     )
 
     response_text = engine_result.get("response_text", "")
@@ -938,41 +925,22 @@ async def list_conversations(
     # If in-memory is empty, try loading from database (survives restarts)
     if not conversations:
         try:
-            from kailash import LocalRuntime, WorkflowBuilder
+            from hr_advisory.services import dataflow_crud
 
-            wf = WorkflowBuilder()
-            wf.add_node(
-                "ConversationThreadListNode",
-                "list_threads",
-                {
-                    "filter": {"user_id": int(user_id) if user_id.isdigit() else 0},
-                    "limit": 50,
-                    "enable_cache": False,
-                },
+            items = dataflow_crud.list_records(
+                "ConversationThread",
+                {"user_id": int(user_id) if user_id.isdigit() else 0},
+                limit=50,
             )
-            runtime = LocalRuntime()
-            results, _ = runtime.execute(wf.build())
-            records = results.get("list_threads", {})
-            items = records.get("records", []) if isinstance(records, dict) else []
 
             for thread in items:
                 # Load last message for preview
                 last_msg = ""
                 try:
-                    wf2 = WorkflowBuilder()
-                    wf2.add_node(
-                        "ConversationMessageListNode",
-                        "msgs",
-                        {
-                            "filter": {"thread_id": thread["id"]},
-                            "limit": 1,
-                            "enable_cache": False,
-                        },
-                    )
-                    msg_results, _ = runtime.execute(wf2.build())
-                    msg_records = msg_results.get("msgs", {})
-                    msg_items = (
-                        msg_records.get("records", []) if isinstance(msg_records, dict) else []
+                    msg_items = dataflow_crud.list_records(
+                        "ConversationMessage",
+                        {"thread_id": thread["id"]},
+                        limit=1,
                     )
                     if msg_items:
                         last_msg = msg_items[-1].get("text", "")[:100]
@@ -1056,23 +1024,13 @@ async def advisory_history(
     # If in-memory is empty, try loading from database (survives restarts)
     if not messages:
         try:
-            from kailash import LocalRuntime, WorkflowBuilder
+            from hr_advisory.services import dataflow_crud
 
-            # Find the thread by session_id (conversation_id)
-            wf = WorkflowBuilder()
-            wf.add_node(
-                "ConversationThreadListNode",
-                "find_thread",
-                {
-                    "filter": {"session_id": conv_key},
-                    "limit": 1,
-                    "enable_cache": False,
-                },
+            items = dataflow_crud.list_records(
+                "ConversationThread",
+                {"session_id": conv_key},
+                limit=1,
             )
-            runtime = LocalRuntime()
-            results, _ = runtime.execute(wf.build())
-            records = results.get("find_thread", {})
-            items = records.get("records", []) if isinstance(records, dict) else []
 
             if items:
                 thread = items[0]
@@ -1084,19 +1042,11 @@ async def advisory_history(
                     raise HTTPException(status_code=404, detail="Conversation not found.")
 
                 # Load messages from DB
-                wf2 = WorkflowBuilder()
-                wf2.add_node(
-                    "ConversationMessageListNode",
-                    "load_msgs",
-                    {
-                        "filter": {"thread_id": thread_id},
-                        "limit": 10000,
-                        "enable_cache": False,
-                    },
+                msg_items = dataflow_crud.list_records(
+                    "ConversationMessage",
+                    {"thread_id": thread_id},
+                    limit=10000,
                 )
-                msg_results, _ = runtime.execute(wf2.build())
-                msg_records = msg_results.get("load_msgs", {})
-                msg_items = msg_records.get("records", []) if isinstance(msg_records, dict) else []
 
                 for db_msg in msg_items:
                     sender = db_msg.get("sender", "user")

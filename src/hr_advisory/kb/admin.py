@@ -15,15 +15,6 @@ from kailash.workflow.builder import WorkflowBuilder
 logger = logging.getLogger(__name__)
 
 
-def _execute(node_type: str, node_id: str, params: dict) -> dict:
-    """Run a single-node workflow and return the node result."""
-    runtime = LocalRuntime()
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, node_id, params)
-    results, _ = runtime.execute(wf.build())
-    return results[node_id]
-
-
 def _extract_records(result) -> list[dict]:
     """Extract the record list from a ListNode result.
 
@@ -81,20 +72,15 @@ def update_provision(provision_id: int, updates: dict, reason: str) -> dict:
     Raises:
         ValueError: If the original provision is not found.
     """
-    runtime = LocalRuntime()
+    from hr_advisory.models.database import db
 
     # Read original provision
-    wf_read = WorkflowBuilder()
-    wf_read.add_node("ProvisionReadNode", "read", {"id": provision_id})
-    results, _ = runtime.execute(wf_read.build())
-    original = results["read"]
-
+    original = db.express_sync.read("Provision", str(provision_id))
     if not original:
         raise ValueError(f"Provision with id={provision_id} not found. Cannot update.")
 
     # Build data for the new version: start from original, apply updates
     new_data = dict(original)
-    # Remove fields that should not be copied to the new version
     for key in (
         "id",
         "created_at",
@@ -105,21 +91,16 @@ def update_provision(provision_id: int, updates: dict, reason: str) -> dict:
     ):
         new_data.pop(key, None)
 
-    # Apply updates
     new_data.update(updates)
     new_data["is_active"] = True
 
-    # Convert datetime strings if needed
     for date_field in ("effective_date", "superseded_date"):
         val = new_data.get(date_field)
         if isinstance(val, str):
             new_data[date_field] = datetime.fromisoformat(val)
 
     # Create new version
-    wf_create = WorkflowBuilder()
-    wf_create.add_node("ProvisionCreateNode", "create_new", new_data)
-    create_results, _ = runtime.execute(wf_create.build())
-    new_provision = create_results["create_new"]
+    new_provision = db.express_sync.create("Provision", new_data)
 
     logger.info(
         "Created new provision version id=%s (supersedes id=%s, reason: %s)",
@@ -129,20 +110,15 @@ def update_provision(provision_id: int, updates: dict, reason: str) -> dict:
     )
 
     # Mark old version as superseded
-    wf_update = WorkflowBuilder()
-    wf_update.add_node(
-        "ProvisionUpdateNode",
-        "supersede",
+    db.express_sync.update(
+        "Provision",
+        str(provision_id),
         {
-            "filter": {"id": provision_id},
-            "fields": {
-                "is_active": False,
-                "superseded_by_id": new_provision["id"],
-                "superseded_date": datetime.now(tz=None),
-            },
+            "is_active": False,
+            "superseded_by_id": new_provision["id"],
+            "superseded_date": datetime.now(tz=None),
         },
     )
-    runtime.execute(wf_update.build())
 
     logger.info("Marked provision id=%s as superseded", provision_id)
     return new_provision
@@ -168,21 +144,22 @@ def get_kb_stats() -> dict:
         "rate_tables": "RateTableListNode",
     }
 
-    for entity_name, node_type in entity_nodes.items():
-        try:
-            wf = WorkflowBuilder()
+    # Single workflow with all 7 count nodes — 1 connection checkout, not 7
+    try:
+        wf = WorkflowBuilder()
+        for entity_name, node_type in entity_nodes.items():
             wf.add_node(
                 node_type,
                 f"count_{entity_name}",
                 {"filter": {}, "enable_cache": False, "limit": 10000},
             )
-            results, _ = runtime.execute(wf.build())
-            data = results[f"count_{entity_name}"]
-            records = _extract_records(data)
-            stats[entity_name] = len(records)
-        except Exception as exc:
-            logger.error("Failed to count %s: %s", entity_name, exc)
-            stats[entity_name] = 0
+        results, _ = runtime.execute(wf.build())
+        for entity_name in entity_nodes:
+            data = results.get(f"count_{entity_name}", {})
+            stats[entity_name] = len(_extract_records(data))
+    except Exception as exc:
+        logger.error("Failed to retrieve KB stats: %s", exc)
+        stats = {name: 0 for name in entity_nodes}
 
     logger.info("KB stats: %s", stats)
     return stats
@@ -213,11 +190,9 @@ def ensure_kb_seeded() -> bool:
 
     try:
         # Quick check: are there any provisions already?
-        runtime = LocalRuntime()
-        wf = WorkflowBuilder()
-        wf.add_node("ProvisionListNode", "check", {"filter": {}, "enable_cache": False, "limit": 1})
-        results, _ = runtime.execute(wf.build())
-        existing = _extract_records(results["check"])
+        from hr_advisory.services import dataflow_crud
+
+        existing = dataflow_crud.list_records("Provision", {}, limit=1)
         if existing:
             logger.debug("KB already has provisions, skipping seed")
             return False
@@ -274,16 +249,9 @@ def search_provisions(
     # Ensure KB is populated on first search
     ensure_kb_seeded()
 
-    runtime = LocalRuntime()
+    from hr_advisory.services import dataflow_crud
 
-    # Get all provisions (DataFlow ListNode doesn't support LIKE/ILIKE natively,
-    # so we filter in Python)
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "ProvisionListNode", "all_provs", {"filter": {}, "enable_cache": False, "limit": 10000}
-    )
-    results, _ = runtime.execute(wf.build())
-    all_provisions = _extract_records(results["all_provs"])
+    all_provisions = dataflow_crud.list_records("Provision", {}, limit=10000)
 
     if not all_provisions:
         return []
@@ -291,12 +259,7 @@ def search_provisions(
     # If domain filter is specified, resolve domain_id first
     domain_id = None
     if domain:
-        wf_domain = WorkflowBuilder()
-        wf_domain.add_node(
-            "DomainListNode", "find_domain", {"filter": {"name": domain}, "enable_cache": False}
-        )
-        domain_results, _ = runtime.execute(wf_domain.build())
-        domains = _extract_records(domain_results["find_domain"])
+        domains = dataflow_crud.list_records("Domain", {"name": domain}, limit=1)
         if domains:
             domain_id = domains[0]["id"]
         else:

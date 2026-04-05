@@ -126,7 +126,7 @@ class ShortTermMemory:
     ) -> None:
         """Persist conversation turn to database (best-effort)."""
         try:
-            from kailash import LocalRuntime, WorkflowBuilder
+            from hr_advisory.services import dataflow_crud
 
             # Ensure thread exists (upsert by session_id)
             thread_id = self._ensure_thread(
@@ -136,10 +136,8 @@ class ShortTermMemory:
                 return
 
             # Save user message
-            wf = WorkflowBuilder()
-            wf.add_node(
-                "ConversationMessageCreateNode",
-                "save_user_msg",
+            dataflow_crud.create(
+                "ConversationMessage",
                 {
                     "thread_id": thread_id,
                     "sender": "user",
@@ -149,14 +147,10 @@ class ShortTermMemory:
                     "risk_tier": risk_tier,
                 },
             )
-            runtime = LocalRuntime()
-            runtime.execute(wf.build())
 
             # Save agent message
-            wf2 = WorkflowBuilder()
-            wf2.add_node(
-                "ConversationMessageCreateNode",
-                "save_agent_msg",
+            dataflow_crud.create(
+                "ConversationMessage",
                 {
                     "thread_id": thread_id,
                     "sender": "agent",
@@ -168,7 +162,6 @@ class ShortTermMemory:
                     "provisions_cited": json.dumps(provisions_cited or []),
                 },
             )
-            runtime.execute(wf2.build())
         except Exception as exc:
             logger.warning("Failed to persist conversation turn: %s", exc)
 
@@ -177,35 +170,19 @@ class ShortTermMemory:
     ) -> Optional[int]:
         """Get or create a conversation thread for the session_id."""
         try:
-            from kailash import LocalRuntime, WorkflowBuilder
+            from hr_advisory.services import dataflow_crud
 
             # Try to find existing thread
-            wf = WorkflowBuilder()
-            wf.add_node(
-                "ConversationThreadListNode",
-                "find_thread",
-                {
-                    "filter": {"session_id": session_id},
-                    "limit": 1,
-                    "enable_cache": False,
-                },
+            items = dataflow_crud.list_records(
+                "ConversationThread", {"session_id": session_id}, limit=1
             )
-            runtime = LocalRuntime()
-            results, _ = runtime.execute(wf.build())
-            records = results.get("find_thread", {})
-            if isinstance(records, dict):
-                items = records.get("records", [])
-            else:
-                items = records if isinstance(records, list) else []
 
             if items:
                 return items[0].get("id")
 
             # Create new thread
-            wf2 = WorkflowBuilder()
-            wf2.add_node(
-                "ConversationThreadCreateNode",
-                "create_thread",
+            created = dataflow_crud.create(
+                "ConversationThread",
                 {
                     "user_id": user_id,
                     "company_id": company_id,
@@ -213,8 +190,6 @@ class ShortTermMemory:
                     "subject": subject,
                 },
             )
-            results2, _ = runtime.execute(wf2.build())
-            created = results2.get("create_thread", {})
             return created.get("id")
         except Exception as exc:
             logger.warning("Failed to ensure conversation thread: %s", exc)

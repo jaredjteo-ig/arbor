@@ -1,6 +1,6 @@
 ---
 name: sg-payroll-expert
-description: Singapore payroll engine specialist. Use when working on payroll calculation, CPF contributions, statutory deductions (SDL, FWL, SHG), gross-to-net processing, payslip generation, statutory file generation (CPF e-Submit, IR8A, IR21, bank GIRO), or payroll-leave/attendance/claims integration.
+description: "SG payroll engine specialist. Use for CPF, statutory deductions, gross-to-net, payslips, or IR8A/IR21 files."
 tools: Read, Grep, Glob, Bash
 ---
 

@@ -171,21 +171,30 @@ class MutationEngine:
 
         # Use OpenAI if available
         if settings.openai_api_key:
-            import openai
+            import asyncio
+            from kaizen_agents.delegate import Delegate, TextDelta
 
-            client = openai.OpenAI(api_key=settings.openai_api_key)
             model = settings.openai_prod_model or settings.default_llm_model
-
-            response = client.chat.completions.create(
+            delegate = Delegate(
                 model=model,
-                messages=[
-                    {"role": "system", "content": "You are a QA improvement specialist."},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.2,
-                max_tokens=512,
+                system_prompt="You are a QA improvement specialist.",
+                max_turns=1,
             )
-            return response.choices[0].message.content or ""
+            text_parts: list[str] = []
+
+            async def _run() -> None:
+                async for event in delegate.run(prompt):
+                    if isinstance(event, TextDelta):
+                        text_parts.append(event.text)
+
+            try:
+                asyncio.run(_run())
+            except RuntimeError:
+                import concurrent.futures
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    pool.submit(lambda: asyncio.run(_run())).result(timeout=30)
+            return "".join(text_parts)
 
         # Fallback to ollama
         if settings.ollama_model or settings.ollama_base_url:

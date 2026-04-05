@@ -27,30 +27,7 @@ __all__ = [
 ]
 
 
-# ── DataFlow helpers ──────────────────────────────────────────
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    """Execute a DataFlow ListNode query and return the record list."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    with LocalRuntime() as runtime:
-        results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
+from hr_advisory.services import dataflow_crud
 
 
 # ── Briefing category builders ────────────────────────────────
@@ -67,8 +44,8 @@ def _pending_actions(company_id: int, user_role: str) -> list[dict[str, Any]]:
     if user_role in ("admin", "hr", "hr_admin", "owner", "manager"):
         # Pending leave applications
         try:
-            pending_leave = _dataflow_list(
-                "LeaveApplicationListNode",
+            pending_leave = dataflow_crud.list_records(
+                "LeaveApplication",
                 {"company_id": company_id, "status": "pending"},
                 limit=100,
             )
@@ -89,8 +66,8 @@ def _pending_actions(company_id: int, user_role: str) -> list[dict[str, Any]]:
 
         # Draft payroll runs
         try:
-            draft_runs = _dataflow_list(
-                "PayrollRunListNode",
+            draft_runs = dataflow_crud.list_records(
+                "PayrollRun",
                 {"company_id": company_id, "status": "draft"},
                 limit=10,
             )
@@ -111,8 +88,8 @@ def _pending_actions(company_id: int, user_role: str) -> list[dict[str, Any]]:
 
         # Pending claims
         try:
-            pending_claims = _dataflow_list(
-                "ClaimListNode",
+            pending_claims = dataflow_crud.list_records(
+                "Claim",
                 {"company_id": company_id, "status": "submitted"},
                 limit=100,
             )
@@ -216,8 +193,8 @@ def _attention_needed(company_id: int) -> list[dict[str, Any]]:
 
     # ── Work pass expiries ──────────────────────────────────────
     try:
-        employees = _dataflow_list(
-            "EmployeeListNode",
+        employees = dataflow_crud.list_records(
+            "Employee",
             {"company_id": company_id, "is_active": True},
             limit=10000,
         )
@@ -277,8 +254,8 @@ def _attention_needed(company_id: int) -> list[dict[str, Any]]:
 
     # ── Probation ending soon ───────────────────────────────────
     try:
-        employees = _dataflow_list(
-            "EmployeeListNode",
+        employees = dataflow_crud.list_records(
+            "Employee",
             {"company_id": company_id, "is_active": True},
             limit=10000,
         )
@@ -332,8 +309,8 @@ def _quick_stats(company_id: int) -> dict[str, Any]:
 
     # Active employee count
     try:
-        employees = _dataflow_list(
-            "EmployeeListNode",
+        employees = dataflow_crud.list_records(
+            "Employee",
             {"company_id": company_id, "is_active": True},
             limit=10000,
         )
@@ -344,8 +321,8 @@ def _quick_stats(company_id: int) -> dict[str, Any]:
 
     # Pending leave count
     try:
-        pending = _dataflow_list(
-            "LeaveApplicationListNode",
+        pending = dataflow_crud.list_records(
+            "LeaveApplication",
             {"company_id": company_id, "status": "pending"},
             limit=10000,
         )
@@ -358,8 +335,8 @@ def _quick_stats(company_id: int) -> dict[str, Any]:
     try:
         today = date.today()
         period_start = today.replace(day=1).isoformat()
-        runs = _dataflow_list(
-            "PayrollRunListNode",
+        runs = dataflow_crud.list_records(
+            "PayrollRun",
             {"company_id": company_id},
             limit=100,
         )
