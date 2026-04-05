@@ -26,6 +26,9 @@ _MAX_TEXT_LENGTH = 500_000
 # header or footer candidate for stripping.
 _HEADER_FOOTER_REPEAT_THRESHOLD = 3
 
+# Maximum number of PDF pages to extract before truncating.
+_MAX_PDF_PAGES = 200
+
 # Quality validation thresholds
 _MIN_WORD_COUNT = 10
 _MAX_CHAR_TO_WORD_RATIO = 20.0
@@ -65,12 +68,24 @@ def extract_text_from_pdf(
             import pdfplumber
 
             page_texts: list[list[str]] = []
+            truncated = False
 
             with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                for page in pdf.pages:
+                for idx, page in enumerate(pdf.pages):
+                    if idx >= _MAX_PDF_PAGES:
+                        truncated = True
+                        logger.info(
+                            "PDF extraction stopped at %d pages (total pages: %d)",
+                            _MAX_PDF_PAGES,
+                            len(pdf.pages),
+                        )
+                        break
                     text = page.extract_text() or ""
                     lines = text.split("\n")
                     page_texts.append(lines)
+
+            if truncated:
+                status[0] = "partial"
 
             if not page_texts:
                 result.append("")

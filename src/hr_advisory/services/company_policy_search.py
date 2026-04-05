@@ -75,7 +75,7 @@ def search_company_policies(
     company_id: int,
     category: str | None = None,
     limit: int = 5,
-) -> list[dict]:
+) -> list[dict] | dict:
     """Search company policies by keyword relevance.
 
     Uses the same scoring pattern as _search_python_kb in advisory_engine.py:
@@ -90,7 +90,9 @@ def search_company_policies(
     Returns:
         List of result dicts with keys: policy_id, title, category,
         content_excerpt, effective_date, version_number, authority_level.
-        Returns [] if no matches or on error.
+        When no results match but policies exist, returns a structured dict
+        with keys: results, total_company_policies, message.
+        Returns [] if query is empty or on error.
     """
     if not query or not query.strip():
         return []
@@ -104,7 +106,7 @@ def search_company_policies(
 
     # Fetch active policies from DataFlow
     try:
-        policies = _fetch_active_policies(company_id, category=category)
+        all_policies = _fetch_active_policies(company_id, category=None)
     except Exception as exc:
         logger.warning(
             "Failed to fetch company policies for company_id=%d: %s",
@@ -113,20 +115,31 @@ def search_company_policies(
         )
         return []
 
-    if not policies:
-        return []
+    if not all_policies:
+        return {
+            "results": [],
+            "total_company_policies": 0,
+            "message": "No company policies found. The company has not uploaded any policies yet.",
+        }
 
-    # Post-fetch category filter (defense-in-depth: ensure results match
-    # even if the DataFlow filter was bypassed or returned extra records)
+    # Apply category filter for scoring
+    policies_to_search = all_policies
     if category:
-        policies = [p for p in policies if p.get("category") == category]
+        policies_to_search = [p for p in all_policies if p.get("category") == category]
 
-    if not policies:
-        return []
+    if not policies_to_search:
+        return {
+            "results": [],
+            "total_company_policies": len(all_policies),
+            "message": (
+                f"No company policies matched the category '{category}'. "
+                f"The company has {len(all_policies)} policies but none in this category."
+            ),
+        }
 
     # Score by keyword overlap (same pattern as _search_python_kb)
     scored: list[tuple[int, dict]] = []
-    for policy in policies:
+    for policy in policies_to_search:
         searchable = " ".join(
             str(policy.get(f, ""))
             for f in ("title", "category", "policy_type", "content")
@@ -136,6 +149,16 @@ def search_company_policies(
             scored.append((score, policy))
 
     scored.sort(key=lambda x: x[0], reverse=True)
+
+    if not scored:
+        return {
+            "results": [],
+            "total_company_policies": len(all_policies),
+            "message": (
+                f"No company policies matched this query. "
+                f"The company has {len(all_policies)} policies but none are relevant to this topic."
+            ),
+        }
 
     # Build result dicts
     results: list[dict] = []

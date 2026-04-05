@@ -62,27 +62,41 @@ export const policiesApi = {
   },
 
   /** Admin: create a new policy record. */
-  async create(data: Partial<PolicyRecord>): Promise<PolicyRecord> {
-    const resp = await apiClient.post<{ policy: PolicyRecord }>(
-      "/policies/",
-      data,
-    );
-    return (
-      (resp as { policy: PolicyRecord }).policy ??
-      (resp as unknown as PolicyRecord)
-    );
+  async create(data: Partial<PolicyRecord>): Promise<{
+    policy: PolicyRecord;
+    statutory_floor_warnings?: StatutoryFloorWarning[];
+  }> {
+    const resp = await apiClient.post<{
+      policy: PolicyRecord;
+      statutory_floor_warnings?: StatutoryFloorWarning[];
+    }>("/policies/", data);
+    const raw = resp as {
+      policy: PolicyRecord;
+      statutory_floor_warnings?: StatutoryFloorWarning[];
+    };
+    return {
+      policy: raw.policy ?? (resp as unknown as PolicyRecord),
+      statutory_floor_warnings: raw.statutory_floor_warnings,
+    };
   },
 
   /** Admin: upload a policy document (PDF/DOCX). */
-  async upload(formData: FormData): Promise<PolicyRecord> {
-    const resp = await apiClient.postFormData<{ policy: PolicyRecord }>(
-      "/policies/upload",
-      formData,
-    );
-    return (
-      (resp as { policy: PolicyRecord }).policy ??
-      (resp as unknown as PolicyRecord)
-    );
+  async upload(formData: FormData): Promise<{
+    policy: PolicyRecord;
+    statutory_floor_warnings?: StatutoryFloorWarning[];
+  }> {
+    const resp = await apiClient.postFormData<{
+      policy: PolicyRecord;
+      statutory_floor_warnings?: StatutoryFloorWarning[];
+    }>("/policies/upload", formData);
+    const raw = resp as {
+      policy: PolicyRecord;
+      statutory_floor_warnings?: StatutoryFloorWarning[];
+    };
+    return {
+      policy: raw.policy ?? (resp as unknown as PolicyRecord),
+      statutory_floor_warnings: raw.statutory_floor_warnings,
+    };
   },
 
   /** Admin: update policy metadata. */

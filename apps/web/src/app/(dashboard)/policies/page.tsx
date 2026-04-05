@@ -246,10 +246,7 @@ function PolicyCard({
 export default function PoliciesPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
   /* State */
   const [policies, setPolicies] = useState<PolicyRecord[]>([]);
@@ -558,6 +555,10 @@ export default function PoliciesPage() {
                       key={policy.id}
                       policy={policy}
                       onClick={() => router.push(`/policies/${policy.id}`)}
+                      isAdmin={isAdmin}
+                      onArchive={() =>
+                        handleArchivePolicy(policy.id, policy.title)
+                      }
                     />
                   ))}
                 </div>

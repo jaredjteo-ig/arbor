@@ -17,7 +17,11 @@ import {
   Edit,
   Trash2,
 } from "lucide-react";
-import { policiesApi, type PolicyRecord } from "@/services/api/policies";
+import {
+  policiesApi,
+  type PolicyRecord,
+  type StatutoryFloorWarning,
+} from "@/services/api/policies";
 
 /* -- Constants --------------------------------------------------- */
 
@@ -117,6 +121,7 @@ export function PolicyCreateModal({
   const [uploadedPolicy, setUploadedPolicy] = useState<PolicyRecord | null>(
     null,
   );
+  const [warnings, setWarnings] = useState<StatutoryFloorWarning[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!isOpen) return null;
@@ -136,6 +141,7 @@ export function PolicyCreateModal({
     setUploadDate("");
     setUploadRequiresAck(false);
     setUploadedPolicy(null);
+    setWarnings([]);
   }
 
   function handleClose() {
@@ -161,7 +167,7 @@ export function PolicyCreateModal({
 
     setIsSaving(true);
     try {
-      await policiesApi.create({
+      const result = await policiesApi.create({
         title: title.trim(),
         category: resolveCategory(category, customCategory),
         content,
@@ -169,8 +175,16 @@ export function PolicyCreateModal({
         requires_acknowledgment: requiresAck,
         status: "draft",
       });
-      resetState();
-      onSuccess();
+      const belowMinimum = (result.statutory_floor_warnings ?? []).filter(
+        (w) => w.status === "below_minimum",
+      );
+      if (belowMinimum.length > 0) {
+        setWarnings(belowMinimum);
+        setUploadedPolicy(result.policy);
+      } else {
+        resetState();
+        onSuccess();
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to save draft";
@@ -196,7 +210,7 @@ export function PolicyCreateModal({
 
     setIsSaving(true);
     try {
-      await policiesApi.create({
+      const result = await policiesApi.create({
         title: title.trim(),
         category: resolveCategory(category, customCategory),
         content,
@@ -204,8 +218,16 @@ export function PolicyCreateModal({
         requires_acknowledgment: requiresAck,
         status: "active",
       });
-      resetState();
-      onSuccess();
+      const belowMinimum = (result.statutory_floor_warnings ?? []).filter(
+        (w) => w.status === "below_minimum",
+      );
+      if (belowMinimum.length > 0) {
+        setWarnings(belowMinimum);
+        setUploadedPolicy(result.policy);
+      } else {
+        resetState();
+        onSuccess();
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to publish policy";
@@ -265,7 +287,13 @@ export function PolicyCreateModal({
       formData.append("requires_acknowledgment", String(uploadRequiresAck));
 
       const result = await policiesApi.upload(formData);
-      setUploadedPolicy(result);
+      setUploadedPolicy(result.policy);
+      const belowMinimum = (result.statutory_floor_warnings ?? []).filter(
+        (w) => w.status === "below_minimum",
+      );
+      if (belowMinimum.length > 0) {
+        setWarnings(belowMinimum);
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to upload document";
@@ -520,6 +548,25 @@ export function PolicyCreateModal({
                 />
               </div>
 
+              {/* Statutory floor warnings */}
+              {warnings.length > 0 && (
+                <div className="flex items-start gap-2 rounded-[8px] border border-amber-200 bg-amber-50 px-4 py-3">
+                  <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">
+                      Compliance Warnings
+                    </p>
+                    <ul className="mt-1 space-y-1">
+                      {warnings.map((w, idx) => (
+                        <li key={idx} className="text-xs text-amber-700">
+                          {w.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
               <div className="rounded-[8px] border border-[var(--color-gray-200)] bg-[var(--color-gray-50)] p-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-[var(--color-gray-500)]">
@@ -648,7 +695,7 @@ export function PolicyCreateModal({
                     await policiesApi.archive(uploadedPolicy.id);
                     toast.success("Policy deleted");
                     resetState();
-                    onSuccess();
+                    onClose();
                   } catch {
                     toast.error("Failed to delete policy");
                   }

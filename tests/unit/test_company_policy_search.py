@@ -114,11 +114,14 @@ class TestSearchCompanyPolicies:
         assert "Annual Leave Policy" in titles
 
     @patch("hr_advisory.services.company_policy_search._fetch_active_policies")
-    def test_returns_empty_for_no_match(self, mock_fetch):
-        """Search for something with no keyword overlap returns empty list."""
+    def test_returns_structured_zero_result_for_no_match(self, mock_fetch):
+        """Search with no keyword overlap returns structured zero-result dict."""
         mock_fetch.return_value = [p for p in _FAKE_POLICIES if p["company_id"] == 42 and p["is_active"]]
         results = search_company_policies(query="xyz999 quantum teleportation", company_id=42)
-        assert results == []
+        assert isinstance(results, dict)
+        assert results["results"] == []
+        assert results["total_company_policies"] > 0
+        assert "message" in results
 
     @patch("hr_advisory.services.company_policy_search._fetch_active_policies")
     def test_category_filter(self, mock_fetch):

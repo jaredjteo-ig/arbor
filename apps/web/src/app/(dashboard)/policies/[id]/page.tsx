@@ -26,6 +26,7 @@ import {
   policiesApi,
   type PolicyRecord,
   type PolicyAcknowledgmentRecord,
+  type StatutoryFloorWarning,
 } from "@/services/api/policies";
 
 /* -- Helpers ----------------------------------------------------- */
@@ -180,14 +181,41 @@ function OverviewTab({
   isAdmin,
   ackCount,
   totalEmployees,
+  complianceWarnings,
 }: {
   policy: PolicyRecord;
   isAdmin: boolean;
   ackCount: number;
   totalEmployees: number;
+  complianceWarnings: StatutoryFloorWarning[];
 }) {
+  const belowMinimum = complianceWarnings.filter(
+    (w) => w.status === "below_minimum",
+  );
+
   return (
     <div className="space-y-6">
+      {/* Compliance warnings (admin only, active leave policies) */}
+      {isAdmin && belowMinimum.length > 0 && (
+        <AppCard variant="standard" className="border-amber-200 bg-amber-50">
+          <h3 className="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-amber-500" />
+            Compliance Warnings
+          </h3>
+          <ul className="space-y-2">
+            {belowMinimum.map((w, idx) => (
+              <li
+                key={idx}
+                className="flex items-start gap-2 text-sm text-amber-700"
+              >
+                <span className="shrink-0 mt-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                {w.message}
+              </li>
+            ))}
+          </ul>
+        </AppCard>
+      )}
+
       {/* Summary card */}
       <AppCard variant="standard">
         <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4 flex items-center gap-2">
@@ -467,10 +495,23 @@ function VersionsTab({ policyId }: { policyId: number }) {
 
 /* -- Acknowledgments Tab ----------------------------------------- */
 
+interface AcknowledgedItem {
+  employee_id: number;
+  acknowledged_at: string;
+  ip_address?: string;
+}
+
+interface NotAcknowledgedItem {
+  employee_id: number;
+  full_name: string;
+  email: string;
+}
+
 function AcknowledgmentsTab({ policyId }: { policyId: number }) {
-  const [acknowledgments, setAcknowledgments] = useState<
-    PolicyAcknowledgmentRecord[]
-  >([]);
+  const [acknowledged, setAcknowledged] = useState<AcknowledgedItem[]>([]);
+  const [notAcknowledged, setNotAcknowledged] = useState<NotAcknowledgedItem[]>(
+    [],
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -479,7 +520,14 @@ function AcknowledgmentsTab({ policyId }: { policyId: number }) {
     setError(null);
     try {
       const data = await policiesApi.acknowledgments(policyId);
-      setAcknowledgments(data.acknowledgments ?? []);
+      /* Backend returns { acknowledged: [...], not_acknowledged: [...] } */
+      const raw = data as unknown as {
+        acknowledged?: AcknowledgedItem[];
+        not_acknowledged?: NotAcknowledgedItem[];
+        acknowledgments?: PolicyAcknowledgmentRecord[];
+      };
+      setAcknowledged(raw.acknowledged ?? []);
+      setNotAcknowledged(raw.not_acknowledged ?? []);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Unable to load acknowledgments.";
@@ -512,13 +560,13 @@ function AcknowledgmentsTab({ policyId }: { policyId: number }) {
     );
   }
 
-  if (acknowledgments.length === 0) {
+  if (acknowledged.length === 0 && notAcknowledged.length === 0) {
     return (
       <AppCard variant="standard">
         <div className="py-8 text-center">
           <Users className="h-8 w-8 text-[var(--color-gray-300)] mx-auto mb-2" />
           <p className="text-sm text-[var(--color-gray-500)]">
-            No acknowledgments yet.
+            No acknowledgment data available.
           </p>
         </div>
       </AppCard>
@@ -526,52 +574,103 @@ function AcknowledgmentsTab({ policyId }: { policyId: number }) {
   }
 
   return (
-    <AppCard variant="standard">
-      <div className="overflow-x-auto -mx-5 -my-4">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-[var(--color-gray-200)]">
-              <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                Employee ID
-              </th>
-              <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                Version
-              </th>
-              <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                Acknowledged
-              </th>
-              <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                Status
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {acknowledgments.map((ack) => (
-              <tr
-                key={ack.id}
-                className="border-b border-[var(--color-gray-100)] last:border-0"
-              >
-                <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                  Employee #{ack.employee_id}
-                </td>
-                <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
-                  v{ack.version_acknowledged}
-                </td>
-                <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                  {formatDateTime(ack.acknowledged_at)}
-                </td>
-                <td className="py-3 px-5 text-center">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    <CheckCircle2 className="h-3 w-3" />
-                    Acknowledged
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </AppCard>
+    <div className="space-y-6">
+      {/* Pending acknowledgments (shown first - more actionable for HR) */}
+      {notAcknowledged.length > 0 && (
+        <AppCard variant="standard">
+          <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-3 flex items-center gap-2">
+            <Clock className="h-4 w-4 text-amber-500" />
+            Pending ({notAcknowledged.length})
+          </h3>
+          <div className="overflow-x-auto -mx-5 -mb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-gray-200)]">
+                  <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                    Employee
+                  </th>
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Email
+                  </th>
+                  <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {notAcknowledged.map((emp) => (
+                  <tr
+                    key={emp.employee_id}
+                    className="border-b border-[var(--color-gray-100)] last:border-0"
+                  >
+                    <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
+                      {emp.full_name || `Employee #${emp.employee_id}`}
+                    </td>
+                    <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                      {emp.email || "-"}
+                    </td>
+                    <td className="py-3 px-5 text-center">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                        <Clock className="h-3 w-3" />
+                        Pending
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </AppCard>
+      )}
+
+      {/* Acknowledged */}
+      {acknowledged.length > 0 && (
+        <AppCard variant="standard">
+          <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-3 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+            Acknowledged ({acknowledged.length})
+          </h3>
+          <div className="overflow-x-auto -mx-5 -mb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-gray-200)]">
+                  <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                    Employee ID
+                  </th>
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Acknowledged At
+                  </th>
+                  <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {acknowledged.map((ack) => (
+                  <tr
+                    key={ack.employee_id}
+                    className="border-b border-[var(--color-gray-100)] last:border-0"
+                  >
+                    <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
+                      Employee #{ack.employee_id}
+                    </td>
+                    <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                      {formatDateTime(ack.acknowledged_at)}
+                    </td>
+                    <td className="py-3 px-5 text-center">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Acknowledged
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </AppCard>
+      )}
+    </div>
   );
 }
 
@@ -636,16 +735,17 @@ export default function PolicyDetailPage({
 
   const router = useRouter();
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
   const [policy, setPolicy] = useState<PolicyRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [ackCount, setAckCount] = useState(0);
+  const [totalEmployees, setTotalEmployees] = useState(0);
+  const [complianceWarnings, setComplianceWarnings] = useState<
+    StatutoryFloorWarning[]
+  >([]);
   const [needsAck, setNeedsAck] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
@@ -671,7 +771,20 @@ export default function PolicyDetailPage({
     if (!isAdmin) return;
     try {
       const data = await policiesApi.acknowledgments(policyId);
-      setAckCount(data.acknowledgments?.length ?? 0);
+      /* Backend returns { acknowledged: [...], not_acknowledged: [...] } */
+      const raw = data as unknown as {
+        acknowledged?: { employee_id: number }[];
+        not_acknowledged?: { employee_id: number }[];
+        total_employees?: number;
+        acknowledged_count?: number;
+        not_acknowledged_count?: number;
+      };
+      const ackList = raw.acknowledged ?? [];
+      const notAckList = raw.not_acknowledged ?? [];
+      setAckCount(raw.acknowledged_count ?? ackList.length);
+      setTotalEmployees(
+        (raw.total_employees ?? ackList.length + notAckList.length) || 0,
+      );
     } catch {
       // Non-critical
     }
@@ -696,6 +809,31 @@ export default function PolicyDetailPage({
     fetchAckCount();
     checkPendingAck();
   }, [fetchPolicy, fetchAckCount, checkPendingAck]);
+
+  /* Fetch compliance warnings (admin only, active leave policies) */
+  useEffect(() => {
+    if (
+      !isAdmin ||
+      !policy ||
+      policy.status !== "active" ||
+      policy.category !== "leave_absence"
+    )
+      return;
+    let cancelled = false;
+    policiesApi
+      .complianceCheck(policy.id)
+      .then((result) => {
+        if (!cancelled) {
+          setComplianceWarnings(result.warnings ?? []);
+        }
+      })
+      .catch(() => {
+        // Non-critical
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, policy]);
 
   /* Archive handler */
   async function handleArchive() {
@@ -875,7 +1013,8 @@ export default function PolicyDetailPage({
           policy={policy}
           isAdmin={isAdmin}
           ackCount={ackCount}
-          totalEmployees={0}
+          totalEmployees={totalEmployees}
+          complianceWarnings={complianceWarnings}
         />
       )}
 

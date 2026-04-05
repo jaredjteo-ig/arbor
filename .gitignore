@@ -69,6 +69,9 @@ secrets/
 # Data folder
 data/
 
+# User uploads (policy documents, etc.)
+uploads/
+
 # ── React (apps/web/) ────────────────────────────────────────
 apps/web/node_modules/
 apps/web/.next/

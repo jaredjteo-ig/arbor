@@ -754,11 +754,27 @@ _WINDOW_SECONDS = 60
 _MAX_REQUESTS_PER_WINDOW = 120
 
 
-def check_rate_limit(user_id: str) -> bool:
+def check_rate_limit(
+    user_id: str,
+    max_requests: int | None = None,
+    window_seconds: int | None = None,
+    action_name: str = "this action",
+) -> bool:
     """Check if a user has exceeded the rate limit.
+
+    Args:
+        user_id: Unique identifier for rate-limit tracking (e.g. "policy_upload:42").
+        max_requests: Maximum requests allowed per window. Defaults to module-level
+            ``_MAX_REQUESTS_PER_WINDOW``.
+        window_seconds: Window duration in seconds. Defaults to module-level
+            ``_WINDOW_SECONDS``.
+        action_name: Human-readable action description for log messages.
 
     Returns True if the request should be ALLOWED, False if rate-limited.
     """
+    effective_max = max_requests if max_requests is not None else _MAX_REQUESTS_PER_WINDOW
+    effective_window = window_seconds if window_seconds is not None else _WINDOW_SECONDS
+
     now = datetime.now()
 
     # Evict oldest users if at capacity
@@ -774,10 +790,17 @@ def check_rate_limit(user_id: str) -> bool:
 
     # Clean old entries
     _request_counts[user_id] = [
-        t for t in _request_counts[user_id] if (now - t).total_seconds() < _WINDOW_SECONDS
+        t for t in _request_counts[user_id] if (now - t).total_seconds() < effective_window
     ]
 
-    if len(_request_counts[user_id]) >= _MAX_REQUESTS_PER_WINDOW:
+    if len(_request_counts[user_id]) >= effective_max:
+        logger.warning(
+            "Rate limit exceeded for '%s': %d requests in %ds window (%s)",
+            user_id,
+            len(_request_counts[user_id]),
+            effective_window,
+            action_name,
+        )
         return False
 
     _request_counts[user_id].append(now)

@@ -558,12 +558,18 @@ def _execute_tool_call(name: str, arguments: dict, company_id: int | None = None
 
             from hr_advisory.services.company_policy_search import search_company_policies
 
-            results = search_company_policies(
+            raw_results = search_company_policies(
                 query=arguments.get("query", ""),
                 company_id=company_id,
                 category=arguments.get("category"),
                 limit=5,
             )
+
+            # Handle both list and structured dict returns (Fix 14)
+            if isinstance(raw_results, dict):
+                # Structured zero-result response — pass through directly
+                return json.dumps(raw_results, default=str)
+            results = raw_results
 
             # T013: Screen each result's content_excerpt for injection attempts
             screened_results = []
@@ -651,34 +657,40 @@ def _execute_tool_call(name: str, arguments: dict, company_id: int | None = None
             return json.dumps(result, default=str)
 
         elif name == "get_company_context":
-            company_id = arguments.get("company_id")
-            if company_id is not None:
-                try:
-                    from kailash import LocalRuntime, WorkflowBuilder
+            # Use the caller-provided company_id for tenant isolation.
+            # Ignore the LLM-provided argument to prevent cross-tenant data access.
+            if company_id is None:
+                return json.dumps({"error": "company_id is required for company context lookup"})
+            try:
+                from kailash import LocalRuntime, WorkflowBuilder
 
-                    wf = WorkflowBuilder()
-                    wf.add_node(
-                        "CompanyListNode",
-                        "find",
-                        {"filter": {"id": int(company_id)}, "limit": 1, "enable_cache": False},
-                    )
-                    runtime = LocalRuntime()
-                    results, _ = runtime.execute(wf.build())
-                    records = results.get("find", {})
-                    items = records.get("records", []) if isinstance(records, dict) else []
-                    if items:
-                        return json.dumps(items[0], default=str)
-                    return json.dumps({"error": "Company not found"})
-                except Exception as fetch_exc:
-                    return json.dumps({"error": f"Failed to fetch company: {fetch_exc}"})
-            return json.dumps({"error": "company_id is required"})
+                wf = WorkflowBuilder()
+                wf.add_node(
+                    "CompanyListNode",
+                    "find",
+                    {"filter": {"id": int(company_id)}, "limit": 1, "enable_cache": False},
+                )
+                runtime = LocalRuntime()
+                results, _ = runtime.execute(wf.build())
+                records = results.get("find", {})
+                items = records.get("records", []) if isinstance(records, dict) else []
+                if items:
+                    return json.dumps(items[0], default=str)
+                return json.dumps({"error": "Company not found"})
+            except Exception as fetch_exc:
+                logger.exception(
+                    "Failed to fetch company context for company_id=%s: %s",
+                    company_id,
+                    fetch_exc,
+                )
+                return json.dumps({"error": "Company context could not be retrieved."})
 
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})
 
     except Exception as exc:
-        logger.warning("Tool call %s failed: %s", name, exc)
-        return json.dumps({"error": str(exc)})
+        logger.exception("Tool call %s failed: %s", name, exc)
+        return json.dumps({"error": "An internal error occurred while executing this tool."})
 
 
 # -- Confidence/risk extraction -----------------------------------------------

@@ -12,6 +12,7 @@ Roles:
 import hashlib
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -19,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.workflows.guardrails import check_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -156,19 +158,18 @@ def _compute_content_hash(content: str) -> str:
 
 
 def _validate_category(category: str) -> None:
-    """Validate that category is in the allowed list.
+    """Validate that category is a non-empty string when provided.
 
-    Raises:
-        HTTPException(400): If category is not recognized.
+    The 9 predefined categories in POLICY_CATEGORIES are suggestions, not
+    a hard whitelist. Custom categories are allowed per stakeholder
+    decision D6 (9 predefined + custom categories).
     """
-    if category and category not in POLICY_CATEGORIES:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Invalid category '{category}'. "
-                f"Allowed: {', '.join(POLICY_CATEGORIES)}"
-            ),
-        )
+    # Empty string = no category selected, which is fine
+    if not category:
+        return
+    # Any non-empty string is accepted (predefined or custom)
+    if category not in POLICY_CATEGORIES:
+        logger.info("Custom policy category used: '%s'", category)
 
 
 def _truncate_content(content: str, max_length: int = 200) -> str:
@@ -181,6 +182,25 @@ def _truncate_content(content: str, max_length: int = 200) -> str:
 def _is_admin_role(role: str) -> bool:
     """Check if role has admin-level policy management access."""
     return role in ("owner", "hr_manager", "platform_admin")
+
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_date(date_str: str) -> bool:
+    """Check if *date_str* matches the ``YYYY-MM-DD`` format.
+
+    Returns ``True`` when the string is a valid calendar date,
+    ``False`` otherwise.
+    """
+    if not _DATE_RE.match(date_str):
+        return False
+    # Also verify it represents a real calendar date
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
 
 
 # --------------------------------------------------------------------------
@@ -241,8 +261,12 @@ async def list_policies(
                 "status": p.get("status", "active"),
                 "version_number": p.get("version_number", 1),
                 "file_type": p.get("file_type", ""),
+                "file_name": p.get("file_name", ""),
+                "file_size_bytes": p.get("file_size_bytes", 0),
                 "requires_acknowledgment": p.get("requires_acknowledgment", False),
                 "extraction_status": p.get("extraction_status", ""),
+                "created_at": p.get("created_at", ""),
+                "updated_at": p.get("updated_at", ""),
             }
             for p in policies
         ],
@@ -314,6 +338,9 @@ async def get_pending_acknowledgments(
             "version_number": p.get("version_number", 1),
             "effective_date": p.get("effective_date", ""),
             "content": _truncate_content(p.get("content", "")),
+            "status": p.get("status", "active"),
+            "requires_acknowledgment": p.get("requires_acknowledgment", False),
+            "file_type": p.get("file_type", ""),
         }
         for p in policies
         if (p.get("id"), p.get("version_number", 1)) not in acked_set
@@ -358,7 +385,7 @@ async def get_policy(
         if policy.get("status") != "active" or not policy.get("is_active", True):
             raise HTTPException(status_code=404, detail="Policy not found.")
 
-    return {"policy": policy}
+    return {"policy": {k: v for k, v in policy.items() if k != "file_path"}}
 
 
 # --------------------------------------------------------------------------
@@ -381,10 +408,22 @@ async def create_policy(
     Status codes:
         201: Created
         400: Validation error
+        429: Rate limit exceeded
     """
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+
+    if not check_rate_limit(
+        f"policy_create:{company_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="creating policies",
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many policy creation requests. Please wait before trying again.",
+        )
 
     body = await request.json()
 
@@ -397,25 +436,32 @@ async def create_policy(
             detail=f"Title exceeds maximum length of {MAX_TITLE_LENGTH} characters.",
         )
 
-    content = (body.get("content") or "").strip()
-    if not content:
-        raise HTTPException(status_code=400, detail="Content is required for text policies.")
-    if len(content) > MAX_CONTENT_LENGTH:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Content exceeds maximum length of {MAX_CONTENT_LENGTH} characters.",
-        )
-
     category = (body.get("category") or "").strip()
     _validate_category(category)
 
     effective_date = (body.get("effective_date") or "").strip()
+    if effective_date and not _validate_date(effective_date):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid effective_date format. Expected YYYY-MM-DD.",
+        )
+
     requires_ack = bool(body.get("requires_acknowledgment", False))
     status_val = (body.get("status") or "active").strip()
     if status_val not in ("active", "draft"):
         raise HTTPException(
             status_code=400,
             detail="Status must be 'active' or 'draft' for new policies.",
+        )
+
+    content = (body.get("content") or "").strip()
+    # Drafts may have empty content; active policies require it
+    if status_val == "active" and not content:
+        raise HTTPException(status_code=400, detail="Content is required for active policies.")
+    if len(content) > MAX_CONTENT_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Content exceeds maximum length of {MAX_CONTENT_LENGTH} characters.",
         )
 
     policy_type = (body.get("policy_type") or category or "general_hr").strip()
@@ -500,10 +546,23 @@ async def upload_policy(
     Status codes:
         201: Created
         400: Validation error (file too large, wrong type, missing title)
+        413: File too large
+        429: Rate limit exceeded
     """
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+
+    if not check_rate_limit(
+        f"policy_upload:{company_id}",
+        max_requests=10,
+        window_seconds=60,
+        action_name="uploading policies",
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many policy upload requests. Please wait before trying again.",
+        )
 
     form = await request.form()
     file = form.get("file")
@@ -523,16 +582,39 @@ async def upload_policy(
     _validate_category(category)
 
     effective_date = (form.get("effective_date") or "").strip()
+    if effective_date and not _validate_date(effective_date):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid effective_date format. Expected YYYY-MM-DD.",
+        )
+
     requires_ack_raw = (form.get("requires_acknowledgment") or "false").strip()
     requires_ack = requires_ack_raw.lower() in ("true", "1", "yes")
 
-    # --- File validation ---
-    file_content = await file.read()
-    if len(file_content) > MAX_FILE_SIZE:
+    # --- File validation (size check before full read) ---
+    # Check Content-Length header first for early rejection
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_FILE_SIZE:
         raise HTTPException(
-            status_code=400,
-            detail=f"File exceeds {MAX_FILE_SIZE // (1024 * 1024)}MB limit.",
+            status_code=413,
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB.",
         )
+
+    # Read in chunks with size guard to avoid unbounded memory usage
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 64)  # 64KB chunks
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB.",
+            )
+        chunks.append(chunk)
+    file_content = b"".join(chunks)
 
     original_filename = getattr(file, "filename", None) or "policy"
     file_ext = os.path.splitext(original_filename)[1].lower()
@@ -547,14 +629,24 @@ async def upload_policy(
 
     content_type = getattr(file, "content_type", "application/octet-stream")
     if content_type not in ALLOWED_MIME_TYPES:
-        # Some browsers send generic MIME types; fall back to extension check only
-        logger.warning(
-            "MIME type '%s' not in allowed list for file '%s'. "
-            "Proceeding based on extension '%s'.",
-            content_type,
-            original_filename,
-            file_ext,
-        )
+        if content_type == "application/octet-stream":
+            # Generic MIME type from some browsers — extension already validated above
+            logger.warning(
+                "MIME type '%s' is generic for file '%s'. "
+                "Proceeding based on validated extension '%s'.",
+                content_type,
+                original_filename,
+                file_ext,
+            )
+        else:
+            # Both extension and MIME type don't match — reject
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"File MIME type '{content_type}' does not match allowed types. "
+                    f"Supported formats: PDF, DOCX, TXT."
+                ),
+            )
 
     # --- Save file to disk ---
     os.makedirs(POLICY_UPLOAD_DIR, exist_ok=True)
@@ -564,7 +656,10 @@ async def upload_policy(
         f.write(file_content)
 
     # --- Extract text ---
-    from hr_advisory.services.policy_parser import extract_text
+    from hr_advisory.services.policy_parser import (
+        extract_text,
+        validate_extraction_quality,
+    )
 
     extracted_content = ""
     extraction_status = "failed"
@@ -591,6 +686,17 @@ async def upload_policy(
             file_ext,
             exc,
         )
+
+    # --- Validate extraction quality ---
+    if extracted_content and extraction_status in ("complete", "partial"):
+        quality_status, quality_warnings = validate_extraction_quality(extracted_content)
+        if quality_status in ("low_quality", "empty"):
+            extraction_status = quality_status
+            logger.warning(
+                "Low extraction quality for file '%s': %s",
+                original_filename,
+                "; ".join(quality_warnings),
+            )
 
     content_hash = _compute_content_hash(extracted_content) if extracted_content else ""
     actor_id = int(current_user.get("sub", 0))
@@ -718,7 +824,7 @@ async def update_policy(
             "CompanyPolicyListNode",
             {
                 "company_id": company_id,
-                "title": policy.get("title"),
+                "policy_type": policy.get("policy_type", ""),
                 "is_active": True,
             },
         )
@@ -798,7 +904,7 @@ async def update_policy(
             company_id,
         )
         return {
-            "policy": new_policy,
+            "policy": {k: v for k, v in new_policy.items() if k != "file_path"},
             "previous_version_id": policy_id,
             "message": f"New version (v{current_version + 1}) created. Previous version archived.",
         }
@@ -822,7 +928,13 @@ async def update_policy(
         updates["category"] = new_category
 
     if "effective_date" in body:
-        updates["effective_date"] = body["effective_date"].strip()
+        ed = body["effective_date"].strip()
+        if ed and not _validate_date(ed):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid effective_date format. Expected YYYY-MM-DD.",
+            )
+        updates["effective_date"] = ed
 
     if "requires_acknowledgment" in body:
         updates["requires_acknowledgment"] = bool(body["requires_acknowledgment"])
@@ -855,7 +967,10 @@ async def update_policy(
         list(updates.keys()),
         company_id,
     )
-    return {"policy": updated_policy, "message": "Policy updated."}
+    return {
+        "policy": {k: v for k, v in updated_policy.items() if k != "file_path"},
+        "message": "Policy updated.",
+    }
 
 
 # --------------------------------------------------------------------------
@@ -977,7 +1092,7 @@ async def list_policy_versions(
 ) -> dict:
     """List the version history for a policy.
 
-    Returns all records sharing the same title and company_id,
+    Returns all records sharing the same policy_type and company_id,
     ordered by version_number descending.
 
     Status codes:
@@ -991,10 +1106,10 @@ async def list_policy_versions(
     if policy.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Policy not found.")
 
-    title = policy.get("title", "")
+    policy_type = policy.get("policy_type", "")
     all_versions = _dataflow_list(
         "CompanyPolicyListNode",
-        {"company_id": company_id, "title": title},
+        {"company_id": company_id, "policy_type": policy_type},
     )
 
     # Sort by version_number descending
@@ -1002,7 +1117,7 @@ async def list_policy_versions(
 
     return {
         "policy_id": policy_id,
-        "title": title,
+        "policy_type": policy_type,
         "versions": [
             {
                 "id": v.get("id"),
