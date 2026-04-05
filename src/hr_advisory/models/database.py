@@ -20,11 +20,11 @@ _url = get_database_url()
 
 db = DataFlow(
     database_url=_url,
-    pool_size=20,
+    pool_size=int(os.environ.get("DATAFLOW_MAX_CONNECTIONS", "10")),
     auto_migrate=True,
     config=DataFlowConfig(
         database_url=_url,
-        connect_timeout_secs=30,
+        connect_timeout_secs=5,
         max_lifetime_secs=3600,
     ),
 )

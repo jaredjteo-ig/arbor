@@ -9,6 +9,7 @@ with additional Python-side filtering for act_id and authority_level.
 """
 
 import logging
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -23,10 +24,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# ---------------------------------------------------------------------------
+# Cached lookups (TTL-based, shared across requests)
+# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+_act_cache: dict[int, str] = {}
+_domain_cache: dict[int, str] = {}
+_cache_ts: float = 0.0
+_CACHE_TTL_SECS = 300  # 5 minutes
 
 
 def _extract_records(result) -> list[dict]:
@@ -38,46 +43,43 @@ def _extract_records(result) -> list[dict]:
     return []
 
 
-def _load_act_lookup() -> dict[int, str]:
-    """Load a mapping of act_id -> act title/short_name for display.
-
-    Returns an empty dict if the database is unavailable.
-    """
+def _refresh_lookups_if_stale() -> None:
+    """Refresh act and domain lookup caches if TTL has expired."""
+    global _act_cache, _domain_cache, _cache_ts
+    now = time.monotonic()
+    if _act_cache and (now - _cache_ts) < _CACHE_TTL_SECS:
+        return
     try:
         runtime = LocalRuntime()
         wf = WorkflowBuilder()
         wf.add_node(
-            "ActListNode",
-            "all_acts",
-            {"filter": {}, "enable_cache": False, "limit": 10000},
+            "ActListNode", "all_acts", {"filter": {}, "enable_cache": False, "limit": 10000}
+        )
+        wf.add_node(
+            "DomainListNode", "all_domains", {"filter": {}, "enable_cache": False, "limit": 10000}
         )
         results, _ = runtime.execute(wf.build())
         acts = _extract_records(results["all_acts"])
-        return {act["id"]: act.get("title") or act.get("short_name", "Unknown") for act in acts}
+        domains = _extract_records(results["all_domains"])
+        _act_cache = {
+            act["id"]: act.get("title") or act.get("short_name", "Unknown") for act in acts
+        }
+        _domain_cache = {domain["id"]: domain.get("name", "Unknown") for domain in domains}
+        _cache_ts = now
     except Exception as exc:
-        logger.warning("Failed to load act lookup: %s", exc)
-        return {}
+        logger.warning("Failed to refresh lookups: %s", exc)
+
+
+def _load_act_lookup() -> dict[int, str]:
+    """Return cached act_id -> act title mapping (refreshes every 5 min)."""
+    _refresh_lookups_if_stale()
+    return _act_cache
 
 
 def _load_domain_lookup() -> dict[int, str]:
-    """Load a mapping of domain_id -> domain name for display.
-
-    Returns an empty dict if the database is unavailable.
-    """
-    try:
-        runtime = LocalRuntime()
-        wf = WorkflowBuilder()
-        wf.add_node(
-            "DomainListNode",
-            "all_domains",
-            {"filter": {}, "enable_cache": False, "limit": 10000},
-        )
-        results, _ = runtime.execute(wf.build())
-        domains = _extract_records(results["all_domains"])
-        return {domain["id"]: domain.get("name", "Unknown") for domain in domains}
-    except Exception as exc:
-        logger.warning("Failed to load domain lookup: %s", exc)
-        return {}
+    """Return cached domain_id -> domain name mapping (refreshes every 5 min)."""
+    _refresh_lookups_if_stale()
+    return _domain_cache
 
 
 def _calculate_relevance_score(query: str, provision: dict) -> float:

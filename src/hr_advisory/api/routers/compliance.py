@@ -109,6 +109,15 @@ def _query_domain_provisions(domain: str, limit: int = 100) -> list[dict]:
         return []
 
 
+def _batch_query_domain_provisions(domains: list[str], limit: int = 100) -> dict[str, list[dict]]:
+    """Fetch provisions for all requested domains upfront.
+
+    Collects per-domain results in a single pass so callers don't
+    need their own loop.
+    """
+    return {d: _query_domain_provisions(d, limit=limit) for d in domains}
+
+
 def _classify_status(
     domain_counts: dict[str, int],
     domains: list[str],
@@ -197,21 +206,12 @@ async def compliance_check(
     check_domains: list[str] = body.get("domains") or list(CORE_DOMAINS)
 
     kb_error = False
+    domain_provisions = _batch_query_domain_provisions(check_domains, limit=100)
     domain_counts: dict[str, int] = {}
     findings: list[dict[str, Any]] = []
 
     for domain in check_domains:
-        try:
-            provisions = search_provisions(domain, limit=100)
-        except Exception as exc:
-            logger.warning(
-                "KB unavailable for domain '%s' during compliance check: %s",
-                domain,
-                exc,
-            )
-            provisions = []
-            kb_error = True
-
+        provisions = domain_provisions.get(domain, [])
         count = len(provisions)
         domain_counts[domain] = count
 
@@ -294,13 +294,14 @@ async def compliance_status(
     except Exception as exc:
         logger.warning("Failed to retrieve KB stats for compliance status: %s", exc)
 
-    # Check each core domain
+    # Check all core domains in a single batch query
+    domain_provisions = _batch_query_domain_provisions(list(CORE_DOMAINS), limit=100)
     domains_result: dict[str, dict[str, Any]] = {}
     all_covered = True
     any_critical_missing = False
 
     for domain in CORE_DOMAINS:
-        provisions = _query_domain_provisions(domain, limit=100)
+        provisions = domain_provisions.get(domain, [])
         count = len(provisions)
         if count == 0:
             domain_status = "missing"
@@ -362,12 +363,13 @@ async def gap_analysis(
 
     analyze_domains: list[str] = body.get("domains") or list(CORE_DOMAINS)
 
+    domain_provisions = _batch_query_domain_provisions(analyze_domains, limit=100)
     gaps: list[dict[str, Any]] = []
     total_gaps = 0
     critical_gaps = 0
 
     for domain in analyze_domains:
-        provisions = _query_domain_provisions(domain, limit=100)
+        provisions = domain_provisions.get(domain, [])
         count = len(provisions)
 
         if count == 0:

@@ -127,29 +127,14 @@ def _escalate_risk_tier(current: str, proposed: str) -> str:
 def _get_company_budget_limit(company_id: int) -> float | None:
     """Fetch the company's custom monthly LLM budget, or None for default."""
     try:
-        from kailash.runtime import LocalRuntime
-        from kailash.workflow.builder import WorkflowBuilder
-        import hr_advisory.models  # noqa: F401
+        import math
 
-        wf = WorkflowBuilder()
-        wf.add_node(
-            "CompanyListNode",
-            "co",
-            {
-                "filter": {"id": company_id},
-                "limit": 1,
-                "enable_cache": False,
-            },
-        )
-        runtime = LocalRuntime()
-        results, _ = runtime.execute(wf.build())
-        raw = results.get("co", {})
-        records = raw.get("records", []) if isinstance(raw, dict) else []
-        if records:
-            val = records[0].get("monthly_llm_budget_usd")
+        from hr_advisory.models.database import db
+
+        result = db.express_sync.read("Company", str(company_id))
+        if result:
+            val = result.get("monthly_llm_budget_usd")
             if val is not None:
-                import math
-
                 fval = float(val)
                 if math.isfinite(fval) and fval > 0:
                     return fval
@@ -164,15 +149,9 @@ def _fetch_company_profile(company_id: int) -> dict | None:
     Returns a dict with company context fields, or None if unavailable.
     """
     try:
-        from kailash.runtime import LocalRuntime
-        from kailash.workflow.builder import WorkflowBuilder
-        import hr_advisory.models  # noqa: F401 -- ensure models are registered
+        from hr_advisory.models.database import db
 
-        wf = WorkflowBuilder()
-        wf.add_node("CompanyReadNode", "read", {"id": company_id})
-        runtime = LocalRuntime()
-        results, _ = runtime.execute(wf.build())
-        result = results.get("read")
+        result = db.express_sync.read("Company", str(company_id))
         if result and not result.get("error"):
             return {
                 "company_name": result.get("name", ""),
@@ -394,15 +373,18 @@ async def advisory_query(
     }
 
     loop = asyncio.get_event_loop()
-    engine_result = await loop.run_in_executor(
-        None,
-        lambda: engine.run(
-            query=query,
-            conversation_history=conversation_messages,
-            company_context=company_profile,
-            company_id=int(effective_company_id) if effective_company_id else None,
-            user_context=_user_ctx,
+    engine_result = await asyncio.wait_for(
+        loop.run_in_executor(
+            None,
+            lambda: engine.run(
+                query=query,
+                conversation_history=conversation_messages,
+                company_context=company_profile,
+                company_id=int(effective_company_id) if effective_company_id else None,
+                user_context=_user_ctx,
+            ),
         ),
+        timeout=60.0,
     )
 
     response_text = engine_result.get("response_text", "")
