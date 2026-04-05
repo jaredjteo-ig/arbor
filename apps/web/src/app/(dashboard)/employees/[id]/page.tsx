@@ -2015,7 +2015,7 @@ function StatutoryTab({
             onChange={(e) =>
               updateField(
                 "iras_auto_inclusion" as keyof EmployeeDetail,
-                e.target.value === "true",
+                e.target.value,
               )
             }
             disabled={!isAdmin}
@@ -2058,7 +2058,7 @@ function StatutoryTab({
             onChange={(e) =>
               updateField(
                 "amcs_enabled" as keyof EmployeeDetail,
-                e.target.value === "true",
+                e.target.value,
               )
             }
             disabled={!isAdmin}
@@ -2075,7 +2075,7 @@ function StatutoryTab({
             onChange={(e) =>
               updateField(
                 "pmbs_enabled" as keyof EmployeeDetail,
-                e.target.value === "true",
+                e.target.value,
               )
             }
             disabled={!isAdmin}
