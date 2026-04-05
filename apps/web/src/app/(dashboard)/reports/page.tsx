@@ -326,7 +326,22 @@ function ReportViewer({
   const [department, setDepartment] = useState("");
   const [data, setData] = useState<Record<string, unknown>[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [employeeMap, setEmployeeMap] = useState<Record<number, string>>({});
   const Icon = report.icon;
+
+  // Fetch employee name lookup on mount
+  useEffect(() => {
+    employeesApi
+      .list()
+      .then((res) => {
+        const map: Record<number, string> = {};
+        for (const e of res.employees ?? []) {
+          if (e.id && e.name) map[e.id] = e.name;
+        }
+        setEmployeeMap(map);
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleGenerate() {
     setIsLoading(true);
@@ -383,16 +398,39 @@ function ReportViewer({
         let tableRows = Array.isArray(rows)
           ? (rows as Record<string, unknown>[])
           : [];
-        if (report.id === "employees" && tableRows.length > 0) {
-          /* Sort alphabetically by name */
-          tableRows = [...tableRows].sort((a, b) =>
-            String(a.name ?? "").localeCompare(String(b.name ?? "")),
-          );
-          /* Move name to the first column */
-          tableRows = tableRows.map((row) => {
-            const { name, ...rest } = row;
-            return { name, ...rest };
-          });
+        if (tableRows.length > 0) {
+          /* Inject employee name from lookup for reports that only have employee_id */
+          if (
+            report.id !== "employees" &&
+            report.id !== "payroll" &&
+            report.id !== "projects"
+          ) {
+            tableRows = tableRows.map((row) => {
+              const empId = row.employee_id as number | undefined;
+              const empName = empId ? employeeMap[empId] : undefined;
+              if (empName) {
+                const { employee_id, ...rest } = row;
+                return { employee_name: empName, ...rest };
+              }
+              return row;
+            });
+          }
+          /* Sort alphabetically by name/employee_name */
+          const nameKey = tableRows[0]?.employee_name
+            ? "employee_name"
+            : "name";
+          if (tableRows[0]?.[nameKey]) {
+            tableRows = [...tableRows].sort((a, b) =>
+              String(a[nameKey] ?? "").localeCompare(String(b[nameKey] ?? "")),
+            );
+          }
+          /* Move name column to first position */
+          if (report.id === "employees") {
+            tableRows = tableRows.map((row) => {
+              const { name, ...rest } = row;
+              return { name, ...rest };
+            });
+          }
         }
         setData(tableRows);
       }
