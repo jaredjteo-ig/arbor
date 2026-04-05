@@ -1,20 +1,20 @@
 {
-  "version": "2.2.0",
+  "version": "2.5.0",
   "type": "coc-use-template",
   "description": "COC USE template for Python SDK projects",
   "released": "2026-04-05",
   "upstream": {
     "name": "kailash",
     "type": "coc-source",
-    "version": "1.7.0",
+    "version": "2.0.0",
     "build_version": "2.5.1",
-    "synced_at": "2026-04-05T14:00:00Z"
+    "synced_at": "2026-04-05T19:00:00Z"
   },
   "changelog": [
     {
-      "version": "2.2.0",
+      "version": "2.5.0",
       "date": "2026-04-05",
-      "summary": "v2.5.1 codify: SSRF prevention, Nexus transports, ML protocol consolidation, SDK pin bump"
+      "summary": "Skill tightening: 28 global skills compressed 78%, 7 files with restored patterns"
     }
   ]
 }
