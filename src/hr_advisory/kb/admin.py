@@ -15,18 +15,6 @@ from kailash.workflow.builder import WorkflowBuilder
 logger = logging.getLogger(__name__)
 
 
-def _execute(node_type: str, node_id: str, params: dict) -> dict:
-    """Run a single-node workflow and return the node result.
-
-    Kept for multi-step or non-CRUD operations that can't use db.express.
-    """
-    runtime = LocalRuntime()
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, node_id, params)
-    results, _ = runtime.execute(wf.build())
-    return results[node_id]
-
-
 def _extract_records(result) -> list[dict]:
     """Extract the record list from a ListNode result.
 
@@ -202,11 +190,9 @@ def ensure_kb_seeded() -> bool:
 
     try:
         # Quick check: are there any provisions already?
-        runtime = LocalRuntime()
-        wf = WorkflowBuilder()
-        wf.add_node("ProvisionListNode", "check", {"filter": {}, "enable_cache": False, "limit": 1})
-        results, _ = runtime.execute(wf.build())
-        existing = _extract_records(results["check"])
+        from hr_advisory.services import dataflow_crud
+
+        existing = dataflow_crud.list_records("Provision", {}, limit=1)
         if existing:
             logger.debug("KB already has provisions, skipping seed")
             return False
@@ -263,16 +249,9 @@ def search_provisions(
     # Ensure KB is populated on first search
     ensure_kb_seeded()
 
-    runtime = LocalRuntime()
+    from hr_advisory.services import dataflow_crud
 
-    # Get all provisions (DataFlow ListNode doesn't support LIKE/ILIKE natively,
-    # so we filter in Python)
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "ProvisionListNode", "all_provs", {"filter": {}, "enable_cache": False, "limit": 10000}
-    )
-    results, _ = runtime.execute(wf.build())
-    all_provisions = _extract_records(results["all_provs"])
+    all_provisions = dataflow_crud.list_records("Provision", {}, limit=10000)
 
     if not all_provisions:
         return []
@@ -280,12 +259,7 @@ def search_provisions(
     # If domain filter is specified, resolve domain_id first
     domain_id = None
     if domain:
-        wf_domain = WorkflowBuilder()
-        wf_domain.add_node(
-            "DomainListNode", "find_domain", {"filter": {"name": domain}, "enable_cache": False}
-        )
-        domain_results, _ = runtime.execute(wf_domain.build())
-        domains = _extract_records(domain_results["find_domain"])
+        domains = dataflow_crud.list_records("Domain", {"name": domain}, limit=1)
         if domains:
             domain_id = domains[0]["id"]
         else:
