@@ -17,6 +17,7 @@ Encrypted keys are never returned — only a masked preview.
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -482,11 +483,11 @@ async def _validate_openai_compatible(
         return {"valid": False, "message": "base_url is required for custom providers."}
 
     default_models = {
-        "openai": "gpt-4o-mini",
-        "deepseek": "deepseek-chat",
-        "mistral": "mistral-small-latest",
+        "openai": os.environ.get("DEFAULT_LLM_MODEL", ""),
+        "deepseek": os.environ.get("DEFAULT_LLM_MODEL", ""),
+        "mistral": os.environ.get("DEFAULT_LLM_MODEL", ""),
     }
-    model = model_pref or default_models.get(provider, "gpt-4o-mini")
+    model = model_pref or default_models.get(provider, "")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
@@ -528,7 +529,7 @@ async def _validate_anthropic(api_key: str, model_pref: str) -> dict:
     """Validate Anthropic API key."""
     import httpx
 
-    model = model_pref or "claude-haiku-4-5-20251001"
+    model = model_pref or os.environ.get("DEFAULT_LLM_MODEL", "")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
@@ -567,7 +568,7 @@ async def _validate_gemini(api_key: str, model_pref: str) -> dict:
     """Validate Google Gemini API key."""
     import httpx
 
-    model = model_pref or "gemini-2.5-flash"
+    model = model_pref or os.environ.get("DEFAULT_LLM_MODEL", "")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
@@ -676,21 +677,7 @@ async def update_company_llm_budget(
 
     # Update company record
     try:
-        from kailash.runtime import LocalRuntime
-        from kailash.workflow.builder import WorkflowBuilder
-        import hr_advisory.models  # noqa: F401
-
-        wf = WorkflowBuilder()
-        wf.add_node(
-            "CompanyUpdateNode",
-            "update",
-            {
-                "filter": {"id": company_id},
-                "fields": {"monthly_llm_budget_usd": budget},
-            },
-        )
-        runtime = LocalRuntime()
-        runtime.execute(wf.build())
+        dataflow_crud.update("Company", company_id, {"monthly_llm_budget_usd": budget})
     except Exception as exc:
         logger.error("Failed to update budget for company_id=%s: %s", company_id, exc)
         raise HTTPException(

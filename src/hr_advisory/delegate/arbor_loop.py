@@ -58,7 +58,7 @@ def _resolve_llm_settings(config: DelegateConfig) -> tuple[str, str, str | None]
         or os.environ.get("LLM_MODEL")
         or os.environ.get("DEFAULT_LLM_MODEL")
         or os.environ.get("OPENAI_PROD_MODEL")
-        or "gpt-5-chat-latest"
+        or ""
     )
 
     api_key = (

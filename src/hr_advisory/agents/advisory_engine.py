@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import warnings
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -613,6 +614,11 @@ class AdvisoryEngine:
 
         If no context is provided, builds one from server .env defaults.
         """
+        warnings.warn(
+            "AdvisoryEngine is deprecated. Use delegate.arbor_loop.run_delegate_sync() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if llm_context is None:
             from hr_advisory.agents.llm_context import LLMKeyContext
 
@@ -644,7 +650,7 @@ class AdvisoryEngine:
 
         # Build the OpenAI client
         client = self._build_client()
-        model = self._ctx.model or os.environ.get("DEFAULT_LLM_MODEL", "gpt-5-chat-latest")
+        model = self._ctx.model or os.environ.get("DEFAULT_LLM_MODEL", "")
 
         # Build messages
         system_prompt = _build_system_prompt(company_context, user_context)
