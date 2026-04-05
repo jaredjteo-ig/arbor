@@ -31,7 +31,7 @@ class Settings:
     cors_origins: str = "http://localhost:3000"  # Comma-separated list
 
     # Database
-    database_url: str = "postgresql://arbor:arbor@localhost:5432/arbor"
+    database_url: str = ""
     redis_url: str = "redis://localhost:6379/0"
 
     # LLM
@@ -85,8 +85,8 @@ def get_settings() -> Settings:
         )
 
     # SECURITY: Block startup if production uses the default database credentials
-    database_url = os.environ.get("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
-    if app_env == "production" and "arbor:arbor" in database_url:
+    database_url = os.environ.get("DATABASE_URL", "")
+    if app_env == "production" and (not database_url or "arbor:arbor" in database_url):
         raise RuntimeError(
             "FATAL: DATABASE_URL must not use default credentials (arbor:arbor) in production. "
             "Set DATABASE_URL to a connection string with secure credentials."

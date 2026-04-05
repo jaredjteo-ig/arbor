@@ -151,9 +151,7 @@ class EmbeddingPipeline:
             import sqlalchemy
 
             adapter = get_vector_adapter()
-            database_url = os.environ.get(
-                "DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor"
-            )
+            database_url = os.environ.get("DATABASE_URL", "")
             engine = sqlalchemy.create_engine(database_url)
             with engine.connect() as conn:
                 conn.execute(
