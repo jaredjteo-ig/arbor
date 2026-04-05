@@ -1,6 +1,6 @@
 ---
 name: sg-employment-law-expert
-description: Singapore employment law domain expert. Use when working on KB content, provision accuracy, regulatory domain classification, cross-references between acts, or anything involving Singapore employment legislation (EA, CPF, EFMA, TAFEP/WFA, WSH, Tax/IRAS).
+description: "SG employment law expert. Use for EA, CPF, EFMA, TAFEP, WSH, IRAS provisions or regulatory accuracy."
 tools: Read, Grep, Glob
 ---
 

@@ -1,60 +1,20 @@
 {
-  "version": "1.2.0",
+  "version": "2.2.0",
   "type": "coc-use-template",
   "description": "COC USE template for Python SDK projects",
-  "released": "2026-03-31",
+  "released": "2026-04-05",
   "upstream": {
     "name": "kailash",
     "type": "coc-source",
-    "version": "1.0.0",
-    "build_version": "2.2.1",
-    "synced_at": "2026-03-31T10:00:00Z"
+    "version": "1.7.0",
+    "build_version": "2.5.1",
+    "synced_at": "2026-04-05T14:00:00Z"
   },
   "changelog": [
     {
-      "version": "1.2.0",
-      "date": "2026-03-31",
-      "summary": "Gate 1 py changes: DataFlow SyncExpress, PACT approve_bridge, __del__ patterns, Nexus K8s probes, Kaizen agent reference",
-      "changes": [
-        "UPDATED: skills/02-dataflow/dataflow-express.md — SyncExpress API, SQLite timestamp fix",
-        "UPDATED: skills/29-pact/pact-governance-engine.md — approve_bridge pattern",
-        "UPDATED: rules/patterns.md — __del__ cleanup patterns",
-        "UPDATED: skills/03-nexus/nexus-k8s-probes.md — K8s health probe patterns",
-        "UPDATED: skills/04-kaizen/kaizen-tool-hydration.md — tool hydration refinements",
-        "UPDATED: agents/standards/co-expert.md — CO expert updates",
-        "UPDATED: agents/standards/coc-expert.md — COC expert updates",
-        "UPDATED: rules/journal.md — journal rule refinements",
-        "UPDATED: skills/co-reference/SKILL.md — CO reference updates",
-        "UPDATED: commands/codify.md — codify command updates",
-        "UPDATED: guides/co-setup/ — variant architecture, lifecycle, sync flow, versioning",
-        "UPDATED: rules/artifact-flow.md — artifact flow refinements",
-        "UPDATED: skills/02-dataflow/SKILL.md + dataflow-quickstart.md — DataFlow skill index"
-      ]
-    },
-    {
-      "version": "1.1.0",
-      "date": "2026-03-30",
-      "summary": "Engine-first framework rule, layer preference tables, Delegate-vs-BaseAgent skill",
-      "changes": [
-        "NEW: rules/framework-first.md — Engine-over-Primitives 3-layer model",
-        "NEW: skills/04-kaizen/kaizen-delegate-vs-baseagent.md — Delegate vs BaseAgent decision guide",
-        "UPDATED: agents/framework-advisor.md — added Step 2b layer selection table",
-        "UPDATED: agents/frameworks/dataflow-specialist.md — added layer preference section",
-        "UPDATED: agents/frameworks/nexus-specialist.md — added layer preference section",
-        "UPDATED: skills/13-architecture-decisions/decide-framework.md — added within-framework layer selection"
-      ]
-    },
-    {
-      "version": "1.0.0",
-      "date": "2026-03-29",
-      "summary": "Initial versioned release with variant architecture",
-      "changes": [
-        "Downstream merge /sync command",
-        "Proposal-based /codify flow",
-        "artifact-flow.md rule",
-        "Project-level /cc-audit command",
-        "Version tracking with upstream check"
-      ]
+      "version": "2.2.0",
+      "date": "2026-04-05",
+      "summary": "v2.5.1 codify: SSRF prevention, Nexus transports, ML protocol consolidation, SDK pin bump"
     }
   ]
 }

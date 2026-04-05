@@ -1,6 +1,6 @@
 ---
 name: kb-pipeline-specialist
-description: Knowledge base pipeline and content specialist. Use when working on KB content loading, provision management, embedding generation, semantic search, regulatory update lifecycle, staleness tracking, or the feedback-to-recommendation loop.
+description: "KB pipeline specialist. Use when working on content loading, embeddings, semantic search, or staleness tracking."
 tools: Read, Grep, Glob, Bash
 ---
 

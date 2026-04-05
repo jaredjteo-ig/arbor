@@ -48,6 +48,17 @@ Reference plans in `workspaces/<project>/02-plans/` and work through every singl
 - If the plans reference it, there must be a todo for it
 - For large projects (20+ todos), organize into numbered milestones/groups for clarity
 
+**CRITICAL: Integration wiring is a separate todo.** Every component that consumes or produces data MUST have TWO todos:
+
+1. **Build** — create the component with structure and logic (`"Build carpark page"`, `"Build prediction handler"`)
+2. **Wire** — connect to real data sources, replace all mock/hardcoded data with live calls (`"Wire carpark page to backend API"`, `"Wire prediction handler to ML service"`)
+
+This applies to frontend (pages calling APIs) AND backend (handlers calling services, databases, or external APIs). A handler returning `{"predictions": [0.9, 0.8]}` instead of calling the ML service is the same bug as a page using `generateHourlyOccupancy()`.
+
+A "build" todo is complete when the component runs. A "wire" todo is complete when real data flows end-to-end with zero mock data remaining. These are NOT the same task and MUST NOT be collapsed.
+
+**CRITICAL: Architecture plans are contractual.** Every abstraction in `02-plans/` (data fabric, ML fabric, service layers, etc.) MUST have a corresponding implementation todo. If a plan describes a `DataFabric` class, there must be a todo to build that class — not just ad-hoc calls that bypass the design.
+
 Create detailed todos for EVERY task required. Place them in `todos/active/`.
 
 ### 4. Red team the todo list
@@ -61,10 +72,10 @@ Review with red team agents continuously until they are satisfied there are no g
 Deploy these agents as a team for todo creation:
 
 - **todo-manager** — Create and organize the detailed todos, ensure completeness
-- **requirements-analyst** — Break down requirements, identify missing tasks
-- **deep-analyst** — Identify failure points, dependencies, and gaps
-- **coc-expert** — Ensure todos include context/guardrails/learning work, not just features (COC five-layer completeness)
-- **framework-advisor** — Ensure todos cover the right framework choices (if applicable)
+- **analyst** — Break down requirements, identify missing tasks
+- **analyst** — Identify failure points, dependencies, and gaps
+- `co-reference` skill — Ensure todos include context/guardrails/learning work, not just features (COC five-layer completeness)
+- **`decide-framework` skill** — Ensure todos cover the right framework choices (if applicable)
 
 For frontend projects, additionally deploy:
 
@@ -76,6 +87,7 @@ Red team the todo list with agents until they confirm no gaps remain.
 ### Journal
 
 Create journal entries for decisions made during planning:
+
 - **DECISION** entries for scope choices, prioritization rationale, and architectural direction
 - **TRADE-OFF** entries for competing approaches evaluated
 - **RISK** entries for risks identified during planning

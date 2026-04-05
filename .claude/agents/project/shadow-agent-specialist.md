@@ -1,6 +1,6 @@
 ---
 name: shadow-agent-specialist
-description: Arbor Shadow Agent specialist. Use when working on the shadow agent intelligence layer — intent classification, PACE execution loop, tool registry, entity resolution, workflow composition, observation/memory, briefing/nudges, or any shadow agent frontend components (CommandSurface, PaceCard, ArborOverlay, ArborResult, ArborHistory).
+description: "Shadow agent specialist. Use when working on PACE loop, tool registry, observation/memory, or shadow UI."
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
