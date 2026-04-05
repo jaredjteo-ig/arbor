@@ -203,7 +203,7 @@ function ReportsDashboardCharts() {
     );
   }
 
-  const activeEmployees = employees.filter((e) => e.is_active !== false);
+  const activeEmployees = employees.filter((e) => e.status !== "inactive");
 
   /* Headcount by department */
   const deptCounts: Record<string, number> = {};
