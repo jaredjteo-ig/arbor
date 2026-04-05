@@ -540,7 +540,7 @@ export default function EmergencyPage() {
   <div>${provisionsHtml}</div>
 
   <div class="footer">
-    <p>Generated from Arbor Emergency HR Guide on ${new Date().toLocaleDateString("en-SG", { year: "numeric", month: "long", day: "numeric" })}.</p>
+    <p>Generated from Central Emergency HR Guide on ${new Date().toLocaleDateString("en-SG", { year: "numeric", month: "long", day: "numeric" })}.</p>
     <p>This guide provides immediate steps only. For complex situations, always consult an employment law specialist.</p>
   </div>
 </body>

@@ -122,7 +122,7 @@ export function ArborHistory({
     <div
       className="fixed inset-y-0 right-0 z-[var(--z-shadow-margin,70)] w-80 bg-[var(--background)] border-l border-[var(--color-gray-200)] shadow-xl flex flex-col animate-in slide-in-from-right duration-200"
       role="complementary"
-      aria-label="Arbor action history"
+      aria-label="Central action history"
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-gray-200)]">

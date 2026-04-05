@@ -49,7 +49,7 @@ export function WelcomeStep({ onNext, isLoggedIn }: WelcomeStepProps) {
         <p className="text-[var(--color-gray-600)] text-base">
           Your AI-powered HR advisory platform.
           {!isLoggedIn &&
-            " Sign up to get started, or continue to set up your company profile."}
+            " Log in to get started, or continue to set up your company profile."}
         </p>
       </div>
 

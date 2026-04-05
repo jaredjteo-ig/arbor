@@ -242,7 +242,7 @@ function AIMemorySection() {
     >
       <div className="space-y-4">
         <p className="text-sm text-[var(--color-gray-600)]">
-          Arbor learns your work patterns to provide better assistance. This
+          Central learns your work patterns to provide better assistance. This
           data is stored only in your browser session and is not shared with
           anyone.
         </p>
@@ -252,7 +252,7 @@ function AIMemorySection() {
           checked={isEnabled}
           onChange={setEnabled}
           label="Enable pattern learning"
-          description="Allow Arbor to observe your navigation patterns and offer proactive suggestions"
+          description="Allow Central to observe your navigation patterns and offer proactive suggestions"
         />
 
         {/* Observed patterns */}

@@ -545,7 +545,7 @@ export function ChatContainer({
         <div className="max-w-3xl mx-auto flex items-start gap-1.5">
           <Info className="h-3 w-3 text-[var(--color-gray-500)] mt-0.5 shrink-0" />
           <p className="text-xs text-[var(--color-gray-500)] leading-relaxed">
-            Arbor provides general guidance based on Singapore employment
+            Central provides general guidance based on Singapore employment
             regulations. This is not legal advice. Always consult a qualified
             employment law practitioner for specific situations.
           </p>

@@ -331,7 +331,7 @@ export default function HelpPage() {
                 Ask Central
               </AppButton>
             </Link>
-            <a href="mailto:support@arbor.terrene.dev">
+            <a href="mailto:support@central.kailash.ai">
               <AppButton variant="outlined" size="md">
                 Contact Support
               </AppButton>

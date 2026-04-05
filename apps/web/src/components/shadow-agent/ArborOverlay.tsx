@@ -73,7 +73,7 @@ export function ArborOverlay({
         className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[var(--z-shadow-overlay,80)] w-full max-w-md"
         role="status"
         aria-live="polite"
-        aria-label="Arbor execution progress"
+        aria-label="Central execution progress"
       >
         <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--background)] shadow-xl shadow-[var(--color-primary)]/10 p-4">
           {/* Header */}
@@ -107,7 +107,7 @@ export function ArborOverlay({
                   ? "Execution complete"
                   : isFailed
                     ? "Execution stopped"
-                    : "Arbor is working..."}
+                    : "Central is working..."}
               </span>
             </div>
 

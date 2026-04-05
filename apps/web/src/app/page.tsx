@@ -68,15 +68,9 @@ function LandingNav() {
         <div className="hidden md:flex items-center gap-3">
           <Link
             href="/login"
-            className="text-sm font-medium text-gray-700 hover:text-gray-900 px-4 py-2 rounded-lg transition-colors"
-          >
-            Login
-          </Link>
-          <Link
-            href="/signup"
             className="text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2.5 rounded-xl transition-colors"
           >
-            Get Started Free
+            Login
           </Link>
         </div>
 
@@ -122,15 +116,9 @@ function LandingNav() {
           <div className="pt-2 border-t border-gray-100 flex flex-col gap-2">
             <Link
               href="/login"
-              className="text-center text-sm font-medium text-gray-700 border border-gray-200 px-4 py-2.5 rounded-xl"
-            >
-              Login
-            </Link>
-            <Link
-              href="/signup"
               className="text-center text-sm font-semibold text-white bg-blue-600 px-4 py-2.5 rounded-xl"
             >
-              Get Started Free
+              Login
             </Link>
           </div>
         </div>
@@ -170,10 +158,10 @@ function ComplianceSection() {
               remediation guidance before gaps become fines.
             </p>
             <Link
-              href="/signup"
+              href="/login"
               className="inline-flex items-center gap-2 text-blue-600 font-semibold hover:text-blue-700 transition-colors"
             >
-              Start your free compliance check
+              Run a compliance check
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -321,22 +309,15 @@ function BottomCta() {
           Ready to simplify your HR?
         </h2>
         <p className="text-lg text-white/80 mb-8 max-w-xl mx-auto">
-          Free to get started. Set up in under a minute. No credit card
-          required.
+          Set up in under a minute. Manage your HR with confidence.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link
-            href="/signup"
+            href="/login"
             className="inline-flex items-center gap-2 px-6 py-3 bg-white text-blue-700 font-semibold rounded-xl hover:bg-white/90 transition-all shadow-lg"
           >
-            Get Started Free
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-          <Link
-            href="/login"
-            className="inline-flex items-center gap-2 px-6 py-3 border-2 border-white/30 text-white font-medium rounded-xl hover:bg-white/10 transition-all"
-          >
             Login to Your Account
+            <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
       </div>
@@ -357,7 +338,7 @@ function LandingFooter() {
             </div>
             <span className="text-white font-semibold">Central</span>
             <span className="text-sm text-gray-500 ml-2">
-              by Terrene Foundation
+              HR Advisory Platform
             </span>
           </div>
           <p className="text-sm text-gray-500">

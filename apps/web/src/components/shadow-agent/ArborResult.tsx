@@ -84,7 +84,7 @@ export function ArborResult({ response, showUndo = true }: ArborResultProps) {
       setUndoActive(false);
       setUndoMessage(result.message);
     } catch {
-      setUndoMessage("Arbor: Could not undo this action.");
+      setUndoMessage("Central: Could not undo this action.");
     }
   }, [sessionId]);
 

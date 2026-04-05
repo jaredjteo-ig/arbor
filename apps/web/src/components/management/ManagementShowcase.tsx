@@ -204,8 +204,7 @@ const VALUE_PROPS = [
   {
     icon: Zap,
     title: "100% Free",
-    description:
-      "Full HRIS suite at zero cost. Backed by Terrene Foundation for Singapore SMEs.",
+    description: "Full HRIS suite at zero cost. Built for Singapore SMEs.",
   },
   {
     icon: Sparkles,
@@ -229,7 +228,7 @@ const VALUE_PROPS = [
 
 interface ManagementShowcaseProps {
   hasCompany: boolean;
-  /** When true, CTAs link to /signup instead of opening CompanySetupModal */
+  /** When true, CTAs link to /login instead of opening CompanySetupModal */
   isPublic?: boolean;
 }
 
@@ -239,10 +238,10 @@ export function ManagementShowcase({
 }: ManagementShowcaseProps) {
   const [showSetup, setShowSetup] = useState(false);
 
-  /** CTA handler: public pages navigate to signup; authenticated pages open setup modal */
+  /** CTA handler: public pages navigate to login; authenticated pages open setup modal */
   const handleCta = () => {
     if (isPublic) {
-      window.location.href = "/signup";
+      window.location.href = "/login";
     } else {
       setShowSetup(true);
     }
@@ -262,7 +261,7 @@ export function ManagementShowcase({
           <div className="relative z-10 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-sm font-medium mb-4">
               <Sparkles className="w-4 h-4" />
-              Free for all Singapore SMEs
+              HR Management for Singapore SMEs
             </div>
             <h1 className="text-3xl md:text-4xl font-bold mb-4">
               Your Complete HR Management Suite
@@ -277,7 +276,7 @@ export function ManagementShowcase({
               className="inline-flex items-center gap-2 px-6 py-3 bg-white text-blue-700 font-semibold rounded-xl hover:bg-white/90 transition-all shadow-lg"
             >
               <Building2 className="w-5 h-5" />
-              {isPublic ? "Get Started Free" : "Set Up Your Company"}
+              {isPublic ? "Login" : "Set Up Your Company"}
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -414,15 +413,15 @@ export function ManagementShowcase({
             Ready to get started?
           </h3>
           <p className="text-sm text-gray-500 mb-4 max-w-md mx-auto">
-            Set up your company in under a minute. All features are completely
-            free — no credit card, no limits, no catch.
+            Set up your company in under a minute and unlock all HR management
+            features.
           </p>
           <button
             onClick={handleCta}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors"
           >
             <Building2 className="w-4 h-4" />
-            {isPublic ? "Get Started Free" : "Set Up Company"}
+            {isPublic ? "Login" : "Set Up Company"}
           </button>
         </div>
       )}

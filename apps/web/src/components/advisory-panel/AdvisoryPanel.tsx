@@ -151,7 +151,7 @@ export function AdvisoryPanel() {
         ref={panelRef}
         id="advisory-panel"
         role="dialog"
-        aria-label="Arbor Advisory Panel"
+        aria-label="Central Advisory Panel"
         aria-modal="false"
         className={clsx(
           "fixed top-0 right-0 z-30 h-full",
@@ -199,7 +199,7 @@ export function AdvisoryPanel() {
         {/* Disclaimer */}
         <div className="shrink-0 border-t border-[var(--color-gray-200)] bg-[var(--color-surface-card)]">
           <p className="text-[10px] text-[var(--color-gray-400)] px-4 py-1 text-center">
-            Arbor provides general guidance, not legal advice. Consult a
+            Central provides general guidance, not legal advice. Consult a
             qualified practitioner for specific situations.
           </p>
         </div>

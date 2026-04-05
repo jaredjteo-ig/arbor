@@ -166,15 +166,10 @@ export default function LoginPage() {
         {t("auth.google")}
       </AppButton>
 
-      {/* Sign up link */}
+      {/* Registration note */}
       <p className="mt-6 text-center text-sm text-[var(--color-gray-500)]">
-        {t("auth.no_account")}{" "}
-        <Link
-          href="/signup"
-          className="font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-light)] transition-colors"
-        >
-          {t("auth.signup")}
-        </Link>
+        Registration is by invitation only. Contact your administrator for
+        access.
       </p>
     </div>
   );

@@ -464,7 +464,7 @@ export function CommandSurface({
         className="fixed inset-x-0 top-[30vh] sm:top-[15vh] flex justify-center px-4 animate-shadow-scale-in"
         style={{ zIndex: "calc(var(--z-shadow-command) + 1)" }}
         role="dialog"
-        aria-label="Arbor Command Surface"
+        aria-label="Central Command Surface"
         aria-modal="true"
       >
         <div className="w-full max-w-2xl bg-[var(--color-surface-card)] rounded-2xl shadow-[var(--shadow-modal)] overflow-hidden">
