@@ -119,18 +119,18 @@ T001-T140 across 15 milestones. Covers:
 
 **Goal**: Payroll accuracy verified against CPF Board rate tables. Security audited. PDPA compliance for salary and bank data. Red team validated.
 
-| Task ID | Task Name                                                                 | Dependencies |
-| ------- | ------------------------------------------------------------------------- | ------------ |
-| T183    | Payroll accuracy test suite — against CPF Board published rate examples   | T150         |
-| T184    | PDPA data category extensions — SALARY_DATA, BANK_DETAILS categories      | T143, T147   |
-| T185    | Audit trail for all payroll data access                                   | T153, T184   |
-| T186    | Payroll run performance test — 200 employees under 30 seconds             | T150         |
-| T187    | Employee data import — CSV upload for bulk onboarding                     | T146         |
+| Task ID | Task Name                                                                  | Dependencies |
+| ------- | -------------------------------------------------------------------------- | ------------ |
+| T183    | Payroll accuracy test suite — against CPF Board published rate examples    | T150         |
+| T184    | PDPA data category extensions — SALARY_DATA, BANK_DETAILS categories       | T143, T147   |
+| T185    | Audit trail for all payroll data access                                    | T153, T184   |
+| T186    | Payroll run performance test — 200 employees under 30 seconds              | T150         |
+| T187    | Employee data import — CSV upload for bulk onboarding                      | T146         |
 | T188    | Parallel run support — run Arbor alongside existing HRIS, compare payslips | T152         |
-| T189    | Payroll data export — full history CSV for migration                      | T148         |
-| T190    | Red team — payroll accuracy, PDPA compliance, security                    | T183-T189    |
-| T191    | COC codification — update project agents and skills for HRIS domain       | T190         |
-| T192    | Deploy HRIS to production                                                 | T190         |
+| T189    | Payroll data export — full history CSV for migration                       | T148         |
+| T190    | Red team — payroll accuracy, PDPA compliance, security                     | T183-T189    |
+| T191    | COC codification — update project agents and skills for HRIS domain        | T190         |
+| T192    | Deploy HRIS to production                                                  | T190         |
 
 ---
 
@@ -141,12 +141,22 @@ T001-T140 across 15 milestones. Covers:
 - **140/140 tasks** across 15 milestones
 - Full advisory + shadow agent + enterprise model
 
-### Active (T141-T192) — Full HRIS + Shadow Agent Enhancement
+### Completed (T141-T185) — HRIS Expansion (2026-04-06)
 
-- **52 tasks** across 6 milestones (M16-M21)
-- M16 (5 tasks): Shadow agent enhancement — personalisation, attention, encryption, validation
-- M17 (11 tasks): Payroll engine — calculation, payslips, PDF, dashboard
-- M18 (8 tasks): Leave management — apply/approve, calendar, payroll integration
-- M19 (7 tasks): CPF/IR8A file generation — submission files, tax data
-- M20 (11 tasks): Claims, attendance, employee lifecycle
-- M21 (10 tasks): Hardening — accuracy testing, PDPA, performance, red team, deploy
+- **45/52 tasks complete** across M16-M20 + partial M21
+- M16: Shadow enhancement — personalisation (T141), encryption (T143), HRIS integration (T145)
+- M17: Payroll engine — all 11 tasks complete (models, calc, YTD, CPF file, PDF, API, dashboard)
+- M18: Leave management — all 8 tasks complete (model, API, balance, pro-ration, calendar, UI)
+- M19: CPF/Tax — all 7 tasks complete (CPF eSubmit, reconciliation, IR8A CSV, Appendix 8A)
+- M20: Claims/attendance/lifecycle — all 11 tasks complete (models, API, UI, exit processing)
+- Red Team Round 8: 70 findings, 30 fixed (all CRITICAL/HIGH resolved)
+
+### Remaining (7 tasks)
+
+- T142: Shadow widget attention state (ripple on proactive insights) — frontend UX
+- T144: Shadow context uses actual company compliance data — partial
+- T152: Payslip PDF rendering (HTML exists, PDF generation pending)
+- T186: Payroll performance test (200 employees under 30 seconds)
+- T188: Parallel run support (run Arbor alongside existing HRIS)
+- T190: Final red team for HRIS
+- T191-T192: COC codification + deploy (in progress)
