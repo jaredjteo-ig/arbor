@@ -116,21 +116,21 @@ def advisory_query_handler(query: str, company_id: int = None):
 
 The web frontend (`apps/web/`) uses two client patterns:
 
-| Client | File | Pattern | Auth |
-|--------|------|---------|------|
-| `apiClient` | `services/api/client.ts` | REST (GET/POST/PUT/DELETE) | Auto 401/403 retry with token refresh |
-| `createSSEStream` | `services/api/sse.ts` | SSE streaming (POST) | Auto 401 retry with token refresh |
+| Client            | File                     | Pattern                    | Auth                                  |
+| ----------------- | ------------------------ | -------------------------- | ------------------------------------- |
+| `apiClient`       | `services/api/client.ts` | REST (GET/POST/PUT/DELETE) | Auto 401/403 retry with token refresh |
+| `createSSEStream` | `services/api/sse.ts`    | SSE streaming (POST)       | Auto 401 retry with token refresh     |
 
 JWT tokens stored in `localStorage` (`access_token`, `refresh_token`). Singleton refresh promise prevents concurrent refresh requests.
 
 ## Conversation Management Endpoints
 
-| Method | Path | Purpose | Tenant Isolation |
-|--------|------|---------|------------------|
-| GET | `/advisory/conversations` | List user's conversations | Filtered by ownership |
-| GET | `/advisory/conversations/{id}/history` | Conversation history | Ownership verified |
-| DELETE | `/advisory/conversations/{id}` | Delete conversation | Ownership verified |
-| PATCH | `/advisory/conversations/{id}` | Rename conversation | Ownership verified |
+| Method | Path                                   | Purpose                   | Tenant Isolation      |
+| ------ | -------------------------------------- | ------------------------- | --------------------- |
+| GET    | `/advisory/conversations`              | List user's conversations | Filtered by ownership |
+| GET    | `/advisory/conversations/{id}/history` | Conversation history      | Ownership verified    |
+| DELETE | `/advisory/conversations/{id}`         | Delete conversation       | Ownership verified    |
+| PATCH  | `/advisory/conversations/{id}`         | Rename conversation       | Ownership verified    |
 
 Non-owned conversations return 404 (prevents enumeration).
 
@@ -152,6 +152,31 @@ In-memory sliding window rate limiter applied before auth middleware:
 - Configurable via `RATE_LIMIT_WINDOW_SECONDS` and `RATE_LIMIT_MAX_REQUESTS` env vars
 - Returns 429 with `Retry-After` header on breach
 - Advisory and auth endpoints have stricter limits
+
+## CRUD Pattern — dataflow_crud (Mandatory)
+
+All single-record database operations MUST use `dataflow_crud` (not WorkflowBuilder):
+
+```python
+from hr_advisory.services import dataflow_crud
+
+record = dataflow_crud.create("Employee", {"name": "Alice", "company_id": 1})
+record = dataflow_crud.read("Employee", record_id)
+records = dataflow_crud.list_records("Employee", {"company_id": 1})
+dataflow_crud.update("Employee", record_id, {"department": "Engineering"})
+dataflow_crud.delete("Employee", record_id)
+```
+
+**Why**: `db.express_sync` is ~23x faster than WorkflowBuilder for CRUD — no graph construction, validation, or tracking overhead. WorkflowBuilder is reserved for multi-step workflows only.
+
+**Migration**: All 13 routers migrated (547 calls). Model names are bare (e.g., `"Employee"` not `"EmployeeListNode"`).
+
+## Performance Patterns
+
+- **List endpoints**: use bulk lookups (`_bulk_find_users`) instead of per-record queries in loops
+- **Lightweight serializers**: list views use `_serialize_employee_summary()` (no decryption). Detail views use full `_serialize_employee()`.
+- **Response caching**: compliance status cached 5 min (`_compliance_cache` with TTL + LRU eviction). Invalidated on policy changes.
+- **Bounded in-memory stores**: all caches/stores use `OrderedDict` with max size + LRU eviction.
 
 ## Related Documentation
 

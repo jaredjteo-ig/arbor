@@ -19,26 +19,27 @@ Full HRIS operations: payroll, leave, claims, attendance, shifts, employee lifec
 | Reports     | `api/routers/reports.py`         | — (aggregation queries, no dedicated models)                                                                    | —                                                               | `/reports`                                      |
 | Approvals   | `api/routers/approval_groups.py` | ApprovalGroup, ApprovalGroupMember                                                                              | —                                                               | `/settings/approval-groups`                     |
 
-## DataFlow Helper Pattern
+## CRUD Pattern — dataflow_crud (Mandatory)
 
-Every router uses four identical helpers. This is the canonical pattern:
+All routers use `dataflow_crud` for single-record operations (~23x faster than WorkflowBuilder):
 
 ```python
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-    import hr_advisory.models  # noqa: F401 — ensures models registered
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
+from hr_advisory.services import dataflow_crud
 
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    # CRITICAL: enable_cache=False on ALL queries (prevents stale reads)
-    # CRITICAL: limit=10000 (DataFlow default is ~10 — silently truncates)
-    wf.add_node(node_type, "list", {"filter": filter_dict, "limit": limit, "enable_cache": False})
-    # Result is {"records": [...], "count": N} — unwrap to list
+# Create
+record = dataflow_crud.create("PayrollRun", {"company_id": 1, "period_start": "2026-04-01"})
+
+# Read
+record = dataflow_crud.read("PayrollRun", run_id)  # Returns None if not found
+
+# List with filter
+records = dataflow_crud.list_records("PayrollRun", {"company_id": 1, "status": "draft"})
+
+# Update
+dataflow_crud.update("PayrollRun", run_id, {"status": "approved"})
+
+# Delete
+dataflow_crud.delete("PayrollRun", run_id)
 ```
 
 ## Router Endpoint Template
