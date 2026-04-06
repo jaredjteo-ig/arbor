@@ -1047,9 +1047,9 @@ def _build_payslip_pdf_response(
 
     pdf_bytes = generate_payslip_pdf(payslip, items, emp, company)
 
-    emp_name = emp.get("name", "employee").replace(" ", "-").lower()
+    emp_name = emp.get("name", "employee")
     period = payslip.get("period_start", "period")
-    filename = f"payslip-{emp_name}-{period}.pdf"
+    filename = _sanitize_filename(f"payslip-{emp_name}-{period}", ".pdf")
 
     return Response(
         content=pdf_bytes,
@@ -2435,6 +2435,8 @@ async def get_appendix_8a(
     from hr_advisory.services.statutory_files import generate_appendix_8a
 
     company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
     if year == 0:
         year = datetime.now(timezone.utc).year
 
@@ -2627,12 +2629,18 @@ def _parse_float(value: str, field_name: str, row_num: int) -> float:
     if not cleaned:
         return 0.0
     try:
-        return float(cleaned)
+        result = float(cleaned)
     except ValueError:
         raise HTTPException(
             status_code=400,
             detail=f"Row {row_num}: '{field_name}' value '{value}' is not a valid number.",
         )
+    if not math.isfinite(result):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Row {row_num}: '{field_name}' value '{value}' is not a valid number.",
+        )
+    return result
 
 
 @router.post("/parallel/upload")

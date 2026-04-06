@@ -26,7 +26,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 from hr_advisory.workflows.guardrails import check_rate_limit
 from hr_advisory.workflows.compliance_checker import (
@@ -2382,7 +2382,7 @@ def _shadow_dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000)
 
 @router.get("/payroll/validate")
 async def shadow_payroll_validate(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Validate the latest payroll run for the company.
 
@@ -2644,7 +2644,7 @@ async def shadow_payroll_validate(
 
 @router.get("/leave/team-balances")
 async def shadow_leave_team_balances(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Return leave balances for the user's team (or all employees for admin).
 

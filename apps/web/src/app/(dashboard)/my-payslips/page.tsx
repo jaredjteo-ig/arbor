@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { AppCard, AppButton, EmptyState } from "@/components/design-system";
+import {
+  AppCard,
+  AppButton,
+  EmptyState,
+  toast,
+} from "@/components/design-system";
 import {
   Receipt,
   ChevronDown,
@@ -286,7 +291,9 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
                     try {
                       await payrollApi.downloadMyPayslipPdf(payslip.payslip_id);
                     } catch {
-                      /* Download failed — browser will show network error */
+                      toast.error(
+                        "Failed to download payslip. Please try again.",
+                      );
                     } finally {
                       setDownloadingPdf(false);
                     }
