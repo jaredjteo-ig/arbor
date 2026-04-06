@@ -349,6 +349,40 @@ html.dark .text-slate-500 {
   animation: shadow-ripple var(--shadow-attention-interval) ease-out infinite;
 }
 
+@keyframes shadow-nudge-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--shadow-accent);
+    opacity: 0.5;
+  }
+  50% {
+    box-shadow: 0 0 0 8px transparent;
+    opacity: 0;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    opacity: 0;
+  }
+}
+
+@keyframes shadow-badge-in {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-shadow-nudge-pulse {
+  animation: shadow-nudge-pulse 2s ease-out infinite;
+}
+
+.animate-shadow-badge-in {
+  animation: shadow-badge-in var(--shadow-transition-normal) ease-out;
+}
+
 .animate-shadow-fade-in {
   animation: shadow-fade-in var(--shadow-transition-normal) ease-out;
 }

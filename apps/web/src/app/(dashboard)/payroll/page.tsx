@@ -16,9 +16,21 @@ import {
   DollarSign,
   ArrowRight,
   RefreshCw,
+  Upload,
+  GitCompareArrows,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { payrollApi, type PayrollRun } from "@/services/api/payroll";
+import {
+  payrollApi,
+  type PayrollRun,
+  type ParallelUploadResult,
+  type ParallelCompareResult,
+} from "@/services/api/payroll";
 
 /* ── Helpers ──────────────────────────────────────────────── */
 
@@ -127,6 +139,18 @@ export default function PayrollPage() {
   );
   const [isCalculating, setIsCalculating] = useState(false);
 
+  /* -- Parallel run state -- */
+  const [parallelOpen, setParallelOpen] = useState(false);
+  const [parallelFile, setParallelFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<ParallelUploadResult | null>(
+    null,
+  );
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [isComparing, setIsComparing] = useState(false);
+  const [compareResult, setCompareResult] =
+    useState<ParallelCompareResult | null>(null);
+
   /* -- Past runs state -- */
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -197,6 +221,52 @@ export default function PayrollPage() {
       toast.error(message);
     } finally {
       setIsCalculating(false);
+    }
+  }
+
+  /* -- Parallel run handlers -- */
+  async function handleParallelUpload() {
+    if (!parallelFile) return;
+    setIsUploading(true);
+    setCompareResult(null);
+    try {
+      const result = await payrollApi.uploadParallelRun(parallelFile);
+      setUploadResult(result);
+      toast.success(
+        `Uploaded ${result.row_count} rows from ${result.filename}`,
+      );
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to upload CSV.";
+      toast.error(message);
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  async function handleParallelCompare() {
+    if (!uploadResult || selectedRunId === null) return;
+    setIsComparing(true);
+    try {
+      const result = await payrollApi.compareParallelRun(
+        uploadResult.parallel_run_id,
+        selectedRunId,
+      );
+      setCompareResult(result);
+      const { full_matches, mismatches } = result.summary;
+      if (mismatches === 0) {
+        toast.success(`All ${full_matches} employees match.`);
+      } else {
+        toast.error(
+          `${mismatches} of ${full_matches + mismatches} employees have differences.`,
+        );
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to compare payroll runs.";
+      toast.error(message);
+    } finally {
+      setIsComparing(false);
     }
   }
 
@@ -361,6 +431,295 @@ export default function PayrollPage() {
               Calculate Payroll
             </AppButton>
           </div>
+        </AppCard>
+      )}
+
+      {/* Parallel Run — Compare with External HRIS */}
+      {isAdmin && (
+        <AppCard variant="standard">
+          <button
+            type="button"
+            onClick={() => setParallelOpen(!parallelOpen)}
+            className="flex items-center gap-2 w-full text-left"
+          >
+            {parallelOpen ? (
+              <ChevronDown className="h-4 w-4 text-[var(--color-gray-400)]" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-[var(--color-gray-400)]" />
+            )}
+            <GitCompareArrows
+              className="h-5 w-5 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <div>
+              <span className="text-base font-semibold text-[var(--color-gray-900)]">
+                Parallel Run
+              </span>
+              <span className="text-sm text-[var(--color-gray-500)] ml-2">
+                Compare with external HRIS
+              </span>
+            </div>
+          </button>
+
+          {parallelOpen && (
+            <div className="mt-4 space-y-4">
+              {/* Step 1: Upload CSV */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-[var(--color-gray-700)]">
+                  Step 1: Upload external payslip CSV
+                </h3>
+                <p className="text-xs text-[var(--color-gray-500)]">
+                  CSV should contain: Employee Name or ID, Gross Salary, Net
+                  Salary, Employee CPF, Employer CPF (and optionally SDL,
+                  Period)
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      setParallelFile(e.target.files?.[0] ?? null);
+                      setUploadResult(null);
+                      setCompareResult(null);
+                    }}
+                    className="text-sm text-[var(--color-gray-600)] file:mr-3 file:py-1.5 file:px-3 file:rounded-[8px] file:border file:border-[var(--color-gray-200)] file:bg-[var(--color-surface-card)] file:text-sm file:font-medium file:text-[var(--color-gray-700)] hover:file:bg-[var(--color-gray-50)]"
+                  />
+                  <AppButton
+                    variant="outlined"
+                    size="sm"
+                    onClick={handleParallelUpload}
+                    loading={isUploading}
+                    disabled={!parallelFile}
+                  >
+                    <Upload className="h-4 w-4 mr-1" />
+                    Upload
+                  </AppButton>
+                </div>
+                {uploadResult && (
+                  <p className="text-sm text-emerald-600">
+                    Uploaded {uploadResult.row_count} employee rows from{" "}
+                    <span className="font-medium">{uploadResult.filename}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Step 2: Select Arbor run and compare */}
+              {uploadResult && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium text-[var(--color-gray-700)]">
+                    Step 2: Select an Arbor payroll run to compare against
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <select
+                      value={selectedRunId ?? ""}
+                      onChange={(e) =>
+                        setSelectedRunId(
+                          e.target.value ? Number(e.target.value) : null,
+                        )
+                      }
+                      className="rounded-[8px] border px-3 py-2 text-sm min-h-[44px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+                    >
+                      <option value="">Choose a payroll run...</option>
+                      {runs.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {formatPeriod(r.period_start, r.period_end)} -{" "}
+                          {r.status} ({r.employee_count} employees)
+                        </option>
+                      ))}
+                    </select>
+                    <AppButton
+                      variant="primary"
+                      size="sm"
+                      onClick={handleParallelCompare}
+                      loading={isComparing}
+                      disabled={selectedRunId === null}
+                    >
+                      <GitCompareArrows className="h-4 w-4 mr-1" />
+                      Compare
+                    </AppButton>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Results */}
+              {compareResult && (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-[var(--color-gray-700)]">
+                    Comparison Results
+                  </h3>
+
+                  {/* Summary stats */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-[8px] border border-emerald-200 bg-emerald-50 p-3 text-center">
+                      <p className="text-xs text-emerald-600 font-medium">
+                        Matches
+                      </p>
+                      <p className="text-lg font-bold text-emerald-700">
+                        {compareResult.summary.full_matches}
+                      </p>
+                    </div>
+                    <div className="rounded-[8px] border border-red-200 bg-red-50 p-3 text-center">
+                      <p className="text-xs text-red-600 font-medium">
+                        Mismatches
+                      </p>
+                      <p className="text-lg font-bold text-red-700">
+                        {compareResult.summary.mismatches}
+                      </p>
+                    </div>
+                    <div className="rounded-[8px] border border-amber-200 bg-amber-50 p-3 text-center">
+                      <p className="text-xs text-amber-600 font-medium">
+                        Unmatched (ext)
+                      </p>
+                      <p className="text-lg font-bold text-amber-700">
+                        {compareResult.summary.unmatched_external}
+                      </p>
+                    </div>
+                    <div className="rounded-[8px] border border-[var(--color-gray-200)] bg-[var(--color-gray-50)] p-3 text-center">
+                      <p className="text-xs text-[var(--color-gray-500)] font-medium">
+                        Largest diff
+                      </p>
+                      <p className="text-lg font-bold text-[var(--color-gray-900)]">
+                        ${compareResult.summary.largest_deviation.toFixed(2)}
+                      </p>
+                      {compareResult.summary.largest_deviation_employee && (
+                        <p className="text-xs text-[var(--color-gray-400)] truncate">
+                          {compareResult.summary.largest_deviation_employee} (
+                          {compareResult.summary.largest_deviation_field.replace(
+                            /_/g,
+                            " ",
+                          )}
+                          )
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Per-employee comparison table */}
+                  {compareResult.comparisons.length > 0 && (
+                    <div className="overflow-x-auto rounded-[8px] border border-[var(--color-gray-200)]">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-[var(--color-gray-50)] border-b border-[var(--color-gray-200)]">
+                            <th className="text-left py-2.5 px-3 font-medium text-[var(--color-gray-500)]">
+                              Employee
+                            </th>
+                            <th className="text-right py-2.5 px-3 font-medium text-[var(--color-gray-500)]">
+                              Gross
+                            </th>
+                            <th className="text-right py-2.5 px-3 font-medium text-[var(--color-gray-500)]">
+                              Net
+                            </th>
+                            <th className="text-right py-2.5 px-3 font-medium text-[var(--color-gray-500)]">
+                              Emp CPF
+                            </th>
+                            <th className="text-right py-2.5 px-3 font-medium text-[var(--color-gray-500)]">
+                              Er CPF
+                            </th>
+                            <th className="text-center py-2.5 px-3 font-medium text-[var(--color-gray-500)]">
+                              Status
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {compareResult.comparisons.map((comp, idx) => {
+                            const gross = comp.fields.find(
+                              (f) => f.field === "gross_salary",
+                            );
+                            const net = comp.fields.find(
+                              (f) => f.field === "net_salary",
+                            );
+                            const empCpf = comp.fields.find(
+                              (f) => f.field === "employee_cpf",
+                            );
+                            const erCpf = comp.fields.find(
+                              (f) => f.field === "employer_cpf",
+                            );
+                            return (
+                              <tr
+                                key={idx}
+                                className="border-b border-[var(--color-gray-100)] last:border-0"
+                              >
+                                <td className="py-2 px-3 font-medium text-[var(--color-gray-900)]">
+                                  {comp.employee_name || comp.employee_id}
+                                </td>
+                                {[gross, net, empCpf, erCpf].map((f, fi) => (
+                                  <td
+                                    key={fi}
+                                    className={`py-2 px-3 text-right ${f && !f.match ? "text-red-600 font-medium" : "text-[var(--color-gray-600)]"}`}
+                                  >
+                                    {f ? (
+                                      f.match ? (
+                                        <span>${f.external.toFixed(2)}</span>
+                                      ) : (
+                                        <span
+                                          title={`External: $${f.external.toFixed(2)} | Arbor: $${f.arbor.toFixed(2)}`}
+                                        >
+                                          {f.difference > 0 ? "+" : ""}$
+                                          {f.difference.toFixed(2)}
+                                        </span>
+                                      )
+                                    ) : (
+                                      "-"
+                                    )}
+                                  </td>
+                                ))}
+                                <td className="py-2 px-3 text-center">
+                                  {comp.overall_match ? (
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-500 inline" />
+                                  ) : (
+                                    <XCircle className="h-4 w-4 text-red-500 inline" />
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Unmatched employees */}
+                  {(compareResult.unmatched_external.length > 0 ||
+                    compareResult.unmatched_arbor.length > 0) && (
+                    <div className="space-y-2">
+                      {compareResult.unmatched_external.length > 0 && (
+                        <div className="text-sm">
+                          <div className="flex items-center gap-1 text-amber-600 font-medium mb-1">
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            Employees in external CSV but not in Arbor:
+                          </div>
+                          <ul className="list-disc list-inside text-[var(--color-gray-600)] text-xs ml-1">
+                            {compareResult.unmatched_external.map((u, i) => (
+                              <li key={i}>
+                                {u.employee_name || u.employee_id}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {compareResult.unmatched_arbor.length > 0 && (
+                        <div className="text-sm">
+                          <div className="flex items-center gap-1 text-[var(--color-gray-500)] font-medium mb-1">
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            Employees in Arbor but not in external CSV:
+                          </div>
+                          <ul className="list-disc list-inside text-[var(--color-gray-600)] text-xs ml-1">
+                            {compareResult.unmatched_arbor.map((u, i) => (
+                              <li key={i}>
+                                {u.employee_name ||
+                                  u.employee_id_internal ||
+                                  "Unknown"}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </AppCard>
       )}
 

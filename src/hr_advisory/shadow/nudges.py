@@ -430,27 +430,12 @@ def _suggestion_probation_ending(company_id: int) -> dict[str, Any] | None:
 
 
 def _suggestion_compliance_score(company_id: int) -> dict[str, Any] | None:
-    """Suggest compliance review based on frequent compliance page views."""
+    """Suggest compliance review based on the company's actual compliance state."""
     try:
-        from hr_advisory.workflows.compliance_checker import (
-            ComplianceCheckInput,
-            check_compliance,
-        )
+        from hr_advisory.api.routers.shadow import _build_compliance_context
+        from hr_advisory.workflows.compliance_checker import check_compliance
 
-        compliance_input = ComplianceCheckInput(
-            company_size=10,
-            has_foreign_workers=True,
-            sector="general",
-            has_ket_issued=False,
-            has_written_contracts=False,
-            has_payslip_system=True,
-            has_leave_records=True,
-            has_ot_records=False,
-            has_safety_policy=False,
-            has_grievance_process=False,
-            has_cpf_registered=True,
-            has_fwa_policy=False,
-        )
+        compliance_input, _extra = _build_compliance_context(company_id)
         result = check_compliance(compliance_input)
         gap_count = len([f for f in result.findings if f.severity in ("high", "critical")])
         if gap_count > 0:

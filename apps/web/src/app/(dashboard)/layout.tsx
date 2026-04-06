@@ -46,9 +46,11 @@ function ShadowAgentUI() {
     isAdvisoryPage,
     isProcessing,
     recentCommands,
+    nudgeCount,
     toggleCommand,
     closeCommand,
     submitCommand,
+    markNudgesSeen,
   } = useShadowAgent();
 
   return (
@@ -57,7 +59,9 @@ function ShadowAgentUI() {
         isCommandOpen={isCommandOpen}
         hasAttention={hasAttention}
         isAdvisoryPage={isAdvisoryPage}
+        nudgeCount={nudgeCount}
         onToggle={toggleCommand}
+        onNudgesSeen={markNudgesSeen}
       />
       <CommandSurface
         isOpen={isCommandOpen}

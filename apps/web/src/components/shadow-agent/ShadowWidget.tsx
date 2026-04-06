@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import clsx from "clsx";
 
 interface ShadowWidgetProps {
@@ -10,8 +10,12 @@ interface ShadowWidgetProps {
   hasAttention?: boolean;
   /** Whether the advisory deep workspace page is active */
   isAdvisoryPage?: boolean;
+  /** Number of unseen nudges to display as a badge */
+  nudgeCount?: number;
   /** Callback to toggle the command surface */
   onToggle: () => void;
+  /** Callback when the widget is clicked (marks nudges as seen) */
+  onNudgesSeen?: () => void;
 }
 
 /**
@@ -30,23 +34,36 @@ export function ShadowWidget({
   isCommandOpen,
   hasAttention = false,
   isAdvisoryPage = false,
+  nudgeCount = 0,
   onToggle,
+  onNudgesSeen,
 }: ShadowWidgetProps) {
+  const showNudgeBadge = nudgeCount > 0;
+  const showAttention = hasAttention || showNudgeBadge;
+
+  const handleClick = () => {
+    // Mark nudges as seen when user interacts with the widget
+    if (showNudgeBadge && onNudgesSeen) {
+      onNudgesSeen();
+    }
+    onToggle();
+  };
+
   // Global keyboard shortcut: Ctrl+Shift+A
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key === "A") {
         e.preventDefault();
+        // Mark nudges as seen on keyboard shortcut too
+        if (nudgeCount > 0 && onNudgesSeen) {
+          onNudgesSeen();
+        }
         onToggle();
       }
-    },
-    [onToggle],
-  );
-
-  useEffect(() => {
+    };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
+  }, [onToggle, onNudgesSeen, nudgeCount]);
 
   // Hide when command surface is open or on advisory deep workspace
   if (isCommandOpen || isAdvisoryPage) return null;
@@ -56,13 +73,15 @@ export function ShadowWidget({
       className="fixed bottom-6 right-6 lg:right-[calc(var(--shadow-margin-current,var(--shadow-margin-collapsed))+1.5rem)] transition-[right] duration-[var(--shadow-transition-normal)] ease-out"
       style={{ zIndex: "var(--z-shadow-widget)" }}
     >
-      {/* Attention ripple ring — only when agent has something to surface */}
-      {hasAttention && (
+      {/* Attention ripple ring — when agent has something to surface or nudges exist */}
+      {showAttention && (
         <span
           className={clsx(
             "absolute inset-0 rounded-full",
             "bg-[var(--shadow-accent)]",
-            "animate-shadow-ripple",
+            showNudgeBadge
+              ? "animate-shadow-nudge-pulse"
+              : "animate-shadow-ripple",
           )}
           style={{
             width: "var(--shadow-widget-size)",
@@ -75,15 +94,15 @@ export function ShadowWidget({
       {/* Main widget button */}
       <button
         type="button"
-        onClick={onToggle}
-        aria-label="Ask Central (Ctrl+Shift+A)"
+        onClick={handleClick}
+        aria-label={`Ask Central (Ctrl+Shift+A)${showNudgeBadge ? ` — ${nudgeCount} new notification${nudgeCount !== 1 ? "s" : ""}` : ""}`}
         title="Ask Central (Ctrl+Shift+A)"
         className={clsx(
           "relative flex items-center justify-center",
           "rounded-full cursor-pointer",
           "bg-[var(--color-primary)]",
           "text-white",
-          "animate-shadow-breathe",
+          showNudgeBadge ? "opacity-100" : "animate-shadow-breathe",
           "hover:opacity-100 hover:scale-110",
           "active:scale-95",
           "transition-transform duration-[var(--shadow-transition-fast)] ease-out",
@@ -107,6 +126,22 @@ export function ShadowWidget({
           <ellipse cx="12" cy="9" rx="4" ry="3.5" fill="white" opacity="0.3" />
         </svg>
       </button>
+
+      {/* Nudge count badge — shown when there are unseen nudges */}
+      {showNudgeBadge && (
+        <span
+          className={clsx(
+            "absolute -top-1 -right-1 flex items-center justify-center",
+            "min-w-[18px] h-[18px] px-1 rounded-full",
+            "bg-[var(--color-error)] text-white text-[11px] font-semibold leading-none",
+            "pointer-events-none",
+            "animate-shadow-badge-in",
+          )}
+          aria-hidden="true"
+        >
+          {nudgeCount > 9 ? "9+" : nudgeCount}
+        </span>
+      )}
     </div>
   );
 }

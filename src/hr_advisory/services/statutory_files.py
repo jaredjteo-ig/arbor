@@ -770,6 +770,474 @@ def generate_payslip_html(
 
 
 # ---------------------------------------------------------------------------
+# Payslip PDF generation (EA s88A compliant)
+# ---------------------------------------------------------------------------
+
+
+def generate_payslip_pdf(
+    payslip: dict,
+    items: list[dict],
+    employee: dict,
+    company: dict,
+) -> bytes:
+    """Generate PDF for a single payslip (EA s88A compliant).
+
+    Uses reportlab (pure Python, no system dependencies) to produce a
+    professional PDF matching the HTML payslip layout.
+
+    Must include per EA s88A:
+    1. Employer name
+    2. Employee name and NRIC (masked)
+    3. Date of payment
+    4. Basic salary
+    5. Period covered
+    6. Allowances (itemised)
+    7. Additional payments (OT, bonus, etc. with calculation basis)
+    8. Deductions (itemised: CPF, SHG, loans)
+    9. OT hours, rate, and pay (if applicable)
+    10. Net salary
+    11. Employer CPF (for reference)
+    12. Mode of payment
+
+    Returns PDF content as bytes.
+    """
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        HRFlowable,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+
+    # --- Prepare data ---
+    company_name = company.get("name", "Company")
+    company_uen = company.get("uen", "")
+
+    emp_name = _get_employee_display_name(employee)
+    nric_masked = _mask_nric(employee.get("nric_fin", ""))
+    emp_id_internal = employee.get("employee_id_internal", "")
+    department = employee.get("department", "")
+    designation = employee.get("designation", "")
+
+    period_start = payslip.get("period_start", "")
+    period_end = payslip.get("period_end", "")
+    pay_date = _format_display_date(payslip.get("pay_date", period_end))
+
+    gross_salary = payslip.get("gross_salary", 0.0)
+    net_salary = payslip.get("net_salary", 0.0)
+
+    # Classify items into earnings, deductions, and employer contributions
+    earnings: list[dict] = []
+    deductions: list[dict] = []
+    employer_contributions: list[dict] = []
+
+    for item in items:
+        item_type = item.get("item_type", "")
+        amount = item.get("amount", 0.0)
+
+        if item_type in ("employer_cpf", "sdl", "fwl"):
+            employer_contributions.append(item)
+        elif amount < 0:
+            deductions.append(item)
+        else:
+            earnings.append(item)
+
+    total_deductions = sum(abs(item.get("amount", 0.0)) for item in deductions)
+
+    # Determine payment mode
+    bank_name = employee.get("bank_name", "")
+    bank_last4 = employee.get("bank_account_last4", "")
+    if bank_name and bank_last4:
+        payment_mode = f"Bank Transfer ({bank_name} ****{bank_last4})"
+    elif bank_name:
+        payment_mode = f"Bank Transfer ({bank_name})"
+    else:
+        payment_mode = "Bank Transfer"
+
+    # --- Build PDF ---
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm,
+    )
+
+    # Styles
+    styles = getSampleStyleSheet()
+    dark_blue = colors.HexColor("#2c3e50")
+    light_gray = colors.HexColor("#f8f9fa")
+    medium_gray = colors.HexColor("#666666")
+    border_gray = colors.HexColor("#dddddd")
+    light_blue_bg = colors.HexColor("#f0f7ff")
+
+    style_company = ParagraphStyle(
+        "CompanyName",
+        parent=styles["Normal"],
+        fontSize=16,
+        fontName="Helvetica-Bold",
+        textColor=dark_blue,
+        leading=20,
+    )
+    style_uen = ParagraphStyle(
+        "UEN",
+        parent=styles["Normal"],
+        fontSize=9,
+        textColor=medium_gray,
+    )
+    style_title = ParagraphStyle(
+        "PayslipTitle",
+        parent=styles["Normal"],
+        fontSize=14,
+        fontName="Helvetica-Bold",
+        textColor=dark_blue,
+        alignment=2,  # RIGHT
+    )
+    style_period = ParagraphStyle(
+        "Period",
+        parent=styles["Normal"],
+        fontSize=9,
+        textColor=medium_gray,
+        alignment=2,  # RIGHT
+    )
+    style_section = ParagraphStyle(
+        "SectionTitle",
+        parent=styles["Normal"],
+        fontSize=10,
+        fontName="Helvetica-Bold",
+        textColor=dark_blue,
+        spaceAfter=4,
+    )
+    style_label = ParagraphStyle(
+        "InfoLabel",
+        parent=styles["Normal"],
+        fontSize=8,
+        fontName="Helvetica-Bold",
+        textColor=medium_gray,
+    )
+    style_value = ParagraphStyle(
+        "InfoValue",
+        parent=styles["Normal"],
+        fontSize=9,
+        fontName="Helvetica",
+        textColor=colors.HexColor("#1a1a1a"),
+    )
+    style_item_name = ParagraphStyle(
+        "ItemName",
+        parent=styles["Normal"],
+        fontSize=9,
+        fontName="Helvetica",
+    )
+    style_item_amount = ParagraphStyle(
+        "ItemAmount",
+        parent=styles["Normal"],
+        fontSize=9,
+        fontName="Helvetica",
+        alignment=2,  # RIGHT
+    )
+    style_total_name = ParagraphStyle(
+        "TotalName",
+        parent=styles["Normal"],
+        fontSize=9,
+        fontName="Helvetica-Bold",
+    )
+    style_total_amount = ParagraphStyle(
+        "TotalAmount",
+        parent=styles["Normal"],
+        fontSize=9,
+        fontName="Helvetica-Bold",
+        alignment=2,  # RIGHT
+    )
+    style_net_name = ParagraphStyle(
+        "NetName",
+        parent=styles["Normal"],
+        fontSize=11,
+        fontName="Helvetica-Bold",
+        textColor=dark_blue,
+    )
+    style_net_amount = ParagraphStyle(
+        "NetAmount",
+        parent=styles["Normal"],
+        fontSize=11,
+        fontName="Helvetica-Bold",
+        textColor=dark_blue,
+        alignment=2,  # RIGHT
+    )
+    style_footer = ParagraphStyle(
+        "Footer",
+        parent=styles["Normal"],
+        fontSize=7,
+        textColor=colors.HexColor("#888888"),
+        alignment=1,  # CENTER
+    )
+    style_payment = ParagraphStyle(
+        "PaymentInfo",
+        parent=styles["Normal"],
+        fontSize=9,
+        fontName="Helvetica",
+    )
+
+    elements: list = []
+    page_width = A4[0] - 40 * mm  # available width after margins
+
+    # --- Header: Company name + Payslip title ---
+    header_data = [
+        [
+            Paragraph(company_name, style_company),
+            Paragraph("Payslip", style_title),
+        ],
+    ]
+    if company_uen:
+        header_data.append(
+            [
+                Paragraph(f"UEN: {company_uen}", style_uen),
+                Paragraph(
+                    f"For period {_format_display_date(period_start)} to {_format_display_date(period_end)}",
+                    style_period,
+                ),
+            ]
+        )
+    else:
+        header_data.append(
+            [
+                Paragraph("", style_uen),
+                Paragraph(
+                    f"For period {_format_display_date(period_start)} to {_format_display_date(period_end)}",
+                    style_period,
+                ),
+            ]
+        )
+
+    header_table = Table(header_data, colWidths=[page_width * 0.55, page_width * 0.45])
+    header_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LINEBELOW", (0, -1), (-1, -1), 1.5, dark_blue),
+                ("BOTTOMPADDING", (0, -1), (-1, -1), 8),
+            ]
+        )
+    )
+    elements.append(header_table)
+    elements.append(Spacer(1, 10))
+
+    # --- Employee info grid ---
+    info_data = [
+        [
+            Paragraph("EMPLOYEE NAME", style_label),
+            Paragraph(emp_name, style_value),
+            Paragraph("NRIC/FIN", style_label),
+            Paragraph(nric_masked, style_value),
+        ],
+        [
+            Paragraph("EMPLOYEE ID", style_label),
+            Paragraph(emp_id_internal, style_value),
+            Paragraph("DATE OF PAYMENT", style_label),
+            Paragraph(pay_date, style_value),
+        ],
+        [
+            Paragraph("DEPARTMENT", style_label),
+            Paragraph(department, style_value),
+            Paragraph("DESIGNATION", style_label),
+            Paragraph(designation, style_value),
+        ],
+    ]
+
+    info_table = Table(
+        info_data,
+        colWidths=[page_width * 0.18, page_width * 0.32, page_width * 0.18, page_width * 0.32],
+    )
+    info_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), light_gray),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("ROUNDEDCORNERS", [3, 3, 3, 3]),
+            ]
+        )
+    )
+    elements.append(info_table)
+    elements.append(Spacer(1, 12))
+
+    # --- Earnings section ---
+    elements.append(Paragraph("EARNINGS", style_section))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=border_gray))
+    elements.append(Spacer(1, 4))
+
+    earnings_data = []
+    for item in earnings:
+        earnings_data.append(
+            [
+                Paragraph(item.get("name", ""), style_item_name),
+                Paragraph(f"${item.get('amount', 0.0):,.2f}", style_item_amount),
+            ]
+        )
+    earnings_data.append(
+        [
+            Paragraph("Gross Salary", style_total_name),
+            Paragraph(f"${gross_salary:,.2f}", style_total_amount),
+        ]
+    )
+
+    earnings_table = Table(earnings_data, colWidths=[page_width * 0.7, page_width * 0.3])
+    earnings_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                # Total row top border
+                ("LINEABOVE", (0, -1), (-1, -1), 0.5, colors.HexColor("#999999")),
+                ("TOPPADDING", (0, -1), (-1, -1), 4),
+            ]
+        )
+    )
+    elements.append(earnings_table)
+    elements.append(Spacer(1, 10))
+
+    # --- Deductions section ---
+    elements.append(Paragraph("DEDUCTIONS", style_section))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=border_gray))
+    elements.append(Spacer(1, 4))
+
+    deductions_data = []
+    for item in deductions:
+        deductions_data.append(
+            [
+                Paragraph(item.get("name", ""), style_item_name),
+                Paragraph(f"${abs(item.get('amount', 0.0)):,.2f}", style_item_amount),
+            ]
+        )
+    deductions_data.append(
+        [
+            Paragraph("Total Deductions", style_total_name),
+            Paragraph(f"${total_deductions:,.2f}", style_total_amount),
+        ]
+    )
+
+    deductions_table = Table(deductions_data, colWidths=[page_width * 0.7, page_width * 0.3])
+    deductions_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("LINEABOVE", (0, -1), (-1, -1), 0.5, colors.HexColor("#999999")),
+                ("TOPPADDING", (0, -1), (-1, -1), 4),
+            ]
+        )
+    )
+    elements.append(deductions_table)
+    elements.append(Spacer(1, 10))
+
+    # --- Net Salary row ---
+    net_data = [
+        [
+            Paragraph("Net Salary", style_net_name),
+            Paragraph(f"${net_salary:,.2f}", style_net_amount),
+        ]
+    ]
+    net_table = Table(net_data, colWidths=[page_width * 0.7, page_width * 0.3])
+    net_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LINEABOVE", (0, 0), (-1, 0), 1.5, dark_blue),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    elements.append(net_table)
+    elements.append(Spacer(1, 10))
+
+    # --- Employer contributions (for reference) ---
+    if employer_contributions:
+        elements.append(Paragraph("EMPLOYER CONTRIBUTIONS (FOR REFERENCE)", style_section))
+        elements.append(HRFlowable(width="100%", thickness=0.5, color=border_gray))
+        elements.append(Spacer(1, 4))
+
+        contrib_data = []
+        for item in employer_contributions:
+            contrib_data.append(
+                [
+                    Paragraph(item.get("name", ""), style_item_name),
+                    Paragraph(f"${abs(item.get('amount', 0.0)):,.2f}", style_item_amount),
+                ]
+            )
+
+        contrib_table = Table(contrib_data, colWidths=[page_width * 0.7, page_width * 0.3])
+        contrib_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+        elements.append(contrib_table)
+        elements.append(Spacer(1, 10))
+
+    # --- Payment mode ---
+    payment_data = [
+        [
+            Paragraph("<b>Mode of Payment:</b>  " + payment_mode, style_payment),
+        ]
+    ]
+    payment_table = Table(payment_data, colWidths=[page_width])
+    payment_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), light_blue_bg),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LINEBEFORE", (0, 0), (0, -1), 2, dark_blue),
+            ]
+        )
+    )
+    elements.append(payment_table)
+    elements.append(Spacer(1, 16))
+
+    # --- Footer ---
+    elements.append(
+        HRFlowable(width="100%", thickness=0.5, color=border_gray)
+    )
+    elements.append(Spacer(1, 6))
+    elements.append(
+        Paragraph(
+            "This is a computer-generated payslip. No signature is required.<br/>"
+            "Issued in compliance with Singapore Employment Act s88A.",
+            style_footer,
+        )
+    )
+
+    # Build PDF
+    doc.build(elements)
+    return buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
 # Appendix 8A — Benefits in Kind (T169)
 # ---------------------------------------------------------------------------
 

@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
       typing-extensions \
       # --- Arbor app deps ---
       python-dotenv structlog openai cryptography pgvector \
-      psycopg2-binary python-docx sendgrid rich \
+      psycopg2-binary python-docx sendgrid rich reportlab \
       python-multipart email-validator tiktoken tenacity jinja2 && \
     pip install --no-cache-dir .
 

@@ -2,12 +2,15 @@
 
 Handles payroll run lifecycle: calculate, review, approve, mark paid.
 Also handles payslip access, CPF YTD tracking, payroll reports, and exports.
+Includes parallel run support for comparing Arbor calculations against external HRIS data.
 """
 
 import csv
 import io
 import logging
 import re
+import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -20,6 +23,11 @@ from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# In-memory store for parallel payroll run uploads (production: use database).
+# Bounded to prevent memory exhaustion in long-running processes.
+_parallel_runs: OrderedDict[str, dict] = OrderedDict()
+MAX_PARALLEL_RUNS = 10
 
 
 # --------------------------------------------------------------------------
@@ -704,6 +712,54 @@ async def get_my_payslip_detail(
 
 
 # --------------------------------------------------------------------------
+# GET /payroll/my-payslips/{id}/pdf — Employee's own payslip PDF download
+# --------------------------------------------------------------------------
+
+
+@router.get("/my-payslips/{payslip_id}/pdf")
+async def get_my_payslip_pdf(
+    payslip_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> Response:
+    """Download a PDF of the employee's own payslip (EA s88A compliant)."""
+    user_id = int(current_user.get("sub", 0))
+    company_id = current_user.get("company_id")
+
+    payslip = _dataflow_read("PayslipReadNode", payslip_id)
+    if payslip is None:
+        raise HTTPException(status_code=404, detail="Payslip not found.")
+
+    # Verify this payslip belongs to the current user
+    emp_records = _dataflow_list(
+        "EmployeeListNode",
+        {
+            "user_id": user_id,
+            "company_id": company_id,
+        },
+        limit=1,
+    )
+    if not emp_records or emp_records[0].get("id") != payslip.get("employee_id"):
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    emp = emp_records[0]
+    user = _find_user_by_id(emp.get("user_id"))
+    if user:
+        emp["name"] = user.get("name", "")
+
+    items = _dataflow_list("PayslipItemListNode", {"payslip_id": payslip_id})
+    company = _dataflow_read("CompanyReadNode", company_id) or {}
+
+    # Attach pay_date from the payroll run
+    run_id = payslip.get("payroll_run_id")
+    if run_id:
+        run = _dataflow_read("PayrollRunReadNode", run_id)
+        if run:
+            payslip["pay_date"] = run.get("pay_date", "")
+
+    return _build_payslip_pdf_response(payslip, items, emp, company)
+
+
+# --------------------------------------------------------------------------
 # GET /payroll/cpf-ytd/{employee_id} — CPF YTD breakdown
 # --------------------------------------------------------------------------
 
@@ -935,21 +991,20 @@ async def generate_bank_file(
 
 
 # --------------------------------------------------------------------------
-# POST /payroll/runs/{id}/payslips/{payslip_id}/pdf — Generate payslip HTML
+# Payslip PDF helpers (shared by admin and self-service endpoints)
 # --------------------------------------------------------------------------
 
 
-@router.post("/runs/{run_id}/payslips/{payslip_id}/pdf")
-async def generate_payslip_pdf(
+def _resolve_payslip_for_pdf(
     run_id: int,
     payslip_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
-) -> Response:
-    """Generate payslip as HTML (can be rendered to PDF by client or weasyprint)."""
-    from hr_advisory.services.statutory_files import generate_payslip_html
+    company_id: int,
+) -> tuple[dict, list, dict, dict, dict]:
+    """Fetch and validate all data needed to render a payslip PDF.
 
-    company_id = get_current_company_id(current_user)
-
+    Returns (payslip, items, employee, company, run).
+    Raises HTTPException on any validation failure.
+    """
     # Verify run ownership
     run = _dataflow_read("PayrollRunReadNode", run_id)
     if run is None or run.get("company_id") != company_id:
@@ -978,15 +1033,50 @@ async def generate_payslip_pdf(
     # Add pay_date from run to payslip dict for display
     payslip["pay_date"] = run.get("pay_date", "")
 
-    html = generate_payslip_html(payslip, items, emp, company)
+    return payslip, items, emp, company, run
+
+
+def _build_payslip_pdf_response(
+    payslip: dict,
+    items: list,
+    emp: dict,
+    company: dict,
+) -> Response:
+    """Generate a PDF payslip and return it as a downloadable Response."""
+    from hr_advisory.services.statutory_files import generate_payslip_pdf
+
+    pdf_bytes = generate_payslip_pdf(payslip, items, emp, company)
+
+    emp_name = emp.get("name", "employee").replace(" ", "-").lower()
+    period = payslip.get("period_start", "period")
+    filename = f"payslip-{emp_name}-{period}.pdf"
 
     return Response(
-        content=html,
-        media_type="text/html",
+        content=pdf_bytes,
+        media_type="application/pdf",
         headers={
-            "Content-Disposition": f'inline; filename="payslip_{payslip_id}.html"',
+            "Content-Disposition": f'attachment; filename="{filename}"',
         },
     )
+
+
+# --------------------------------------------------------------------------
+# POST /payroll/runs/{id}/payslips/{payslip_id}/pdf — Generate payslip PDF
+# --------------------------------------------------------------------------
+
+
+@router.post("/runs/{run_id}/payslips/{payslip_id}/pdf")
+async def generate_payslip_pdf_endpoint(
+    run_id: int,
+    payslip_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> Response:
+    """Generate payslip as a downloadable PDF (EA s88A compliant)."""
+    company_id = get_current_company_id(current_user)
+    payslip, items, emp, company, _run = _resolve_payslip_for_pdf(
+        run_id, payslip_id, company_id
+    )
+    return _build_payslip_pdf_response(payslip, items, emp, company)
 
 
 # --------------------------------------------------------------------------
@@ -2479,3 +2569,441 @@ async def export_payroll_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ==========================================================================
+# PARALLEL PAYROLL RUN — Compare Arbor vs External HRIS
+# ==========================================================================
+
+# Expected CSV columns (case-insensitive, whitespace-trimmed):
+#   Employee Name | Employee ID | Period | Gross Salary | Net Salary
+#   | Employee CPF | Employer CPF | SDL (optional)
+#
+# At least one of Employee Name or Employee ID must be present per row.
+
+_PARALLEL_CSV_REQUIRED_COLUMNS = {
+    "gross_salary",
+    "net_salary",
+    "employee_cpf",
+    "employer_cpf",
+}
+
+# Map of normalised header -> canonical field name
+_PARALLEL_CSV_COLUMN_MAP: dict[str, str] = {
+    "employee name": "employee_name",
+    "employee_name": "employee_name",
+    "name": "employee_name",
+    "employee id": "employee_id",
+    "employee_id": "employee_id",
+    "id": "employee_id",
+    "period": "period",
+    "month": "period",
+    "pay period": "period",
+    "gross salary": "gross_salary",
+    "gross_salary": "gross_salary",
+    "gross": "gross_salary",
+    "net salary": "net_salary",
+    "net_salary": "net_salary",
+    "net": "net_salary",
+    "net pay": "net_salary",
+    "employee cpf": "employee_cpf",
+    "employee_cpf": "employee_cpf",
+    "cpf employee": "employee_cpf",
+    "employer cpf": "employer_cpf",
+    "employer_cpf": "employer_cpf",
+    "cpf employer": "employer_cpf",
+    "sdl": "sdl",
+}
+
+
+def _normalise_header(header: str) -> str:
+    """Lowercase, strip whitespace, collapse multiple spaces."""
+    return re.sub(r"\s+", " ", header.strip().lower())
+
+
+def _parse_float(value: str, field_name: str, row_num: int) -> float:
+    """Parse a numeric string to float, raising a clear error on failure."""
+    cleaned = value.strip().replace(",", "").replace("$", "")
+    if not cleaned:
+        return 0.0
+    try:
+        return float(cleaned)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Row {row_num}: '{field_name}' value '{value}' is not a valid number.",
+        )
+
+
+@router.post("/parallel/upload")
+async def upload_parallel_payroll(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Upload external payslip data (CSV) for parallel comparison with Arbor.
+
+    Accepts multipart/form-data with a CSV file. The CSV must contain columns
+    for employee identification (name or ID), salary figures (gross, net),
+    and statutory contributions (employee CPF, employer CPF).
+
+    Returns the parsed rows and a parallel_run_id for use in the compare endpoint.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    check_rate_limit(
+        f"parallel_upload:{company_id}",
+        max_requests=30,
+        window_seconds=3600,
+        action_name="parallel payroll upload",
+    )
+
+    # --- Read the uploaded file from multipart form ---
+    form = await request.form()
+    file = form.get("file")
+    if file is None:
+        raise HTTPException(status_code=400, detail="CSV file is required. Upload as 'file' field in multipart/form-data.")
+
+    content_bytes = await file.read()
+    if len(content_bytes) > 5 * 1024 * 1024:  # 5 MB limit
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 5MB.")
+
+    filename = getattr(file, "filename", "upload.csv") or "upload.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are accepted.")
+
+    # --- Decode and parse CSV ---
+    try:
+        text = content_bytes.decode("utf-8-sig")  # Handle BOM from Excel exports
+    except UnicodeDecodeError:
+        try:
+            text = content_bytes.decode("latin-1")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="Unable to decode CSV file. Use UTF-8 or Latin-1 encoding.")
+
+    reader = csv.reader(io.StringIO(text))
+
+    # --- Parse header row ---
+    try:
+        raw_headers = next(reader)
+    except StopIteration:
+        raise HTTPException(status_code=400, detail="CSV file is empty.")
+
+    column_map: dict[int, str] = {}
+    for idx, raw_header in enumerate(raw_headers):
+        normalised = _normalise_header(raw_header)
+        canonical = _PARALLEL_CSV_COLUMN_MAP.get(normalised)
+        if canonical:
+            column_map[idx] = canonical
+
+    # Validate that required columns are present
+    mapped_fields = set(column_map.values())
+    missing_required = _PARALLEL_CSV_REQUIRED_COLUMNS - mapped_fields
+    if missing_required:
+        raise HTTPException(
+            status_code=400,
+            detail=f"CSV is missing required columns: {', '.join(sorted(missing_required))}. "
+            f"Found: {', '.join(sorted(mapped_fields))}.",
+        )
+
+    has_name = "employee_name" in mapped_fields
+    has_id = "employee_id" in mapped_fields
+    if not has_name and not has_id:
+        raise HTTPException(
+            status_code=400,
+            detail="CSV must contain at least one of 'Employee Name' or 'Employee ID' columns.",
+        )
+
+    # --- Parse data rows ---
+    rows: list[dict] = []
+    for row_num, raw_row in enumerate(reader, start=2):
+        if not any(cell.strip() for cell in raw_row):
+            continue  # Skip blank rows
+
+        row_data: dict = {}
+        for col_idx, field_name in column_map.items():
+            if col_idx < len(raw_row):
+                row_data[field_name] = raw_row[col_idx].strip()
+            else:
+                row_data[field_name] = ""
+
+        # Validate employee identification
+        emp_name = row_data.get("employee_name", "").strip()
+        emp_id = row_data.get("employee_id", "").strip()
+        if not emp_name and not emp_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Row {row_num}: must have at least an employee name or employee ID.",
+            )
+
+        # Parse numeric fields
+        parsed_row = {
+            "employee_name": emp_name,
+            "employee_id": emp_id,
+            "period": row_data.get("period", ""),
+            "gross_salary": _parse_float(row_data.get("gross_salary", "0"), "Gross Salary", row_num),
+            "net_salary": _parse_float(row_data.get("net_salary", "0"), "Net Salary", row_num),
+            "employee_cpf": _parse_float(row_data.get("employee_cpf", "0"), "Employee CPF", row_num),
+            "employer_cpf": _parse_float(row_data.get("employer_cpf", "0"), "Employer CPF", row_num),
+            "sdl": _parse_float(row_data.get("sdl", "0"), "SDL", row_num),
+        }
+        rows.append(parsed_row)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="CSV contains no data rows.")
+
+    # --- Store the parallel run ---
+    run_id = str(uuid.uuid4())
+
+    while len(_parallel_runs) >= MAX_PARALLEL_RUNS:
+        _parallel_runs.popitem(last=False)  # Evict oldest entry
+
+    _parallel_runs[run_id] = {
+        "id": run_id,
+        "company_id": company_id,
+        "filename": filename,
+        "uploaded_by": int(current_user.get("sub", 0)),
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "row_count": len(rows),
+        "rows": rows,
+    }
+
+    return {
+        "parallel_run_id": run_id,
+        "filename": filename,
+        "row_count": len(rows),
+        "rows": rows,
+    }
+
+
+@router.post("/parallel/compare")
+async def compare_parallel_payroll(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Compare external payslip data against an Arbor payroll run.
+
+    For each employee present in both datasets, compares gross salary, net salary,
+    employee CPF, and employer CPF. Gross salary must match exactly; other fields
+    allow a $1.00 tolerance (statutory rounding differences are common).
+
+    Returns per-employee comparison details and an overall summary.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    check_rate_limit(
+        f"parallel_compare:{company_id}",
+        max_requests=60,
+        window_seconds=3600,
+        action_name="parallel payroll comparison",
+    )
+
+    body = await request.json()
+    parallel_run_id = body.get("parallel_run_id", "")
+    payroll_run_id = body.get("payroll_run_id")
+
+    if not parallel_run_id:
+        raise HTTPException(status_code=400, detail="parallel_run_id is required.")
+    if payroll_run_id is None:
+        raise HTTPException(status_code=400, detail="payroll_run_id is required (Arbor payroll run).")
+
+    try:
+        payroll_run_id = int(payroll_run_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="payroll_run_id must be an integer.")
+
+    # --- Retrieve the parallel run ---
+    parallel = _parallel_runs.get(parallel_run_id)
+    if parallel is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Parallel run not found. It may have expired — please re-upload.",
+        )
+    if parallel.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Parallel run not found.")
+
+    # --- Retrieve the Arbor payroll run ---
+    arbor_run = _dataflow_read("PayrollRunReadNode", payroll_run_id)
+    if arbor_run is None or arbor_run.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Arbor payroll run not found.")
+
+    payslips = _dataflow_list("PayslipListNode", {"payroll_run_id": payroll_run_id})
+
+    # --- Build Arbor lookup keyed by normalised name and employee ID ---
+    arbor_by_name: dict[str, dict] = {}
+    arbor_by_emp_id: dict[str, dict] = {}
+
+    for ps in payslips:
+        emp_id = ps.get("employee_id")
+        emp_records = _dataflow_list("EmployeeListNode", {"id": emp_id}, limit=1)
+        emp = emp_records[0] if emp_records else {}
+        user = _find_user_by_id(emp.get("user_id")) if emp else None
+        emp_name = (user.get("name", "") if user else "").strip()
+        emp_id_internal = (emp.get("employee_id_internal", "") or "").strip()
+
+        arbor_record = {
+            "employee_name": emp_name,
+            "employee_id_internal": emp_id_internal,
+            "gross_salary": ps.get("gross_salary", 0.0),
+            "net_salary": ps.get("net_salary", 0.0),
+            "employee_cpf": ps.get("employee_cpf", 0.0),
+            "employer_cpf": ps.get("employer_cpf", 0.0),
+            "sdl": ps.get("sdl", 0.0),
+        }
+
+        if emp_name:
+            arbor_by_name[emp_name.lower()] = arbor_record
+        if emp_id_internal:
+            arbor_by_emp_id[emp_id_internal.lower()] = arbor_record
+
+    # --- Compare each external row against Arbor ---
+    comparisons: list[dict] = []
+    total_matches = 0
+    total_mismatches = 0
+    unmatched_external: list[dict] = []
+    largest_deviation = 0.0
+    largest_deviation_field = ""
+    largest_deviation_employee = ""
+
+    TOLERANCE_EXACT = 0.005  # Gross: essentially exact (half-cent for float precision)
+    TOLERANCE_STATUTORY = 1.005  # CPF/net: $1.00 tolerance for rounding
+
+    for ext_row in parallel["rows"]:
+        ext_name = ext_row.get("employee_name", "").strip()
+        ext_id = ext_row.get("employee_id", "").strip()
+
+        # Try to match: first by employee ID, then by name
+        arbor_record = None
+        matched_by = ""
+        if ext_id and ext_id.lower() in arbor_by_emp_id:
+            arbor_record = arbor_by_emp_id[ext_id.lower()]
+            matched_by = "employee_id"
+        elif ext_name and ext_name.lower() in arbor_by_name:
+            arbor_record = arbor_by_name[ext_name.lower()]
+            matched_by = "employee_name"
+
+        if arbor_record is None:
+            unmatched_external.append({
+                "employee_name": ext_name,
+                "employee_id": ext_id,
+                "reason": "No matching employee found in Arbor payroll run.",
+            })
+            continue
+
+        # Compare fields
+        fields_to_compare = [
+            ("gross_salary", TOLERANCE_EXACT),
+            ("net_salary", TOLERANCE_STATUTORY),
+            ("employee_cpf", TOLERANCE_STATUTORY),
+            ("employer_cpf", TOLERANCE_STATUTORY),
+        ]
+
+        field_results: list[dict] = []
+        row_has_mismatch = False
+
+        for field_name, tolerance in fields_to_compare:
+            ext_val = ext_row.get(field_name, 0.0)
+            arbor_val = arbor_record.get(field_name, 0.0)
+            diff = round(ext_val - arbor_val, 2)
+            abs_diff = abs(diff)
+            is_match = abs_diff < tolerance
+
+            field_results.append({
+                "field": field_name,
+                "external": round(ext_val, 2),
+                "arbor": round(arbor_val, 2),
+                "difference": diff,
+                "match": is_match,
+                "tolerance": round(tolerance, 2),
+            })
+
+            if not is_match:
+                row_has_mismatch = True
+                if abs_diff > largest_deviation:
+                    largest_deviation = abs_diff
+                    largest_deviation_field = field_name
+                    largest_deviation_employee = ext_name or ext_id
+
+        # Also compare SDL if both datasets have it
+        ext_sdl = ext_row.get("sdl", 0.0)
+        arbor_sdl = arbor_record.get("sdl", 0.0)
+        if ext_sdl > 0 or arbor_sdl > 0:
+            sdl_diff = round(ext_sdl - arbor_sdl, 2)
+            sdl_match = abs(sdl_diff) < TOLERANCE_STATUTORY
+            field_results.append({
+                "field": "sdl",
+                "external": round(ext_sdl, 2),
+                "arbor": round(arbor_sdl, 2),
+                "difference": sdl_diff,
+                "match": sdl_match,
+                "tolerance": round(TOLERANCE_STATUTORY, 2),
+            })
+            if not sdl_match:
+                row_has_mismatch = True
+                if abs(sdl_diff) > largest_deviation:
+                    largest_deviation = abs(sdl_diff)
+                    largest_deviation_field = "sdl"
+                    largest_deviation_employee = ext_name or ext_id
+
+        if row_has_mismatch:
+            total_mismatches += 1
+        else:
+            total_matches += 1
+
+        comparisons.append({
+            "employee_name": ext_name or arbor_record.get("employee_name", ""),
+            "employee_id": ext_id or arbor_record.get("employee_id_internal", ""),
+            "matched_by": matched_by,
+            "overall_match": not row_has_mismatch,
+            "fields": field_results,
+        })
+
+    # --- Build unmatched Arbor employees (in Arbor but not in external) ---
+    matched_arbor_names = set()
+    matched_arbor_ids = set()
+    for comp in comparisons:
+        if comp.get("matched_by") == "employee_name":
+            matched_arbor_names.add((comp.get("employee_name") or "").lower())
+        elif comp.get("matched_by") == "employee_id":
+            matched_arbor_ids.add((comp.get("employee_id") or "").lower())
+
+    unmatched_arbor: list[dict] = []
+    for ps in payslips:
+        emp_id = ps.get("employee_id")
+        emp_records = _dataflow_list("EmployeeListNode", {"id": emp_id}, limit=1)
+        emp = emp_records[0] if emp_records else {}
+        user = _find_user_by_id(emp.get("user_id")) if emp else None
+        emp_name = (user.get("name", "") if user else "").strip()
+        emp_id_internal = (emp.get("employee_id_internal", "") or "").strip()
+
+        name_matched = emp_name and emp_name.lower() in matched_arbor_names
+        id_matched = emp_id_internal and emp_id_internal.lower() in matched_arbor_ids
+        if not name_matched and not id_matched:
+            unmatched_arbor.append({
+                "employee_name": emp_name,
+                "employee_id_internal": emp_id_internal,
+                "reason": "Employee exists in Arbor but not in uploaded external data.",
+            })
+
+    return {
+        "parallel_run_id": parallel_run_id,
+        "payroll_run_id": payroll_run_id,
+        "arbor_run_period": f"{arbor_run.get('period_start', '')} to {arbor_run.get('period_end', '')}",
+        "arbor_run_status": arbor_run.get("status", ""),
+        "summary": {
+            "employees_compared": len(comparisons),
+            "full_matches": total_matches,
+            "mismatches": total_mismatches,
+            "unmatched_external": len(unmatched_external),
+            "unmatched_arbor": len(unmatched_arbor),
+            "largest_deviation": round(largest_deviation, 2),
+            "largest_deviation_field": largest_deviation_field,
+            "largest_deviation_employee": largest_deviation_employee,
+        },
+        "comparisons": comparisons,
+        "unmatched_external": unmatched_external,
+        "unmatched_arbor": unmatched_arbor,
+    }

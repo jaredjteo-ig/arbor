@@ -85,6 +85,7 @@ def create_platform(settings: Settings | None = None) -> Nexus:
         cors_origins=settings.cors_origins_list,
         cors_allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         cors_allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        cors_expose_headers=["Content-Disposition", "X-Request-ID"],
         cors_allow_credentials=True,
         rate_limit=100,
         enable_durability=False,

@@ -77,6 +77,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<PayslipDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   async function handleToggle() {
     if (expanded) {
@@ -274,19 +275,26 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
                 </span>
               </div>
 
-              {/* Download placeholder */}
+              {/* Download PDF */}
               <div className="pt-2">
                 <AppButton
                   variant="outlined"
                   size="sm"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    /* PDF generation to be implemented in a later task */
+                    setDownloadingPdf(true);
+                    try {
+                      await payrollApi.downloadMyPayslipPdf(payslip.payslip_id);
+                    } catch {
+                      /* Download failed — browser will show network error */
+                    } finally {
+                      setDownloadingPdf(false);
+                    }
                   }}
-                  disabled
+                  disabled={downloadingPdf}
                 >
                   <Download className="h-4 w-4 mr-1" />
-                  Download PDF
+                  {downloadingPdf ? "Downloading..." : "Download PDF"}
                 </AppButton>
               </div>
             </div>

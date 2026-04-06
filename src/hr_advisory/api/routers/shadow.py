@@ -458,6 +458,295 @@ def _build_annotations(
     return result
 
 
+# ── Compliance context helper ────────────────────────────────
+
+
+def _build_compliance_context(company_id: int | None) -> tuple[ComplianceCheckInput, dict[str, Any]]:
+    """Build a ComplianceCheckInput from the company's actual data.
+
+    Queries the company profile, active employees, policies, payroll
+    runs, employee documents, and content updates to assemble a
+    real compliance picture instead of using generic defaults.
+
+    Args:
+        company_id: The company ID, or None if unavailable.
+
+    Returns:
+        A tuple of (ComplianceCheckInput, extra_context_dict) where
+        extra_context_dict contains supplementary data for the
+        context response (employee breakdown, pending items, alerts).
+    """
+    # Conservative defaults — used when company_id is missing or queries fail.
+    default_input = ComplianceCheckInput(
+        company_size=10,
+        has_foreign_workers=True,
+        sector="general",
+        has_ket_issued=False,
+        has_written_contracts=False,
+        has_payslip_system=True,
+        has_leave_records=True,
+        has_ot_records=False,
+        has_safety_policy=False,
+        has_grievance_process=False,
+        has_cpf_registered=True,
+        has_fwa_policy=False,
+    )
+
+    if company_id is None:
+        return default_input, {}
+
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401 — ensure models are registered
+
+    extra: dict[str, Any] = {}
+
+    # ── 1. Fetch company profile ─────────────────────────────
+    company: dict = {}
+    try:
+        wf = WorkflowBuilder()
+        wf.add_node("CompanyReadNode", "read", {"id": company_id})
+        runtime = LocalRuntime()
+        results, _ = runtime.execute(wf.build())
+        raw = results.get("read")
+        if isinstance(raw, dict):
+            company = raw
+    except Exception:
+        logger.debug("Compliance context: failed to read company %s", company_id, exc_info=True)
+
+    sector = company.get("sector") or "general"
+    # Headcount from company profile fields
+    headcount_local = company.get("headcount_local", 0) or 0
+    headcount_pr = company.get("headcount_pr", 0) or 0
+    headcount_ep = company.get("headcount_ep", 0) or 0
+    headcount_sp = company.get("headcount_sp", 0) or 0
+    headcount_wp = company.get("headcount_wp", 0) or 0
+    profile_total = headcount_local + headcount_pr + headcount_ep + headcount_sp + headcount_wp
+
+    # ── 2. Count active employees by pass type ───────────────
+    employees: list = []
+    try:
+        wf_emp = WorkflowBuilder()
+        wf_emp.add_node(
+            "EmployeeListNode",
+            "list",
+            {"filter": {"company_id": company_id, "is_active": True}, "limit": 10000, "enable_cache": False},
+        )
+        runtime_emp = LocalRuntime()
+        raw_emp, _ = runtime_emp.execute(wf_emp.build())
+        raw_emp_data = raw_emp["list"]
+        if isinstance(raw_emp_data, dict) and "records" in raw_emp_data:
+            employees = raw_emp_data["records"]
+        elif isinstance(raw_emp_data, list):
+            employees = raw_emp_data
+    except Exception:
+        logger.debug("Compliance context: failed to list employees for company %s", company_id, exc_info=True)
+
+    # Prefer actual employee count; fall back to profile headcounts
+    company_size = len(employees) if employees else (profile_total if profile_total > 0 else 10)
+
+    # Determine foreign worker presence from employee records
+    foreign_pass_types = {"ep", "sp", "wp", "s_pass", "ltvp", "dp"}
+    foreign_statuses = {"foreigner"}
+    foreign_count = 0
+    for emp in employees:
+        pass_type = (emp.get("pass_type") or "").lower()
+        imm_status = (emp.get("immigration_status") or "").lower()
+        if pass_type in foreign_pass_types or imm_status in foreign_statuses:
+            foreign_count += 1
+
+    # Fall back to profile headcounts if no employees in DB yet
+    if not employees and (headcount_ep + headcount_sp + headcount_wp) > 0:
+        foreign_count = headcount_ep + headcount_sp + headcount_wp
+
+    has_foreign_workers = foreign_count > 0
+
+    extra["employee_count"] = company_size
+    extra["foreign_worker_count"] = foreign_count
+    extra["employee_breakdown"] = {
+        "local": headcount_local or sum(
+            1 for e in employees
+            if (e.get("immigration_status") or "").lower() in ("citizen", "")
+            and (e.get("pass_type") or "").lower() in ("citizen", "")
+        ),
+        "pr": headcount_pr or sum(
+            1 for e in employees
+            if (e.get("immigration_status") or "").lower().startswith("pr")
+        ),
+        "ep": headcount_ep or sum(1 for e in employees if (e.get("pass_type") or "").lower() == "ep"),
+        "sp": headcount_sp or sum(
+            1 for e in employees if (e.get("pass_type") or "").lower() in ("sp", "s_pass")
+        ),
+        "wp": headcount_wp or sum(1 for e in employees if (e.get("pass_type") or "").lower() == "wp"),
+    }
+
+    # ── 3. Check company policies ────────────────────────────
+    policies: list = []
+    try:
+        wf_pol = WorkflowBuilder()
+        wf_pol.add_node(
+            "CompanyPolicyListNode",
+            "list",
+            {"filter": {"company_id": company_id, "is_active": True}, "limit": 200, "enable_cache": False},
+        )
+        runtime_pol = LocalRuntime()
+        raw_pol, _ = runtime_pol.execute(wf_pol.build())
+        raw_pol_data = raw_pol["list"]
+        if isinstance(raw_pol_data, dict) and "records" in raw_pol_data:
+            policies = raw_pol_data["records"]
+        elif isinstance(raw_pol_data, list):
+            policies = raw_pol_data
+    except Exception:
+        logger.debug("Compliance context: failed to list policies for company %s", company_id, exc_info=True)
+
+    # Map policy categories/types to compliance flags
+    policy_categories = {(p.get("category") or "").lower() for p in policies}
+    policy_types = {(p.get("policy_type") or "").lower() for p in policies}
+    all_policy_tags = policy_categories | policy_types
+
+    has_safety_policy = bool(
+        {"workplace_safety", "safety", "wsh"} & all_policy_tags
+    )
+    has_fwa_policy = bool(
+        {"fwa", "flexible_work", "flexible_work_arrangement"} & all_policy_tags
+    )
+    has_grievance_process = bool(
+        {"grievance", "fair_employment", "code_of_conduct"} & all_policy_tags
+    )
+    has_written_contracts = bool(
+        {"employment_terms", "handbook", "contract"} & all_policy_tags
+    )
+
+    # ── 4. Check for KET documents ───────────────────────────
+    has_ket_issued = False
+    if employees:
+        try:
+            wf_docs = WorkflowBuilder()
+            wf_docs.add_node(
+                "EmployeeDocumentListNode",
+                "list",
+                {"filter": {"company_id": company_id, "document_type": "ket"}, "limit": 1, "enable_cache": False},
+            )
+            runtime_docs = LocalRuntime()
+            raw_docs, _ = runtime_docs.execute(wf_docs.build())
+            raw_docs_data = raw_docs["list"]
+            if isinstance(raw_docs_data, dict) and "records" in raw_docs_data:
+                has_ket_issued = len(raw_docs_data["records"]) > 0
+            elif isinstance(raw_docs_data, list):
+                has_ket_issued = len(raw_docs_data) > 0
+        except Exception:
+            logger.debug("Compliance context: failed to check KET documents for company %s", company_id, exc_info=True)
+
+    # ── 5. Check payroll system (has any payroll runs) ───────
+    has_payslip_system = False
+    try:
+        wf_pay = WorkflowBuilder()
+        wf_pay.add_node(
+            "PayrollRunListNode",
+            "list",
+            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
+        )
+        runtime_pay = LocalRuntime()
+        raw_pay, _ = runtime_pay.execute(wf_pay.build())
+        raw_pay_data = raw_pay["list"]
+        if isinstance(raw_pay_data, dict) and "records" in raw_pay_data:
+            has_payslip_system = len(raw_pay_data["records"]) > 0
+        elif isinstance(raw_pay_data, list):
+            has_payslip_system = len(raw_pay_data) > 0
+    except Exception:
+        logger.debug("Compliance context: failed to check payroll runs for company %s", company_id, exc_info=True)
+
+    # ── 6. Check leave records ───────────────────────────────
+    has_leave_records = False
+    try:
+        wf_leave = WorkflowBuilder()
+        wf_leave.add_node(
+            "LeaveTypeConfigListNode",
+            "list",
+            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
+        )
+        runtime_leave = LocalRuntime()
+        raw_leave, _ = runtime_leave.execute(wf_leave.build())
+        raw_leave_data = raw_leave["list"]
+        if isinstance(raw_leave_data, dict) and "records" in raw_leave_data:
+            has_leave_records = len(raw_leave_data["records"]) > 0
+        elif isinstance(raw_leave_data, list):
+            has_leave_records = len(raw_leave_data) > 0
+    except Exception:
+        logger.debug("Compliance context: failed to check leave config for company %s", company_id, exc_info=True)
+
+    # ── 7. Check for OT records (shift templates imply OT tracking) ─
+    has_ot_records = False
+    try:
+        wf_shift = WorkflowBuilder()
+        wf_shift.add_node(
+            "ShiftTemplateListNode",
+            "list",
+            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
+        )
+        runtime_shift = LocalRuntime()
+        raw_shift, _ = runtime_shift.execute(wf_shift.build())
+        raw_shift_data = raw_shift["list"]
+        if isinstance(raw_shift_data, dict) and "records" in raw_shift_data:
+            has_ot_records = len(raw_shift_data["records"]) > 0
+        elif isinstance(raw_shift_data, list):
+            has_ot_records = len(raw_shift_data) > 0
+    except Exception:
+        logger.debug("Compliance context: failed to check shift templates for company %s", company_id, exc_info=True)
+
+    # ── 8. Count pending compliance items & recent alerts ────
+    pending_items = 0
+    recent_alerts = 0
+    try:
+        wf_updates = WorkflowBuilder()
+        wf_updates.add_node(
+            "ContentUpdateListNode",
+            "list",
+            {"filter": {"status": "published"}, "limit": 50, "enable_cache": False},
+        )
+        runtime_updates = LocalRuntime()
+        raw_updates, _ = runtime_updates.execute(wf_updates.build())
+        raw_updates_data = raw_updates["list"]
+        updates_list: list = []
+        if isinstance(raw_updates_data, dict) and "records" in raw_updates_data:
+            updates_list = raw_updates_data["records"]
+        elif isinstance(raw_updates_data, list):
+            updates_list = raw_updates_data
+
+        recent_alerts = len(updates_list)
+        # Count high/critical urgency updates as pending items
+        pending_items = sum(
+            1 for u in updates_list
+            if (u.get("urgency") or "").lower() in ("high", "critical")
+        )
+    except Exception:
+        logger.debug("Compliance context: failed to check content updates for company %s", company_id, exc_info=True)
+
+    extra["pending_compliance_items"] = pending_items
+    extra["recent_regulatory_alerts"] = recent_alerts
+
+    # ── 9. Determine CPF registration (assume registered if payroll exists) ─
+    has_cpf_registered = has_payslip_system or bool(company.get("uen"))
+
+    compliance_input = ComplianceCheckInput(
+        company_size=company_size,
+        has_foreign_workers=has_foreign_workers,
+        sector=sector,
+        has_ket_issued=has_ket_issued,
+        has_written_contracts=has_written_contracts,
+        has_payslip_system=has_payslip_system,
+        has_leave_records=has_leave_records,
+        has_ot_records=has_ot_records,
+        has_safety_policy=has_safety_policy,
+        has_grievance_process=has_grievance_process,
+        has_cpf_registered=has_cpf_registered,
+        has_fwa_policy=has_fwa_policy,
+    )
+
+    return compliance_input, extra
+
+
 # ── Leave context helper (T164) ──────────────────────────────
 
 
@@ -573,24 +862,9 @@ async def shadow_context(
         company_id = None
     page_domains = _PAGE_DOMAINS.get(page, _PAGE_DOMAINS["dashboard"])
 
-    # Run compliance check with a default input profile.
-    # In production this would load the company's actual compliance state
-    # from the database. For now we use a conservative default that
-    # surfaces the most common gaps.
-    compliance_input = ComplianceCheckInput(
-        company_size=10,
-        has_foreign_workers=True,
-        sector="general",
-        has_ket_issued=False,
-        has_written_contracts=False,
-        has_payslip_system=True,
-        has_leave_records=True,
-        has_ot_records=False,
-        has_safety_policy=False,
-        has_grievance_process=False,
-        has_cpf_registered=True,
-        has_fwa_policy=False,
-    )
+    # Build compliance input from the company's actual data (policies,
+    # employees, payroll runs, documents) instead of generic defaults.
+    compliance_input, compliance_extra = _build_compliance_context(company_id)
 
     result = check_compliance(compliance_input)
 
@@ -612,16 +886,40 @@ async def shadow_context(
         len(annotations),
     )
 
+    # Identify which compliance domains have issues
+    risk_domains: list[dict[str, str]] = []
+    seen_domains: set[str] = set()
+    for finding in result.findings:
+        if finding.domain not in seen_domains and finding.severity in ("critical", "high"):
+            risk_domains.append({
+                "domain": finding.domain,
+                "severity": finding.severity,
+                "issue": finding.issue,
+            })
+            seen_domains.add(finding.domain)
+
     response: dict = {
         "page": page,
         "company_id": company_id,
         "compliance_score": result.score,
         "risk_tier": result.risk_tier,
+        "risk_domains": risk_domains,
+        "pending_compliance_items": compliance_extra.get("pending_compliance_items", 0),
+        "recent_regulatory_alerts": compliance_extra.get("recent_regulatory_alerts", 0),
         "insights": insights,
         "alerts": alerts,
         "annotations": annotations,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+    # Include workforce breakdown when available
+    if compliance_extra.get("employee_count"):
+        response["workforce"] = {
+            "total": compliance_extra["employee_count"],
+            "foreign_workers": compliance_extra.get("foreign_worker_count", 0),
+            "breakdown": compliance_extra.get("employee_breakdown", {}),
+        }
+
     if leave_context:
         response["leave_context"] = leave_context
 

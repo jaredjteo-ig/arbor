@@ -1,6 +1,6 @@
 /* ── Payroll API Service ──────────────────────────────────── */
 
-import { apiClient } from "./client";
+import { apiClient, getValidAccessToken } from "./client";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -197,6 +197,77 @@ export const payrollApi = {
     return { ...resp.payslip, items: resp.items };
   },
 
+  /**
+   * Employee: download own payslip as PDF.
+   * Triggers a browser download of the file.
+   */
+  async downloadMyPayslipPdf(payslipId: number): Promise<void> {
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const token = await getValidAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const response = await fetch(
+      `${API_BASE}/payroll/my-payslips/${payslipId}/pdf`,
+      {
+        method: "GET",
+        headers,
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to download payslip PDF (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch?.[1] ?? `payslip-${payslipId}.pdf`;
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  },
+
+  /**
+   * Admin: download payslip PDF for a specific employee in a payroll run.
+   * Triggers a browser download of the file.
+   */
+  async downloadPayslipPdf(runId: number, payslipId: number): Promise<void> {
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const token = await getValidAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const response = await fetch(
+      `${API_BASE}/payroll/runs/${runId}/payslips/${payslipId}/pdf`,
+      { method: "POST", headers },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to download payslip PDF (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch?.[1] ?? `payslip-${payslipId}.pdf`;
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  },
+
   /** CPF year-to-date for an employee. */
   cpfYtd(employeeId: number, year: number): Promise<CpfYtd> {
     return apiClient.get<CpfYtd>(`/payroll/cpf-ytd/${employeeId}`, {
@@ -217,4 +288,93 @@ export const payrollApi = {
       year: String(year),
     });
   },
+
+  /* ── Parallel payroll run (external HRIS comparison) ───── */
+
+  /** Upload external payslip CSV for parallel comparison. */
+  async uploadParallelRun(file: File): Promise<ParallelUploadResult> {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiClient.postFormData<ParallelUploadResult>(
+      "/payroll/parallel/upload",
+      formData,
+    );
+  },
+
+  /** Compare an uploaded parallel run against an Arbor payroll run. */
+  async compareParallelRun(
+    parallelRunId: string,
+    payrollRunId: number,
+  ): Promise<ParallelCompareResult> {
+    return apiClient.post<ParallelCompareResult>("/payroll/parallel/compare", {
+      parallel_run_id: parallelRunId,
+      payroll_run_id: payrollRunId,
+    });
+  },
 };
+
+/* ── Parallel Payroll Types ──────────────────────────────── */
+
+export interface ParallelRow {
+  employee_name: string;
+  employee_id: string;
+  period: string;
+  gross_salary: number;
+  net_salary: number;
+  employee_cpf: number;
+  employer_cpf: number;
+  sdl: number;
+}
+
+export interface ParallelUploadResult {
+  parallel_run_id: string;
+  filename: string;
+  row_count: number;
+  rows: ParallelRow[];
+}
+
+export interface ParallelFieldComparison {
+  field: string;
+  external: number;
+  arbor: number;
+  difference: number;
+  match: boolean;
+  tolerance: number;
+}
+
+export interface ParallelEmployeeComparison {
+  employee_name: string;
+  employee_id: string;
+  matched_by: string;
+  overall_match: boolean;
+  fields: ParallelFieldComparison[];
+}
+
+export interface ParallelUnmatched {
+  employee_name: string;
+  employee_id?: string;
+  employee_id_internal?: string;
+  reason: string;
+}
+
+export interface ParallelCompareSummary {
+  employees_compared: number;
+  full_matches: number;
+  mismatches: number;
+  unmatched_external: number;
+  unmatched_arbor: number;
+  largest_deviation: number;
+  largest_deviation_field: string;
+  largest_deviation_employee: string;
+}
+
+export interface ParallelCompareResult {
+  parallel_run_id: string;
+  payroll_run_id: number;
+  arbor_run_period: string;
+  arbor_run_status: string;
+  summary: ParallelCompareSummary;
+  comparisons: ParallelEmployeeComparison[];
+  unmatched_external: ParallelUnmatched[];
+  unmatched_arbor: ParallelUnmatched[];
+}
