@@ -7,6 +7,8 @@ provides remediation recommendations based on real KB data.
 """
 
 import logging
+import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,6 +22,33 @@ from hr_advisory.kb.admin import search_provisions as _kb_search_provisions
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ── Compliance status cache (5-minute TTL) ──────────────────────────
+_compliance_cache: OrderedDict[int, tuple[float, dict]] = OrderedDict()
+_CACHE_TTL = 300  # 5 minutes
+_MAX_CACHE_ENTRIES = 100
+
+
+def _get_cached_compliance(company_id: int) -> dict | None:
+    entry = _compliance_cache.get(company_id)
+    if entry and (time.time() - entry[0]) < _CACHE_TTL:
+        _compliance_cache.move_to_end(company_id)
+        return entry[1]
+    if entry:
+        del _compliance_cache[company_id]
+    return None
+
+
+def _set_cached_compliance(company_id: int, data: dict) -> None:
+    while len(_compliance_cache) >= _MAX_CACHE_ENTRIES:
+        _compliance_cache.popitem(last=False)
+    _compliance_cache[company_id] = (time.time(), data)
+
+
+def invalidate_compliance_cache(company_id: int) -> None:
+    """Call from policies router when policies change."""
+    _compliance_cache.pop(company_id, None)
+
 
 # Domains considered critical for Singapore HR compliance.
 # Missing provisions in these domains triggers "non_compliant" status.
@@ -286,6 +315,11 @@ async def compliance_status(
     """
     validate_company_access(current_user, requested_company_id=company_id)
 
+    # Check cache first
+    cached = _get_cached_compliance(company_id)
+    if cached:
+        return cached
+
     # Retrieve total provision count from KB stats
     total_provisions = 0
     try:
@@ -332,13 +366,15 @@ async def compliance_status(
         total_provisions,
     )
 
-    return {
+    result = {
         "company_id": company_id,
         "overall_status": overall_status,
         "last_check": datetime.now(timezone.utc).isoformat(),
         "total_provisions": total_provisions,
         "domains": domains_result,
     }
+    _set_cached_compliance(company_id, result)
+    return result
 
 
 # ------------------------------------------------------------------

@@ -258,19 +258,39 @@ def _find_employee_by_user_id(user_id: int, company_id: int) -> dict | None:
 
 def _find_user_by_id(user_id: int) -> dict | None:
     """Look up a user by ID."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
+    return dataflow_crud.read("User", user_id)
 
-    import hr_advisory.models  # noqa: F401
 
-    wf = WorkflowBuilder()
-    wf.add_node("UserReadNode", "read", {"id": user_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+def _bulk_find_users(user_ids: list[int]) -> dict[int, dict]:
+    """Bulk-fetch users by IDs. Returns {user_id: user_dict}."""
+    if not user_ids:
+        return {}
+    all_users = dataflow_crud.list_records("User", {}, limit=10000)
+    id_set = set(user_ids)
+    return {u["id"]: u for u in all_users if u.get("id") in id_set}
+
+
+def _serialize_employee_summary(emp: dict, user: dict | None = None) -> dict:
+    """Lightweight serializer for list view — no decryption, no sensitive fields."""
+    return {
+        "id": emp.get("id"),
+        "user_id": emp.get("user_id"),
+        "company_id": emp.get("company_id"),
+        "email": user.get("email", "") if user else "",
+        "name": user.get("name", "") if user else "",
+        "employee_id_internal": emp.get("employee_id_internal", ""),
+        "department": emp.get("department", ""),
+        "designation": emp.get("designation", ""),
+        "employment_type": emp.get("employment_type", ""),
+        "start_date": emp.get("start_date", ""),
+        "end_date": emp.get("end_date", ""),
+        "is_active": emp.get("is_active", True),
+        "confirmation_status": emp.get("confirmation_status", "on_probation"),
+        "nationality": emp.get("nationality", ""),
+        "pass_type": emp.get("pass_type", ""),
+        "photo_url": emp.get("photo_url", ""),
+        "phone": emp.get("phone", ""),
+    }
 
 
 def _list_policies_for_company(company_id: int) -> list:
@@ -1659,11 +1679,15 @@ async def list_employees(
 
     employees = _list_employees_for_company(company_id)
 
-    # Enrich with user details
+    # Bulk-fetch user details (1 query instead of N)
+    user_ids = [emp.get("user_id") for emp in employees if emp.get("user_id")]
+    users_map = _bulk_find_users(user_ids)
+
+    # Lightweight serialization (no decryption for list view)
     enriched = []
     for emp in employees:
-        user = _find_user_by_id(emp.get("user_id"))
-        enriched.append(_serialize_employee(emp, user))
+        user = users_map.get(emp.get("user_id"))
+        enriched.append(_serialize_employee_summary(emp, user))
 
     return {
         "employees": enriched,
