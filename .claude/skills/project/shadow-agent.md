@@ -300,6 +300,37 @@ _MAX_OBSERVATIONS = 10000       # Per-user observation limit
 _MAX_MEMORY_USERS = 10000       # Users with memory
 ```
 
+## HRIS Integration (Added 2026-04-06)
+
+### Context Sources
+
+`_build_compliance_context(company_id)` queries 8 sources: company profile, employees, policies, KET documents, payroll runs, leave configs, shift templates, content updates. Returns real compliance data. Leave context adds pending count + upcoming team leave (7 days).
+
+### Observation Personalisation
+
+`_generate_suggestions_from_observations()` in nudges.py: 30-day window, frequency-based mapping:
+
+- Payroll views -> "Next payroll due in X days"
+- Leave views -> "X pending leave approvals"
+- Employee views -> "X probation employees ending this month"
+- Compliance views -> "Compliance score X%"
+
+### HRIS Tools
+
+- `payroll.validate` (autonomous) -> 4 checks: employee coverage, CPF rates, zero-salary, variance >20%
+- `leave.team_balances` (autonomous) -> aggregated balances, low-balance alerts, pending count
+- Both require `owner`/`hr_manager` role
+
+### CPF Briefing
+
+`_cpf_validation()`: deadline reminder (14th within 14 days), month-over-month variance >10% flagged with explanation.
+
+### Attention Widget
+
+- `useShadowNudges` hook: 60s polling, session-scoped seen tracking
+- ShadowWidget: pulsing red badge, `shadow-nudge-pulse` animation, accessible aria-label
+- `prefers-reduced-motion` respected
+
 ## Related Docs
 
 - `docs/00-authority/08-shadow-agent.md` — Architecture authority doc

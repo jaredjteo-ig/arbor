@@ -155,6 +155,18 @@ Ollama base_url validation blocks cloud metadata endpoints (169.254.169.254, met
 CLI tool: `OLD_LLM_KEY=... NEW_LLM_KEY=... python -m hr_advisory.cli.rotate_llm_keys`
 Process restart required after rotation (lru_cache on Fernet instance).
 
+## Red Team Hardening (Rounds 8-9, 2026-04-06)
+
+**SSRF Prevention**: `_resolve_and_validate_url(url)` in llm_config.py resolves hostname via `socket.getaddrinfo()`, checks each IP against blocked ranges (loopback, private, link-local, metadata, IPv4-mapped IPv6). Applied to Ollama and custom LLM validation.
+
+**Content-Disposition Sanitization**: `_sanitize_filename(title, extension)` strips all chars except `[a-zA-Z0-9\-_. ]`, collapses hyphens, truncates to 100 chars. Applied to all download endpoints (documents, payroll exports, payslip PDFs).
+
+**NaN/Infinity Validation**: `math.isfinite()` required on all monetary values from user input. NaN bypasses all comparisons (`NaN > X` is always `False`). Applied to: claim category limits, parallel CSV upload, constraint fields.
+
+**Rate Limiter Bounds**: `OrderedDict` with `MAX_RATE_KEYS = 50,000` and LRU eviction on middleware + webhook rate limiters. `_generated_docs` bounded to 1,000 entries.
+
+**Role Gating**: Standardized `owner || hr_manager` for admin pages (not consultant). Shadow financial tools require `require_role("owner", "hr_manager")`. Google OAuth new users get `role="employee"` (never auto-owner).
+
 ## Consult Agent
 
 For security work: use the built-in `security-reviewer` agent

@@ -66,6 +66,20 @@ Client: GET /document/download/{document_id}
 - `src/hr_advisory/api/routers/document.py` — Document endpoints
 - `docs/02-api-reference.md` — Full API documentation
 
+## Payslip PDF Generation (reportlab)
+
+`generate_payslip_pdf()` in `services/statutory_files.py` produces A4 PDF via reportlab Canvas:
+
+- Company header (name, UEN, dark blue accent line)
+- Employee info grid (name, masked NRIC, employee ID, pay date, department, designation)
+- Earnings section with line items + gross total
+- Deductions section with line items + total
+- Bold net salary row with accent border
+- Employer contributions (CPF, SDL, FWL) labeled "for reference"
+- Payment mode info, EA s88A compliance footer
+
+Lazy import of reportlab (optional dependency). Admin: `POST /payroll/runs/{id}/payslips/{id}/pdf`. Employee: `GET /payroll/my-payslips/{id}/pdf`. CORS exposes `Content-Disposition` for filename. Frontend uses raw `fetch()` with blob download (not `apiClient`, which parses JSON).
+
 ## Consult Agent
 
 For document work: `arbor-platform-specialist`

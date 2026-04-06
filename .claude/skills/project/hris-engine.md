@@ -4,20 +4,20 @@ Full HRIS operations: payroll, leave, claims, attendance, shifts, employee lifec
 
 ## Module Map
 
-| Module      | Router                          | Models                                                                                                                                      | Service                                                         | Frontend                                                   |
-| ----------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------- |
-| Payroll     | `api/routers/payroll.py`        | PayrollRun, Payslip, PayslipItem, PayslipLineItem, CpfYtdRecord, TaxFiling, PayItem, PayScheme, PayslipSettings                            | `services/payroll_calculator.py`, `services/statutory_files.py` | `/payroll`, `/payroll/[id]`, `/my-payslips`                |
-| Leave       | `api/routers/leave.py`          | LeaveTypeConfig, LeaveApplication, PublicHoliday, LeavePolicy, LeavePolicyEntitlement, LeaveEncashment                                     | —                                                               | `/leave`                                                   |
-| Claims      | `api/routers/claims.py`         | ClaimCategory, ClaimGroup, Claim, ClaimItem, ClaimAuditEntry                                                                                | —                                                               | `/claims`                                                  |
-| Attendance  | `api/routers/attendance.py`     | AttendanceSettings, AttendanceRecord, TimesheetApproval                                                                                     | —                                                               | `/attendance`                                              |
-| Shifts      | `api/routers/shifts.py`         | ShiftTemplate, ShiftAssignment, ShiftPublish                                                                                                | —                                                               | `/shifts`                                                  |
-| Employee    | `api/routers/employees.py`      | Employee (30+ fields), SalaryComponent, EmergencyContact, EmploymentEvent, EmployeeDocument, PdpaAccessLog                                  | —                                                               | `/employees`, `/employees/[id]`                            |
-| Appraisals  | `api/routers/appraisals.py`     | AppraisalTemplate, AppraisalPeriod, AppraisalReview                                                                                         | —                                                               | `/appraisals`, `/my-appraisals`                            |
-| Projects    | `api/routers/projects.py`       | Project, ProjectAssignment, ProjectTimesheet, ProjectAllocation                                                                              | —                                                               | `/projects`, `/projects/[id]`, `/my-timesheets`            |
-| Inventory   | `api/routers/inventory.py`      | InventoryLocation, InventoryCategory, InventoryItem, InventoryRequest, InventoryMovement                                                    | —                                                               | `/inventory`, `/inventory/requests`                        |
-| Recruitment | `api/routers/recruitment.py`    | JobListing, Candidate, Interview, InterviewFeedback                                                                                          | —                                                               | `/recruitment`, `/recruitment/[id]`                        |
-| Reports     | `api/routers/reports.py`        | — (aggregation queries, no dedicated models)                                                                                                 | —                                                               | `/reports`                                                 |
-| Approvals   | `api/routers/approval_groups.py`| ApprovalGroup, ApprovalGroupMember                                                                                                           | —                                                               | `/settings/approval-groups`                                |
+| Module      | Router                           | Models                                                                                                          | Service                                                         | Frontend                                        |
+| ----------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------- |
+| Payroll     | `api/routers/payroll.py`         | PayrollRun, Payslip, PayslipItem, PayslipLineItem, CpfYtdRecord, TaxFiling, PayItem, PayScheme, PayslipSettings | `services/payroll_calculator.py`, `services/statutory_files.py` | `/payroll`, `/payroll/[id]`, `/my-payslips`     |
+| Leave       | `api/routers/leave.py`           | LeaveTypeConfig, LeaveApplication, PublicHoliday, LeavePolicy, LeavePolicyEntitlement, LeaveEncashment          | —                                                               | `/leave`                                        |
+| Claims      | `api/routers/claims.py`          | ClaimCategory, ClaimGroup, Claim, ClaimItem, ClaimAuditEntry                                                    | —                                                               | `/claims`                                       |
+| Attendance  | `api/routers/attendance.py`      | AttendanceSettings, AttendanceRecord, TimesheetApproval                                                         | —                                                               | `/attendance`                                   |
+| Shifts      | `api/routers/shifts.py`          | ShiftTemplate, ShiftAssignment, ShiftPublish                                                                    | —                                                               | `/shifts`                                       |
+| Employee    | `api/routers/employees.py`       | Employee (30+ fields), SalaryComponent, EmergencyContact, EmploymentEvent, EmployeeDocument, PdpaAccessLog      | —                                                               | `/employees`, `/employees/[id]`                 |
+| Appraisals  | `api/routers/appraisals.py`      | AppraisalTemplate, AppraisalPeriod, AppraisalReview                                                             | —                                                               | `/appraisals`, `/my-appraisals`                 |
+| Projects    | `api/routers/projects.py`        | Project, ProjectAssignment, ProjectTimesheet, ProjectAllocation                                                 | —                                                               | `/projects`, `/projects/[id]`, `/my-timesheets` |
+| Inventory   | `api/routers/inventory.py`       | InventoryLocation, InventoryCategory, InventoryItem, InventoryRequest, InventoryMovement                        | —                                                               | `/inventory`, `/inventory/requests`             |
+| Recruitment | `api/routers/recruitment.py`     | JobListing, Candidate, Interview, InterviewFeedback                                                             | —                                                               | `/recruitment`, `/recruitment/[id]`             |
+| Reports     | `api/routers/reports.py`         | — (aggregation queries, no dedicated models)                                                                    | —                                                               | `/reports`                                      |
+| Approvals   | `api/routers/approval_groups.py` | ApprovalGroup, ApprovalGroupMember                                                                              | —                                                               | `/settings/approval-groups`                     |
 
 ## DataFlow Helper Pattern
 
@@ -58,19 +58,19 @@ async def handler(request: Request, current_user: dict = Depends(require_role("o
 
 ## Status Machines
 
-| Entity            | States                                                                         | Key Transition Rules                                                          |
-| ----------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| PayrollRun        | draft → approved → paid (+ cancelled)                                          | Approve: owner only. Cancel approved: owner only.                             |
-| LeaveApplication  | pending → approved/rejected/withdrawn/cancelled                                | Approve deducts balance. Cancel restores balance. Remarks required on reject. |
-| Claim             | draft → submitted → pending_approval → approved/rejected → paid                | Audit entry on every transition. Paid only via payroll mark-paid.             |
-| TimesheetApproval | pending → approved/rejected                                                    | Approved OT feeds into payroll.                                               |
-| ShiftAssignment   | scheduled → confirmed → completed/cancelled/no_show                            | No-show: no pay for that shift.                                               |
-| InventoryItem     | available → reserved → issued → acknowledged → returned → disposed             | Full lifecycle. reserved/issued require employee_id. Movement audit trail.    |
-| InventoryRequest  | pending → approved → issued → acknowledged / rejected                          | Approval queue. Issued triggers item state change.                            |
-| AppraisalReview   | draft → submitted → reviewed → signed_off                                      | Employee submits self-assessment, reviewer scores, sign-off locks.            |
-| JobListing        | draft → published → closed                                                     | Published listings visible to candidates. Close when position filled.         |
-| Candidate         | new → screening → interview → offered → hired / rejected                       | Hired triggers employee creation. Each stage can reject.                      |
-| ProjectTimesheet  | draft → submitted → approved → rejected                                        | Employee submits, manager approves. Approved hours feed cost calculations.    |
+| Entity            | States                                                             | Key Transition Rules                                                          |
+| ----------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| PayrollRun        | draft → approved → paid (+ cancelled)                              | Approve: owner only. Cancel approved: owner only.                             |
+| LeaveApplication  | pending → approved/rejected/withdrawn/cancelled                    | Approve deducts balance. Cancel restores balance. Remarks required on reject. |
+| Claim             | draft → submitted → pending_approval → approved/rejected → paid    | Audit entry on every transition. Paid only via payroll mark-paid.             |
+| TimesheetApproval | pending → approved/rejected                                        | Approved OT feeds into payroll.                                               |
+| ShiftAssignment   | scheduled → confirmed → completed/cancelled/no_show                | No-show: no pay for that shift.                                               |
+| InventoryItem     | available → reserved → issued → acknowledged → returned → disposed | Full lifecycle. reserved/issued require employee_id. Movement audit trail.    |
+| InventoryRequest  | pending → approved → issued → acknowledged / rejected              | Approval queue. Issued triggers item state change.                            |
+| AppraisalReview   | draft → submitted → reviewed → signed_off                          | Employee submits self-assessment, reviewer scores, sign-off locks.            |
+| JobListing        | draft → published → closed                                         | Published listings visible to candidates. Close when position filled.         |
+| Candidate         | new → screening → interview → offered → hired / rejected           | Hired triggers employee creation. Each stage can reject.                      |
+| ProjectTimesheet  | draft → submitted → approved → rejected                            | Employee submits, manager approves. Approved hours feed cost calculations.    |
 
 ## Security Checklist (Every New Endpoint)
 
@@ -119,6 +119,7 @@ POST /payroll/calculate
 ```
 
 Recruitment → Employee conversion:
+
 ```
 POST /recruitment/candidates/{id}/hire
   ├── Validate candidate status == "offered"
@@ -128,6 +129,7 @@ POST /recruitment/candidates/{id}/hire
 ```
 
 Inventory approval workflow:
+
 ```
 POST /inventory/requests
   ├── Employee creates request → status: pending
@@ -226,6 +228,7 @@ Claims approved before the payroll cut-off date are included in that month's pay
 ### Lateness / Early Departure Brackets
 
 Configurable deduction brackets in `AttendanceSettings`:
+
 ```
 lateness_brackets: [
   {"minutes": 15, "deduction": 0},       # grace period
@@ -382,19 +385,19 @@ Each stage transition is logged. Candidates carry: name, email, phone, resume_ur
 
 ### 11 Report Types
 
-| Report              | Endpoint                        | Data Source                     | Chart Type          |
-| ------------------- | ------------------------------- | ------------------------------- | ------------------- |
-| Payroll Summary     | `GET /reports/payroll-summary`  | PayrollRun + Payslip            | BarChart            |
-| CPF Contributions   | `GET /reports/cpf`              | PayslipItem (CPF lines)        | BarChart            |
-| Bank Summary        | `GET /reports/banks`            | Payslip (by bank)              | DonutChart          |
-| YTD Earnings        | `GET /reports/ytd`              | CpfYtdRecord                   | TrendLine           |
-| Payroll Variance    | `GET /reports/variance`         | Two PayrollRun periods          | BarChart            |
-| Leave Balance       | `GET /reports/leave`            | LeaveBalance                   | BarChart            |
-| Claims Summary      | `GET /reports/claims`           | Claim (by category/status)     | DonutChart          |
-| Attendance Summary  | `GET /reports/attendance`       | AttendanceRecord               | TrendLine           |
-| Employee Directory  | `GET /reports/employees`        | Employee (headcount, turnover) | BarChart            |
-| Project Costs       | `GET /reports/projects`         | ProjectTimesheet + costs       | BarChart + TrendLine|
-| Recruitment Funnel  | `GET /reports/recruitment`      | Candidate pipeline stages      | BarChart            |
+| Report             | Endpoint                       | Data Source                    | Chart Type           |
+| ------------------ | ------------------------------ | ------------------------------ | -------------------- |
+| Payroll Summary    | `GET /reports/payroll-summary` | PayrollRun + Payslip           | BarChart             |
+| CPF Contributions  | `GET /reports/cpf`             | PayslipItem (CPF lines)        | BarChart             |
+| Bank Summary       | `GET /reports/banks`           | Payslip (by bank)              | DonutChart           |
+| YTD Earnings       | `GET /reports/ytd`             | CpfYtdRecord                   | TrendLine            |
+| Payroll Variance   | `GET /reports/variance`        | Two PayrollRun periods         | BarChart             |
+| Leave Balance      | `GET /reports/leave`           | LeaveBalance                   | BarChart             |
+| Claims Summary     | `GET /reports/claims`          | Claim (by category/status)     | DonutChart           |
+| Attendance Summary | `GET /reports/attendance`      | AttendanceRecord               | TrendLine            |
+| Employee Directory | `GET /reports/employees`       | Employee (headcount, turnover) | BarChart             |
+| Project Costs      | `GET /reports/projects`        | ProjectTimesheet + costs       | BarChart + TrendLine |
+| Recruitment Funnel | `GET /reports/recruitment`     | Candidate pipeline stages      | BarChart             |
 
 ### Chart Components
 
@@ -441,6 +444,46 @@ Reusable employee selection component used across modules (project assignments, 
 ## Demo Seed Data
 
 `services/demo_seed.py` creates realistic demo data across all modules: employees with varied profiles, payroll runs with line items, leave applications, claims, attendance records, shift rosters, appraisal periods with reviews, projects with timesheets, inventory items, job listings with candidates, and approval groups.
+
+## Payroll Reports & Exports (Added 2026-04-06)
+
+| Endpoint                                           | Method | Purpose                                                                     |
+| -------------------------------------------------- | ------ | --------------------------------------------------------------------------- |
+| `/payroll/reports/cpf-reconciliation?year=&month=` | GET    | Per-employee CPF vs YTD record comparison, flags >$0.01 discrepancies       |
+| `/payroll/tax/ir8a-csv`                            | POST   | IRAS AIS CSV (ID/Name/Type/NRIC/DOB/Commencement/Cessation/Gross/Bonus/CPF) |
+| `/payroll/tax/appendix-8a/{employee_id}?year=`     | GET    | Benefits-in-kind: housing, car, utilities, club, education, insurance       |
+| `/payroll/export?start_date=&end_date=`            | GET    | Full payslip CSV with all statutory columns                                 |
+| `/payroll/runs/{id}/payslips/{id}/pdf`             | POST   | Admin payslip PDF download (reportlab, EA s88A)                             |
+| `/payroll/my-payslips/{id}/pdf`                    | GET    | Employee self-service payslip PDF                                           |
+
+All exports use `_sanitize_filename()`. All require `owner`/`hr_manager` (except employee self-service PDF).
+
+## Parallel Payroll Runs
+
+Compare Arbor against external HRIS:
+
+- `POST /payroll/parallel/upload` — flexible CSV column matching (BOM-aware, comma/dollar stripping)
+- `POST /payroll/parallel/compare` — match by ID or name, tolerances: gross=exact, net/CPF=$1
+- Bounded storage: `OrderedDict` max 10, LRU eviction. NaN rejected via `math.isfinite()`.
+
+## Exit Processing
+
+`POST /employees/{employee_id}/exit` with settlement calculation:
+
+1. Pro-rated salary (calendar day method)
+2. Leave encashment (unused annual × monthly/26)
+3. Notice period payment/deduction (shortfall days × daily rate)
+4. Retrenchment benefit (sector-aware calculator)
+
+Creates EmploymentEvent, sets employee inactive. Frontend: lifecycle tab on employee detail page with employment timeline, status card, confirm/extend/exit actions.
+
+## Performance Testing
+
+`tests/performance/test_payroll_performance.py` — 8 tests with deterministic seed (42):
+
+- 200 employees (60% citizen, 20% PR, 10% EP, 10% SP/WP), salaries $2.5k-$15k
+- Timing: <30s total, <150ms per employee
+- Correctness: CPF non-zero for citizens/PRs, zero for foreigners, SDL in $2-$11.25, FWL only for WP/SP
 
 ## Related Docs
 
