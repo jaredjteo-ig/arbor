@@ -384,6 +384,17 @@ class ToolRegistry:
                 description="Create an ad-hoc payroll run",
             )
         )
+        self.register(
+            ToolDefinition(
+                module="payroll",
+                action="validate",
+                method="GET",
+                path="/shadow/payroll/validate",
+                params=[],
+                trust_level="autonomous",
+                description="Validate the latest payroll run (employee coverage, CPF rates, zero-salary, variance)",
+            )
+        )
 
         # ── Leave ────────────────────────────────────────────────
         self.register(
@@ -527,6 +538,17 @@ class ToolRegistry:
                 params=[],
                 trust_level="autonomous",
                 description="View company leave policies",
+            )
+        )
+        self.register(
+            ToolDefinition(
+                module="leave",
+                action="team_balances",
+                method="GET",
+                path="/shadow/leave/team-balances",
+                params=[],
+                trust_level="autonomous",
+                description="Check leave balances for your team",
             )
         )
 

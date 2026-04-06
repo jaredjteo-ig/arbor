@@ -235,6 +235,33 @@ export interface AdminLeaveBalance {
   pending_days: number;
 }
 
+export interface ExitSettlement {
+  employee_id: number;
+  exit_type: string;
+  last_working_day: string;
+  notice_served: boolean;
+  breakdown: {
+    prorated_salary: number;
+    leave_encashment: {
+      unused_days: number;
+      daily_rate: number;
+      amount: number;
+    };
+    notice_period: {
+      notice_period_days: number;
+      shortfall_days: number;
+      amount: number;
+      note: string;
+    };
+    retrenchment_benefit: {
+      amount: number;
+      explanation: string;
+    } | null;
+  };
+  total_settlement: number;
+  message: string;
+}
+
 /* ── Public (no-auth) helpers ─────────────────────────────── */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -472,6 +499,19 @@ export const employeesApi = {
       `/employees/${id}/extend-probation`,
       { new_end_date: newEndDate, remarks },
     );
+  },
+
+  /** Process employee exit (resignation/termination/retrenchment/contract end). */
+  processExit(
+    id: number,
+    data: {
+      exit_type: string;
+      last_working_day: string;
+      reason?: string;
+      notice_served?: boolean;
+    },
+  ): Promise<ExitSettlement> {
+    return apiClient.post<ExitSettlement>(`/employees/${id}/exit`, data);
   },
 
   /* ── Family Members ──────────────────────────────────────── */

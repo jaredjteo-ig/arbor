@@ -227,13 +227,28 @@ def _nudges_leave(company_id: int, user_role: str) -> list[dict[str, Any]]:
     nudges: list[dict[str, Any]] = []
 
     if user_role in ("admin", "hr", "hr_admin", "owner", "manager"):
-        # Old pending applications (pending for more than 3 days)
         try:
             pending = _dataflow_list(
                 "LeaveApplicationListNode",
                 {"company_id": company_id, "status": "pending"},
                 limit=100,
             )
+
+            # Nudge: pending leave approvals for managers
+            if pending:
+                nudges.append(
+                    {
+                        "id": "nudge-pending-leave-approvals",
+                        "type": "completion",
+                        "message": f"You have {len(pending)} leave request{'s' if len(pending) != 1 else ''} awaiting your approval.",
+                        "action_type": "navigate",
+                        "route": "/leave",
+                        "dismissible": True,
+                        "priority": 1,
+                    }
+                )
+
+            # Nudge: stale pending applications (pending for more than 3 days)
             today = date.today()
             stale_count = 0
             for app in pending:
@@ -260,7 +275,7 @@ def _nudges_leave(company_id: int, user_role: str) -> list[dict[str, Any]]:
                     }
                 )
         except Exception:
-            logger.debug("Failed to query stale leave requests for nudge", exc_info=True)
+            logger.debug("Failed to query pending leave requests for nudge", exc_info=True)
 
     return nudges
 
@@ -294,6 +309,228 @@ def _nudges_claims(company_id: int, user_role: str) -> list[dict[str, Any]]:
     return nudges
 
 
+# ── Observation-based personalized suggestions ──────────────
+
+# Maps frequently observed action_type or page patterns to
+# personalized suggestion nudges. Each entry: (threshold, nudge_factory).
+# threshold = minimum number of observations of this pattern in 30 days.
+
+_OBSERVATION_SUGGESTION_RULES: list[dict[str, Any]] = [
+    {
+        "pattern_field": "page",
+        "pattern_value": "payroll",
+        "threshold": 3,
+        "nudge_factory": lambda company_id: _suggestion_payroll_due(company_id),
+    },
+    {
+        "pattern_field": "page",
+        "pattern_value": "leave",
+        "threshold": 3,
+        "nudge_factory": lambda company_id: _suggestion_pending_leave(company_id),
+    },
+    {
+        "pattern_field": "page",
+        "pattern_value": "employees",
+        "threshold": 3,
+        "nudge_factory": lambda company_id: _suggestion_probation_ending(company_id),
+    },
+    {
+        "pattern_field": "page",
+        "pattern_value": "compliance",
+        "threshold": 2,
+        "nudge_factory": lambda company_id: _suggestion_compliance_score(company_id),
+    },
+]
+
+
+def _suggestion_payroll_due(company_id: int) -> dict[str, Any] | None:
+    """Suggest payroll run timing based on frequent payroll page views."""
+    today = date.today()
+    # Calculate days until next CPF deadline (14th of next month)
+    if today.month == 12:
+        next_deadline = date(today.year + 1, 1, 14)
+    else:
+        next_deadline = date(today.year, today.month + 1, 14)
+    # Check this month's deadline too
+    try:
+        this_month_deadline = date(today.year, today.month, 14)
+    except ValueError:
+        this_month_deadline = date(today.year, today.month, 28)
+    target = this_month_deadline if this_month_deadline >= today else next_deadline
+    days_left = (target - today).days
+
+    return {
+        "id": "nudge-personal-payroll-due",
+        "type": "personalized",
+        "message": f"Your next payroll run is due in {days_left} day{'s' if days_left != 1 else ''} (CPF deadline: {target.isoformat()}).",
+        "action_type": "navigate",
+        "route": "/payroll",
+        "dismissible": True,
+        "priority": 2,
+    }
+
+
+def _suggestion_pending_leave(company_id: int) -> dict[str, Any] | None:
+    """Suggest pending leave approvals based on frequent leave page views."""
+    try:
+        pending = _dataflow_list(
+            "LeaveApplicationListNode",
+            {"company_id": company_id, "status": "pending"},
+            limit=100,
+        )
+        if pending:
+            return {
+                "id": "nudge-personal-pending-leave",
+                "type": "personalized",
+                "message": f"You have {len(pending)} pending leave approval{'s' if len(pending) != 1 else ''}.",
+                "action_type": "navigate",
+                "route": "/leave",
+                "dismissible": True,
+                "priority": 2,
+            }
+    except Exception:
+        logger.debug("Failed to query pending leave for personalized nudge", exc_info=True)
+    return None
+
+
+def _suggestion_probation_ending(company_id: int) -> dict[str, Any] | None:
+    """Suggest probation reviews based on frequent employee page views."""
+    today = date.today()
+    try:
+        employees = _dataflow_list(
+            "EmployeeListNode",
+            {"company_id": company_id, "is_active": True},
+            limit=10000,
+        )
+        ending_count = 0
+        for emp in employees:
+            probation_end = emp.get("probation_end_date", "")
+            if not probation_end:
+                continue
+            try:
+                prob_date = date.fromisoformat(probation_end[:10])
+            except (ValueError, TypeError):
+                continue
+            if 0 <= (prob_date - today).days <= 30:
+                ending_count += 1
+
+        if ending_count > 0:
+            return {
+                "id": "nudge-personal-probation",
+                "type": "personalized",
+                "message": f"{ending_count} employee{'s are' if ending_count != 1 else ' is'} in probation ending this month.",
+                "action_type": "navigate",
+                "route": "/employees",
+                "dismissible": True,
+                "priority": 3,
+            }
+    except Exception:
+        logger.debug("Failed to query probation for personalized nudge", exc_info=True)
+    return None
+
+
+def _suggestion_compliance_score(company_id: int) -> dict[str, Any] | None:
+    """Suggest compliance review based on frequent compliance page views."""
+    try:
+        from hr_advisory.workflows.compliance_checker import (
+            ComplianceCheckInput,
+            check_compliance,
+        )
+
+        compliance_input = ComplianceCheckInput(
+            company_size=10,
+            has_foreign_workers=True,
+            sector="general",
+            has_ket_issued=False,
+            has_written_contracts=False,
+            has_payslip_system=True,
+            has_leave_records=True,
+            has_ot_records=False,
+            has_safety_policy=False,
+            has_grievance_process=False,
+            has_cpf_registered=True,
+            has_fwa_policy=False,
+        )
+        result = check_compliance(compliance_input)
+        gap_count = len([f for f in result.findings if f.severity in ("high", "critical")])
+        if gap_count > 0:
+            return {
+                "id": "nudge-personal-compliance",
+                "type": "personalized",
+                "message": f"Your compliance score is {result.score}% — {gap_count} item{'s' if gap_count != 1 else ''} need attention.",
+                "action_type": "navigate",
+                "route": "/compliance",
+                "dismissible": True,
+                "priority": 3,
+            }
+    except Exception:
+        logger.debug("Failed to compute compliance score for personalized nudge", exc_info=True)
+    return None
+
+
+def _generate_suggestions_from_observations(
+    user_id: str,
+    company_id: int,
+) -> list[dict[str, Any]]:
+    """Generate personalized suggestions from recent user observations.
+
+    Reads observations from the last 30 days, groups by action_type and page,
+    counts frequency of each, and maps frequent patterns to helpful suggestions
+    using a rule-based mapping.
+
+    Args:
+        user_id: The user to generate suggestions for.
+        company_id: The user's company ID for data queries.
+
+    Returns:
+        List of up to 3 personalized nudge dicts.
+    """
+    from collections import Counter
+    from hr_advisory.shadow.observation import get_observation_store
+
+    store = get_observation_store()
+    # 30 days = 720 hours
+    observations = store.get_user_observations(user_id, since_hours=720)
+    if not observations:
+        return []
+
+    # Count by page
+    page_counts: Counter[str] = Counter()
+    for obs in observations:
+        page = obs.get("page", "")
+        if page:
+            page_counts[page] += 1
+
+    suggestions: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    for rule in _OBSERVATION_SUGGESTION_RULES:
+        pattern_field = rule["pattern_field"]
+        pattern_value = rule["pattern_value"]
+        threshold = rule["threshold"]
+        nudge_factory = rule["nudge_factory"]
+
+        count = page_counts.get(pattern_value, 0) if pattern_field == "page" else 0
+        if count >= threshold:
+            try:
+                nudge = nudge_factory(company_id)
+                if nudge is not None and nudge["id"] not in seen_ids:
+                    suggestions.append(nudge)
+                    seen_ids.add(nudge["id"])
+            except Exception:
+                logger.debug(
+                    "Failed to generate personalized suggestion for %s=%s",
+                    pattern_field,
+                    pattern_value,
+                    exc_info=True,
+                )
+
+        if len(suggestions) >= 3:
+            break
+
+    return suggestions
+
+
 # ── Page routing table ────────────────────────────────────────
 
 _PAGE_NUDGE_GENERATORS: dict[str, Any] = {
@@ -315,6 +552,9 @@ def get_nudges(
     user_role: str = "admin",
 ) -> list[dict[str, Any]]:
     """Get contextual nudges for the current page.
+
+    Combines page-specific nudges with personalized suggestions derived
+    from the user's recent observation patterns (last 30 days).
 
     Args:
         company_id: The company ID to query data for.
@@ -342,7 +582,17 @@ def get_nudges(
         nudges = generator(company_id, user_id, user_role)
     except Exception:
         logger.warning("Failed to generate nudges for page=%s", page_context, exc_info=True)
-        return []
+        nudges = []
+
+    # Merge personalized suggestions from observation patterns
+    try:
+        personalized = _generate_suggestions_from_observations(user_id, company_id)
+        existing_ids = {n["id"] for n in nudges}
+        for suggestion in personalized:
+            if suggestion["id"] not in existing_ids:
+                nudges.append(suggestion)
+    except Exception:
+        logger.debug("Failed to generate personalized suggestions", exc_info=True)
 
     # Sort by priority (lower = more urgent) and cap at max
     nudges.sort(key=lambda n: n.get("priority", 99))

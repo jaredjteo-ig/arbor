@@ -770,6 +770,148 @@ def generate_payslip_html(
 
 
 # ---------------------------------------------------------------------------
+# Appendix 8A — Benefits in Kind (T169)
+# ---------------------------------------------------------------------------
+
+
+def generate_appendix_8a(
+    employee: dict,
+    payslips: list[dict],
+    items: list[dict],
+    tax_year: int,
+) -> dict:
+    """Generate Appendix 8A (Benefits in Kind) data for a single employee.
+
+    Appendix 8A covers taxable non-cash benefits provided by the employer:
+    - Section A: Housing/accommodation benefit
+    - Section B: Car/transport benefit
+    - Section C: Utilities & household expenses
+    - Section D: Other benefits (education, club membership, etc.)
+
+    For now, aggregates benefit-type payslip items into the standard Appendix 8A
+    structure. Most values will be zero for companies that primarily pay cash
+    compensation, but the structure is ready for future benefit tracking.
+
+    Returns dict matching Appendix 8A form fields.
+    """
+    # Filter payslips to the tax year
+    year_payslips = [ps for ps in payslips if ps.get("period_start", "").startswith(str(tax_year))]
+    year_payslip_ids = {ps.get("id") for ps in year_payslips}
+
+    # Filter items to only those belonging to the tax year payslips
+    year_items = [item for item in items if item.get("payslip_id") in year_payslip_ids]
+
+    # Aggregate benefit items by category
+    housing_benefit = 0.0
+    car_benefit = 0.0
+    utilities_benefit = 0.0
+    driver_benefit = 0.0
+    club_membership = 0.0
+    education_benefit = 0.0
+    entertainment_benefit = 0.0
+    insurance_benefit = 0.0
+    interest_benefit = 0.0
+    holiday_passage = 0.0
+    other_benefits = 0.0
+
+    for item in year_items:
+        item_type = item.get("item_type", "")
+        name_lower = item.get("name", "").lower()
+        amount = abs(item.get("amount", 0.0))
+
+        # Only process benefit-type items
+        if item_type not in ("benefit", "benefit_in_kind", "allowance"):
+            continue
+
+        # Skip non-taxable items
+        if not item.get("is_taxable", True):
+            continue
+
+        # Classify by name keywords into Appendix 8A categories
+        if any(kw in name_lower for kw in ("housing", "accommodation", "rent", "lodging")):
+            housing_benefit += amount
+        elif any(kw in name_lower for kw in ("car", "vehicle", "motor", "parking")):
+            car_benefit += amount
+        elif any(kw in name_lower for kw in ("utility", "utilities", "household")):
+            utilities_benefit += amount
+        elif "driver" in name_lower:
+            driver_benefit += amount
+        elif any(kw in name_lower for kw in ("club", "membership")):
+            club_membership += amount
+        elif any(kw in name_lower for kw in ("education", "school", "tuition")):
+            education_benefit += amount
+        elif "entertainment" in name_lower:
+            entertainment_benefit += amount
+        elif any(kw in name_lower for kw in ("insurance", "medical")):
+            insurance_benefit += amount
+        elif any(kw in name_lower for kw in ("interest", "loan")):
+            interest_benefit += amount
+        elif any(kw in name_lower for kw in ("holiday", "passage", "travel")):
+            holiday_passage += amount
+        else:
+            other_benefits += amount
+
+    total_benefits = (
+        housing_benefit
+        + car_benefit
+        + utilities_benefit
+        + driver_benefit
+        + club_membership
+        + education_benefit
+        + entertainment_benefit
+        + insurance_benefit
+        + interest_benefit
+        + holiday_passage
+        + other_benefits
+    )
+
+    # Employment period within the tax year
+    emp_start = employee.get("start_date", "")
+    emp_end = employee.get("end_date", "")
+    period_from = f"{tax_year}-01-01"
+    period_to = f"{tax_year}-12-31"
+
+    if emp_start and emp_start > period_from:
+        period_from = emp_start
+    if emp_end and emp_end < period_to:
+        period_to = emp_end
+
+    return {
+        "filing_type": "appendix_8a",
+        "tax_year": tax_year,
+        # Employee details
+        "employee_name": _get_employee_display_name(employee),
+        "nric_fin": employee.get("nric_fin", ""),
+        "date_of_birth": employee.get("date_of_birth", ""),
+        "designation": employee.get("designation", ""),
+        # Employment period
+        "period_from": period_from,
+        "period_to": period_to,
+        # Section A: Housing / Accommodation
+        "housing_benefit": round(housing_benefit, 2),
+        "furniture_fittings": 0.0,
+        "hotel_accommodation": 0.0,
+        # Section B: Motor Vehicle
+        "car_benefit": round(car_benefit, 2),
+        "driver_benefit": round(driver_benefit, 2),
+        # Section C: Utilities & Household
+        "utilities_benefit": round(utilities_benefit, 2),
+        "domestic_helper": 0.0,
+        "gardener": 0.0,
+        # Section D: Other Benefits
+        "club_membership": round(club_membership, 2),
+        "education_benefit": round(education_benefit, 2),
+        "entertainment_benefit": round(entertainment_benefit, 2),
+        "insurance_benefit": round(insurance_benefit, 2),
+        "interest_benefit": round(interest_benefit, 2),
+        "holiday_passage": round(holiday_passage, 2),
+        "other_benefits": round(other_benefits, 2),
+        # Total
+        "total_benefits_in_kind": round(total_benefits, 2),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

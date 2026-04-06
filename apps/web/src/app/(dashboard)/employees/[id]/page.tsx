@@ -42,6 +42,8 @@ import {
   Users,
   HelpCircle,
   CalendarDays,
+  Activity,
+  LogOut,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -57,6 +59,7 @@ import {
   type CustomFieldValue,
   type AdminLeaveBalance,
   type FamilyMember,
+  type ExitSettlement,
 } from "@/services/api/employees";
 import { policiesApi } from "@/services/api/policies";
 
@@ -71,6 +74,7 @@ type TabKey =
   | "leave"
   | "documents"
   | "timeline"
+  | "lifecycle"
   | "notes"
   | "onboarding"
   | "custom_fields"
@@ -85,6 +89,7 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: "leave", label: "Leave", icon: Calendar },
   { key: "documents", label: "Documents", icon: FileText },
   { key: "timeline", label: "Timeline", icon: Clock },
+  { key: "lifecycle", label: "Lifecycle", icon: Activity },
   { key: "notes", label: "Notes", icon: StickyNote },
   { key: "onboarding", label: "Onboarding", icon: ClipboardCheck },
   { key: "custom_fields", label: "Custom Fields", icon: Settings },
@@ -2812,6 +2817,359 @@ function TimelineTab({ employeeId }: { employeeId: number }) {
   );
 }
 
+/* ── Lifecycle Tab ─────────────────────────────────────────── */
+
+function LifecycleTab({
+  employee,
+  employeeId,
+  isAdmin,
+  onOpenModal,
+  onRefresh,
+}: {
+  employee: EmployeeDetail;
+  employeeId: number;
+  isAdmin: boolean;
+  onOpenModal: (modal: ModalType) => void;
+  onRefresh: () => void;
+}) {
+  const [events, setEvents] = useState<EmploymentEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchEvents = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await employeesApi.listEmploymentHistory(employeeId);
+      setEvents(data.events ?? []);
+    } catch {
+      // Non-critical
+    } finally {
+      setIsLoading(false);
+    }
+  }, [employeeId]);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  // Compute lifecycle details
+  const startDate = employee.start_date;
+  const endDate = employee.end_date;
+  const probationEnd = employee.probation_end_date;
+  const confirmationStatus = employee.confirmation_status || "on_probation";
+  const isActive = employee.is_active;
+
+  // Days in current role
+  const daysInRole = startDate
+    ? Math.max(
+        0,
+        Math.ceil((Date.now() - new Date(startDate).getTime()) / 86400000),
+      )
+    : 0;
+
+  // Probation days remaining
+  const probationDaysLeft =
+    confirmationStatus !== "confirmed" && probationEnd
+      ? Math.ceil((new Date(probationEnd).getTime() - Date.now()) / 86400000)
+      : null;
+
+  // Build timeline milestones from events and employee record
+  type Milestone = {
+    label: string;
+    date: string;
+    status: "completed" | "current" | "upcoming" | "negative";
+    detail?: string;
+  };
+
+  const milestones: Milestone[] = [];
+
+  if (startDate) {
+    milestones.push({
+      label: "Hired",
+      date: startDate,
+      status: "completed",
+      detail: `${employee.employment_type?.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "Full Time"} - ${employee.department || "No department"}`,
+    });
+  }
+
+  // Probation start (same as hire)
+  if (startDate && (employee.probation_months || 0) > 0) {
+    milestones.push({
+      label: "Probation Started",
+      date: startDate,
+      status: "completed",
+      detail: `${employee.probation_months} month probation period`,
+    });
+  }
+
+  // Check events for confirmations, promotions, etc.
+  for (const evt of events) {
+    const evtType = evt.event_type.toLowerCase();
+    if (evtType === "confirmed") {
+      milestones.push({
+        label: "Confirmed",
+        date: evt.event_date || evt.effective_date,
+        status: "completed",
+        detail: evt.description,
+      });
+    } else if (evtType === "promoted") {
+      milestones.push({
+        label: "Promoted",
+        date: evt.event_date || evt.effective_date,
+        status: "completed",
+        detail: evt.description,
+      });
+    } else if (evtType === "transferred") {
+      milestones.push({
+        label: "Transferred",
+        date: evt.event_date || evt.effective_date,
+        status: "completed",
+        detail: evt.description,
+      });
+    } else if (evtType === "salary_revision") {
+      milestones.push({
+        label: "Salary Revision",
+        date: evt.event_date || evt.effective_date,
+        status: "completed",
+        detail: evt.description,
+      });
+    } else if (
+      evtType === "resigned" ||
+      evtType === "terminated" ||
+      evtType === "retrenched"
+    ) {
+      milestones.push({
+        label: evtType.replace(/\b\w/g, (c) => c.toUpperCase()),
+        date: evt.effective_date || evt.event_date,
+        status: "negative",
+        detail: evt.description,
+      });
+    }
+  }
+
+  // Probation end if still on probation and no confirmation event
+  if (
+    confirmationStatus !== "confirmed" &&
+    probationEnd &&
+    !milestones.some((m) => m.label === "Confirmed")
+  ) {
+    const isPast = new Date(probationEnd) < new Date();
+    milestones.push({
+      label: "Probation End",
+      date: probationEnd,
+      status: isPast ? "completed" : "upcoming",
+      detail: isPast
+        ? "Probation period ended (pending confirmation)"
+        : `${probationDaysLeft ?? 0} days remaining`,
+    });
+  }
+
+  // End date if terminated
+  if (endDate && !isActive) {
+    const alreadyHasTermination = milestones.some(
+      (m) =>
+        m.label === "Terminated" ||
+        m.label === "Resigned" ||
+        m.label === "Retrenched",
+    );
+    if (!alreadyHasTermination) {
+      milestones.push({
+        label: "Employment Ended",
+        date: endDate,
+        status: "negative",
+      });
+    }
+  }
+
+  // Sort by date
+  milestones.sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+
+  const statusColor: Record<string, string> = {
+    confirmed: "text-emerald-700 bg-emerald-50 border-emerald-200",
+    on_probation: "text-amber-700 bg-amber-50 border-amber-200",
+    extended: "text-orange-700 bg-orange-50 border-orange-200",
+    terminated: "text-red-700 bg-red-50 border-red-200",
+  };
+
+  const statusLabel: Record<string, string> = {
+    confirmed: "Confirmed",
+    on_probation: "On Probation",
+    extended: "Probation Extended",
+    terminated: "Terminated",
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Current Status Card */}
+      <SectionCard
+        title="Current Status"
+        icon={<Activity className="h-4 w-4" />}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <p className="text-xs text-[var(--color-gray-500)] mb-1">
+              Employment Status
+            </p>
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
+                !isActive
+                  ? statusColor.terminated
+                  : statusColor[confirmationStatus] || statusColor.on_probation
+              }`}
+            >
+              {!isActive
+                ? "Inactive"
+                : statusLabel[confirmationStatus] || confirmationStatus}
+            </span>
+          </div>
+          <div>
+            <p className="text-xs text-[var(--color-gray-500)] mb-1">
+              Days in Current Role
+            </p>
+            <p className="text-lg font-bold text-[var(--color-gray-900)]">
+              {daysInRole.toLocaleString()}
+            </p>
+            <p className="text-xs text-[var(--color-gray-400)]">
+              Since {startDate || "-"}
+            </p>
+          </div>
+          {probationDaysLeft !== null && isActive && (
+            <div>
+              <p className="text-xs text-[var(--color-gray-500)] mb-1">
+                Probation Ends
+              </p>
+              <p className="text-lg font-bold text-[var(--color-gray-900)]">
+                {probationEnd}
+              </p>
+              <p
+                className={`text-xs mt-0.5 ${
+                  probationDaysLeft <= 0
+                    ? "text-red-600 font-medium"
+                    : probationDaysLeft <= 30
+                      ? "text-amber-600"
+                      : "text-[var(--color-gray-400)]"
+                }`}
+              >
+                {probationDaysLeft <= 0
+                  ? "Overdue for confirmation"
+                  : `${probationDaysLeft} days remaining`}
+              </p>
+            </div>
+          )}
+        </div>
+      </SectionCard>
+
+      {/* Lifecycle Timeline */}
+      <SectionCard
+        title="Employment Journey"
+        icon={<Clock className="h-4 w-4" />}
+      >
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="animate-pulse flex gap-3">
+                <div className="w-3 h-3 rounded-full bg-[var(--color-gray-200)] mt-1" />
+                <div className="flex-1 space-y-1">
+                  <div className="h-4 w-32 bg-[var(--color-gray-200)] rounded" />
+                  <div className="h-3 w-48 bg-[var(--color-gray-100)] rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : milestones.length === 0 ? (
+          <p className="text-sm text-[var(--color-gray-500)] text-center py-4">
+            No lifecycle events recorded yet.
+          </p>
+        ) : (
+          <div className="relative pl-6">
+            <div className="absolute left-2 top-1 bottom-1 w-px bg-[var(--color-gray-200)]" />
+            <div className="space-y-4">
+              {milestones.map((ms, idx) => {
+                const dotColor =
+                  ms.status === "negative"
+                    ? "bg-red-500 border-red-200"
+                    : ms.status === "upcoming"
+                      ? "bg-[var(--color-gray-300)] border-[var(--color-gray-200)]"
+                      : ms.status === "current"
+                        ? "bg-amber-500 border-amber-200"
+                        : "bg-emerald-500 border-emerald-200";
+                return (
+                  <div key={idx} className="relative">
+                    <div
+                      className={`absolute -left-6 top-1 w-4 h-4 rounded-full border-2 ${dotColor}`}
+                    />
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p
+                          className={`text-sm font-medium ${
+                            ms.status === "negative"
+                              ? "text-red-700"
+                              : ms.status === "upcoming"
+                                ? "text-[var(--color-gray-500)]"
+                                : "text-[var(--color-gray-900)]"
+                          }`}
+                        >
+                          {ms.label}
+                        </p>
+                        {ms.detail && (
+                          <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                            {ms.detail}
+                          </p>
+                        )}
+                      </div>
+                      <p className="text-xs text-[var(--color-gray-500)] shrink-0">
+                        {ms.date}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </SectionCard>
+
+      {/* Lifecycle Actions (Admin only) */}
+      {isAdmin && isActive && (
+        <SectionCard title="Actions" icon={<Settings className="h-4 w-4" />}>
+          <div className="flex flex-wrap gap-3">
+            {confirmationStatus !== "confirmed" && (
+              <>
+                <AppButton
+                  variant="primary"
+                  size="sm"
+                  onClick={() => onOpenModal("confirm")}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                  Confirm Employee
+                </AppButton>
+                <AppButton
+                  variant="outlined"
+                  size="sm"
+                  onClick={() => onOpenModal("extend")}
+                >
+                  <Calendar className="h-3.5 w-3.5 mr-1.5" />
+                  Extend Probation
+                </AppButton>
+              </>
+            )}
+            <AppButton
+              variant="outlined"
+              size="sm"
+              onClick={() => onOpenModal("terminate")}
+              className="text-red-600 border-red-200 hover:bg-red-50"
+            >
+              <LogOut className="h-3.5 w-3.5 mr-1.5" />
+              Process Exit
+            </AppButton>
+          </div>
+        </SectionCard>
+      )}
+    </div>
+  );
+}
+
 /* ── Notes Tab ─────────────────────────────────────────────── */
 
 const NOTE_TYPES = [
@@ -4459,37 +4817,145 @@ function TerminateEmployeeForm({
   onSaved: () => void;
   onClose: () => void;
 }) {
-  const [endDate, setEndDate] = useState("");
+  const [exitType, setExitType] = useState("resignation");
+  const [lastWorkingDay, setLastWorkingDay] = useState("");
   const [reason, setReason] = useState("");
+  const [noticeServed, setNoticeServed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [settlement, setSettlement] = useState<ExitSettlement | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!endDate) {
-      toast.error("Please enter a termination date");
-      return;
-    }
-    if (!reason.trim()) {
-      toast.error("Please enter a reason for termination");
+    if (!lastWorkingDay) {
+      toast.error("Please enter the last working day");
       return;
     }
     setIsSaving(true);
     try {
-      await employeesApi.updateEmployee(employeeId, {
-        end_date: endDate,
-        confirmation_status: "terminated",
-        is_active: false,
-      } as Partial<EmployeeDetail>);
-      toast.success("Employee terminated");
+      const result = await employeesApi.processExit(employeeId, {
+        exit_type: exitType,
+        last_working_day: lastWorkingDay,
+        reason: reason.trim() || undefined,
+        notice_served: noticeServed,
+      });
+      setSettlement(result);
+      toast.success("Exit processed successfully");
       onSaved();
-      onClose();
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Failed to terminate employee";
+        err instanceof Error ? err.message : "Failed to process exit";
       toast.error(message);
     } finally {
       setIsSaving(false);
     }
+  }
+
+  if (settlement) {
+    const b = settlement.breakdown;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-emerald-800">
+              Exit Processed
+            </p>
+            <p className="text-sm text-emerald-700 mt-1">
+              {settlement.message}
+            </p>
+          </div>
+        </div>
+
+        <div className="border border-[var(--color-gray-200)] rounded-[8px] overflow-hidden">
+          <div className="bg-[var(--color-gray-50)] px-4 py-2.5 border-b border-[var(--color-gray-200)]">
+            <p className="text-sm font-semibold text-[var(--color-gray-900)]">
+              Settlement Breakdown
+            </p>
+          </div>
+          <div className="divide-y divide-[var(--color-gray-100)]">
+            <div className="flex justify-between px-4 py-2.5">
+              <span className="text-sm text-[var(--color-gray-600)]">
+                Pro-rated Salary
+              </span>
+              <span className="text-sm font-medium text-[var(--color-gray-900)]">
+                $
+                {b.prorated_salary.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+            <div className="flex justify-between px-4 py-2.5">
+              <span className="text-sm text-[var(--color-gray-600)]">
+                Leave Encashment ({b.leave_encashment.unused_days} days)
+              </span>
+              <span className="text-sm font-medium text-[var(--color-gray-900)]">
+                $
+                {b.leave_encashment.amount.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+            <div className="flex justify-between px-4 py-2.5">
+              <div>
+                <span className="text-sm text-[var(--color-gray-600)]">
+                  Notice Period
+                </span>
+                <p className="text-xs text-[var(--color-gray-400)]">
+                  {b.notice_period.note}
+                </p>
+              </div>
+              <span
+                className={`text-sm font-medium ${
+                  b.notice_period.amount < 0
+                    ? "text-red-600"
+                    : "text-[var(--color-gray-900)]"
+                }`}
+              >
+                {b.notice_period.amount < 0 ? "-" : ""}$
+                {Math.abs(b.notice_period.amount).toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+            {b.retrenchment_benefit && (
+              <div className="flex justify-between px-4 py-2.5">
+                <div>
+                  <span className="text-sm text-[var(--color-gray-600)]">
+                    Retrenchment Benefit
+                  </span>
+                  <p className="text-xs text-[var(--color-gray-400)] max-w-[260px]">
+                    Market norm (advisory only)
+                  </p>
+                </div>
+                <span className="text-sm font-medium text-[var(--color-gray-900)]">
+                  $
+                  {b.retrenchment_benefit.amount.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                  })}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between px-4 py-3 bg-[var(--color-gray-50)]">
+              <span className="text-sm font-semibold text-[var(--color-gray-900)]">
+                Total Settlement
+              </span>
+              <span className="text-sm font-bold text-[var(--color-gray-900)]">
+                $
+                {settlement.total_settlement.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <AppButton variant="primary" size="md" onClick={onClose}>
+            Done
+          </AppButton>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -4498,31 +4964,73 @@ function TerminateEmployeeForm({
         <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
         <div>
           <p className="text-sm font-medium text-red-800">
-            Terminate {employee.name}
+            Process Exit for {employee.name}
           </p>
           <p className="text-sm text-red-700 mt-1">
-            This action cannot be undone. The employee will be marked as
-            terminated and their access will be revoked.
+            This will calculate the final settlement, mark the employee as
+            inactive, and revoke their access.
           </p>
         </div>
       </div>
 
-      <DatePicker
-        label="Termination Date"
-        value={endDate}
-        onChange={setEndDate}
+      <AppInput
+        label="Exit Type"
+        variant="select"
+        options={[
+          { value: "resignation", label: "Resignation" },
+          { value: "termination", label: "Termination" },
+          { value: "retrenchment", label: "Retrenchment" },
+          { value: "contract_end", label: "Contract End" },
+        ]}
+        value={exitType}
+        onChange={(e) => setExitType(e.target.value)}
       />
+
+      <DatePicker
+        label="Last Working Day"
+        value={lastWorkingDay}
+        onChange={setLastWorkingDay}
+      />
+
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="notice-served"
+          checked={noticeServed}
+          onChange={(e) => setNoticeServed(e.target.checked)}
+          className="h-4 w-4 rounded border-[var(--color-gray-300)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+        />
+        <label
+          htmlFor="notice-served"
+          className="text-sm text-[var(--color-gray-700)]"
+        >
+          Notice period fully served
+        </label>
+      </div>
+
+      {employee.notice_period_days > 0 && !noticeServed && (
+        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+          <p className="text-xs text-amber-700">
+            Notice period: {employee.notice_period_days} days. If not fully
+            served, the settlement will include a notice period
+            {exitType === "resignation"
+              ? " deduction (employee owes company)"
+              : " payment (company owes employee)"}
+            .
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-medium text-[var(--color-gray-700)]">
-          Reason for Termination
+          Reason (optional)
         </label>
         <textarea
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          rows={4}
-          className="rounded-[8px] border px-3 py-2 text-sm bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] focus:outline-none focus:ring-2 focus:ring-red-500 resize-y"
-          placeholder="Provide the reason for termination..."
+          rows={3}
+          className="rounded-[8px] border px-3 py-2 text-sm bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-y"
+          placeholder="Provide the reason for exit..."
         />
       </div>
 
@@ -4531,7 +5039,7 @@ function TerminateEmployeeForm({
           Cancel
         </AppButton>
         <AppButton type="submit" variant="danger" size="md" loading={isSaving}>
-          Terminate Employee
+          Process Exit
         </AppButton>
       </div>
     </form>
@@ -4839,6 +5347,15 @@ export default function EmployeeDetailPage({
         <DocumentsTab employeeId={employeeId} isAdmin={isAdmin} />
       )}
       {activeTab === "timeline" && <TimelineTab employeeId={employeeId} />}
+      {activeTab === "lifecycle" && (
+        <LifecycleTab
+          employee={employee}
+          employeeId={employeeId}
+          isAdmin={isAdmin}
+          onOpenModal={setEditModal}
+          onRefresh={fetchEmployee}
+        />
+      )}
       {activeTab === "notes" && (
         <NotesTab employeeId={employeeId} isAdmin={isAdmin} />
       )}
@@ -4922,7 +5439,7 @@ export default function EmployeeDetailPage({
       <EditModal
         isOpen={editModal === "terminate"}
         onClose={() => setEditModal(null)}
-        title="Terminate Employee"
+        title="Process Employee Exit"
       >
         <TerminateEmployeeForm
           employee={employee}

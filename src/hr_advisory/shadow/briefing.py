@@ -322,6 +322,139 @@ def _attention_needed(company_id: int) -> list[dict[str, Any]]:
     return items
 
 
+def _cpf_validation(company_id: int) -> list[dict[str, Any]]:
+    """Validate CPF totals against previous month and flag anomalies.
+
+    Checks:
+    - Compares current month CPF totals against previous month
+    - Flags significant changes (>10% increase/decrease) with explanation
+    - Includes CPF submission deadline reminder (14th of next month)
+
+    Returns a list of CPF validation items for the briefing.
+    """
+    items: list[dict[str, Any]] = []
+    today = date.today()
+
+    # CPF submission deadline reminder (14th of next month)
+    if today.month == 12:
+        cpf_deadline = date(today.year + 1, 1, 14)
+    else:
+        cpf_deadline = date(today.year, today.month + 1, 14)
+    # Also check this month's deadline
+    try:
+        this_month_deadline = date(today.year, today.month, 14)
+    except ValueError:
+        this_month_deadline = date(today.year, today.month, 28)
+
+    deadline_target = this_month_deadline if this_month_deadline >= today else cpf_deadline
+    days_until_deadline = (deadline_target - today).days
+
+    if days_until_deadline <= 14:
+        items.append(
+            {
+                "id": "cpf-deadline-reminder",
+                "category": "cpf_validation",
+                "title": f"CPF submission due in {days_until_deadline} day{'s' if days_until_deadline != 1 else ''}",
+                "description": f"Monthly CPF contributions must be submitted by {deadline_target.isoformat()}. Late payment incurs 18% p.a. interest.",
+                "days_remaining": days_until_deadline,
+                "due_date": deadline_target.isoformat(),
+                "action_type": "navigate",
+                "route": "/payroll",
+                "priority": "high" if days_until_deadline <= 3 else "medium",
+            }
+        )
+
+    # Compare CPF totals between current and previous month payroll runs
+    try:
+        all_runs = _dataflow_list(
+            "PayrollRunListNode",
+            {"company_id": company_id},
+            limit=100,
+        )
+
+        if not all_runs:
+            return items
+
+        # Sort runs by period_start descending
+        sorted_runs = sorted(
+            all_runs,
+            key=lambda r: r.get("period_start", ""),
+            reverse=True,
+        )
+
+        # Find the two most recent completed/approved runs
+        completed_runs = [
+            r for r in sorted_runs if r.get("status") in ("approved", "paid", "completed")
+        ]
+
+        if len(completed_runs) >= 2:
+            current_run = completed_runs[0]
+            previous_run = completed_runs[1]
+
+            current_cpf = float(current_run.get("total_cpf_employee", 0)) + float(
+                current_run.get("total_cpf_employer", 0)
+            )
+            previous_cpf = float(previous_run.get("total_cpf_employee", 0)) + float(
+                previous_run.get("total_cpf_employer", 0)
+            )
+
+            if previous_cpf > 0 and current_cpf > 0:
+                pct_change = ((current_cpf - previous_cpf) / previous_cpf) * 100.0
+
+                if abs(pct_change) > 10.0:
+                    direction = "increase" if pct_change > 0 else "decrease"
+                    current_period = current_run.get("period_start", "current")[:7]
+                    previous_period = previous_run.get("period_start", "previous")[:7]
+
+                    # Build explanation
+                    explanation_parts = []
+                    current_headcount = current_run.get("employee_count", 0)
+                    previous_headcount = previous_run.get("employee_count", 0)
+                    if current_headcount and previous_headcount:
+                        if current_headcount != previous_headcount:
+                            diff = current_headcount - previous_headcount
+                            explanation_parts.append(
+                                f"headcount changed by {'+' if diff > 0 else ''}{diff}"
+                            )
+
+                    current_gross = float(current_run.get("total_gross", 0))
+                    previous_gross = float(previous_run.get("total_gross", 0))
+                    if previous_gross > 0 and current_gross > 0:
+                        gross_pct = ((current_gross - previous_gross) / previous_gross) * 100.0
+                        if abs(gross_pct) > 5.0:
+                            explanation_parts.append(
+                                f"gross payroll {'up' if gross_pct > 0 else 'down'} {abs(gross_pct):.1f}%"
+                            )
+
+                    explanation = ""
+                    if explanation_parts:
+                        explanation = f" Possible reasons: {', '.join(explanation_parts)}."
+
+                    items.append(
+                        {
+                            "id": "cpf-variance-alert",
+                            "category": "cpf_validation",
+                            "title": f"CPF contributions {direction}d {abs(pct_change):.1f}% from {previous_period} to {current_period}",
+                            "description": (
+                                f"Total CPF went from ${previous_cpf:,.2f} to ${current_cpf:,.2f} "
+                                f"({'+' if pct_change > 0 else ''}{pct_change:.1f}%). "
+                                f"Review for accuracy before CPF submission.{explanation}"
+                            ),
+                            "current_cpf_total": current_cpf,
+                            "previous_cpf_total": previous_cpf,
+                            "pct_change": round(pct_change, 1),
+                            "action_type": "navigate",
+                            "route": "/payroll",
+                            "priority": "high",
+                        }
+                    )
+
+    except Exception:
+        logger.debug("Failed to compute CPF variance for briefing", exc_info=True)
+
+    return items
+
+
 def _quick_stats(company_id: int) -> dict[str, Any]:
     """Compute at-a-glance stats for the dashboard.
 
@@ -448,15 +581,17 @@ def generate_briefing(company_id: int, user_role: str) -> dict[str, Any]:
     pending = _pending_actions(company_id, user_role)
     deadlines = _upcoming_deadlines(company_id)
     attention = _attention_needed(company_id)
+    cpf_items = _cpf_validation(company_id)
     stats = _quick_stats(company_id)
 
     # Compute total action count for headline
-    total_items = len(pending) + len(attention)
+    total_items = len(pending) + len(attention) + len(cpf_items)
 
     return {
         "pending_actions": pending,
         "upcoming_deadlines": deadlines,
         "attention_needed": attention,
+        "cpf_validation": cpf_items,
         "quick_stats": stats,
         "total_action_items": total_items,
         "generated_date": date.today().isoformat(),

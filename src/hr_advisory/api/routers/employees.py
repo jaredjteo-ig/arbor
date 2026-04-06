@@ -6,6 +6,7 @@ Admins (owner, hr_manager) can invite employees and view the full roster.
 Employees can view their own record via /employees/me.
 """
 
+import calendar
 import csv
 import io
 import json
@@ -13,7 +14,7 @@ import logging
 import math
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date as date_type, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
@@ -3058,6 +3059,257 @@ async def extend_probation(
     )
 
     return {"message": f"Probation extended to {new_end_date}."}
+
+
+# --------------------------------------------------------------------------
+# POST /employees/{id}/exit — Process employee exit (resignation/termination)
+# --------------------------------------------------------------------------
+
+_VALID_EXIT_TYPES = {"resignation", "termination", "retrenchment", "contract_end"}
+
+
+@router.post("/{employee_id}/exit")
+async def process_employee_exit(
+    employee_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Process employee exit and calculate final settlement.
+
+    Accepts exit_type, last_working_day, reason, notice_served.
+    Calculates: pro-rated salary, leave encashment, notice period
+    payment/deduction, and retrenchment benefit (if applicable).
+    Updates employee status to inactive and creates an EmploymentEvent.
+    """
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    if not emp.get("is_active"):
+        raise HTTPException(status_code=400, detail="Employee is already inactive.")
+
+    body = await request.json()
+
+    # --- Validate inputs ---
+    exit_type = (body.get("exit_type") or "").strip().lower()
+    if exit_type not in _VALID_EXIT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"exit_type must be one of: {', '.join(sorted(_VALID_EXIT_TYPES))}",
+        )
+
+    last_working_day = (body.get("last_working_day") or "").strip()
+    if not last_working_day:
+        raise HTTPException(status_code=400, detail="last_working_day is required.")
+
+    # Validate date format
+    try:
+        lwd = date_type.fromisoformat(last_working_day)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=400,
+            detail="last_working_day must be in YYYY-MM-DD format.",
+        )
+
+    reason = _validate_text_length(
+        (body.get("reason") or "").strip(), "reason", MAX_TEXT_LENGTH
+    )
+    notice_served = bool(body.get("notice_served", False))
+
+    actor_id = int(current_user.get("sub", 0))
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    monthly_salary = float(emp.get("salary_monthly") or 0.0)
+    if not math.isfinite(monthly_salary) or monthly_salary < 0:
+        monthly_salary = 0.0
+
+    notice_period_days = int(emp.get("notice_period_days") or 0)
+
+    # --- 1. Pro-rated salary for partial month ---
+    # Calculate the partial month of the last working day
+    lwd_month_start = lwd.replace(day=1)
+    _, days_in_lwd_month = calendar.monthrange(lwd.year, lwd.month)
+    lwd_month_end = lwd.replace(day=days_in_lwd_month)
+
+    from hr_advisory.services.payroll_calculator import prorate_salary
+
+    prorated_salary = prorate_salary(
+        monthly_salary,
+        emp.get("start_date", ""),
+        last_working_day,
+        lwd_month_start.isoformat(),
+        lwd_month_end.isoformat(),
+    )
+
+    # --- 2. Outstanding leave encashment ---
+    # Get unused annual leave and calculate encashment at daily rate
+    leave_balances = _get_leave_balances(employee_id, company_id)
+    annual_balance = None
+    for bal in leave_balances:
+        lt = (bal.get("leave_type") or "").lower()
+        if lt == "annual":
+            annual_balance = bal
+            break
+
+    unused_leave_days = 0.0
+    if annual_balance:
+        entitlement = float(annual_balance.get("entitlement_days") or 0.0)
+        used = float(annual_balance.get("used_days") or 0.0)
+        pending = float(annual_balance.get("pending_days") or 0.0)
+        unused_leave_days = max(0.0, entitlement - used - pending)
+
+    # Daily rate = monthly salary / 26 (Singapore norm for working days)
+    daily_rate = monthly_salary / 26.0 if monthly_salary > 0 else 0.0
+    leave_encashment = round(unused_leave_days * daily_rate, 2)
+
+    # --- 3. Notice period payment/deduction ---
+    notice_payment = 0.0
+    notice_shortfall_days = 0
+
+    if notice_period_days > 0 and not notice_served:
+        # Calculate days between today and last working day
+        today_date = datetime.now(timezone.utc).date()
+        days_given = max(0, (lwd - today_date).days)
+        notice_shortfall_days = max(0, notice_period_days - days_given)
+
+        if notice_shortfall_days > 0:
+            if exit_type == "resignation":
+                # Employee owes company for shortfall (deduction)
+                notice_payment = -round(daily_rate * notice_shortfall_days, 2)
+            elif exit_type in ("termination", "retrenchment"):
+                # Company owes employee salary in lieu of notice
+                notice_payment = round(daily_rate * notice_shortfall_days, 2)
+
+    # --- 4. Retrenchment benefit (if applicable) ---
+    retrenchment_benefit = 0.0
+    retrenchment_explanation = ""
+
+    if exit_type == "retrenchment":
+        # Calculate years of service
+        start_date_str = emp.get("start_date", "")
+        years_of_service = 0.0
+        if start_date_str:
+            try:
+                start_dt = date_type.fromisoformat(start_date_str)
+                service_days = (lwd - start_dt).days
+                years_of_service = max(0.0, service_days / 365.25)
+            except (ValueError, TypeError):
+                years_of_service = 0.0
+
+        # Use the existing retrenchment calculator
+        from hr_advisory.workflows.calculators.retrenchment_calculator import (
+            calculate_retrenchment,
+            RetrenchmentInput,
+        )
+
+        company_record = None
+        try:
+            from kailash.runtime import LocalRuntime
+            from kailash.workflow.builder import WorkflowBuilder
+
+            import hr_advisory.models  # noqa: F401
+
+            wf = WorkflowBuilder()
+            wf.add_node("CompanyReadNode", "read_company", {"id": company_id})
+            runtime = LocalRuntime()
+            results, _ = runtime.execute(wf.build())
+            company_record = results.get("read_company", {})
+        except Exception:
+            logger.debug("Could not read company record for sector lookup")
+
+        sector = (company_record or {}).get("sector", "") or ""
+
+        retrench_result = calculate_retrenchment(
+            RetrenchmentInput(
+                years_of_service=years_of_service,
+                monthly_salary=monthly_salary,
+                sector=sector,
+            )
+        )
+        retrenchment_benefit = retrench_result.market_norm_total
+        retrenchment_explanation = retrench_result.explanation
+
+    # --- 5. Calculate total settlement ---
+    total_settlement = round(
+        prorated_salary + leave_encashment + notice_payment + retrenchment_benefit, 2
+    )
+
+    # --- 6. Update employee record ---
+    _update_employee(
+        employee_id,
+        {
+            "is_active": False,
+            "end_date": last_working_day,
+            "confirmation_status": "terminated",
+        },
+    )
+
+    # --- 7. Create EmploymentEvent ---
+    event_type_map = {
+        "resignation": "resigned",
+        "termination": "terminated",
+        "retrenchment": "retrenched",
+        "contract_end": "terminated",
+    }
+    _create_employment_event(
+        {
+            "employee_id": employee_id,
+            "company_id": company_id,
+            "event_type": event_type_map.get(exit_type, "terminated"),
+            "event_date": today,
+            "description": f"Exit processed: {exit_type.replace('_', ' ').title()}",
+            "effective_date": last_working_day,
+            "approved_by": actor_id,
+            "notes": reason,
+            "new_value": {
+                "exit_type": exit_type,
+                "last_working_day": last_working_day,
+                "notice_served": notice_served,
+                "total_settlement": total_settlement,
+            },
+        }
+    )
+
+    # --- 8. Build settlement breakdown ---
+    settlement = {
+        "employee_id": employee_id,
+        "exit_type": exit_type,
+        "last_working_day": last_working_day,
+        "notice_served": notice_served,
+        "breakdown": {
+            "prorated_salary": prorated_salary,
+            "leave_encashment": {
+                "unused_days": unused_leave_days,
+                "daily_rate": round(daily_rate, 2),
+                "amount": leave_encashment,
+            },
+            "notice_period": {
+                "notice_period_days": notice_period_days,
+                "shortfall_days": notice_shortfall_days,
+                "amount": notice_payment,
+                "note": (
+                    "Employee owes company (salary in lieu of notice)"
+                    if notice_payment < 0
+                    else (
+                        "Company owes employee (salary in lieu of notice)"
+                        if notice_payment > 0
+                        else "Notice fully served or not applicable"
+                    )
+                ),
+            },
+            "retrenchment_benefit": {
+                "amount": retrenchment_benefit,
+                "explanation": retrenchment_explanation,
+            }
+            if exit_type == "retrenchment"
+            else None,
+        },
+        "total_settlement": total_settlement,
+        "message": f"Exit processed for employee. Total settlement: ${total_settlement:,.2f}",
+    }
+
+    return settlement
 
 
 # ==========================================================================

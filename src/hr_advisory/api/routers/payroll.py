@@ -1,10 +1,13 @@
 """Payroll management endpoints.
 
 Handles payroll run lifecycle: calculate, review, approve, mark paid.
-Also handles payslip access, CPF YTD tracking, and payroll reports.
+Also handles payslip access, CPF YTD tracking, payroll reports, and exports.
 """
 
+import csv
+import io
 import logging
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -90,6 +93,23 @@ def _dataflow_read(node_type: str, record_id: int) -> dict | None:
 
 def _find_user_by_id(user_id: int) -> dict | None:
     return _dataflow_read("UserReadNode", user_id)
+
+
+def _sanitize_filename(title: str, extension: str = ".csv") -> str:
+    """Sanitize a title for use in Content-Disposition headers.
+
+    Removes all characters except alphanumeric, hyphen, underscore, dot, and space.
+    Replaces spaces with hyphens, truncates to 100 characters.
+    """
+    safe = re.sub(r"[^a-zA-Z0-9\-_. ]", "", title)
+    safe = safe.replace(" ", "-")
+    safe = re.sub(r"-+", "-", safe).strip("-")
+    max_base = 100 - len(extension)
+    if len(safe) > max_base:
+        safe = safe[:max_base]
+    if not safe:
+        safe = "export"
+    return safe + extension
 
 
 # --------------------------------------------------------------------------
@@ -2042,3 +2062,420 @@ async def generate_ir21(
         "status": "draft",
         "ir21": ir21,
     }
+
+
+# ==========================================================================
+# CPF RECONCILIATION REPORT (T166)
+# ==========================================================================
+
+
+@router.get("/reports/cpf-reconciliation")
+async def cpf_reconciliation_report(
+    year: int = Query(..., description="Tax/contribution year"),
+    month: int = Query(0, description="Month (1-12). 0 = full year."),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """CPF reconciliation report comparing payslip CPF totals against YTD records.
+
+    For each employee, aggregates employer CPF, employee CPF, and total CPF from
+    payslips for the given period and compares against CpfYtdRecord totals.
+    Any discrepancies are flagged.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    if month and (month < 1 or month > 12):
+        raise HTTPException(status_code=400, detail="month must be between 1 and 12.")
+
+    # Fetch all payroll runs for the period
+    all_runs = _dataflow_list("PayrollRunListNode", {"company_id": company_id})
+    period_runs = []
+    for run in all_runs:
+        ps = run.get("period_start", "")
+        if not ps:
+            continue
+        try:
+            from datetime import date as _date
+            run_date = _date.fromisoformat(ps)
+            if run_date.year != year:
+                continue
+            if month and run_date.month != month:
+                continue
+            period_runs.append(run)
+        except (ValueError, TypeError):
+            continue
+
+    # Fetch all active employees
+    employees = _dataflow_list(
+        "EmployeeListNode",
+        {"company_id": company_id, "is_active": True},
+    )
+
+    reconciliation: list[dict] = []
+    total_discrepancies = 0
+
+    for emp in employees:
+        emp_id = emp.get("id")
+        user = _find_user_by_id(emp.get("user_id"))
+        emp_name = user.get("name", "") if user else ""
+
+        # Aggregate CPF from payslips
+        payslip_employer_cpf = 0.0
+        payslip_employee_cpf = 0.0
+
+        for run in period_runs:
+            run_id = run.get("id")
+            payslips = _dataflow_list(
+                "PayslipListNode",
+                {"payroll_run_id": run_id, "employee_id": emp_id},
+            )
+            for ps in payslips:
+                payslip_employer_cpf += ps.get("employer_cpf", 0.0)
+                payslip_employee_cpf += ps.get("employee_cpf", 0.0)
+
+        payslip_total_cpf = payslip_employer_cpf + payslip_employee_cpf
+
+        # Get CPF YTD records for comparison
+        ytd_filter: dict = {
+            "employee_id": emp_id,
+            "company_id": company_id,
+            "year": year,
+        }
+        if month:
+            ytd_filter["month"] = month
+
+        ytd_records = _dataflow_list("CpfYtdRecordListNode", ytd_filter)
+        ytd_employer_cpf = sum(r.get("employer_cpf", 0.0) for r in ytd_records)
+        ytd_employee_cpf = sum(r.get("employee_cpf", 0.0) for r in ytd_records)
+        ytd_total_cpf = ytd_employer_cpf + ytd_employee_cpf
+
+        # Determine discrepancy (tolerance of 1 cent for rounding)
+        employer_diff = round(payslip_employer_cpf - ytd_employer_cpf, 2)
+        employee_diff = round(payslip_employee_cpf - ytd_employee_cpf, 2)
+        total_diff = round(payslip_total_cpf - ytd_total_cpf, 2)
+        has_discrepancy = abs(employer_diff) > 0.01 or abs(employee_diff) > 0.01
+
+        if has_discrepancy:
+            total_discrepancies += 1
+
+        reconciliation.append(
+            {
+                "employee_id": emp_id,
+                "employee_name": emp_name,
+                "nric_fin_last4": emp.get("nric_fin_last4", ""),
+                # Payslip totals
+                "payslip_employer_cpf": round(payslip_employer_cpf, 2),
+                "payslip_employee_cpf": round(payslip_employee_cpf, 2),
+                "payslip_total_cpf": round(payslip_total_cpf, 2),
+                # YTD record totals
+                "ytd_employer_cpf": round(ytd_employer_cpf, 2),
+                "ytd_employee_cpf": round(ytd_employee_cpf, 2),
+                "ytd_total_cpf": round(ytd_total_cpf, 2),
+                # Discrepancy
+                "employer_cpf_diff": employer_diff,
+                "employee_cpf_diff": employee_diff,
+                "total_cpf_diff": total_diff,
+                "has_discrepancy": has_discrepancy,
+            }
+        )
+
+    period_label = f"{year}-{month:02d}" if month else str(year)
+
+    return {
+        "year": year,
+        "month": month if month else None,
+        "period": period_label,
+        "employee_count": len(reconciliation),
+        "discrepancy_count": total_discrepancies,
+        "reconciliation": reconciliation,
+    }
+
+
+# ==========================================================================
+# IR8A CSV EXPORT — IRAS AIS FORMAT (T168)
+# ==========================================================================
+
+
+@router.post("/tax/ir8a-csv")
+async def export_ir8a_csv(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> Response:
+    """Export IR8A data as CSV in IRAS Auto-Inclusion Scheme format.
+
+    Accepts JSON body with `year` (required) and optional `employee_ids` list.
+    If employee_ids is omitted, exports for all active employees.
+    Returns a downloadable CSV file.
+    """
+    from hr_advisory.services.statutory_files import generate_ir8a_data
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    body = await request.json()
+    year = body.get("year", 0)
+    employee_ids = body.get("employee_ids")
+
+    if not year:
+        raise HTTPException(status_code=400, detail="year is required.")
+
+    # Fetch employees
+    if employee_ids:
+        employees = []
+        for eid in employee_ids:
+            emp_records = _dataflow_list("EmployeeListNode", {"id": eid}, limit=1)
+            if emp_records and emp_records[0].get("company_id") == company_id:
+                employees.append(emp_records[0])
+    else:
+        employees = _dataflow_list(
+            "EmployeeListNode",
+            {"company_id": company_id, "is_active": True},
+        )
+
+    if not employees:
+        raise HTTPException(status_code=400, detail="No employees found.")
+
+    # Generate IR8A data for each employee and build CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # IRAS AIS CSV header
+    writer.writerow(
+        [
+            "Employee ID",
+            "Employee Name",
+            "ID Type",
+            "ID Number",
+            "Date of Birth",
+            "Date of Commencement",
+            "Date of Cessation",
+            "Gross Salary",
+            "Bonus",
+            "Director's Fee",
+            "Others",
+            "Total",
+            "Employee CPF",
+            "Employer CPF",
+        ]
+    )
+
+    for emp in employees:
+        emp_id = emp.get("id")
+        user = _find_user_by_id(emp.get("user_id"))
+        if user:
+            emp["name"] = user.get("name", "")
+
+        # Fetch payslips and items for the year
+        all_payslips = _dataflow_list("PayslipListNode", {"employee_id": emp_id})
+        year_payslips = [
+            ps for ps in all_payslips if ps.get("period_start", "").startswith(str(year))
+        ]
+
+        all_items: list[dict] = []
+        for ps in year_payslips:
+            ps_items = _dataflow_list("PayslipItemListNode", {"payslip_id": ps.get("id")})
+            all_items.extend(ps_items)
+
+        ir8a = generate_ir8a_data(emp, year_payslips, all_items, year)
+
+        # Determine ID type
+        nric_fin = emp.get("nric_fin", "")
+        if nric_fin.upper().startswith(("S", "T")):
+            id_type = "NRIC"
+        elif nric_fin.upper().startswith(("F", "G", "M")):
+            id_type = "FIN"
+        else:
+            id_type = "NRIC"
+
+        # Others = commission + overtime + other allowances
+        others = (
+            ir8a.get("commission", 0.0)
+            + ir8a.get("overtime_pay", 0.0)
+            + ir8a.get("total_allowances", 0.0)
+        )
+
+        writer.writerow(
+            [
+                emp.get("employee_id_internal", str(emp_id)),
+                ir8a.get("employee_name", ""),
+                id_type,
+                nric_fin,
+                emp.get("date_of_birth", ""),
+                emp.get("start_date", ""),
+                emp.get("end_date", ""),
+                f"{ir8a.get('gross_salary_wages', 0.0):.2f}",
+                f"{ir8a.get('bonus', 0.0):.2f}",
+                f"{ir8a.get('director_fees', 0.0):.2f}",
+                f"{others:.2f}",
+                f"{ir8a.get('total_gross_income', 0.0):.2f}",
+                f"{ir8a.get('employee_cpf', 0.0):.2f}",
+                f"{ir8a.get('employer_cpf', 0.0):.2f}",
+            ]
+        )
+
+    csv_content = output.getvalue()
+    filename = _sanitize_filename(f"ir8a_ais_{year}", ".csv")
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ==========================================================================
+# APPENDIX 8A — BENEFITS IN KIND (T169)
+# ==========================================================================
+
+
+@router.get("/tax/appendix-8a/{employee_id}")
+async def get_appendix_8a(
+    employee_id: int,
+    year: int = Query(0),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get Appendix 8A (Benefits in Kind) data for a specific employee and year.
+
+    Returns the standard Appendix 8A structure with housing, car, utilities,
+    and other benefit categories. Values will be zero for employees who receive
+    only cash compensation.
+    """
+    from hr_advisory.services.statutory_files import generate_appendix_8a
+
+    company_id = get_current_company_id(current_user)
+    if year == 0:
+        year = datetime.now(timezone.utc).year
+
+    # Verify employee belongs to company
+    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    if not emp_records or emp_records[0].get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    emp = emp_records[0]
+    user = _find_user_by_id(emp.get("user_id"))
+    if user:
+        emp["name"] = user.get("name", "")
+
+    # Fetch payslips and items for the year
+    all_payslips = _dataflow_list("PayslipListNode", {"employee_id": employee_id})
+    year_payslips = [
+        ps for ps in all_payslips if ps.get("period_start", "").startswith(str(year))
+    ]
+
+    all_items: list[dict] = []
+    for ps in year_payslips:
+        ps_items = _dataflow_list("PayslipItemListNode", {"payslip_id": ps.get("id")})
+        all_items.extend(ps_items)
+
+    appendix_8a = generate_appendix_8a(emp, year_payslips, all_items, year)
+
+    return {
+        "employee_id": employee_id,
+        "year": year,
+        "appendix_8a": appendix_8a,
+    }
+
+
+# ==========================================================================
+# PAYROLL DATA CSV EXPORT (T189)
+# ==========================================================================
+
+
+@router.get("/export")
+async def export_payroll_csv(
+    start_date: str = Query(..., description="Period start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="Period end date (YYYY-MM-DD)"),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> Response:
+    """Export payroll data as a downloadable CSV file.
+
+    Fetches all payroll runs within the date range and exports a row per
+    employee per payroll period with salary breakdown, statutory contributions,
+    and net pay.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    # Validate date inputs
+    from datetime import date as _date
+    try:
+        _date.fromisoformat(start_date)
+        _date.fromisoformat(end_date)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be before or equal to end_date.")
+
+    # Fetch payroll runs in the date range
+    all_runs = _dataflow_list("PayrollRunListNode", {"company_id": company_id})
+    period_runs = [
+        r for r in all_runs
+        if r.get("period_start", "") >= start_date and r.get("period_end", "") <= end_date
+    ]
+    period_runs.sort(key=lambda r: r.get("period_start", ""))
+
+    # Build CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow(
+        [
+            "Period",
+            "Employee Name",
+            "Employee ID",
+            "Basic Salary",
+            "Gross Salary",
+            "Employee CPF",
+            "Employer CPF",
+            "SDL",
+            "FWL",
+            "SHG",
+            "Net Pay",
+            "Status",
+        ]
+    )
+
+    for run in period_runs:
+        run_id = run.get("id")
+        period = f"{run.get('period_start', '')} to {run.get('period_end', '')}"
+        run_status = run.get("status", "")
+
+        payslips = _dataflow_list("PayslipListNode", {"payroll_run_id": run_id})
+
+        for ps in payslips:
+            emp_id = ps.get("employee_id")
+            emp_records = _dataflow_list("EmployeeListNode", {"id": emp_id}, limit=1)
+            emp = emp_records[0] if emp_records else {}
+            user = _find_user_by_id(emp.get("user_id")) if emp else None
+            emp_name = user.get("name", "") if user else ""
+            emp_id_internal = emp.get("employee_id_internal", str(emp_id))
+
+            writer.writerow(
+                [
+                    period,
+                    emp_name,
+                    emp_id_internal,
+                    f"{ps.get('basic_salary', 0.0):.2f}",
+                    f"{ps.get('gross_salary', 0.0):.2f}",
+                    f"{ps.get('employee_cpf', 0.0):.2f}",
+                    f"{ps.get('employer_cpf', 0.0):.2f}",
+                    f"{ps.get('sdl', 0.0):.2f}",
+                    f"{ps.get('fwl', 0.0):.2f}",
+                    f"{ps.get('shg_amount', 0.0):.2f}",
+                    f"{ps.get('net_salary', 0.0):.2f}",
+                    run_status,
+                ]
+            )
+
+    csv_content = output.getvalue()
+    filename = _sanitize_filename(f"payroll_{start_date}_to_{end_date}", ".csv")
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

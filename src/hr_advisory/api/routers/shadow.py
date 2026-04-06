@@ -458,6 +458,97 @@ def _build_annotations(
     return result
 
 
+# ── Leave context helper (T164) ──────────────────────────────
+
+
+def _build_leave_context(company_id: int | None) -> dict[str, Any]:
+    """Build leave-related context data for the shadow agent.
+
+    Includes pending leave count and upcoming team leave within the
+    next 7 days. Used by the /shadow/context endpoint to enrich
+    page context on leave, dashboard, and employee pages.
+
+    Args:
+        company_id: The company ID, or None if unavailable.
+
+    Returns:
+        Dict with pending_count, upcoming_leave list, and summary text.
+    """
+    if company_id is None:
+        return {}
+
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    result: dict[str, Any] = {}
+
+    # Pending leave applications
+    try:
+        import hr_advisory.models  # noqa: F401
+
+        wf = WorkflowBuilder()
+        wf.add_node(
+            "LeaveApplicationListNode",
+            "list",
+            {"filter": {"company_id": company_id, "status": "pending"}, "limit": 100, "enable_cache": False},
+        )
+        runtime = LocalRuntime()
+        raw_results, _ = runtime.execute(wf.build())
+        raw = raw_results["list"]
+        pending = raw.get("records", raw) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+        result["pending_count"] = len(pending)
+    except Exception:
+        result["pending_count"] = 0
+        logger.debug("Failed to query pending leave for context", exc_info=True)
+
+    # Upcoming team leave (next 7 days)
+    try:
+        today = date.today()
+        from datetime import timedelta as _td
+        horizon = today + _td(days=7)
+
+        wf2 = WorkflowBuilder()
+        wf2.add_node(
+            "LeaveApplicationListNode",
+            "list",
+            {"filter": {"company_id": company_id, "status": "approved"}, "limit": 200, "enable_cache": False},
+        )
+        runtime2 = LocalRuntime()
+        raw_results2, _ = runtime2.execute(wf2.build())
+        raw2 = raw_results2["list"]
+        approved = raw2.get("records", raw2) if isinstance(raw2, dict) else (raw2 if isinstance(raw2, list) else [])
+
+        upcoming: list[dict] = []
+        for app in approved:
+            start_str = app.get("start_date", "")
+            if not start_str:
+                continue
+            try:
+                start_date = date.fromisoformat(start_str[:10])
+            except (ValueError, TypeError):
+                continue
+
+            if today <= start_date <= horizon:
+                emp_name = app.get("employee_name", "") or f"Employee #{app.get('employee_id', '?')}"
+                upcoming.append(
+                    {
+                        "employee_name": emp_name,
+                        "start_date": start_str[:10],
+                        "end_date": (app.get("end_date", "") or "")[:10],
+                        "leave_type": app.get("leave_type_name", "") or app.get("leave_type", "Leave"),
+                    }
+                )
+
+        result["upcoming_leave"] = upcoming[:10]  # Cap at 10
+        result["upcoming_count"] = len(upcoming)
+    except Exception:
+        result["upcoming_leave"] = []
+        result["upcoming_count"] = 0
+        logger.debug("Failed to query upcoming leave for context", exc_info=True)
+
+    return result
+
+
 # ── Endpoints ─────────────────────────────────────────────────
 
 
@@ -507,6 +598,11 @@ async def shadow_context(
     alerts = _build_regulatory_alerts(page_domains)
     annotations = _build_annotations(result.findings, page)
 
+    # ── Leave context (T164) — pending leave and upcoming team leave ──
+    leave_context: dict = {}
+    if page in ("leave", "dashboard", "my-leave", "employees"):
+        leave_context = _build_leave_context(company_id)
+
     logger.info(
         "Shadow context for page=%s, company_id=%s: %d insights, %d alerts, %d annotation groups",
         page,
@@ -516,7 +612,7 @@ async def shadow_context(
         len(annotations),
     )
 
-    return {
+    response: dict = {
         "page": page,
         "company_id": company_id,
         "compliance_score": result.score,
@@ -526,6 +622,10 @@ async def shadow_context(
         "annotations": annotations,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if leave_context:
+        response["leave_context"] = leave_context
+
+    return response
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1750,11 +1850,12 @@ async def shadow_briefing(
     briefing = generate_briefing(company_id, user_role)
 
     logger.info(
-        "Briefing generated for company_id=%s: %d actions, %d deadlines, %d attention items",
+        "Briefing generated for company_id=%s: %d actions, %d deadlines, %d attention, %d cpf items",
         company_id,
         len(briefing.get("pending_actions", [])),
         len(briefing.get("upcoming_deadlines", [])),
         len(briefing.get("attention_needed", [])),
+        len(briefing.get("cpf_validation", [])),
     )
 
     return {
@@ -1944,5 +2045,428 @@ async def shadow_distill(
         **memory.to_dict(),
         "user_id": user_id,
         "observations_processed": len(observations),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ════════════════════════════════════════��═════════════════════
+# Shadow Agent HRIS Integration — Payroll & Leave Tools
+# ════��═════════════════════════════════════════════════════════
+#
+# These endpoints are shadow-specific tools that aggregate data
+# across modules to provide validated, contextualized views.
+# They are registered in the tool_registry and invocable via
+# the command surface.
+
+
+def _shadow_dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
+    """Execute a DataFlow ListNode query and return the record list."""
+    from kailash.runtime import LocalRuntime
+    from kailash.workflow.builder import WorkflowBuilder
+
+    import hr_advisory.models  # noqa: F401
+
+    wf = WorkflowBuilder()
+    wf.add_node(
+        node_type,
+        "list",
+        {"filter": filter_dict, "limit": limit, "enable_cache": False},
+    )
+    runtime = LocalRuntime()
+    results, _ = runtime.execute(wf.build())
+    raw = results["list"]
+    if isinstance(raw, dict) and "records" in raw:
+        return raw["records"]
+    if isinstance(raw, list):
+        return raw
+    return []
+
+
+@router.get("/payroll/validate")
+async def shadow_payroll_validate(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Validate the latest payroll run for the company.
+
+    Runs four validation checks:
+    1. Employee coverage: all active employees are included in the run
+    2. CPF rate validation: CPF amounts match expected rates for age/citizenship
+    3. Zero-salary check: no payslips with $0 gross salary
+    4. Variance check: total payroll within 20% of previous month
+
+    Returns a structured validation summary with warnings and pass/fail status.
+    """
+    from hr_advisory.shadow.formatter import ArborFormatter
+
+    company_id = get_current_company_id(current_user)
+    formatter = ArborFormatter()
+
+    warnings: list[dict] = []
+    checks: list[dict] = []
+
+    # ── Fetch latest draft/pending/approved payroll run ───────────
+    try:
+        all_runs = _shadow_dataflow_list(
+            "PayrollRunListNode",
+            {"company_id": company_id},
+            limit=100,
+        )
+    except Exception:
+        logger.warning("Payroll validate: failed to fetch payroll runs", exc_info=True)
+        return {
+            "type": "result",
+            "message": formatter.PREFIX + "Unable to fetch payroll data. Please try again.",
+            "success": False,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    if not all_runs:
+        return {
+            "type": "result",
+            "message": formatter.PREFIX + "No payroll runs found for your company.",
+            "success": True,
+            "data": {"checks": [], "warnings": [], "status": "no_data"},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # Sort by period_start descending and find the most recent actionable run
+    sorted_runs = sorted(all_runs, key=lambda r: r.get("period_start", ""), reverse=True)
+    target_run = None
+    for run in sorted_runs:
+        if run.get("status") in ("draft", "pending", "calculated", "approved"):
+            target_run = run
+            break
+    if target_run is None:
+        # Fall back to most recent completed run
+        target_run = sorted_runs[0]
+
+    run_id = target_run.get("id")
+    run_status = target_run.get("status", "unknown")
+    run_period = target_run.get("period_start", "")[:7] or "unknown"
+
+    # ── Check 1: Employee coverage ───────────────────────────────
+    try:
+        active_employees = _shadow_dataflow_list(
+            "EmployeeListNode",
+            {"company_id": company_id, "is_active": True},
+            limit=10000,
+        )
+        active_count = len(active_employees)
+        run_employee_count = target_run.get("employee_count", 0)
+
+        if active_count > 0 and run_employee_count > 0:
+            if run_employee_count < active_count:
+                missing = active_count - run_employee_count
+                warnings.append(
+                    {
+                        "check": "employee_coverage",
+                        "severity": "high",
+                        "message": f"{missing} active employee{'s are' if missing != 1 else ' is'} not included in the payroll run ({run_employee_count} of {active_count}).",
+                    }
+                )
+                checks.append({"name": "Employee coverage", "status": "warning", "detail": f"{run_employee_count}/{active_count} included"})
+            else:
+                checks.append({"name": "Employee coverage", "status": "pass", "detail": f"All {active_count} active employees included"})
+        else:
+            checks.append({"name": "Employee coverage", "status": "skipped", "detail": "Unable to compare counts"})
+    except Exception:
+        checks.append({"name": "Employee coverage", "status": "error", "detail": "Failed to query employee data"})
+        logger.debug("Payroll validate: employee coverage check failed", exc_info=True)
+
+    # ── Check 2: CPF rate validation (spot-check via payslips) ───
+    try:
+        payslips = _shadow_dataflow_list(
+            "PayslipListNode",
+            {"payroll_run_id": run_id},
+            limit=10000,
+        )
+
+        zero_cpf_count = 0
+        suspicious_cpf_count = 0
+        for slip in payslips:
+            gross = float(slip.get("gross_salary", 0) or 0)
+            cpf_employee = float(slip.get("cpf_employee", 0) or 0)
+            cpf_employer = float(slip.get("cpf_employer", 0) or 0)
+            citizenship = slip.get("citizenship_status", "")
+
+            # For citizens/PRs, CPF should be non-zero if gross > 0
+            if gross > 50 and citizenship in ("citizen", "pr", "singapore_citizen", "permanent_resident"):
+                total_cpf = cpf_employee + cpf_employer
+                if total_cpf <= 0:
+                    zero_cpf_count += 1
+                else:
+                    # Basic rate bounds check: total CPF should be 4-37% of capped OW
+                    from hr_advisory.services.payroll_calculator import CPF_OW_CEILING_MONTHLY
+
+                    capped_ow = min(gross, CPF_OW_CEILING_MONTHLY)
+                    if capped_ow > 0:
+                        cpf_rate_pct = (total_cpf / capped_ow) * 100.0
+                        # Reasonable range: 4% (PR year 1 aged 70+) to 37% (SC below 55)
+                        if cpf_rate_pct < 3.5 or cpf_rate_pct > 40.0:
+                            suspicious_cpf_count += 1
+
+        if zero_cpf_count > 0:
+            warnings.append(
+                {
+                    "check": "cpf_rates",
+                    "severity": "high",
+                    "message": f"{zero_cpf_count} citizen/PR payslip{'s have' if zero_cpf_count != 1 else ' has'} zero CPF despite having a salary.",
+                }
+            )
+        if suspicious_cpf_count > 0:
+            warnings.append(
+                {
+                    "check": "cpf_rates",
+                    "severity": "medium",
+                    "message": f"{suspicious_cpf_count} payslip{'s have' if suspicious_cpf_count != 1 else ' has'} CPF rates outside expected bounds (4-37% of capped OW). Verify age and citizenship status.",
+                }
+            )
+
+        cpf_status = "pass"
+        if zero_cpf_count > 0 or suspicious_cpf_count > 0:
+            cpf_status = "warning"
+        checks.append(
+            {
+                "name": "CPF rates",
+                "status": cpf_status,
+                "detail": f"Checked {len(payslips)} payslips"
+                + (f", {zero_cpf_count} zero-CPF" if zero_cpf_count else "")
+                + (f", {suspicious_cpf_count} suspicious rates" if suspicious_cpf_count else ""),
+            }
+        )
+    except Exception:
+        checks.append({"name": "CPF rates", "status": "error", "detail": "Failed to query payslips"})
+        logger.debug("Payroll validate: CPF rate check failed", exc_info=True)
+
+    # ─��� Check 3: Zero-salary payslips ────────────────────────────
+    try:
+        zero_salary_count = 0
+        for slip in payslips:
+            gross = float(slip.get("gross_salary", 0) or 0)
+            if gross <= 0:
+                zero_salary_count += 1
+
+        if zero_salary_count > 0:
+            warnings.append(
+                {
+                    "check": "zero_salary",
+                    "severity": "medium",
+                    "message": f"{zero_salary_count} payslip{'s have' if zero_salary_count != 1 else ' has'} $0 gross salary. Verify these are intentional (e.g. unpaid leave).",
+                }
+            )
+            checks.append({"name": "Zero-salary check", "status": "warning", "detail": f"{zero_salary_count} payslip{'s' if zero_salary_count != 1 else ''} with $0 gross"})
+        else:
+            checks.append({"name": "Zero-salary check", "status": "pass", "detail": "No zero-salary payslips"})
+    except Exception:
+        checks.append({"name": "Zero-salary check", "status": "error", "detail": "Check failed"})
+        logger.debug("Payroll validate: zero-salary check failed", exc_info=True)
+
+    # ── Check 4: Month-over-month variance (within 20%) ─────���────
+    try:
+        completed_runs = [
+            r
+            for r in sorted_runs
+            if r.get("status") in ("approved", "paid", "completed")
+            and r.get("id") != run_id
+        ]
+        if completed_runs:
+            previous_run = completed_runs[0]
+            current_total = float(target_run.get("total_gross", 0) or 0)
+            previous_total = float(previous_run.get("total_gross", 0) or 0)
+
+            if previous_total > 0 and current_total > 0:
+                variance_pct = ((current_total - previous_total) / previous_total) * 100.0
+
+                if abs(variance_pct) > 20.0:
+                    direction = "higher" if variance_pct > 0 else "lower"
+                    warnings.append(
+                        {
+                            "check": "variance",
+                            "severity": "medium",
+                            "message": (
+                                f"Total payroll is {abs(variance_pct):.1f}% {direction} than previous month "
+                                f"(${current_total:,.2f} vs ${previous_total:,.2f}). Review for accuracy."
+                            ),
+                        }
+                    )
+                    checks.append({"name": "Variance check", "status": "warning", "detail": f"{variance_pct:+.1f}% from previous month"})
+                else:
+                    checks.append({"name": "Variance check", "status": "pass", "detail": f"{variance_pct:+.1f}% from previous month (within bounds)"})
+            else:
+                checks.append({"name": "Variance check", "status": "skipped", "detail": "Insufficient data for comparison"})
+        else:
+            checks.append({"name": "Variance check", "status": "skipped", "detail": "No previous completed run to compare"})
+    except Exception:
+        checks.append({"name": "Variance check", "status": "error", "detail": "Check failed"})
+        logger.debug("Payroll validate: variance check failed", exc_info=True)
+
+    # ── Build summary ────────────────────────────────────────────
+    high_warnings = [w for w in warnings if w.get("severity") == "high"]
+    overall_status = "pass"
+    if high_warnings:
+        overall_status = "needs_attention"
+    elif warnings:
+        overall_status = "warnings"
+
+    passed_count = len([c for c in checks if c["status"] == "pass"])
+    total_checks = len(checks)
+
+    if overall_status == "pass":
+        summary_msg = f"All {passed_count} validation checks passed for the {run_period} payroll run."
+    else:
+        summary_msg = (
+            f"Payroll validation for {run_period}: {passed_count}/{total_checks} checks passed, "
+            f"{len(warnings)} warning{'s' if len(warnings) != 1 else ''} found."
+        )
+
+    logger.info(
+        "Payroll validation for company_id=%s: %s, %d warnings",
+        company_id,
+        overall_status,
+        len(warnings),
+    )
+
+    return {
+        "type": "result",
+        "message": formatter.PREFIX + summary_msg,
+        "success": True,
+        "data": {
+            "run_id": run_id,
+            "run_period": run_period,
+            "run_status": run_status,
+            "overall_status": overall_status,
+            "checks": checks,
+            "warnings": warnings,
+            "passed": passed_count,
+            "total_checks": total_checks,
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/leave/team-balances")
+async def shadow_leave_team_balances(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Return leave balances for the user's team (or all employees for admin).
+
+    Aggregates leave balance data by employee and leave type, providing
+    a quick overview of who has leave remaining and who is running low.
+    """
+    from hr_advisory.shadow.formatter import ArborFormatter
+
+    company_id = get_current_company_id(current_user)
+    user_role = current_user.get("role", "employee")
+    formatter = ArborFormatter()
+
+    try:
+        employees = _shadow_dataflow_list(
+            "EmployeeListNode",
+            {"company_id": company_id, "is_active": True},
+            limit=10000,
+        )
+    except Exception:
+        logger.warning("Leave team balances: failed to fetch employees", exc_info=True)
+        return {
+            "type": "result",
+            "message": formatter.PREFIX + "Unable to fetch employee data.",
+            "success": False,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    if not employees:
+        return {
+            "type": "result",
+            "message": formatter.PREFIX + "No active employees found.",
+            "success": True,
+            "data": {"balances": [], "summary": {}},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # Fetch leave balances for all employees
+    balances_by_employee: list[dict] = []
+    low_balance_count = 0
+    total_queried = 0
+
+    for emp in employees:
+        emp_id = emp.get("id")
+        emp_name = emp.get("full_name") or emp.get("designation") or f"Employee #{emp_id}"
+
+        try:
+            emp_balances = _shadow_dataflow_list(
+                "LeaveBalanceListNode",
+                {"employee_id": emp_id},
+                limit=100,
+            )
+            total_queried += 1
+
+            balance_summary: list[dict] = []
+            for bal in emp_balances:
+                entitled = float(bal.get("entitled_days", 0) or 0)
+                used = float(bal.get("used_days", 0) or 0)
+                remaining = entitled - used
+                leave_type = bal.get("leave_type_name", "") or bal.get("leave_type", "Unknown")
+
+                balance_summary.append(
+                    {
+                        "leave_type": leave_type,
+                        "entitled": entitled,
+                        "used": used,
+                        "remaining": remaining,
+                    }
+                )
+
+                if entitled > 0 and remaining <= 2:
+                    low_balance_count += 1
+
+            balances_by_employee.append(
+                {
+                    "employee_id": emp_id,
+                    "employee_name": emp_name,
+                    "balances": balance_summary,
+                }
+            )
+        except Exception:
+            logger.debug("Failed to fetch leave balances for employee %s", emp_id, exc_info=True)
+
+    # Fetch pending leave applications
+    pending_count = 0
+    try:
+        pending = _shadow_dataflow_list(
+            "LeaveApplicationListNode",
+            {"company_id": company_id, "status": "pending"},
+            limit=100,
+        )
+        pending_count = len(pending)
+    except Exception:
+        logger.debug("Failed to query pending leave count for team balances", exc_info=True)
+
+    summary_parts = [f"{total_queried} employee{'s' if total_queried != 1 else ''}"]
+    if pending_count > 0:
+        summary_parts.append(f"{pending_count} pending approval{'s' if pending_count != 1 else ''}")
+    if low_balance_count > 0:
+        summary_parts.append(f"{low_balance_count} low-balance alert{'s' if low_balance_count != 1 else ''}")
+    summary_msg = f"Team leave overview: {', '.join(summary_parts)}."
+
+    logger.info(
+        "Leave team balances for company_id=%s: %d employees, %d pending, %d low-balance",
+        company_id,
+        total_queried,
+        pending_count,
+        low_balance_count,
+    )
+
+    return {
+        "type": "result",
+        "message": formatter.PREFIX + summary_msg,
+        "success": True,
+        "data": {
+            "balances": balances_by_employee,
+            "summary": {
+                "total_employees": total_queried,
+                "pending_leave_approvals": pending_count,
+                "low_balance_alerts": low_balance_count,
+            },
+        },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
