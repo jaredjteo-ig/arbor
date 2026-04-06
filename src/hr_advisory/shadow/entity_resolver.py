@@ -11,6 +11,7 @@ mappings, and resolves relative date expressions (e.g. "Monday", "tomorrow",
 from __future__ import annotations
 
 import logging
+import math
 import re
 from datetime import date, timedelta
 from typing import Any
@@ -189,6 +190,15 @@ def resolve_entities(
                 key,
                 resolved_value,
             )
+
+    # Validate numeric values — reject NaN/Inf before they reach calculators
+    for param_name, param_value in list(resolved.items()):
+        if isinstance(param_value, float) and not math.isfinite(param_value):
+            warnings.append(
+                f"Parameter '{param_name}' has non-finite value ({param_value}), removed"
+            )
+            logger.warning("Non-finite value for %s.%s param %r: %r", module, action, param_name, param_value)
+            del resolved[param_name]
 
     return resolved, warnings
 
