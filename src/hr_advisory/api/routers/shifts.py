@@ -37,73 +37,11 @@ def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_L
 # DataFlow helpers
 # --------------------------------------------------------------------------
 
-
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-
-def _dataflow_update(node_type: str, record_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "update", {"filter": {"id": record_id}, "fields": updates})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
-
-
-def _dataflow_read(node_type: str, record_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "read", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+from hr_advisory.services import dataflow_crud
 
 
 def _find_user_by_id(user_id: int) -> dict | None:
-    return _dataflow_read("UserReadNode", user_id)
+    return dataflow_crud.read("User", user_id)
 
 
 def _week_dates(week_start: str) -> list[str]:
@@ -114,8 +52,8 @@ def _week_dates(week_start: str) -> list[str]:
 
 def _find_employee_for_user(user_id: int, company_id: int) -> dict | None:
     """Look up the Employee record for a given user and company."""
-    records = _dataflow_list(
-        "EmployeeListNode",
+    records = dataflow_crud.list_records(
+        "Employee",
         {"user_id": user_id, "company_id": company_id},
         limit=1,
     )
@@ -133,7 +71,7 @@ async def list_shift_templates(
 ) -> dict:
     """List all shift templates for the current company."""
     company_id = get_current_company_id(current_user)
-    templates = _dataflow_list("ShiftTemplateListNode", {"company_id": company_id})
+    templates = dataflow_crud.list_records("ShiftTemplate", {"company_id": company_id})
     return {"templates": templates, "count": len(templates)}
 
 
@@ -154,8 +92,8 @@ async def create_shift_template(
 
     _validate_text_length(name, "name", MAX_NAME_LENGTH)
 
-    template = _dataflow_create(
-        "ShiftTemplateCreateNode",
+    template = dataflow_crud.create(
+        "ShiftTemplate",
         {
             "company_id": company_id,
             "name": name,
@@ -178,7 +116,7 @@ async def update_shift_template(
 ) -> dict:
     """Update an existing shift template."""
     company_id = get_current_company_id(current_user)
-    existing = _dataflow_read("ShiftTemplateReadNode", template_id)
+    existing = dataflow_crud.read("ShiftTemplate", template_id)
     if existing is None or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Shift template not found.")
 
@@ -196,8 +134,8 @@ async def update_shift_template(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    _dataflow_update("ShiftTemplateUpdateNode", template_id, updates)
-    updated = _dataflow_read("ShiftTemplateReadNode", template_id)
+    dataflow_crud.update("ShiftTemplate", template_id, updates)
+    updated = dataflow_crud.read("ShiftTemplate", template_id)
     return {"template": updated}
 
 
@@ -229,8 +167,8 @@ async def get_weekly_schedule(
     # Fetch all assignments for the week
     all_assignments = []
     for d in dates:
-        day_assignments = _dataflow_list(
-            "ShiftAssignmentListNode",
+        day_assignments = dataflow_crud.list_records(
+            "ShiftAssignment",
             {"company_id": company_id, "date": d},
         )
         all_assignments.extend(day_assignments)
@@ -239,10 +177,10 @@ async def get_weekly_schedule(
     emp_filter: dict = {"company_id": company_id, "is_active": True}
     if department:
         emp_filter["department"] = department
-    employees = _dataflow_list("EmployeeListNode", emp_filter)
+    employees = dataflow_crud.list_records("Employee", emp_filter)
 
     # Fetch templates for enrichment
-    templates = _dataflow_list("ShiftTemplateListNode", {"company_id": company_id})
+    templates = dataflow_crud.list_records("ShiftTemplate", {"company_id": company_id})
     template_map = {t["id"]: t for t in templates}
 
     # Build grid: employee -> date -> assignment
@@ -301,17 +239,17 @@ async def create_shift_assignment(
         )
 
     # Verify employee belongs to company
-    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    emp_records = dataflow_crud.list_records("Employee", {"id": employee_id}, limit=1)
     if not emp_records or emp_records[0].get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Employee not found.")
 
     # Verify template belongs to company
-    template = _dataflow_read("ShiftTemplateReadNode", shift_template_id)
+    template = dataflow_crud.read("ShiftTemplate", shift_template_id)
     if template is None or template.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Shift template not found.")
 
-    assignment = _dataflow_create(
-        "ShiftAssignmentCreateNode",
+    assignment = dataflow_crud.create(
+        "ShiftAssignment",
         {
             "employee_id": employee_id,
             "company_id": company_id,
@@ -334,7 +272,7 @@ async def update_shift_assignment(
 ) -> dict:
     """Update a shift assignment (e.g. change template, actual times, status)."""
     company_id = get_current_company_id(current_user)
-    existing = _dataflow_read("ShiftAssignmentReadNode", assignment_id)
+    existing = dataflow_crud.read("ShiftAssignment", assignment_id)
     if existing is None or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Shift assignment not found.")
 
@@ -351,8 +289,8 @@ async def update_shift_assignment(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    _dataflow_update("ShiftAssignmentUpdateNode", assignment_id, updates)
-    updated = _dataflow_read("ShiftAssignmentReadNode", assignment_id)
+    dataflow_crud.update("ShiftAssignment", assignment_id, updates)
+    updated = dataflow_crud.read("ShiftAssignment", assignment_id)
     return {"assignment": updated}
 
 
@@ -363,11 +301,11 @@ async def cancel_shift_assignment(
 ) -> dict:
     """Cancel a shift assignment (soft-cancel by setting status to cancelled)."""
     company_id = get_current_company_id(current_user)
-    existing = _dataflow_read("ShiftAssignmentReadNode", assignment_id)
+    existing = dataflow_crud.read("ShiftAssignment", assignment_id)
     if existing is None or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Shift assignment not found.")
 
-    _dataflow_update("ShiftAssignmentUpdateNode", assignment_id, {"status": "cancelled"})
+    dataflow_crud.update("ShiftAssignment", assignment_id, {"status": "cancelled"})
     return {"message": "Shift assignment cancelled.", "status": "cancelled"}
 
 
@@ -394,8 +332,8 @@ async def publish_schedule(
     actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
-    record = _dataflow_create(
-        "ShiftPublishCreateNode",
+    record = dataflow_crud.create(
+        "ShiftPublish",
         {
             "company_id": company_id,
             "week_start": week_start,
@@ -434,13 +372,13 @@ async def get_my_schedule(
     dates = _week_dates(week_start)
 
     # Fetch templates for enrichment
-    templates = _dataflow_list("ShiftTemplateListNode", {"company_id": company_id})
+    templates = dataflow_crud.list_records("ShiftTemplate", {"company_id": company_id})
     template_map = {t["id"]: t for t in templates}
 
     shifts = []
     for d in dates:
-        day_assignments = _dataflow_list(
-            "ShiftAssignmentListNode",
+        day_assignments = dataflow_crud.list_records(
+            "ShiftAssignment",
             {"employee_id": emp["id"], "date": d},
         )
         for assignment in day_assignments:
@@ -490,11 +428,11 @@ async def get_availability(
     emp_filter: dict = {"company_id": company_id, "is_active": True}
     if department:
         emp_filter["department"] = department
-    employees = _dataflow_list("EmployeeListNode", emp_filter)
+    employees = dataflow_crud.list_records("Employee", emp_filter)
 
     # Fetch approved leave applications for this company
-    leave_apps = _dataflow_list(
-        "LeaveApplicationListNode",
+    leave_apps = dataflow_crud.list_records(
+        "LeaveApplication",
         {"company_id": company_id, "status": "approved"},
     )
 
@@ -507,8 +445,8 @@ async def get_availability(
             on_leave.add(la.get("employee_id"))
 
     # Fetch shift assignments for the date
-    day_assignments = _dataflow_list(
-        "ShiftAssignmentListNode",
+    day_assignments = dataflow_crud.list_records(
+        "ShiftAssignment",
         {"company_id": company_id, "date": date_str},
     )
     already_assigned: set[int] = set()
@@ -572,14 +510,14 @@ async def get_weekly_hours(
     # Fetch all non-cancelled assignments for the week
     all_assignments = []
     for d in dates:
-        day_assignments = _dataflow_list(
-            "ShiftAssignmentListNode",
+        day_assignments = dataflow_crud.list_records(
+            "ShiftAssignment",
             {"company_id": company_id, "date": d},
         )
         all_assignments.extend(a for a in day_assignments if a.get("status") != "cancelled")
 
     # Fetch templates for work_hours lookup
-    templates = _dataflow_list("ShiftTemplateListNode", {"company_id": company_id})
+    templates = dataflow_crud.list_records("ShiftTemplate", {"company_id": company_id})
     template_map = {t["id"]: t for t in templates}
 
     # Sum hours per employee
@@ -595,7 +533,7 @@ async def get_weekly_hours(
     emp_ids = list(hours_by_emp.keys())
     for emp_id in emp_ids:
         total = round(hours_by_emp[emp_id], 2)
-        emp_records = _dataflow_list("EmployeeListNode", {"id": emp_id}, limit=1)
+        emp_records = dataflow_crud.list_records("Employee", {"id": emp_id}, limit=1)
         emp = emp_records[0] if emp_records else {}
         user = _find_user_by_id(emp.get("user_id")) if emp else None
         name = user.get("name", "") if user else ""
@@ -638,7 +576,7 @@ async def list_hourly_rates(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    rates = _dataflow_list("ShiftHourlyRateListNode", {"company_id": company_id})
+    rates = dataflow_crud.list_records("ShiftHourlyRate", {"company_id": company_id})
     return {"hourly_rates": rates, "count": len(rates)}
 
 
@@ -664,8 +602,8 @@ async def create_hourly_rate(
     _validate_text_length(name, "name", MAX_NAME_LENGTH)
     _validate_text_length(body.get("description", ""), "description")
 
-    record = _dataflow_create(
-        "ShiftHourlyRateCreateNode",
+    record = dataflow_crud.create(
+        "ShiftHourlyRate",
         {
             "company_id": company_id,
             "name": name,
@@ -686,7 +624,7 @@ async def update_hourly_rate(
 ) -> dict:
     """Update a shift hourly rate."""
     company_id = get_current_company_id(current_user)
-    existing = _dataflow_read("ShiftHourlyRateReadNode", rate_id)
+    existing = dataflow_crud.read("ShiftHourlyRate", rate_id)
     if existing is None or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Hourly rate not found.")
 
@@ -696,8 +634,8 @@ async def update_hourly_rate(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    _dataflow_update("ShiftHourlyRateUpdateNode", rate_id, updates)
-    updated = _dataflow_read("ShiftHourlyRateReadNode", rate_id)
+    dataflow_crud.update("ShiftHourlyRate", rate_id, updates)
+    updated = dataflow_crud.read("ShiftHourlyRate", rate_id)
     return {"hourly_rate": updated}
 
 
@@ -715,7 +653,7 @@ async def list_multipliers(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    multipliers = _dataflow_list("ShiftMultiplierListNode", {"company_id": company_id})
+    multipliers = dataflow_crud.list_records("ShiftMultiplier", {"company_id": company_id})
     return {"multipliers": multipliers, "count": len(multipliers)}
 
 
@@ -753,8 +691,8 @@ async def create_multiplier(
             detail=f"applies_to must be one of: {', '.join(sorted(valid_applies_to))}.",
         )
 
-    record = _dataflow_create(
-        "ShiftMultiplierCreateNode",
+    record = dataflow_crud.create(
+        "ShiftMultiplier",
         {
             "company_id": company_id,
             "name": name,
@@ -779,7 +717,7 @@ async def publish_single_shift(
 ) -> dict:
     """Publish a single shift assignment (makes it visible to the employee)."""
     company_id = get_current_company_id(current_user)
-    existing = _dataflow_read("ShiftAssignmentReadNode", shift_id)
+    existing = dataflow_crud.read("ShiftAssignment", shift_id)
     if existing is None or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Shift assignment not found.")
 
@@ -789,8 +727,8 @@ async def publish_single_shift(
     now = datetime.now(timezone.utc).isoformat()
     actor_id = int(current_user.get("sub", 0))
 
-    _dataflow_update(
-        "ShiftAssignmentUpdateNode",
+    dataflow_crud.update(
+        "ShiftAssignment",
         shift_id,
         {
             "status": "published",
@@ -799,5 +737,5 @@ async def publish_single_shift(
         },
     )
 
-    updated = _dataflow_read("ShiftAssignmentReadNode", shift_id)
+    updated = dataflow_crud.read("ShiftAssignment", shift_id)
     return {"assignment": updated, "message": "Shift published."}

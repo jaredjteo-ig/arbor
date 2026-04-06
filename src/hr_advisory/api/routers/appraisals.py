@@ -36,75 +36,13 @@ def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_L
 # DataFlow helpers
 # --------------------------------------------------------------------------
 
-
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-
-def _dataflow_update(node_type: str, record_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "update", {"filter": {"id": record_id}, "fields": updates})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
-
-
-def _dataflow_read(node_type: str, record_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "read", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
+from hr_advisory.services import dataflow_crud
 
 
 def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
     """Resolve the Employee record for a given user_id + company_id."""
-    records = _dataflow_list(
-        "EmployeeListNode",
+    records = dataflow_crud.list_records(
+        "Employee",
         {"user_id": user_id, "company_id": company_id},
         limit=1,
     )
@@ -125,8 +63,8 @@ async def list_templates(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    templates = _dataflow_list(
-        "AppraisalTemplateListNode",
+    templates = dataflow_crud.list_records(
+        "AppraisalTemplate",
         {"company_id": company_id, "is_archived": False},
     )
     return {"templates": templates, "count": len(templates)}
@@ -150,8 +88,8 @@ async def create_template(
     _validate_text_length(name, "name", MAX_NAME_LENGTH)
     _validate_text_length(body.get("description", ""), "description")
 
-    template = _dataflow_create(
-        "AppraisalTemplateCreateNode",
+    template = dataflow_crud.create(
+        "AppraisalTemplate",
         {
             "company_id": company_id,
             "name": name,
@@ -175,7 +113,7 @@ async def update_template(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("AppraisalTemplateReadNode", template_id)
+    existing = dataflow_crud.read("AppraisalTemplate", template_id)
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Template not found.")
 
@@ -186,7 +124,7 @@ async def update_template(
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = _dataflow_update("AppraisalTemplateUpdateNode", template_id, updates)
+    result = dataflow_crud.update("AppraisalTemplate", template_id, updates)
     return {"template": result}
 
 
@@ -200,11 +138,11 @@ async def archive_template(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("AppraisalTemplateReadNode", template_id)
+    existing = dataflow_crud.read("AppraisalTemplate", template_id)
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Template not found.")
 
-    _dataflow_update("AppraisalTemplateUpdateNode", template_id, {"is_archived": True})
+    dataflow_crud.update("AppraisalTemplate", template_id, {"is_archived": True})
     return {"detail": "Template archived."}
 
 
@@ -222,8 +160,8 @@ async def list_periods(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    periods = _dataflow_list(
-        "AppraisalPeriodListNode",
+    periods = dataflow_crud.list_records(
+        "AppraisalPeriod",
         {"company_id": company_id},
     )
     return {"periods": periods, "count": len(periods)}
@@ -252,8 +190,8 @@ async def create_period(
 
     _validate_text_length(name, "name", MAX_NAME_LENGTH)
 
-    period = _dataflow_create(
-        "AppraisalPeriodCreateNode",
+    period = dataflow_crud.create(
+        "AppraisalPeriod",
         {
             "company_id": company_id,
             "name": name,
@@ -278,7 +216,7 @@ async def update_period(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("AppraisalPeriodReadNode", period_id)
+    existing = dataflow_crud.read("AppraisalPeriod", period_id)
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Period not found.")
 
@@ -289,7 +227,7 @@ async def update_period(
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = _dataflow_update("AppraisalPeriodUpdateNode", period_id, updates)
+    result = dataflow_crud.update("AppraisalPeriod", period_id, updates)
     return {"period": result}
 
 
@@ -303,7 +241,7 @@ async def launch_period(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    period = _dataflow_read("AppraisalPeriodReadNode", period_id)
+    period = dataflow_crud.read("AppraisalPeriod", period_id)
     if not period or period.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Period not found.")
 
@@ -312,8 +250,8 @@ async def launch_period(
             status_code=400, detail="Period must be in draft status to launch."
         )
 
-    employees = _dataflow_list(
-        "EmployeeListNode",
+    employees = dataflow_crud.list_records(
+        "Employee",
         {"company_id": company_id, "is_active": True},
     )
     if not employees:
@@ -322,8 +260,8 @@ async def launch_period(
     created = []
     actor_id = int(current_user.get("sub", 0))
     for emp in employees:
-        appraisal = _dataflow_create(
-            "AppraisalCreateNode",
+        appraisal = dataflow_crud.create(
+            "Appraisal",
             {
                 "company_id": company_id,
                 "period_id": period_id,
@@ -336,7 +274,7 @@ async def launch_period(
         created.append(appraisal)
 
     # Move period to active
-    _dataflow_update("AppraisalPeriodUpdateNode", period_id, {"status": "active"})
+    dataflow_crud.update("AppraisalPeriod", period_id, {"status": "active"})
 
     return {
         "detail": f"Launched {len(created)} appraisals.",
@@ -376,7 +314,7 @@ async def list_my_appraisals(
         else:
             return {"appraisals": [], "count": 0}
 
-    appraisals = _dataflow_list("AppraisalListNode", filters)
+    appraisals = dataflow_crud.list_records("Appraisal", filters)
     return {"appraisals": appraisals, "count": len(appraisals)}
 
 
@@ -398,7 +336,7 @@ async def get_appraisal(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    appraisal = _dataflow_read("AppraisalReadNode", appraisal_id)
+    appraisal = dataflow_crud.read("Appraisal", appraisal_id)
     if not appraisal or appraisal.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Appraisal not found.")
 
@@ -426,7 +364,7 @@ async def update_appraisal(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    appraisal = _dataflow_read("AppraisalReadNode", appraisal_id)
+    appraisal = dataflow_crud.read("Appraisal", appraisal_id)
     if not appraisal or appraisal.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Appraisal not found.")
 
@@ -451,7 +389,7 @@ async def update_appraisal(
         updates["status"] = "in_progress"
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    result = _dataflow_update("AppraisalUpdateNode", appraisal_id, updates)
+    result = dataflow_crud.update("Appraisal", appraisal_id, updates)
     return {"appraisal": result}
 
 
@@ -468,7 +406,7 @@ async def submit_appraisal(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    appraisal = _dataflow_read("AppraisalReadNode", appraisal_id)
+    appraisal = dataflow_crud.read("Appraisal", appraisal_id)
     if not appraisal or appraisal.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Appraisal not found.")
 
@@ -484,8 +422,8 @@ async def submit_appraisal(
             status_code=400, detail="Appraisal must be pending or in_progress to submit."
         )
 
-    result = _dataflow_update(
-        "AppraisalUpdateNode",
+    result = dataflow_crud.update(
+        "Appraisal",
         appraisal_id,
         {
             "status": "submitted",
@@ -508,7 +446,7 @@ async def sign_off_appraisal(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    appraisal = _dataflow_read("AppraisalReadNode", appraisal_id)
+    appraisal = dataflow_crud.read("Appraisal", appraisal_id)
     if not appraisal or appraisal.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Appraisal not found.")
 
@@ -525,8 +463,8 @@ async def sign_off_appraisal(
             detail="Appraisal must be submitted or reviewed before sign-off.",
         )
 
-    result = _dataflow_update(
-        "AppraisalUpdateNode",
+    result = dataflow_crud.update(
+        "Appraisal",
         appraisal_id,
         {
             "status": "signed_off",

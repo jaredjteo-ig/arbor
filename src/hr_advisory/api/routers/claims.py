@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 
@@ -31,79 +32,10 @@ ALLOWED_RECEIPT_TYPES = {
 }
 
 
-# --------------------------------------------------------------------------
-# DataFlow helpers
-# --------------------------------------------------------------------------
-
-
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-
-def _dataflow_update(node_type: str, record_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "update", {"filter": {"id": record_id}, "fields": updates})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
-
-
-def _dataflow_read(node_type: str, record_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "read", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
-
-
 def _find_employee_for_user(user_id: int, company_id: int) -> dict | None:
     """Look up the employee record for a given user in a company."""
-    records = _dataflow_list(
-        "EmployeeListNode",
+    records = dataflow_crud.list_records(
+        "Employee",
         {"user_id": user_id, "company_id": company_id},
         limit=1,
     )
@@ -114,8 +46,8 @@ def _audit_claim(
     claim_id: int, company_id: int, action: str, actor_id: int, details: dict | None = None
 ) -> dict:
     """Create a ClaimAuditEntry for a claim action."""
-    return _dataflow_create(
-        "ClaimAuditEntryCreateNode",
+    return dataflow_crud.create(
+        "ClaimAuditEntry",
         {
             "claim_id": claim_id,
             "company_id": company_id,
@@ -128,9 +60,9 @@ def _audit_claim(
 
 def _recalculate_claim_total(claim_id: int) -> float:
     """Sum all item amounts for a claim and update the total_amount."""
-    items = _dataflow_list("ClaimItemListNode", {"claim_id": claim_id})
+    items = dataflow_crud.list_records("ClaimItem", {"claim_id": claim_id})
     total = sum(item.get("amount", 0.0) for item in items)
-    _dataflow_update("ClaimUpdateNode", claim_id, {"total_amount": round(total, 2)})
+    dataflow_crud.update("Claim", claim_id, {"total_amount": round(total, 2)})
     return round(total, 2)
 
 
@@ -148,8 +80,8 @@ async def list_claim_categories(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    categories = _dataflow_list(
-        "ClaimCategoryListNode",
+    categories = dataflow_crud.list_records(
+        "ClaimCategory",
         {"company_id": company_id, "is_active": True},
     )
     return {"categories": categories, "count": len(categories)}
@@ -177,8 +109,8 @@ async def create_claim_category(
     if not math.isfinite(per_claim_limit):
         raise HTTPException(status_code=400, detail="per_claim_limit must be a finite number")
 
-    category = _dataflow_create(
-        "ClaimCategoryCreateNode",
+    category = dataflow_crud.create(
+        "ClaimCategory",
         {
             "company_id": company_id,
             "name": name,
@@ -199,7 +131,7 @@ async def update_claim_category(
 ) -> dict:
     """Update a claim category."""
     company_id = get_current_company_id(current_user)
-    cat = _dataflow_read("ClaimCategoryReadNode", category_id)
+    cat = dataflow_crud.read("ClaimCategory", category_id)
     if cat is None or cat.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Category not found.")
 
@@ -218,8 +150,8 @@ async def update_claim_category(
         if not math.isfinite(updates["per_claim_limit"]):
             raise HTTPException(status_code=400, detail="per_claim_limit must be a finite number")
 
-    _dataflow_update("ClaimCategoryUpdateNode", category_id, updates)
-    updated = _dataflow_read("ClaimCategoryReadNode", category_id)
+    dataflow_crud.update("ClaimCategory", category_id, updates)
+    updated = dataflow_crud.read("ClaimCategory", category_id)
     return {"category": updated}
 
 
@@ -248,8 +180,8 @@ async def create_claim(
     if not claim_month:
         raise HTTPException(status_code=400, detail="claim_month is required (e.g. '2026-03').")
 
-    claim = _dataflow_create(
-        "ClaimCreateNode",
+    claim = dataflow_crud.create(
+        "Claim",
         {
             "employee_id": emp["id"],
             "company_id": company_id,
@@ -292,7 +224,7 @@ async def list_claims(
     if status_filter:
         filter_dict["status"] = status_filter
 
-    claims = _dataflow_list("ClaimListNode", filter_dict)
+    claims = dataflow_crud.list_records("Claim", filter_dict)
     claims.sort(key=lambda c: c.get("created_at", ""), reverse=True)
     return {"claims": claims, "count": len(claims)}
 
@@ -306,8 +238,8 @@ async def pending_for_payroll(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    claims = _dataflow_list(
-        "ClaimListNode",
+    claims = dataflow_crud.list_records(
+        "Claim",
         {"company_id": company_id, "status": "approved"},
     )
     # Exclude claims already linked to a payroll run
@@ -322,7 +254,7 @@ async def get_claim_detail(
 ) -> dict:
     """Get a claim with its items."""
     company_id = get_current_company_id(current_user)
-    claim = _dataflow_read("ClaimReadNode", claim_id)
+    claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
 
@@ -334,7 +266,7 @@ async def get_claim_detail(
         if emp is None or claim.get("employee_id") != emp["id"]:
             raise HTTPException(status_code=403, detail="Access denied.")
 
-    items = _dataflow_list("ClaimItemListNode", {"claim_id": claim_id})
+    items = dataflow_crud.list_records("ClaimItem", {"claim_id": claim_id})
     # Strip internal filesystem paths from items before returning
     safe_items = []
     for item in items:
@@ -353,7 +285,7 @@ async def submit_claim(
 ) -> dict:
     """Submit a draft claim for approval."""
     company_id = get_current_company_id(current_user)
-    claim = _dataflow_read("ClaimReadNode", claim_id)
+    claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
 
@@ -367,13 +299,13 @@ async def submit_claim(
         raise HTTPException(status_code=400, detail="Only draft claims can be submitted.")
 
     # Must have at least one item
-    items = _dataflow_list("ClaimItemListNode", {"claim_id": claim_id})
+    items = dataflow_crud.list_records("ClaimItem", {"claim_id": claim_id})
     if not items:
         raise HTTPException(status_code=400, detail="Cannot submit a claim with no items.")
 
     now = datetime.now(timezone.utc).isoformat()
-    _dataflow_update(
-        "ClaimUpdateNode",
+    dataflow_crud.update(
+        "Claim",
         claim_id,
         {"status": "pending_approval", "submitted_at": now},
     )
@@ -389,7 +321,7 @@ async def approve_claim(
 ) -> dict:
     """Approve a pending claim."""
     company_id = get_current_company_id(current_user)
-    claim = _dataflow_read("ClaimReadNode", claim_id)
+    claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
 
@@ -399,8 +331,8 @@ async def approve_claim(
     actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
-    _dataflow_update(
-        "ClaimUpdateNode",
+    dataflow_crud.update(
+        "Claim",
         claim_id,
         {
             "status": "approved",
@@ -421,7 +353,7 @@ async def reject_claim(
 ) -> dict:
     """Reject a pending claim. Reviewer remarks are required."""
     company_id = get_current_company_id(current_user)
-    claim = _dataflow_read("ClaimReadNode", claim_id)
+    claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
 
@@ -436,8 +368,8 @@ async def reject_claim(
     actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
-    _dataflow_update(
-        "ClaimUpdateNode",
+    dataflow_crud.update(
+        "Claim",
         claim_id,
         {
             "status": "rejected",
@@ -464,7 +396,7 @@ async def add_claim_item(
 ) -> dict:
     """Add an item to a draft claim. Validates category limits."""
     company_id = get_current_company_id(current_user)
-    claim = _dataflow_read("ClaimReadNode", claim_id)
+    claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
 
@@ -489,7 +421,7 @@ async def add_claim_item(
         raise HTTPException(status_code=400, detail="category_id and positive amount are required.")
 
     # Validate category exists and belongs to company
-    cat = _dataflow_read("ClaimCategoryReadNode", category_id)
+    cat = dataflow_crud.read("ClaimCategory", category_id)
     if cat is None or cat.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim category not found.")
 
@@ -505,14 +437,14 @@ async def add_claim_item(
     monthly_limit = cat.get("monthly_limit", 0.0)
     if monthly_limit > 0:
         # Find all claims for this employee in the same month
-        month_claims = _dataflow_list(
-            "ClaimListNode",
+        month_claims = dataflow_crud.list_records(
+            "Claim",
             {"employee_id": emp["id"], "claim_month": claim.get("claim_month", "")},
         )
         month_total = 0.0
         for mc in month_claims:
-            items = _dataflow_list(
-                "ClaimItemListNode",
+            items = dataflow_crud.list_records(
+                "ClaimItem",
                 {"claim_id": mc["id"], "category_id": category_id},
             )
             month_total += sum(i.get("amount", 0.0) for i in items)
@@ -522,8 +454,8 @@ async def add_claim_item(
                 detail=f"Adding {amount} would exceed monthly limit of {monthly_limit} for category '{cat.get('name')}' (current: {month_total}).",
             )
 
-    item = _dataflow_create(
-        "ClaimItemCreateNode",
+    item = dataflow_crud.create(
+        "ClaimItem",
         {
             "claim_id": claim_id,
             "company_id": company_id,
@@ -555,7 +487,7 @@ async def upload_receipt(
 ) -> dict:
     """Upload a receipt for a claim item (multipart/form-data)."""
     company_id = get_current_company_id(current_user)
-    claim = _dataflow_read("ClaimReadNode", claim_id)
+    claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
 
@@ -566,7 +498,7 @@ async def upload_receipt(
         raise HTTPException(status_code=403, detail="Access denied.")
 
     # Verify item belongs to claim
-    item = _dataflow_read("ClaimItemReadNode", item_id)
+    item = dataflow_crud.read("ClaimItem", item_id)
     if item is None or item.get("claim_id") != claim_id:
         raise HTTPException(status_code=404, detail="Claim item not found.")
 
@@ -608,7 +540,7 @@ async def upload_receipt(
             existing_paths = []
     existing_paths.append(file_path)
 
-    _dataflow_update("ClaimItemUpdateNode", item_id, {"receipt_paths": existing_paths})
+    dataflow_crud.update("ClaimItem", item_id, {"receipt_paths": existing_paths})
 
     return {"message": "Receipt uploaded.", "file_name": stored_name}
 
@@ -625,7 +557,7 @@ async def get_claim_audit_trail(
 ) -> dict:
     """Get the audit trail for a claim."""
     company_id = get_current_company_id(current_user)
-    claim = _dataflow_read("ClaimReadNode", claim_id)
+    claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
 
@@ -637,7 +569,7 @@ async def get_claim_audit_trail(
         if emp is None or claim.get("employee_id") != emp["id"]:
             raise HTTPException(status_code=403, detail="Access denied.")
 
-    entries = _dataflow_list("ClaimAuditEntryListNode", {"claim_id": claim_id})
+    entries = dataflow_crud.list_records("ClaimAuditEntry", {"claim_id": claim_id})
     entries.sort(key=lambda e: e.get("created_at", ""))
     return {"audit_trail": entries, "count": len(entries)}
 
@@ -667,7 +599,7 @@ async def list_claim_groups(
             return {"groups": [], "count": 0}
         filter_dict["employee_id"] = emp["id"]
 
-    groups = _dataflow_list("ClaimGroupListNode", filter_dict)
+    groups = dataflow_crud.list_records("ClaimGroup", filter_dict)
     groups.sort(key=lambda g: g.get("created_at", ""), reverse=True)
     return {"groups": groups, "count": len(groups)}
 
@@ -696,7 +628,7 @@ async def create_claim_group(
 
     # Validate claim_ids belong to the employee
     for cid in claim_ids:
-        claim = _dataflow_read("ClaimReadNode", cid)
+        claim = dataflow_crud.read("Claim", cid)
         if claim is None or claim.get("company_id") != company_id:
             raise HTTPException(status_code=404, detail=f"Claim {cid} not found.")
         if claim.get("employee_id") != emp["id"]:
@@ -704,8 +636,8 @@ async def create_claim_group(
 
     now = datetime.now(timezone.utc).isoformat()
 
-    group = _dataflow_create(
-        "ClaimGroupCreateNode",
+    group = dataflow_crud.create(
+        "ClaimGroup",
         {
             "employee_id": emp["id"],
             "company_id": company_id,
@@ -720,12 +652,12 @@ async def create_claim_group(
     # Calculate total from linked claims
     total = 0.0
     for cid in claim_ids:
-        claim = _dataflow_read("ClaimReadNode", cid)
+        claim = dataflow_crud.read("Claim", cid)
         if claim:
             total += claim.get("total_amount", 0.0)
 
     if total > 0:
-        _dataflow_update("ClaimGroupUpdateNode", group["id"], {"total_amount": round(total, 2)})
+        dataflow_crud.update("ClaimGroup", group["id"], {"total_amount": round(total, 2)})
         group["total_amount"] = round(total, 2)
 
     return {"group": group}
@@ -739,7 +671,7 @@ async def update_claim_group(
 ) -> dict:
     """Update a claim group (add/remove claims, rename)."""
     company_id = get_current_company_id(current_user)
-    group = _dataflow_read("ClaimGroupReadNode", group_id)
+    group = dataflow_crud.read("ClaimGroup", group_id)
     if group is None or group.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim group not found.")
 
@@ -764,13 +696,13 @@ async def update_claim_group(
     if "claim_ids" in updates:
         total = 0.0
         for cid in updates["claim_ids"]:
-            claim = _dataflow_read("ClaimReadNode", cid)
+            claim = dataflow_crud.read("Claim", cid)
             if claim and claim.get("company_id") == company_id:
                 total += claim.get("total_amount", 0.0)
         updates["total_amount"] = round(total, 2)
 
-    _dataflow_update("ClaimGroupUpdateNode", group_id, updates)
-    updated = _dataflow_read("ClaimGroupReadNode", group_id)
+    dataflow_crud.update("ClaimGroup", group_id, updates)
+    updated = dataflow_crud.read("ClaimGroup", group_id)
     return {"group": updated}
 
 
@@ -781,7 +713,7 @@ async def submit_claim_group(
 ) -> dict:
     """Submit a claim group for approval. Submits all linked claims."""
     company_id = get_current_company_id(current_user)
-    group = _dataflow_read("ClaimGroupReadNode", group_id)
+    group = dataflow_crud.read("ClaimGroup", group_id)
     if group is None or group.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim group not found.")
 
@@ -802,20 +734,20 @@ async def submit_claim_group(
     # Submit each claim in the group that is in draft status
     submitted_count = 0
     for cid in claim_ids:
-        claim = _dataflow_read("ClaimReadNode", cid)
+        claim = dataflow_crud.read("Claim", cid)
         if claim and claim.get("status") == "draft":
             # Verify it has items
-            items = _dataflow_list("ClaimItemListNode", {"claim_id": cid})
+            items = dataflow_crud.list_records("ClaimItem", {"claim_id": cid})
             if items:
-                _dataflow_update(
-                    "ClaimUpdateNode", cid,
+                dataflow_crud.update(
+                    "Claim", cid,
                     {"status": "pending_approval", "submitted_at": now},
                 )
                 _audit_claim(cid, company_id, "submitted_via_group", user_id, {"group_id": group_id})
                 submitted_count += 1
 
-    _dataflow_update(
-        "ClaimGroupUpdateNode", group_id,
+    dataflow_crud.update(
+        "ClaimGroup", group_id,
         {"status": "submitted", "submitted_at": now},
     )
 
@@ -846,8 +778,8 @@ async def get_payroll_ready_claims(
 
     cutoff_date = request.query_params.get("cutoff_date", "")
 
-    claims = _dataflow_list(
-        "ClaimListNode",
+    claims = dataflow_crud.list_records(
+        "Claim",
         {"company_id": company_id, "status": "approved"},
     )
 
@@ -864,8 +796,8 @@ async def get_payroll_ready_claims(
     # Enrich with employee names
     enriched = []
     for c in ready:
-        emp_records = _dataflow_list(
-            "EmployeeListNode", {"id": c.get("employee_id")}, limit=1
+        emp_records = dataflow_crud.list_records(
+            "Employee", {"id": c.get("employee_id")}, limit=1
         )
         emp = emp_records[0] if emp_records else {}
         enriched.append(

@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 
@@ -48,79 +49,10 @@ def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_L
     return value
 
 
-# --------------------------------------------------------------------------
-# DataFlow helpers (same pattern as payroll.py)
-# --------------------------------------------------------------------------
-
-
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-
-def _dataflow_update(node_type: str, record_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "update", {"filter": {"id": record_id}, "fields": updates})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
-
-
-def _dataflow_read(node_type: str, record_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "read", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
-
-
 def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
     """Resolve the Employee record for a given user_id + company_id."""
-    records = _dataflow_list(
-        "EmployeeListNode",
+    records = dataflow_crud.list_records(
+        "Employee",
         {"user_id": user_id, "company_id": company_id},
         limit=1,
     )
@@ -143,8 +75,8 @@ def _enrich_leave_applications(apps: list, company_id: int) -> list:
     # Build employee_id -> name lookup
     emp_name_map: dict[int, str] = {}
     if employee_ids:
-        employees = _dataflow_list(
-            "EmployeeListNode",
+        employees = dataflow_crud.list_records(
+            "Employee",
             {"company_id": company_id},
         )
         for emp in employees:
@@ -160,8 +92,8 @@ def _enrich_leave_applications(apps: list, company_id: int) -> list:
     # Build leave_type_id -> name lookup
     lt_name_map: dict[int, str] = {}
     if leave_type_ids:
-        leave_types = _dataflow_list(
-            "LeaveTypeConfigListNode",
+        leave_types = dataflow_crud.list_records(
+            "LeaveTypeConfig",
             {"company_id": company_id},
         )
         for lt in leave_types:
@@ -210,8 +142,8 @@ def _calculate_working_days(
 
     holiday_dates: set[str] = set()
     for yr in years:
-        holidays = _dataflow_list(
-            "PublicHolidayListNode",
+        holidays = dataflow_crud.list_records(
+            "PublicHoliday",
             {"year": yr},
         )
         # Include national (company_id=0) and company-specific holidays
@@ -260,8 +192,8 @@ def _check_overlapping_applications(
     employee_id: int, start_date: str, end_date: str, exclude_id: int | None = None
 ) -> bool:
     """Return True if there is an overlapping non-withdrawn/cancelled application."""
-    apps = _dataflow_list(
-        "LeaveApplicationListNode",
+    apps = dataflow_crud.list_records(
+        "LeaveApplication",
         {"employee_id": employee_id},
     )
     for app in apps:
@@ -285,8 +217,8 @@ def _get_or_create_balance(
     T291: Lazy balance creation — looks up LeaveTypeConfig to determine
     proper entitlement, respecting gender and service-month rules.
     """
-    balances = _dataflow_list(
-        "LeaveBalanceListNode",
+    balances = dataflow_crud.list_records(
+        "LeaveBalance",
         {
             "employee_id": employee_id,
             "leave_type": leave_type_code,
@@ -299,8 +231,8 @@ def _get_or_create_balance(
 
     # Look up the LeaveTypeConfig for this company + code to get proper entitlement
     entitlement = 0.0
-    configs = _dataflow_list(
-        "LeaveTypeConfigListNode",
+    configs = dataflow_crud.list_records(
+        "LeaveTypeConfig",
         {"company_id": company_id, "code": leave_type_code},
         limit=1,
     )
@@ -308,8 +240,8 @@ def _get_or_create_balance(
         config = configs[0]
         entitlement = _calculate_entitlement_for_employee(config, employee_id, company_id, year)
 
-    return _dataflow_create(
-        "LeaveBalanceCreateNode",
+    return dataflow_crud.create(
+        "LeaveBalance",
         {
             "employee_id": employee_id,
             "company_id": company_id,
@@ -337,8 +269,8 @@ def _calculate_entitlement_for_employee(
     code = config.get("code", "")
 
     # Look up employee details for gender and start_date checks
-    employees = _dataflow_list(
-        "EmployeeListNode",
+    employees = dataflow_crud.list_records(
+        "Employee",
         {"id": employee_id, "company_id": company_id},
         limit=1,
     )
@@ -404,8 +336,8 @@ def ensure_leave_balances(employee_id: int, company_id: int, year: int | None = 
         year = date.today().year
 
     # Get all leave type configs for this company
-    configs = _dataflow_list(
-        "LeaveTypeConfigListNode",
+    configs = dataflow_crud.list_records(
+        "LeaveTypeConfig",
         {"company_id": company_id},
     )
 
@@ -566,8 +498,8 @@ def _seed_statutory_leave_types(company_id: int) -> list[dict]:
     Skips any leave type whose code already exists for the company.
     Returns the list of created leave type configs.
     """
-    existing = _dataflow_list(
-        "LeaveTypeConfigListNode",
+    existing = dataflow_crud.list_records(
+        "LeaveTypeConfig",
         {"company_id": company_id},
     )
     existing_codes = {lt.get("code") for lt in existing}
@@ -576,8 +508,8 @@ def _seed_statutory_leave_types(company_id: int) -> list[dict]:
     for lt in SINGAPORE_STATUTORY_LEAVE_TYPES:
         if lt["code"] in existing_codes:
             continue
-        record = _dataflow_create(
-            "LeaveTypeConfigCreateNode",
+        record = dataflow_crud.create(
+            "LeaveTypeConfig",
             {
                 "company_id": company_id,
                 **lt,
@@ -606,8 +538,8 @@ async def list_leave_types(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    types = _dataflow_list(
-        "LeaveTypeConfigListNode",
+    types = dataflow_crud.list_records(
+        "LeaveTypeConfig",
         {"company_id": company_id, "is_active": True},
     )
     return {"leave_types": types, "count": len(types)}
@@ -649,15 +581,15 @@ async def create_leave_type(
         raise HTTPException(status_code=400, detail="name and code are required.")
 
     # Check for duplicate code
-    existing = _dataflow_list(
-        "LeaveTypeConfigListNode",
+    existing = dataflow_crud.list_records(
+        "LeaveTypeConfig",
         {"company_id": company_id},
     )
     if any(lt.get("code") == code for lt in existing):
         raise HTTPException(status_code=409, detail=f"Leave type code '{code}' already exists.")
 
-    record = _dataflow_create(
-        "LeaveTypeConfigCreateNode",
+    record = dataflow_crud.create(
+        "LeaveTypeConfig",
         {
             "company_id": company_id,
             "name": name,
@@ -690,7 +622,7 @@ async def update_leave_type(
 ) -> dict:
     """Update an existing leave type configuration."""
     company_id = get_current_company_id(current_user)
-    lt = _dataflow_read("LeaveTypeConfigReadNode", leave_type_id)
+    lt = dataflow_crud.read("LeaveTypeConfig", leave_type_id)
     if lt is None or lt.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave type not found.")
 
@@ -712,7 +644,7 @@ async def update_leave_type(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    _dataflow_update("LeaveTypeConfigUpdateNode", leave_type_id, updates)
+    dataflow_crud.update("LeaveTypeConfig", leave_type_id, updates)
     return {"message": "Leave type updated.", "id": leave_type_id}
 
 
@@ -771,7 +703,7 @@ async def apply_leave(
         raise HTTPException(status_code=400, detail="end_date cannot be before start_date.")
 
     # Validate leave type exists and belongs to this company
-    lt = _dataflow_read("LeaveTypeConfigReadNode", leave_type_id)
+    lt = dataflow_crud.read("LeaveTypeConfig", leave_type_id)
     if lt is None or lt.get("company_id") != company_id or not lt.get("is_active", True):
         raise HTTPException(status_code=404, detail="Leave type not found.")
 
@@ -804,8 +736,8 @@ async def apply_leave(
     now = datetime.now(timezone.utc).isoformat()
 
     # Create the application
-    application = _dataflow_create(
-        "LeaveApplicationCreateNode",
+    application = dataflow_crud.create(
+        "LeaveApplication",
         {
             "employee_id": employee_id,
             "company_id": company_id,
@@ -824,8 +756,8 @@ async def apply_leave(
     )
 
     # Increase pending days on balance
-    _dataflow_update(
-        "LeaveBalanceUpdateNode",
+    dataflow_crud.update(
+        "LeaveBalance",
         balance["id"],
         {"pending_days": balance.get("pending_days", 0.0) + total_days},
     )
@@ -869,7 +801,7 @@ async def list_applications(
     if status:
         filter_dict["status"] = status
 
-    apps = _dataflow_list("LeaveApplicationListNode", filter_dict)
+    apps = dataflow_crud.list_records("LeaveApplication", filter_dict)
 
     # Enrich with human-readable names
     _enrich_leave_applications(apps, company_id)
@@ -894,7 +826,7 @@ async def approve_application(
     Moves pending_days to used_days on the leave balance.
     """
     company_id = get_current_company_id(current_user)
-    app = _dataflow_read("LeaveApplicationReadNode", application_id)
+    app = dataflow_crud.read("LeaveApplication", application_id)
     if app is None or app.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave application not found.")
 
@@ -911,8 +843,8 @@ async def approve_application(
         pass
     remarks = body.get("remarks", "")
 
-    _dataflow_update(
-        "LeaveApplicationUpdateNode",
+    dataflow_crud.update(
+        "LeaveApplication",
         application_id,
         {
             "status": "approved",
@@ -929,8 +861,8 @@ async def approve_application(
     year = date.fromisoformat(app.get("start_date", "2026-01-01")).year
 
     balance = _get_or_create_balance(employee_id, company_id, leave_type_code, year)
-    _dataflow_update(
-        "LeaveBalanceUpdateNode",
+    dataflow_crud.update(
+        "LeaveBalance",
         balance["id"],
         {
             "used_days": balance.get("used_days", 0.0) + total_days,
@@ -954,7 +886,7 @@ async def reject_application(
 ) -> dict:
     """Reject a pending leave application. Remarks are required."""
     company_id = get_current_company_id(current_user)
-    app = _dataflow_read("LeaveApplicationReadNode", application_id)
+    app = dataflow_crud.read("LeaveApplication", application_id)
     if app is None or app.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave application not found.")
 
@@ -969,8 +901,8 @@ async def reject_application(
     actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
-    _dataflow_update(
-        "LeaveApplicationUpdateNode",
+    dataflow_crud.update(
+        "LeaveApplication",
         application_id,
         {
             "status": "rejected",
@@ -987,8 +919,8 @@ async def reject_application(
     year = date.fromisoformat(app.get("start_date", "2026-01-01")).year
 
     balance = _get_or_create_balance(employee_id, company_id, leave_type_code, year)
-    _dataflow_update(
-        "LeaveBalanceUpdateNode",
+    dataflow_crud.update(
+        "LeaveBalance",
         balance["id"],
         {
             "pending_days": max(0.0, balance.get("pending_days", 0.0) - total_days),
@@ -1012,7 +944,7 @@ async def withdraw_application(
     company_id = get_current_company_id(current_user)
     user_id = int(current_user.get("sub", 0))
 
-    app = _dataflow_read("LeaveApplicationReadNode", application_id)
+    app = dataflow_crud.read("LeaveApplication", application_id)
     if app is None or app.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave application not found.")
 
@@ -1025,8 +957,8 @@ async def withdraw_application(
         raise HTTPException(status_code=403, detail="You can only withdraw your own applications.")
 
     now = datetime.now(timezone.utc).isoformat()
-    _dataflow_update(
-        "LeaveApplicationUpdateNode",
+    dataflow_crud.update(
+        "LeaveApplication",
         application_id,
         {"status": "withdrawn", "reviewed_at": now},
     )
@@ -1038,8 +970,8 @@ async def withdraw_application(
     year = date.fromisoformat(app.get("start_date", "2026-01-01")).year
 
     balance = _get_or_create_balance(employee_id, company_id, leave_type_code, year)
-    _dataflow_update(
-        "LeaveBalanceUpdateNode",
+    dataflow_crud.update(
+        "LeaveBalance",
         balance["id"],
         {
             "pending_days": max(0.0, balance.get("pending_days", 0.0) - total_days),
@@ -1062,7 +994,7 @@ async def cancel_application(
 ) -> dict:
     """Cancel an approved leave application. Restores used_days to the balance."""
     company_id = get_current_company_id(current_user)
-    app = _dataflow_read("LeaveApplicationReadNode", application_id)
+    app = dataflow_crud.read("LeaveApplication", application_id)
     if app is None or app.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave application not found.")
 
@@ -1079,8 +1011,8 @@ async def cancel_application(
     actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
-    _dataflow_update(
-        "LeaveApplicationUpdateNode",
+    dataflow_crud.update(
+        "LeaveApplication",
         application_id,
         {
             "status": "cancelled",
@@ -1097,8 +1029,8 @@ async def cancel_application(
     year = date.fromisoformat(app.get("start_date", "2026-01-01")).year
 
     balance = _get_or_create_balance(employee_id, company_id, leave_type_code, year)
-    _dataflow_update(
-        "LeaveBalanceUpdateNode",
+    dataflow_crud.update(
+        "LeaveBalance",
         balance["id"],
         {
             "used_days": max(0.0, balance.get("used_days", 0.0) - total_days),
@@ -1141,8 +1073,8 @@ async def get_my_leave_balances(
         raise HTTPException(status_code=404, detail="No employee record found for current user.")
 
     employee_id = employee["id"]
-    balances = _dataflow_list(
-        "LeaveBalanceListNode",
+    balances = dataflow_crud.list_records(
+        "LeaveBalance",
         {"employee_id": employee_id, "year": year},
     )
 
@@ -1180,12 +1112,12 @@ async def get_leave_balances(
             raise HTTPException(status_code=403, detail="Access denied.")
 
     # Verify employee belongs to company
-    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    emp_records = dataflow_crud.list_records("Employee", {"id": employee_id}, limit=1)
     if not emp_records or emp_records[0].get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Employee not found.")
 
-    balances = _dataflow_list(
-        "LeaveBalanceListNode",
+    balances = dataflow_crud.list_records(
+        "LeaveBalance",
         {"employee_id": employee_id, "year": year},
     )
 
@@ -1212,7 +1144,7 @@ async def list_public_holidays(
     if year == 0:
         year = datetime.now(timezone.utc).year
 
-    holidays = _dataflow_list("PublicHolidayListNode", {"year": year})
+    holidays = dataflow_crud.list_records("PublicHoliday", {"year": year})
 
     # Filter to national + company-specific
     visible = [
@@ -1252,8 +1184,8 @@ async def create_public_holiday(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    record = _dataflow_create(
-        "PublicHolidayCreateNode",
+    record = dataflow_crud.create(
+        "PublicHoliday",
         {
             "company_id": company_id,
             "name": name,
@@ -1284,16 +1216,16 @@ async def list_leave_policies(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    policies = _dataflow_list(
-        "LeavePolicyListNode",
+    policies = dataflow_crud.list_records(
+        "LeavePolicy",
         {"company_id": company_id, "is_active": True},
     )
 
     # Enrich with entitlement counts
     enriched = []
     for p in policies:
-        entitlements = _dataflow_list(
-            "LeavePolicyEntitlementListNode",
+        entitlements = dataflow_crud.list_records(
+            "LeavePolicyEntitlement",
             {"policy_id": p.get("id")},
         )
         enriched.append({**p, "entitlement_count": len(entitlements)})
@@ -1338,15 +1270,15 @@ async def create_leave_policy(
 
     # If setting as default, unset existing default
     if is_default:
-        existing = _dataflow_list(
-            "LeavePolicyListNode",
+        existing = dataflow_crud.list_records(
+            "LeavePolicy",
             {"company_id": company_id, "is_default": True},
         )
         for p in existing:
-            _dataflow_update("LeavePolicyUpdateNode", p["id"], {"is_default": False})
+            dataflow_crud.update("LeavePolicy", p["id"], {"is_default": False})
 
-    policy = _dataflow_create(
-        "LeavePolicyCreateNode",
+    policy = dataflow_crud.create(
+        "LeavePolicy",
         {
             "company_id": company_id,
             "name": name,
@@ -1363,8 +1295,8 @@ async def create_leave_policy(
         lt_id = ent.get("leave_type_id")
         if not lt_id:
             continue
-        record = _dataflow_create(
-            "LeavePolicyEntitlementCreateNode",
+        record = dataflow_crud.create(
+            "LeavePolicyEntitlement",
             {
                 "policy_id": policy_id,
                 "company_id": company_id,
@@ -1422,8 +1354,8 @@ async def team_calendar(
     month_end_str = month_end.isoformat()
 
     # Fetch approved leave applications for the company
-    apps = _dataflow_list(
-        "LeaveApplicationListNode",
+    apps = dataflow_crud.list_records(
+        "LeaveApplication",
         {"company_id": company_id, "status": "approved"},
     )
 
@@ -1440,11 +1372,11 @@ async def team_calendar(
     # Enrich with employee names
     calendar_entries = []
     for app in overlapping:
-        emp_records = _dataflow_list("EmployeeListNode", {"id": app.get("employee_id")}, limit=1)
+        emp_records = dataflow_crud.list_records("Employee", {"id": app.get("employee_id")}, limit=1)
         emp = emp_records[0] if emp_records else {}
         user = None
         if emp:
-            user_records = _dataflow_list("UserListNode", {"id": emp.get("user_id")}, limit=1)
+            user_records = dataflow_crud.list_records("User", {"id": emp.get("user_id")}, limit=1)
             user = user_records[0] if user_records else None
         calendar_entries.append(
             {
@@ -1460,7 +1392,7 @@ async def team_calendar(
         )
 
     # Public holidays in this month
-    holidays = _dataflow_list("PublicHolidayListNode", {"year": year})
+    holidays = dataflow_crud.list_records("PublicHoliday", {"year": year})
     month_holidays = [
         h
         for h in holidays
@@ -1517,7 +1449,7 @@ async def leave_encashment(
         )
 
     # Verify employee belongs to company
-    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    emp_records = dataflow_crud.list_records("Employee", {"id": employee_id}, limit=1)
     if not emp_records or emp_records[0].get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Employee not found.")
 
@@ -1539,8 +1471,8 @@ async def leave_encashment(
     actor_id = int(current_user.get("sub", 0))
 
     # Create encashment record
-    encashment = _dataflow_create(
-        "LeaveEncashmentCreateNode",
+    encashment = dataflow_crud.create(
+        "LeaveEncashment",
         {
             "employee_id": employee_id,
             "company_id": company_id,
@@ -1555,8 +1487,8 @@ async def leave_encashment(
     )
 
     # Deduct from balance (mark as used)
-    _dataflow_update(
-        "LeaveBalanceUpdateNode",
+    dataflow_crud.update(
+        "LeaveBalance",
         balance["id"],
         {"used_days": balance.get("used_days", 0.0) + days},
     )
@@ -1600,7 +1532,7 @@ async def credit_off_in_lieu(
         )
 
     # Verify employee belongs to company
-    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    emp_records = dataflow_crud.list_records("Employee", {"id": employee_id}, limit=1)
     if not emp_records or emp_records[0].get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Employee not found.")
 
@@ -1616,8 +1548,8 @@ async def credit_off_in_lieu(
 
     # Credit by increasing entitlement
     new_entitlement = balance.get("entitlement_days", 0.0) + days
-    _dataflow_update(
-        "LeaveBalanceUpdateNode",
+    dataflow_crud.update(
+        "LeaveBalance",
         balance["id"],
         {"entitlement_days": new_entitlement},
     )
@@ -1626,8 +1558,8 @@ async def credit_off_in_lieu(
     now = datetime.now(timezone.utc).isoformat()
 
     # Create an audit record
-    record = _dataflow_create(
-        "OffInLieuRecordCreateNode",
+    record = dataflow_crud.create(
+        "OffInLieuRecord",
         {
             "employee_id": employee_id,
             "company_id": company_id,
@@ -1659,7 +1591,7 @@ async def list_leave_type_configs(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    configs = _dataflow_list("LeaveTypeConfigListNode", {"company_id": company_id})
+    configs = dataflow_crud.list_records("LeaveTypeConfig", {"company_id": company_id})
     return {"type_configs": configs, "count": len(configs)}
 
 
@@ -1677,7 +1609,7 @@ async def update_leave_type_config(
     allow_overflow, entitlement_period.
     """
     company_id = get_current_company_id(current_user)
-    config = _dataflow_read("LeaveTypeConfigReadNode", config_id)
+    config = dataflow_crud.read("LeaveTypeConfig", config_id)
     if config is None or config.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave type config not found.")
 
@@ -1700,8 +1632,8 @@ async def update_leave_type_config(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    _dataflow_update("LeaveTypeConfigUpdateNode", config_id, updates)
-    updated = _dataflow_read("LeaveTypeConfigReadNode", config_id)
+    dataflow_crud.update("LeaveTypeConfig", config_id, updates)
+    updated = dataflow_crud.read("LeaveTypeConfig", config_id)
     return {"type_config": updated}
 
 
@@ -1736,7 +1668,7 @@ async def upload_leave_attachment(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     # Fetch the leave application and verify tenant ownership
-    app_record = _dataflow_read("LeaveApplicationReadNode", application_id)
+    app_record = dataflow_crud.read("LeaveApplication", application_id)
     if app_record is None or app_record.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave application not found.")
 
@@ -1793,8 +1725,8 @@ async def upload_leave_attachment(
         f.write(content)
 
     # Update the leave application's attachment_path
-    _dataflow_update(
-        "LeaveApplicationUpdateNode",
+    dataflow_crud.update(
+        "LeaveApplication",
         application_id,
         {"attachment_path": file_path},
     )

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 
@@ -32,92 +33,10 @@ def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_L
     return value
 
 
-# --------------------------------------------------------------------------
-# DataFlow helpers
-# --------------------------------------------------------------------------
-
-
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-
-def _dataflow_update(node_type: str, record_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "update", {"filter": {"id": record_id}, "fields": updates})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
-
-
-def _dataflow_read(node_type: str, record_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "read", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
-
-
-def _dataflow_delete(node_type: str, record_id: int) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "delete", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["delete"]
-
-
 def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
     """Resolve the Employee record for a given user_id + company_id."""
-    records = _dataflow_list(
-        "EmployeeListNode",
+    records = dataflow_crud.list_records(
+        "Employee",
         {"user_id": user_id, "company_id": company_id},
         limit=1,
     )
@@ -126,7 +45,7 @@ def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
 
 def _verify_project_ownership(project_id: int, company_id: int) -> dict:
     """Load a project and verify tenant ownership. Raises 404 on failure."""
-    project = _dataflow_read("ProjectReadNode", project_id)
+    project = dataflow_crud.read("Project", project_id)
     if not project or project.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Project not found.")
     return project
@@ -154,7 +73,7 @@ async def list_projects(
     filters: dict = {"company_id": company_id}
     if status:
         filters["status"] = status
-    projects = _dataflow_list("ProjectListNode", filters)
+    projects = dataflow_crud.list_records("Project", filters)
 
     # Non-admin users see only projects they are assigned to
     role = current_user.get("role", "employee")
@@ -165,8 +84,8 @@ async def list_projects(
             emp_id = emp.get("id")
             assigned_ids = {
                 a.get("project_id")
-                for a in _dataflow_list(
-                    "ProjectAssignmentListNode", {"employee_id": emp_id}
+                for a in dataflow_crud.list_records(
+                    "ProjectAssignment", {"employee_id": emp_id}
                 )
             }
             projects = [p for p in projects if p.get("id") in assigned_ids]
@@ -198,8 +117,8 @@ async def create_project(
     if not math.isfinite(budget_amount):
         raise HTTPException(status_code=400, detail="Invalid numeric value.")
 
-    project = _dataflow_create(
-        "ProjectCreateNode",
+    project = dataflow_crud.create(
+        "Project",
         {
             "company_id": company_id,
             "name": name,
@@ -255,7 +174,7 @@ async def update_project(
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = _dataflow_update("ProjectUpdateNode", project_id, updates)
+    result = dataflow_crud.update("Project", project_id, updates)
     return {"project": result}
 
 
@@ -270,7 +189,7 @@ async def archive_project(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     _verify_project_ownership(project_id, company_id)
-    _dataflow_update("ProjectUpdateNode", project_id, {"status": "archived"})
+    dataflow_crud.update("Project", project_id, {"status": "archived"})
     return {"detail": "Project archived."}
 
 
@@ -290,8 +209,8 @@ async def list_assignments(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     _verify_project_ownership(project_id, company_id)
-    assignments = _dataflow_list(
-        "ProjectAssignmentListNode",
+    assignments = dataflow_crud.list_records(
+        "ProjectAssignment",
         {"project_id": project_id},
     )
     return {"assignments": assignments, "count": len(assignments)}
@@ -327,8 +246,8 @@ async def assign_employees(
         hourly_rate = float(item.get("hourly_rate", 0.0))
         if not math.isfinite(hourly_rate):
             raise HTTPException(status_code=400, detail="Invalid numeric value.")
-        assignment = _dataflow_create(
-            "ProjectAssignmentCreateNode",
+        assignment = dataflow_crud.create(
+            "ProjectAssignment",
             {
                 "project_id": project_id,
                 "employee_id": employee_id,
@@ -357,11 +276,11 @@ async def unassign_employee(
 
     _verify_project_ownership(project_id, company_id)
 
-    existing = _dataflow_read("ProjectAssignmentReadNode", assignment_id)
+    existing = dataflow_crud.read("ProjectAssignment", assignment_id)
     if not existing or existing.get("project_id") != project_id:
         raise HTTPException(status_code=404, detail="Assignment not found.")
 
-    _dataflow_delete("ProjectAssignmentDeleteNode", assignment_id)
+    dataflow_crud.delete("ProjectAssignment", assignment_id)
     return {"detail": "Assignment removed."}
 
 
@@ -379,7 +298,7 @@ async def list_project_roles(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    roles = _dataflow_list("ProjectRoleListNode", {"company_id": company_id})
+    roles = dataflow_crud.list_records("ProjectRole", {"company_id": company_id})
     return {"roles": roles, "count": len(roles)}
 
 
@@ -398,8 +317,8 @@ async def create_project_role(
     if not name:
         raise HTTPException(status_code=400, detail="Role name is required.")
 
-    role = _dataflow_create(
-        "ProjectRoleCreateNode",
+    role = dataflow_crud.create(
+        "ProjectRole",
         {
             "company_id": company_id,
             "name": name,
@@ -421,7 +340,7 @@ async def update_project_role(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("ProjectRoleReadNode", role_id)
+    existing = dataflow_crud.read("ProjectRole", role_id)
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Role not found.")
 
@@ -431,7 +350,7 @@ async def update_project_role(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    result = _dataflow_update("ProjectRoleUpdateNode", role_id, updates)
+    result = dataflow_crud.update("ProjectRole", role_id, updates)
     return {"role": result}
 
 
@@ -451,7 +370,7 @@ async def list_overheads(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     _verify_project_ownership(project_id, company_id)
-    overheads = _dataflow_list("ProjectOverheadListNode", {"project_id": project_id})
+    overheads = dataflow_crud.list_records("ProjectOverhead", {"project_id": project_id})
     return {"overheads": overheads, "count": len(overheads)}
 
 
@@ -474,8 +393,8 @@ async def add_overhead(
     if not name:
         raise HTTPException(status_code=400, detail="Overhead name is required.")
 
-    overhead = _dataflow_create(
-        "ProjectOverheadCreateNode",
+    overhead = dataflow_crud.create(
+        "ProjectOverhead",
         {
             "project_id": project_id,
             "name": name,
@@ -502,7 +421,7 @@ async def update_overhead(
 
     _verify_project_ownership(project_id, company_id)
 
-    existing = _dataflow_read("ProjectOverheadReadNode", overhead_id)
+    existing = dataflow_crud.read("ProjectOverhead", overhead_id)
     if not existing or existing.get("project_id") != project_id:
         raise HTTPException(status_code=404, detail="Overhead not found.")
 
@@ -512,7 +431,7 @@ async def update_overhead(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    result = _dataflow_update("ProjectOverheadUpdateNode", overhead_id, updates)
+    result = dataflow_crud.update("ProjectOverhead", overhead_id, updates)
     return {"overhead": result}
 
 
@@ -529,11 +448,11 @@ async def delete_overhead(
 
     _verify_project_ownership(project_id, company_id)
 
-    existing = _dataflow_read("ProjectOverheadReadNode", overhead_id)
+    existing = dataflow_crud.read("ProjectOverhead", overhead_id)
     if not existing or existing.get("project_id") != project_id:
         raise HTTPException(status_code=404, detail="Overhead not found.")
 
-    _dataflow_delete("ProjectOverheadDeleteNode", overhead_id)
+    dataflow_crud.delete("ProjectOverhead", overhead_id)
     return {"detail": "Overhead deleted."}
 
 
@@ -583,8 +502,8 @@ async def create_timesheet_entry(
     if not employee_id:
         raise HTTPException(status_code=400, detail="employee_id is required.")
 
-    entry = _dataflow_create(
-        "TimesheetEntryCreateNode",
+    entry = dataflow_crud.create(
+        "TimesheetEntry",
         {
             "project_id": project_id,
             "employee_id": employee_id,
@@ -630,7 +549,7 @@ async def list_timesheet_entries(
             # No employee record — return empty rather than all entries
             return {"entries": [], "count": 0}
 
-    entries = _dataflow_list("TimesheetEntryListNode", filters)
+    entries = dataflow_crud.list_records("TimesheetEntry", filters)
 
     # Client-side date filtering (DataFlow may not support range queries directly)
     if date_from:
@@ -652,7 +571,7 @@ async def update_timesheet_entry(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("TimesheetEntryReadNode", entry_id)
+    existing = dataflow_crud.read("TimesheetEntry", entry_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Entry not found.")
 
@@ -674,7 +593,7 @@ async def update_timesheet_entry(
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = _dataflow_update("TimesheetEntryUpdateNode", entry_id, updates)
+    result = dataflow_crud.update("TimesheetEntry", entry_id, updates)
     return {"entry": result}
 
 
@@ -688,7 +607,7 @@ async def delete_timesheet_entry(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("TimesheetEntryReadNode", entry_id)
+    existing = dataflow_crud.read("TimesheetEntry", entry_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Entry not found.")
 
@@ -703,7 +622,7 @@ async def delete_timesheet_entry(
         if not emp or emp.get("id") != existing.get("employee_id"):
             raise HTTPException(status_code=403, detail="Access denied.")
 
-    _dataflow_delete("TimesheetEntryDeleteNode", entry_id)
+    dataflow_crud.delete("TimesheetEntry", entry_id)
     return {"detail": "Entry deleted."}
 
 
@@ -717,7 +636,7 @@ async def submit_timesheet_entry(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("TimesheetEntryReadNode", entry_id)
+    existing = dataflow_crud.read("TimesheetEntry", entry_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Entry not found.")
 
@@ -738,8 +657,8 @@ async def submit_timesheet_entry(
             detail=f"Only draft entries can be submitted (current: {current_status}).",
         )
 
-    result = _dataflow_update(
-        "TimesheetEntryUpdateNode",
+    result = dataflow_crud.update(
+        "TimesheetEntry",
         entry_id,
         {"status": "submitted", "updated_at": datetime.now(timezone.utc).isoformat()},
     )
@@ -756,7 +675,7 @@ async def approve_timesheet_entry(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("TimesheetEntryReadNode", entry_id)
+    existing = dataflow_crud.read("TimesheetEntry", entry_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Entry not found.")
 
@@ -771,8 +690,8 @@ async def approve_timesheet_entry(
         )
 
     user_id = int(current_user.get("sub", 0))
-    result = _dataflow_update(
-        "TimesheetEntryUpdateNode",
+    result = dataflow_crud.update(
+        "TimesheetEntry",
         entry_id,
         {
             "status": "approved",
@@ -794,7 +713,7 @@ async def reject_timesheet_entry(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = _dataflow_read("TimesheetEntryReadNode", entry_id)
+    existing = dataflow_crud.read("TimesheetEntry", entry_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Entry not found.")
 
@@ -813,8 +732,8 @@ async def reject_timesheet_entry(
     _validate_text_length(reason, "reason")
 
     user_id = int(current_user.get("sub", 0))
-    result = _dataflow_update(
-        "TimesheetEntryUpdateNode",
+    result = dataflow_crud.update(
+        "TimesheetEntry",
         entry_id,
         {
             "status": "rejected",
@@ -848,7 +767,7 @@ async def list_allocations(
     if employee_id:
         filters["employee_id"] = employee_id
 
-    allocations = _dataflow_list("ProjectAllocationListNode", filters)
+    allocations = dataflow_crud.list_records("ProjectAllocation", filters)
     return {"allocations": allocations, "count": len(allocations)}
 
 
@@ -872,8 +791,8 @@ async def create_allocation(
 
     _verify_project_ownership(project_id, company_id)
 
-    allocation = _dataflow_create(
-        "ProjectAllocationCreateNode",
+    allocation = dataflow_crud.create(
+        "ProjectAllocation",
         {
             "company_id": company_id,
             "project_id": project_id,
@@ -904,9 +823,9 @@ async def get_project_costs(
 
     project = _verify_project_ownership(project_id, company_id)
 
-    entries = _dataflow_list("TimesheetEntryListNode", {"project_id": project_id})
-    assignments = _dataflow_list(
-        "ProjectAssignmentListNode", {"project_id": project_id}
+    entries = dataflow_crud.list_records("TimesheetEntry", {"project_id": project_id})
+    assignments = dataflow_crud.list_records(
+        "ProjectAssignment", {"project_id": project_id}
     )
     rate_map: dict[int, float] = {}
     for a in assignments:
@@ -921,7 +840,7 @@ async def get_project_costs(
         total_hours += hours
         labour_cost += hours * rate
 
-    overheads = _dataflow_list("ProjectOverheadListNode", {"project_id": project_id})
+    overheads = dataflow_crud.list_records("ProjectOverhead", {"project_id": project_id})
     overhead_total = sum(o.get("amount", 0.0) for o in overheads)
 
     total_cost = labour_cost + overhead_total
@@ -958,10 +877,10 @@ async def calculate_project_costs(
     project = _verify_project_ownership(project_id, company_id)
 
     # Fetch timesheet entries
-    entries = _dataflow_list("TimesheetEntryListNode", {"project_id": project_id})
+    entries = dataflow_crud.list_records("TimesheetEntry", {"project_id": project_id})
 
     # Fetch assignments for hourly rates
-    assignments = _dataflow_list("ProjectAssignmentListNode", {"project_id": project_id})
+    assignments = dataflow_crud.list_records("ProjectAssignment", {"project_id": project_id})
     rate_map: dict[int, float] = {}
     for a in assignments:
         rate_map[a.get("employee_id", 0)] = a.get("hourly_rate", 0.0)
@@ -983,7 +902,7 @@ async def calculate_project_costs(
         employee_costs[emp_id]["cost"] += cost
 
     # Fetch overheads
-    overheads = _dataflow_list("ProjectOverheadListNode", {"project_id": project_id})
+    overheads = dataflow_crud.list_records("ProjectOverhead", {"project_id": project_id})
     overhead_total = sum(o.get("amount", 0.0) for o in overheads)
 
     total_cost = labour_cost + overhead_total
@@ -1014,9 +933,9 @@ async def project_report(
 
     project = _verify_project_ownership(project_id, company_id)
 
-    assignments = _dataflow_list("ProjectAssignmentListNode", {"project_id": project_id})
-    entries = _dataflow_list("TimesheetEntryListNode", {"project_id": project_id})
-    overheads = _dataflow_list("ProjectOverheadListNode", {"project_id": project_id})
+    assignments = dataflow_crud.list_records("ProjectAssignment", {"project_id": project_id})
+    entries = dataflow_crud.list_records("TimesheetEntry", {"project_id": project_id})
+    overheads = dataflow_crud.list_records("ProjectOverhead", {"project_id": project_id})
 
     total_hours = sum(e.get("hours", 0.0) for e in entries)
     overhead_total = sum(o.get("amount", 0.0) for o in overheads)

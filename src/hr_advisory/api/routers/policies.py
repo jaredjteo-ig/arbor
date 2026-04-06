@@ -59,82 +59,7 @@ POLICY_CATEGORIES = [
 # DataFlow helpers
 # --------------------------------------------------------------------------
 
-
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-
-def _dataflow_update(node_type: str, record_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "update", {"filter": {"id": record_id}, "fields": updates})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
-
-
-def _dataflow_read(node_type: str, record_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "read", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
-
-
-def _dataflow_delete(node_type: str, record_id: int) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "delete", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results.get("delete", {})
+from hr_advisory.services import dataflow_crud
 
 
 # --------------------------------------------------------------------------
@@ -144,8 +69,8 @@ def _dataflow_delete(node_type: str, record_id: int) -> dict:
 
 def _find_employee_for_user(user_id: int, company_id: int) -> dict | None:
     """Look up the employee record for a given user in a company."""
-    records = _dataflow_list(
-        "EmployeeListNode",
+    records = dataflow_crud.list_records(
+        "Employee",
         {"user_id": user_id, "company_id": company_id},
         limit=1,
     )
@@ -252,7 +177,7 @@ async def list_policies(
     if category:
         filter_dict["category"] = category
 
-    policies = _dataflow_list("CompanyPolicyListNode", filter_dict)
+    policies = dataflow_crud.list_records("CompanyPolicy", filter_dict)
     return {
         "policies": [
             {
@@ -310,8 +235,8 @@ async def get_pending_acknowledgments(
     employee_id = employee.get("id")
 
     # Get all active policies requiring acknowledgment
-    policies = _dataflow_list(
-        "CompanyPolicyListNode",
+    policies = dataflow_crud.list_records(
+        "CompanyPolicy",
         {
             "company_id": company_id,
             "is_active": True,
@@ -324,8 +249,8 @@ async def get_pending_acknowledgments(
         return {"pending_policies": [], "count": 0}
 
     # Get all acknowledgments by this employee
-    acks = _dataflow_list(
-        "PolicyAcknowledgmentListNode",
+    acks = dataflow_crud.list_records(
+        "PolicyAcknowledgment",
         {"company_id": company_id, "employee_id": employee_id},
     )
 
@@ -373,7 +298,7 @@ async def get_policy(
         404: Policy not found or access denied
     """
     company_id = get_current_company_id(current_user)
-    policy = _dataflow_read("CompanyPolicyReadNode", policy_id)
+    policy = dataflow_crud.read("CompanyPolicy", policy_id)
     if policy is None:
         raise HTTPException(status_code=404, detail="Policy not found.")
     if policy.get("company_id") != company_id:
@@ -472,8 +397,8 @@ async def create_policy(
     policy_type = (body.get("policy_type") or category or "general_hr").strip()
     actor_id = int(current_user.get("sub", 0))
 
-    policy = _dataflow_create(
-        "CompanyPolicyCreateNode",
+    policy = dataflow_crud.create(
+        "CompanyPolicy",
         {
             "company_id": company_id,
             "policy_type": policy_type,
@@ -707,8 +632,8 @@ async def upload_policy(
     actor_id = int(current_user.get("sub", 0))
     policy_type = category or "general_hr"
 
-    policy = _dataflow_create(
-        "CompanyPolicyCreateNode",
+    policy = dataflow_crud.create(
+        "CompanyPolicy",
         {
             "company_id": company_id,
             "policy_type": policy_type,
@@ -803,7 +728,7 @@ async def update_policy(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    policy = _dataflow_read("CompanyPolicyReadNode", policy_id)
+    policy = dataflow_crud.read("CompanyPolicy", policy_id)
     if policy is None:
         raise HTTPException(status_code=404, detail="Policy not found.")
     if policy.get("company_id") != company_id:
@@ -825,8 +750,8 @@ async def update_policy(
         # --- Version creation with race protection (T008) ---
         # Re-query to check no other version was created since we read
         current_version = policy.get("version_number", 1)
-        active_versions = _dataflow_list(
-            "CompanyPolicyListNode",
+        active_versions = dataflow_crud.list_records(
+            "CompanyPolicy",
             {
                 "company_id": company_id,
                 "policy_type": policy.get("policy_type", ""),
@@ -861,8 +786,8 @@ async def update_policy(
         # Create new version
         new_category = (body.get("category") or policy.get("category", "")).strip()
         _validate_category(new_category)
-        new_policy = _dataflow_create(
-            "CompanyPolicyCreateNode",
+        new_policy = dataflow_crud.create(
+            "CompanyPolicy",
             {
                 "company_id": company_id,
                 "policy_type": body.get("policy_type", policy.get("policy_type", "")),
@@ -890,8 +815,8 @@ async def update_policy(
         )
 
         # Archive old version
-        _dataflow_update(
-            "CompanyPolicyUpdateNode",
+        dataflow_crud.update(
+            "CompanyPolicy",
             policy_id,
             {
                 "is_active": False,
@@ -963,9 +888,9 @@ async def update_policy(
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update.")
 
-    _dataflow_update("CompanyPolicyUpdateNode", policy_id, updates)
+    dataflow_crud.update("CompanyPolicy", policy_id, updates)
 
-    updated_policy = _dataflow_read("CompanyPolicyReadNode", policy_id)
+    updated_policy = dataflow_crud.read("CompanyPolicy", policy_id)
     logger.info(
         "Policy updated (metadata): id=%s, fields=%s, company_id=%s",
         policy_id,
@@ -1003,7 +928,7 @@ async def update_policy_content(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    policy = _dataflow_read("CompanyPolicyReadNode", policy_id)
+    policy = dataflow_crud.read("CompanyPolicy", policy_id)
     if policy is None:
         raise HTTPException(status_code=404, detail="Policy not found.")
     if policy.get("company_id") != company_id:
@@ -1020,8 +945,8 @@ async def update_policy_content(
         )
 
     content_hash = _compute_content_hash(new_content)
-    _dataflow_update(
-        "CompanyPolicyUpdateNode",
+    dataflow_crud.update(
+        "CompanyPolicy",
         policy_id,
         {
             "content": new_content,
@@ -1066,7 +991,7 @@ async def delete_policy(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    policy = _dataflow_read("CompanyPolicyReadNode", policy_id)
+    policy = dataflow_crud.read("CompanyPolicy", policy_id)
     if policy is None:
         raise HTTPException(status_code=404, detail="Policy not found.")
     if policy.get("company_id") != company_id:
@@ -1075,8 +1000,8 @@ async def delete_policy(
     if policy.get("status") == "archived":
         return {"message": "Policy is already archived.", "policy_id": policy_id}
 
-    _dataflow_update(
-        "CompanyPolicyUpdateNode",
+    dataflow_crud.update(
+        "CompanyPolicy",
         policy_id,
         {"status": "archived", "is_active": False},
     )
@@ -1105,15 +1030,15 @@ async def list_policy_versions(
         404: Policy not found
     """
     company_id = get_current_company_id(current_user)
-    policy = _dataflow_read("CompanyPolicyReadNode", policy_id)
+    policy = dataflow_crud.read("CompanyPolicy", policy_id)
     if policy is None:
         raise HTTPException(status_code=404, detail="Policy not found.")
     if policy.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Policy not found.")
 
     policy_type = policy.get("policy_type", "")
-    all_versions = _dataflow_list(
-        "CompanyPolicyListNode",
+    all_versions = dataflow_crud.list_records(
+        "CompanyPolicy",
         {"company_id": company_id, "policy_type": policy_type},
     )
 
@@ -1165,7 +1090,7 @@ async def compliance_check(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    policy = _dataflow_read("CompanyPolicyReadNode", policy_id)
+    policy = dataflow_crud.read("CompanyPolicy", policy_id)
     if policy is None:
         raise HTTPException(status_code=404, detail="Policy not found.")
     if policy.get("company_id") != company_id:
@@ -1222,7 +1147,7 @@ async def acknowledge_policy(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    policy = _dataflow_read("CompanyPolicyReadNode", policy_id)
+    policy = dataflow_crud.read("CompanyPolicy", policy_id)
     if policy is None:
         raise HTTPException(status_code=404, detail="Policy not found.")
     if policy.get("company_id") != company_id:
@@ -1242,8 +1167,8 @@ async def acknowledge_policy(
     version_number = policy.get("version_number", 1)
 
     # Check for existing acknowledgment (idempotent)
-    existing = _dataflow_list(
-        "PolicyAcknowledgmentListNode",
+    existing = dataflow_crud.list_records(
+        "PolicyAcknowledgment",
         {
             "company_id": company_id,
             "policy_id": policy_id,
@@ -1267,8 +1192,8 @@ async def acknowledge_policy(
     except Exception:
         pass
 
-    ack = _dataflow_create(
-        "PolicyAcknowledgmentCreateNode",
+    ack = dataflow_crud.create(
+        "PolicyAcknowledgment",
         {
             "company_id": company_id,
             "policy_id": policy_id,
@@ -1312,7 +1237,7 @@ async def list_acknowledgments(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    policy = _dataflow_read("CompanyPolicyReadNode", policy_id)
+    policy = dataflow_crud.read("CompanyPolicy", policy_id)
     if policy is None:
         raise HTTPException(status_code=404, detail="Policy not found.")
     if policy.get("company_id") != company_id:
@@ -1321,8 +1246,8 @@ async def list_acknowledgments(
     version_number = policy.get("version_number", 1)
 
     # Get all acknowledgments for this policy version
-    acknowledgments = _dataflow_list(
-        "PolicyAcknowledgmentListNode",
+    acknowledgments = dataflow_crud.list_records(
+        "PolicyAcknowledgment",
         {"company_id": company_id, "policy_id": policy_id},
     )
     # Filter to current version
@@ -1333,8 +1258,8 @@ async def list_acknowledgments(
     acknowledged_employee_ids = {a.get("employee_id") for a in current_acks}
 
     # Get all active employees in the company
-    all_employees = _dataflow_list(
-        "EmployeeListNode",
+    all_employees = dataflow_crud.list_records(
+        "Employee",
         {"company_id": company_id, "is_active": True},
     )
 

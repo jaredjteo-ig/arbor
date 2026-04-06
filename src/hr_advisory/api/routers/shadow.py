@@ -2357,27 +2357,7 @@ async def shadow_distill(
 # the command surface.
 
 
-def _shadow_dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    """Execute a DataFlow ListNode query and return the record list."""
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
+from hr_advisory.services import dataflow_crud
 
 
 @router.get("/payroll/validate")
@@ -2404,8 +2384,8 @@ async def shadow_payroll_validate(
 
     # ── Fetch latest draft/pending/approved payroll run ───────────
     try:
-        all_runs = _shadow_dataflow_list(
-            "PayrollRunListNode",
+        all_runs = dataflow_crud.list_records(
+            "PayrollRun",
             {"company_id": company_id},
             limit=100,
         )
@@ -2444,8 +2424,8 @@ async def shadow_payroll_validate(
 
     # ── Check 1: Employee coverage ───────────────────────────────
     try:
-        active_employees = _shadow_dataflow_list(
-            "EmployeeListNode",
+        active_employees = dataflow_crud.list_records(
+            "Employee",
             {"company_id": company_id, "is_active": True},
             limit=10000,
         )
@@ -2473,8 +2453,8 @@ async def shadow_payroll_validate(
 
     # ── Check 2: CPF rate validation (spot-check via payslips) ───
     try:
-        payslips = _shadow_dataflow_list(
-            "PayslipListNode",
+        payslips = dataflow_crud.list_records(
+            "Payslip",
             {"payroll_run_id": run_id},
             limit=10000,
         )
@@ -2658,8 +2638,8 @@ async def shadow_leave_team_balances(
     formatter = ArborFormatter()
 
     try:
-        employees = _shadow_dataflow_list(
-            "EmployeeListNode",
+        employees = dataflow_crud.list_records(
+            "Employee",
             {"company_id": company_id, "is_active": True},
             limit=10000,
         )
@@ -2691,8 +2671,8 @@ async def shadow_leave_team_balances(
         emp_name = emp.get("full_name") or emp.get("designation") or f"Employee #{emp_id}"
 
         try:
-            emp_balances = _shadow_dataflow_list(
-                "LeaveBalanceListNode",
+            emp_balances = dataflow_crud.list_records(
+                "LeaveBalance",
                 {"employee_id": emp_id},
                 limit=100,
             )
@@ -2730,8 +2710,8 @@ async def shadow_leave_team_balances(
     # Fetch pending leave applications
     pending_count = 0
     try:
-        pending = _shadow_dataflow_list(
-            "LeaveApplicationListNode",
+        pending = dataflow_crud.list_records(
+            "LeaveApplication",
             {"company_id": company_id, "status": "pending"},
             limit=100,
         )

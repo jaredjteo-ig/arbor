@@ -20,27 +20,7 @@ router = APIRouter()
 # DataFlow helpers
 # --------------------------------------------------------------------------
 
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
+from hr_advisory.services import dataflow_crud
 
 
 # --------------------------------------------------------------------------
@@ -72,8 +52,8 @@ async def payroll_summary_report(
         today = _date.today()
         period_end = today.isoformat()
 
-    runs = _dataflow_list(
-        "PayrollRunListNode",
+    runs = dataflow_crud.list_records(
+        "PayrollRun",
         {"company_id": company_id, "period_start": period_start, "period_end": period_end},
     )
 
@@ -85,7 +65,7 @@ async def payroll_summary_report(
 
     for run in runs:
         run_id = run.get("id")
-        payslips = _dataflow_list("PayslipListNode", {"payroll_run_id": run_id})
+        payslips = dataflow_crud.list_records("Payslip", {"payroll_run_id": run_id})
         run_gross = sum(p.get("gross_pay", 0.0) for p in payslips)
         run_net = sum(p.get("net_pay", 0.0) for p in payslips)
         run_er_cpf = sum(p.get("employer_cpf", 0.0) for p in payslips)
@@ -130,14 +110,14 @@ async def cpf_breakdown_report(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    runs = _dataflow_list(
-        "PayrollRunListNode",
+    runs = dataflow_crud.list_records(
+        "PayrollRun",
         {"company_id": company_id, "period_start": period_start, "period_end": period_end},
     )
 
     employee_cpf: dict[int, dict] = {}
     for run in runs:
-        payslips = _dataflow_list("PayslipListNode", {"payroll_run_id": run.get("id")})
+        payslips = dataflow_crud.list_records("Payslip", {"payroll_run_id": run.get("id")})
         for ps in payslips:
             emp_id = ps.get("employee_id", 0)
             if emp_id not in employee_cpf:
@@ -174,19 +154,19 @@ async def payroll_by_bank_report(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    runs = _dataflow_list(
-        "PayrollRunListNode",
+    runs = dataflow_crud.list_records(
+        "PayrollRun",
         {"company_id": company_id, "period_start": period_start, "period_end": period_end},
     )
 
     bank_totals: dict[str, dict] = {}
     for run in runs:
-        payslips = _dataflow_list("PayslipListNode", {"payroll_run_id": run.get("id")})
+        payslips = dataflow_crud.list_records("Payslip", {"payroll_run_id": run.get("id")})
         for ps in payslips:
             emp_id = ps.get("employee_id", 0)
             # Look up employee bank info
-            employees = _dataflow_list(
-                "EmployeeListNode", {"id": emp_id}, limit=1
+            employees = dataflow_crud.list_records(
+                "Employee", {"id": emp_id}, limit=1
             )
             bank_name = "Unknown"
             if employees:
@@ -214,8 +194,8 @@ async def salary_ytd_report(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    ytd_records = _dataflow_list(
-        "CpfYtdListNode",
+    ytd_records = dataflow_crud.list_records(
+        "CpfYtd",
         {"company_id": company_id, "year": year},
     )
     return {"year": year, "records": ytd_records, "count": len(ytd_records)}
@@ -235,15 +215,15 @@ async def payroll_variance_report(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     def _period_total(p_start: str, p_end: str) -> dict:
-        runs = _dataflow_list(
-            "PayrollRunListNode",
+        runs = dataflow_crud.list_records(
+            "PayrollRun",
             {"company_id": company_id, "period_start": p_start, "period_end": p_end},
         )
         gross = 0.0
         net = 0.0
         for run in runs:
-            payslips = _dataflow_list(
-                "PayslipListNode", {"payroll_run_id": run.get("id")}
+            payslips = dataflow_crud.list_records(
+                "Payslip", {"payroll_run_id": run.get("id")}
             )
             gross += sum(p.get("gross_pay", 0.0) for p in payslips)
             net += sum(p.get("net_pay", 0.0) for p in payslips)
@@ -282,7 +262,7 @@ async def leave_applications_report(
     if status:
         filters["status"] = status
 
-    applications = _dataflow_list("LeaveApplicationListNode", filters)
+    applications = dataflow_crud.list_records("LeaveApplication", filters)
 
     # Client-side year filtering if provided
     if year:
@@ -305,8 +285,8 @@ async def leave_balance_report(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    balances = _dataflow_list(
-        "LeaveBalanceListNode",
+    balances = dataflow_crud.list_records(
+        "LeaveBalance",
         {"company_id": company_id, "year": year},
     )
     return {"year": year, "balances": balances, "count": len(balances)}
@@ -332,7 +312,7 @@ async def claims_report(
     if status:
         filters["status"] = status
 
-    claims = _dataflow_list("ClaimListNode", filters)
+    claims = dataflow_crud.list_records("Claim", filters)
 
     if year:
         year_str = str(year)
@@ -371,7 +351,7 @@ async def attendance_report(
     if employee_id:
         filters["employee_id"] = employee_id
 
-    records = _dataflow_list("AttendanceRecordListNode", filters)
+    records = dataflow_crud.list_records("AttendanceRecord", filters)
 
     # Client-side date filtering
     records = [
@@ -407,8 +387,8 @@ async def employee_details_report(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    employees = _dataflow_list(
-        "EmployeeListNode",
+    employees = dataflow_crud.list_records(
+        "Employee",
         {"company_id": company_id, "is_active": is_active},
     )
     return {"employees": employees, "count": len(employees)}
@@ -433,15 +413,15 @@ async def project_costing_report(
     if project_id:
         filters["id"] = project_id
 
-    projects = _dataflow_list("ProjectListNode", filters)
+    projects = dataflow_crud.list_records("Project", filters)
 
     summaries = []
     for proj in projects:
         pid = proj.get("id")
-        entries = _dataflow_list("TimesheetEntryListNode", {"project_id": pid})
-        overheads = _dataflow_list("ProjectOverheadListNode", {"project_id": pid})
-        assignments = _dataflow_list(
-            "ProjectAssignmentListNode", {"project_id": pid}
+        entries = dataflow_crud.list_records("TimesheetEntry", {"project_id": pid})
+        overheads = dataflow_crud.list_records("ProjectOverhead", {"project_id": pid})
+        assignments = dataflow_crud.list_records(
+            "ProjectAssignment", {"project_id": pid}
         )
 
         total_hours = sum(e.get("hours", 0.0) for e in entries)

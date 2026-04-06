@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 
@@ -33,79 +34,10 @@ def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_L
     return value
 
 
-# --------------------------------------------------------------------------
-# DataFlow helpers
-# --------------------------------------------------------------------------
-
-
-def _dataflow_create(node_type: str, data: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "create", data)
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["create"]
-
-
-def _dataflow_list(node_type: str, filter_dict: dict, limit: int = 10000) -> list:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(
-        node_type,
-        "list",
-        {"filter": filter_dict, "limit": limit, "enable_cache": False},
-    )
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    raw = results["list"]
-    if isinstance(raw, dict) and "records" in raw:
-        return raw["records"]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-
-def _dataflow_update(node_type: str, record_id: int, updates: dict) -> dict:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "update", {"filter": {"id": record_id}, "fields": updates})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    return results["update"]
-
-
-def _dataflow_read(node_type: str, record_id: int) -> dict | None:
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-
-    import hr_advisory.models  # noqa: F401
-
-    wf = WorkflowBuilder()
-    wf.add_node(node_type, "read", {"id": record_id})
-    runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
-    result = results.get("read", {})
-    if result.get("error") or result.get("failed"):
-        return None
-    return result
-
-
 def _find_employee_for_user(user_id: int, company_id: int) -> dict | None:
     """Look up the employee record for a given user in a company."""
-    records = _dataflow_list(
-        "EmployeeListNode",
+    records = dataflow_crud.list_records(
+        "Employee",
         {"user_id": user_id, "company_id": company_id},
         limit=1,
     )
@@ -114,8 +46,8 @@ def _find_employee_for_user(user_id: int, company_id: int) -> dict | None:
 
 def _get_attendance_settings(company_id: int) -> dict:
     """Fetch attendance settings for a company, returning defaults if none exist."""
-    settings = _dataflow_list(
-        "AttendanceSettingsListNode",
+    settings = dataflow_crud.list_records(
+        "AttendanceSettings",
         {"company_id": company_id},
         limit=1,
     )
@@ -223,8 +155,8 @@ async def clock_in(
     now = datetime.now(timezone.utc).isoformat()
 
     # Check if already clocked in today
-    existing = _dataflow_list(
-        "AttendanceRecordListNode",
+    existing = dataflow_crud.list_records(
+        "AttendanceRecord",
         {"employee_id": emp["id"], "date": today},
         limit=1,
     )
@@ -241,8 +173,8 @@ async def clock_in(
     status = _determine_status(now, settings)
 
     try:
-        record = _dataflow_create(
-            "AttendanceRecordCreateNode",
+        record = dataflow_crud.create(
+            "AttendanceRecord",
             {
                 "employee_id": emp["id"],
                 "company_id": company_id,
@@ -261,8 +193,8 @@ async def clock_in(
     except Exception:
         # Handle TOCTOU race: another request may have created a record
         # between our check and create. Return the existing record instead.
-        dup = _dataflow_list(
-            "AttendanceRecordListNode",
+        dup = dataflow_crud.list_records(
+            "AttendanceRecord",
             {"employee_id": emp["id"], "date": today},
             limit=1,
         )
@@ -300,8 +232,8 @@ async def clock_out(
     now = datetime.now(timezone.utc).isoformat()
 
     # Find today's record
-    existing = _dataflow_list(
-        "AttendanceRecordListNode",
+    existing = dataflow_crud.list_records(
+        "AttendanceRecord",
         {"employee_id": emp["id"], "date": today},
         limit=1,
     )
@@ -321,8 +253,8 @@ async def clock_out(
     settings = _get_attendance_settings(company_id)
     work_hours, overtime_hours = _calculate_hours(record["clock_in"], now, settings)
 
-    _dataflow_update(
-        "AttendanceRecordUpdateNode",
+    dataflow_crud.update(
+        "AttendanceRecord",
         record["id"],
         {
             "clock_out": now,
@@ -333,7 +265,7 @@ async def clock_out(
         },
     )
 
-    updated = _dataflow_read("AttendanceRecordReadNode", record["id"])
+    updated = dataflow_crud.read("AttendanceRecord", record["id"])
     return {"record": updated}
 
 
@@ -357,8 +289,8 @@ async def get_today_record(
         return {"record": None}
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    records = _dataflow_list(
-        "AttendanceRecordListNode",
+    records = dataflow_crud.list_records(
+        "AttendanceRecord",
         {"employee_id": emp["id"], "date": today},
         limit=1,
     )
@@ -400,7 +332,7 @@ async def list_attendance_records(
     elif employee_id_param:
         filter_dict["employee_id"] = int(employee_id_param)
 
-    records = _dataflow_list("AttendanceRecordListNode", filter_dict)
+    records = dataflow_crud.list_records("AttendanceRecord", filter_dict)
 
     # Client-side filtering for month/year (DataFlow doesn't support partial date matching)
     if month_param and year_param:
@@ -452,8 +384,8 @@ async def attendance_summary(
     else:
         target_employee_id = int(employee_id_param)
 
-    records = _dataflow_list(
-        "AttendanceRecordListNode",
+    records = dataflow_crud.list_records(
+        "AttendanceRecord",
         {"employee_id": target_employee_id, "company_id": company_id},
     )
 
@@ -498,7 +430,7 @@ async def admin_correct_attendance(
 ) -> dict:
     """Admin correction of an attendance record."""
     company_id = get_current_company_id(current_user)
-    record = _dataflow_read("AttendanceRecordReadNode", record_id)
+    record = dataflow_crud.read("AttendanceRecord", record_id)
     if record is None or record.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Attendance record not found.")
 
@@ -528,8 +460,8 @@ async def admin_correct_attendance(
         updates["work_hours"] = work_hours
         updates["overtime_hours"] = overtime_hours
 
-    _dataflow_update("AttendanceRecordUpdateNode", record_id, updates)
-    updated = _dataflow_read("AttendanceRecordReadNode", record_id)
+    dataflow_crud.update("AttendanceRecord", record_id, updates)
+    updated = dataflow_crud.read("AttendanceRecord", record_id)
     return {"record": updated}
 
 
@@ -574,17 +506,17 @@ async def update_attendance_settings(
     fields = {k: v for k, v in body.items() if k in allowed}
 
     # Check if settings already exist
-    existing = _dataflow_list(
-        "AttendanceSettingsListNode",
+    existing = dataflow_crud.list_records(
+        "AttendanceSettings",
         {"company_id": company_id},
         limit=1,
     )
     if existing:
-        _dataflow_update("AttendanceSettingsUpdateNode", existing[0]["id"], fields)
-        updated = _dataflow_read("AttendanceSettingsReadNode", existing[0]["id"])
+        dataflow_crud.update("AttendanceSettings", existing[0]["id"], fields)
+        updated = dataflow_crud.read("AttendanceSettings", existing[0]["id"])
     else:
         fields["company_id"] = company_id
-        updated = _dataflow_create("AttendanceSettingsCreateNode", fields)
+        updated = dataflow_crud.create("AttendanceSettings", fields)
 
     return {"settings": updated}
 
@@ -619,8 +551,8 @@ async def submit_timesheet(
         raise HTTPException(status_code=400, detail="month is required (e.g. '2026-03').")
 
     # Check for existing timesheet for this month
-    existing = _dataflow_list(
-        "TimesheetApprovalListNode",
+    existing = dataflow_crud.list_records(
+        "TimesheetApproval",
         {"employee_id": emp["id"], "month": month},
         limit=1,
     )
@@ -631,8 +563,8 @@ async def submit_timesheet(
         )
 
     # Aggregate attendance for the month
-    records = _dataflow_list(
-        "AttendanceRecordListNode",
+    records = dataflow_crud.list_records(
+        "AttendanceRecord",
         {"employee_id": emp["id"], "company_id": company_id},
     )
     month_records = [r for r in records if r.get("date", "").startswith(month)]
@@ -640,8 +572,8 @@ async def submit_timesheet(
     total_ot = round(sum(r.get("overtime_hours", 0.0) for r in month_records), 2)
 
     now = datetime.now(timezone.utc).isoformat()
-    timesheet = _dataflow_create(
-        "TimesheetApprovalCreateNode",
+    timesheet = dataflow_crud.create(
+        "TimesheetApproval",
         {
             "employee_id": emp["id"],
             "company_id": company_id,
@@ -662,7 +594,7 @@ async def approve_timesheet(
 ) -> dict:
     """Approve a pending timesheet."""
     company_id = get_current_company_id(current_user)
-    ts = _dataflow_read("TimesheetApprovalReadNode", timesheet_id)
+    ts = dataflow_crud.read("TimesheetApproval", timesheet_id)
     if ts is None or ts.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Timesheet not found.")
 
@@ -672,8 +604,8 @@ async def approve_timesheet(
     actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
-    _dataflow_update(
-        "TimesheetApprovalUpdateNode",
+    dataflow_crud.update(
+        "TimesheetApproval",
         timesheet_id,
         {
             "status": "approved",
@@ -691,14 +623,14 @@ async def reject_timesheet(
 ) -> dict:
     """Reject a pending timesheet."""
     company_id = get_current_company_id(current_user)
-    ts = _dataflow_read("TimesheetApprovalReadNode", timesheet_id)
+    ts = dataflow_crud.read("TimesheetApproval", timesheet_id)
     if ts is None or ts.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Timesheet not found.")
 
     if ts.get("status") != "pending":
         raise HTTPException(status_code=400, detail="Only pending timesheets can be rejected.")
 
-    _dataflow_update("TimesheetApprovalUpdateNode", timesheet_id, {"status": "rejected"})
+    dataflow_crud.update("TimesheetApproval", timesheet_id, {"status": "rejected"})
     return {"message": "Timesheet rejected.", "status": "rejected"}
 
 
@@ -729,7 +661,7 @@ async def list_timesheets(
     if status_filter:
         filter_dict["status"] = status_filter
 
-    timesheets = _dataflow_list("TimesheetApprovalListNode", filter_dict)
+    timesheets = dataflow_crud.list_records("TimesheetApproval", filter_dict)
     timesheets.sort(key=lambda t: t.get("month", ""), reverse=True)
     return {"timesheets": timesheets, "count": len(timesheets)}
 
@@ -741,8 +673,8 @@ async def list_timesheets(
 
 def _get_lateness_settings(company_id: int) -> dict:
     """Fetch lateness settings for a company, returning defaults if none exist."""
-    settings = _dataflow_list(
-        "LatenessSettingsListNode",
+    settings = dataflow_crud.list_records(
+        "LatenessSettings",
         {"company_id": company_id},
         limit=1,
     )
@@ -759,8 +691,8 @@ def _get_lateness_settings(company_id: int) -> dict:
 
 def _get_early_departure_settings(company_id: int) -> dict:
     """Fetch early departure settings for a company, returning defaults if none exist."""
-    settings = _dataflow_list(
-        "EarlyDepartureSettingsListNode",
+    settings = dataflow_crud.list_records(
+        "EarlyDepartureSettings",
         {"company_id": company_id},
         limit=1,
     )
@@ -813,17 +745,17 @@ async def update_lateness_settings(
             raise HTTPException(status_code=400, detail="Invalid numeric value.")
         fields["deduction_per_incident"] = val
 
-    existing = _dataflow_list(
-        "LatenessSettingsListNode",
+    existing = dataflow_crud.list_records(
+        "LatenessSettings",
         {"company_id": company_id},
         limit=1,
     )
     if existing:
-        _dataflow_update("LatenessSettingsUpdateNode", existing[0]["id"], fields)
-        updated = _dataflow_read("LatenessSettingsReadNode", existing[0]["id"])
+        dataflow_crud.update("LatenessSettings", existing[0]["id"], fields)
+        updated = dataflow_crud.read("LatenessSettings", existing[0]["id"])
     else:
         fields["company_id"] = company_id
-        updated = _dataflow_create("LatenessSettingsCreateNode", fields)
+        updated = dataflow_crud.create("LatenessSettings", fields)
 
     return {"settings": updated}
 
@@ -866,17 +798,17 @@ async def update_early_departure_settings(
             raise HTTPException(status_code=400, detail="Invalid numeric value.")
         fields["deduction_per_incident"] = val
 
-    existing = _dataflow_list(
-        "EarlyDepartureSettingsListNode",
+    existing = dataflow_crud.list_records(
+        "EarlyDepartureSettings",
         {"company_id": company_id},
         limit=1,
     )
     if existing:
-        _dataflow_update("EarlyDepartureSettingsUpdateNode", existing[0]["id"], fields)
-        updated = _dataflow_read("EarlyDepartureSettingsReadNode", existing[0]["id"])
+        dataflow_crud.update("EarlyDepartureSettings", existing[0]["id"], fields)
+        updated = dataflow_crud.read("EarlyDepartureSettings", existing[0]["id"])
     else:
         fields["company_id"] = company_id
-        updated = _dataflow_create("EarlyDepartureSettingsCreateNode", fields)
+        updated = dataflow_crud.create("EarlyDepartureSettings", fields)
 
     return {"settings": updated}
 
@@ -898,21 +830,21 @@ async def today_dashboard(
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Fetch all active employees
-    employees = _dataflow_list(
-        "EmployeeListNode",
+    employees = dataflow_crud.list_records(
+        "Employee",
         {"company_id": company_id, "is_active": True},
     )
 
     # Fetch today's attendance records for the company
-    records = _dataflow_list(
-        "AttendanceRecordListNode",
+    records = dataflow_crud.list_records(
+        "AttendanceRecord",
         {"company_id": company_id, "date": today},
     )
     records_by_emp = {r.get("employee_id"): r for r in records}
 
     # Fetch approved leave for today
-    leave_apps = _dataflow_list(
-        "LeaveApplicationListNode",
+    leave_apps = dataflow_crud.list_records(
+        "LeaveApplication",
         {"company_id": company_id, "status": "approved"},
     )
     on_leave_ids: set[int] = set()
@@ -932,7 +864,7 @@ async def today_dashboard(
         user_id = emp.get("user_id")
         user = None
         if user_id:
-            user = _dataflow_read("UserReadNode", user_id)
+            user = dataflow_crud.read("User", user_id)
         name = user.get("name", "") if user else ""
         entry = {
             "employee_id": emp_id,
@@ -1015,8 +947,8 @@ async def aggregated_summary(
         )
 
     # Fetch all attendance records for company
-    all_records = _dataflow_list(
-        "AttendanceRecordListNode",
+    all_records = dataflow_crud.list_records(
+        "AttendanceRecord",
         {"company_id": company_id},
     )
 
@@ -1051,9 +983,9 @@ async def aggregated_summary(
     # Enrich with employee info
     results = []
     for emp_id, totals in emp_totals.items():
-        emp_records = _dataflow_list("EmployeeListNode", {"id": emp_id}, limit=1)
+        emp_records = dataflow_crud.list_records("Employee", {"id": emp_id}, limit=1)
         emp = emp_records[0] if emp_records else {}
-        user = _dataflow_read("UserReadNode", emp.get("user_id")) if emp.get("user_id") else None
+        user = dataflow_crud.read("User", emp.get("user_id")) if emp.get("user_id") else None
         results.append(
             {
                 "employee_id": emp_id,
