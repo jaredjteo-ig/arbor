@@ -72,6 +72,44 @@ Each wrapped in try/except with logging — failure in one module does not block
 
 Calendar day method: `monthly_salary * (days_worked / days_in_month)`
 
+## Payroll Reports & Exports
+
+| Endpoint                                           | Method | Purpose                                                                      |
+| -------------------------------------------------- | ------ | ---------------------------------------------------------------------------- |
+| `/payroll/reports/cpf-reconciliation?year=&month=` | GET    | Per-employee CPF comparison against CpfYtdRecord, flags discrepancies >$0.01 |
+| `/payroll/tax/ir8a-csv`                            | POST   | IRAS AIS format CSV (Employee ID/Name/ID Type/NRIC/DOB/Gross/CPF/etc.)       |
+| `/payroll/tax/appendix-8a/{employee_id}?year=`     | GET    | Benefits-in-kind (housing, car, utilities, club, education, insurance)       |
+| `/payroll/export?start_date=&end_date=`            | GET    | Full payslip CSV with all statutory columns                                  |
+
+All exports use `_sanitize_filename()` for Content-Disposition headers. All require `owner` or `hr_manager` role.
+
+## Parallel Payroll Runs
+
+Compare Arbor calculations against an external HRIS:
+
+- `POST /payroll/parallel/upload` — CSV upload with flexible column matching (handles BOM, comma/dollar stripping, multiple column name variants)
+- `POST /payroll/parallel/compare` — matches employees by ID or name (case-insensitive), compares gross (exact), net/CPF ($1 tolerance), SDL
+- Bounded in-memory storage: `OrderedDict`, max 10 entries, LRU eviction
+- NaN/Infinity rejected via `math.isfinite()` on all parsed values
+
+## Exit Processing
+
+`POST /employees/{employee_id}/exit` — handles resignation, termination, retrenchment, contract end:
+
+1. **Pro-rated salary** — calendar day method via `prorate_salary()`
+2. **Leave encashment** — unused annual leave balance × daily rate (monthly / 26)
+3. **Notice period** — shortfall days × daily rate (positive for termination, negative for resignation)
+4. **Retrenchment benefit** — sector-aware via existing retrenchment calculator
+5. Updates employee to inactive, creates EmploymentEvent, returns settlement breakdown
+
+## Payslip PDF Generation
+
+- `generate_payslip_pdf()` in `statutory_files.py` using reportlab
+- A4 PDF: company header, employee info grid, earnings/deductions sections, net salary, employer contributions, EA s88A compliance footer
+- Admin: `POST /payroll/runs/{id}/payslips/{id}/pdf`
+- Employee self-service: `GET /payroll/my-payslips/{id}/pdf`
+- CORS exposes `Content-Disposition` header for frontend filename extraction
+
 ## Testing
 
-87 tests cover: CPF all age bands, SDL boundaries, SHG all funds, proration, salary components, cross-module, edge cases, statutory file formats. Run: `python -m pytest tests/unit/test_payroll_calculator.py -v`
+87 unit tests + 8 performance tests (200 employees < 30s, per-employee < 150ms). Covers: CPF all age bands, SDL boundaries, SHG all funds, proration, salary components, cross-module, edge cases, statutory file formats, CPF/FWL correctness by immigration status. Run: `python -m pytest tests/unit/test_payroll_calculator.py tests/performance/test_payroll_performance.py -v`

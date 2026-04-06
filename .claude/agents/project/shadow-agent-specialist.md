@@ -170,6 +170,42 @@ POST /shadow/execute
 500 -> "Something went wrong on the server"
 ```
 
+## HRIS Integration (Added 2026-04-06)
+
+The shadow agent is now deeply integrated with HRIS data:
+
+### Real Compliance Context
+
+`_build_compliance_context(company_id)` in shadow.py queries 8 data sources: company profile, active employees, company policies, KET documents, payroll runs, leave configs, shift templates, content updates. Returns actual compliance scores instead of generic defaults. Included in `/shadow/context` response.
+
+### Observation-to-Suggestion Personalisation
+
+`_generate_suggestions_from_observations()` in nudges.py reads 30-day observation history, maps frequent page visits to personalised suggestions:
+
+- Payroll views -> "Next payroll due in X days"
+- Leave views -> "X pending leave approvals"
+- Employee views -> "X employees in probation ending this month"
+- Compliance views -> "Compliance score X% -- Y items need attention"
+
+Merged into nudges, capped at 3, deduplicated by ID.
+
+### HRIS Tools (tool_registry.py)
+
+- `payroll.validate` (autonomous) -> `GET /shadow/payroll/validate` — 4 checks: employee coverage, CPF rate validation, zero-salary, month-over-month variance (>20%). Requires owner/hr_manager.
+- `leave.team_balances` (autonomous) -> `GET /shadow/leave/team-balances` — aggregated leave balances with low-balance alerts, pending approvals. Requires owner/hr_manager.
+
+### CPF Validation in Briefing
+
+`_cpf_validation()` in briefing.py: CPF submission deadline reminder (14th of next month within 14 days), month-over-month CPF total comparison (flags >10% variance with contextual explanation).
+
+### Attention Widget (Frontend)
+
+- `useShadowNudges` hook polls `/shadow/nudges` every 60s, tracks seen IDs
+- ShadowWidget shows pulsing red badge when unseen nudges exist
+- CSS animations: `shadow-nudge-pulse` (box-shadow ripple), `shadow-badge-in` (scale entrance)
+- Accessible: dynamic aria-label with count, respects `prefers-reduced-motion`
+- Click or Ctrl+Shift+A marks nudges as seen
+
 ## When Invoked
 
 1. Adding or modifying intent classification rules
@@ -182,6 +218,8 @@ POST /shadow/execute
 8. Working on shadow agent frontend components
 9. Adding new shadow API endpoints
 10. Security hardening of the execution pipeline
+11. Integrating HRIS data into shadow context, nudges, or briefing
+12. Working on the attention ripple widget or nudge polling
 
 ## Safety
 
