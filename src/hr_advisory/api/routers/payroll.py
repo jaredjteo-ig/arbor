@@ -699,18 +699,19 @@ async def get_cpf_ytd(
     if year == 0:
         year = datetime.now(timezone.utc).year
 
+    # Verify employee belongs to company BEFORE fetching any records
+    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
+    if not emp_records or emp_records[0].get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
     records = _dataflow_list(
         "CpfYtdRecordListNode",
         {
             "employee_id": employee_id,
+            "company_id": company_id,
             "year": year,
         },
     )
-
-    # Verify employee belongs to company
-    emp_records = _dataflow_list("EmployeeListNode", {"id": employee_id}, limit=1)
-    if not emp_records or emp_records[0].get("company_id") != company_id:
-        raise HTTPException(status_code=404, detail="Employee not found.")
 
     records.sort(key=lambda r: r.get("month", 0))
     return {"year": year, "records": records}

@@ -8,7 +8,6 @@ import {
   DatePicker,
   BarChart,
   DonutChart,
-  TrendLine,
   toast,
 } from "@/components/design-system";
 import { employeesApi, type Employee } from "@/services/api/employees";
@@ -36,6 +35,7 @@ interface ReportDef {
   color: string;
   bgColor: string;
   category: "workforce" | "financial" | "operational";
+  comingSoon?: boolean;
 }
 
 const REPORTS: ReportDef[] = [
@@ -56,6 +56,7 @@ const REPORTS: ReportDef[] = [
     color: "text-violet-600",
     bgColor: "bg-violet-50",
     category: "workforce",
+    comingSoon: true,
   },
   {
     id: "payroll",
@@ -145,20 +146,18 @@ const DEPT_COLORS = [
   "#6366f1",
 ];
 
-const PASS_TYPE_LABELS: Record<string, string> = {
-  citizen: "Citizen",
-  pr: "PR",
-  ep: "EP",
-  sp: "S Pass",
-  wp: "Work Permit",
+const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
+  full_time: "Full-time",
+  part_time: "Part-time",
+  contract: "Contract",
+  intern: "Intern",
 };
 
-const PASS_TYPE_COLORS: Record<string, string> = {
-  citizen: "#3b82f6",
-  pr: "#10b981",
-  ep: "#f59e0b",
-  sp: "#8b5cf6",
-  wp: "#ef4444",
+const EMPLOYMENT_TYPE_COLORS: Record<string, string> = {
+  full_time: "#3b82f6",
+  part_time: "#10b981",
+  contract: "#f59e0b",
+  intern: "#8b5cf6",
 };
 
 function ReportsDashboardCharts() {
@@ -220,48 +219,21 @@ function ReportsDashboardCharts() {
       color: DEPT_COLORS[i % DEPT_COLORS.length],
     }));
 
-  /* Foreign worker ratio (pass type breakdown) */
-  const passTypeCounts: Record<string, number> = {};
+  /* Employment type breakdown */
+  const empTypeCounts: Record<string, number> = {};
   for (const e of activeEmployees) {
-    const passType = (e.employment_type || "unknown").toLowerCase();
-    passTypeCounts[passType] = (passTypeCounts[passType] || 0) + 1;
+    const empType = (e.employment_type || "unknown").toLowerCase();
+    empTypeCounts[empType] = (empTypeCounts[empType] || 0) + 1;
   }
-  const passTypeData = Object.entries(passTypeCounts)
+  const empTypeData = Object.entries(empTypeCounts)
     .sort((a, b) => b[1] - a[1])
     .map(([key, value]) => ({
       label:
-        PASS_TYPE_LABELS[key] ||
+        EMPLOYMENT_TYPE_LABELS[key] ||
         key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
       value,
-      color: PASS_TYPE_COLORS[key] || "#9ca3af",
+      color: EMPLOYMENT_TYPE_COLORS[key] || "#9ca3af",
     }));
-
-  /* Leave utilization (placeholder since leave data needs a separate API) */
-  const leaveData = [
-    {
-      label: "Annual Used",
-      value: Math.round(activeEmployees.length * 3.2),
-      color: "#3b82f6",
-    },
-    {
-      label: "Sick Used",
-      value: Math.round(activeEmployees.length * 0.8),
-      color: "#f59e0b",
-    },
-    {
-      label: "Remaining",
-      value: Math.round(activeEmployees.length * 10.5),
-      color: "#d1d5db",
-    },
-  ];
-
-  /* Payroll cost trend (estimated from headcount) */
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-  const basePayroll = activeEmployees.length * 4500;
-  const payrollTrend = months.map((label, i) => ({
-    label,
-    value: Math.round(basePayroll * (1 + i * 0.02 + Math.sin(i) * 0.01)),
-  }));
 
   const hasData = activeEmployees.length > 0;
 
@@ -290,21 +262,32 @@ function ReportsDashboardCharts() {
           </AppCard>
           <AppCard variant="flat">
             <DonutChart
-              title="Workforce Composition"
-              data={passTypeData}
+              title="Employment Type Breakdown"
+              data={empTypeData}
               size={130}
             />
           </AppCard>
           <AppCard variant="flat">
-            <DonutChart title="Leave Utilisation" data={leaveData} size={130} />
+            <div className="py-6 text-center">
+              <CalendarDays className="h-8 w-8 text-[var(--color-gray-300)] mx-auto mb-2" />
+              <p className="text-xs font-medium text-[var(--color-gray-500)] mb-1">
+                Leave Utilisation
+              </p>
+              <p className="text-xs text-[var(--color-gray-400)]">
+                Generate a Leave report to view utilisation data.
+              </p>
+            </div>
           </AppCard>
           <AppCard variant="flat">
-            <TrendLine
-              title="Payroll Cost Trend"
-              data={payrollTrend}
-              color="#10b981"
-              height={100}
-            />
+            <div className="py-6 text-center">
+              <Wallet className="h-8 w-8 text-[var(--color-gray-300)] mx-auto mb-2" />
+              <p className="text-xs font-medium text-[var(--color-gray-500)] mb-1">
+                Payroll Cost Trend
+              </p>
+              <p className="text-xs text-[var(--color-gray-400)]">
+                Run a payroll period to see cost trends here.
+              </p>
+            </div>
           </AppCard>
         </div>
       )}
@@ -575,10 +558,7 @@ function ReportViewer({
 
 export default function ReportsPage() {
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
   const [selectedReport, setSelectedReport] = useState<ReportDef | null>(null);
 
   if (selectedReport) {
@@ -629,18 +609,30 @@ export default function ReportsPage() {
                   <button
                     key={report.id}
                     type="button"
-                    onClick={() => setSelectedReport(report)}
-                    className="text-left rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] p-5 hover:border-[var(--color-primary)] hover:shadow-sm transition-all group"
+                    onClick={() =>
+                      !report.comingSoon && setSelectedReport(report)
+                    }
+                    disabled={report.comingSoon}
+                    className={`text-left rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] p-5 transition-all group ${
+                      report.comingSoon
+                        ? "opacity-60 cursor-not-allowed"
+                        : "hover:border-[var(--color-primary)] hover:shadow-sm"
+                    }`}
                   >
                     <div className="flex items-center gap-3 mb-2">
                       <div
-                        className={`p-2 rounded-lg ${report.bgColor} group-hover:scale-105 transition-transform`}
+                        className={`p-2 rounded-lg ${report.bgColor} ${!report.comingSoon ? "group-hover:scale-105" : ""} transition-transform`}
                       >
                         <Icon className={`h-5 w-5 ${report.color}`} />
                       </div>
                       <h3 className="text-sm font-semibold text-[var(--color-gray-900)]">
                         {report.title}
                       </h3>
+                      {report.comingSoon && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-500)] border border-[var(--color-gray-200)]">
+                          Coming Soon
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-[var(--color-gray-500)]">
                       {report.description}

@@ -240,23 +240,35 @@ async def clock_in(
     settings = _get_attendance_settings(company_id)
     status = _determine_status(now, settings)
 
-    record = _dataflow_create(
-        "AttendanceRecordCreateNode",
-        {
-            "employee_id": emp["id"],
-            "company_id": company_id,
-            "date": today,
-            "clock_in": now,
-            "clock_out": "",
-            "clock_in_location": body.get("location"),
-            "clock_in_photo": body.get("photo", ""),
-            "status": status,
-            "work_hours": 0.0,
-            "overtime_hours": 0.0,
-            "remarks": "",
-            "is_manual": False,
-        },
-    )
+    try:
+        record = _dataflow_create(
+            "AttendanceRecordCreateNode",
+            {
+                "employee_id": emp["id"],
+                "company_id": company_id,
+                "date": today,
+                "clock_in": now,
+                "clock_out": "",
+                "clock_in_location": body.get("location"),
+                "clock_in_photo": body.get("photo", ""),
+                "status": status,
+                "work_hours": 0.0,
+                "overtime_hours": 0.0,
+                "remarks": "",
+                "is_manual": False,
+            },
+        )
+    except Exception:
+        # Handle TOCTOU race: another request may have created a record
+        # between our check and create. Return the existing record instead.
+        dup = _dataflow_list(
+            "AttendanceRecordListNode",
+            {"employee_id": emp["id"], "date": today},
+            limit=1,
+        )
+        if dup:
+            return {"record": dup[0]}
+        raise HTTPException(status_code=400, detail="Already clocked in for today.")
     return {"record": record}
 
 

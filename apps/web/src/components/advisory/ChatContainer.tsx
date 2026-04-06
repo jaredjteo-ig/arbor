@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ChatBubble, ChatInput, toast } from "@/components/design-system";
 import { Info, AlertCircle, RefreshCw, Loader2 } from "lucide-react";
@@ -8,7 +9,7 @@ import { SystemMessage } from "./SystemMessage";
 import { ContextBar } from "./ContextBar";
 import { advisoryApi } from "@/services/api/advisory";
 import { learningApi } from "@/services/api/learning";
-import { humanizeError } from "@/services/api/errors";
+import { humanizeError, BudgetExceededError } from "@/services/api/errors";
 import { useAuth } from "@/contexts/AuthContext";
 import type {
   AdvisoryMessage,
@@ -33,6 +34,8 @@ interface AssistantMessage {
   confidenceScore?: number;
   provisionsCited?: ProvisionCited[];
   streaming?: boolean;
+  /** Set when the free-tier LLM budget has been exhausted. */
+  budgetExceeded?: boolean;
 }
 
 type ChatMessage = UserMessage | AssistantMessage;
@@ -288,6 +291,7 @@ export function ChatContainer({
             abortRef.current = null;
           },
           onError: (error: Error) => {
+            const isBudgetExceeded = error instanceof BudgetExceededError;
             setMessages((prev) => {
               const updated = [...prev];
               const last = updated[updated.length - 1];
@@ -297,6 +301,7 @@ export function ChatContainer({
                   content: humanizeError(error),
                   riskTier: undefined,
                   streaming: false,
+                  budgetExceeded: isBudgetExceeded,
                 };
               }
               return updated;
@@ -485,6 +490,37 @@ export function ChatContainer({
                 return (
                   <div key={idx} className="pl-0">
                     <ThinkingIndicator />
+                  </div>
+                );
+              }
+
+              // Budget exceeded — show a friendly info card instead of a generic error
+              if (assistantMsg.budgetExceeded) {
+                return (
+                  <div key={idx} className="flex justify-start">
+                    <div className="w-full max-w-[80%] rounded-[12px] border border-[var(--color-warning-border,var(--color-amber-200,#fde68a))] bg-[var(--color-warning-bg,var(--color-amber-50,#fffbeb))] p-4 shadow-[var(--shadow-card)]">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 shrink-0">
+                          <Info className="h-5 w-5 text-[var(--color-warning,var(--color-amber-600,#d97706))]" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-[var(--color-gray-900)] mb-1">
+                            Free advisory limit reached
+                          </p>
+                          <p className="text-sm text-[var(--color-gray-600)] mb-3">
+                            You&apos;ve used your free advisory allowance for
+                            this month. To continue using the AI advisor, add
+                            your own API key or set up a local AI model.
+                          </p>
+                          <Link
+                            href="/settings/ai"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-[var(--color-primary)] text-white hover:opacity-90 transition-opacity"
+                          >
+                            Go to AI Settings
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 );
               }

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
 
 logger = logging.getLogger(__name__)
@@ -65,12 +65,14 @@ def _company_to_client(company: dict) -> dict:
 
 @router.get("")
 async def list_clients(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "platform_admin")),
 ) -> dict:
     """List all client companies visible to the current user.
 
     Platform admins and consultants see all active companies.
     Regular users see only their own company.
+
+    Requires owner, hr_manager, or platform_admin role.
     """
     role = current_user.get("role", "")
     user_company_id = current_user.get("company_id")
@@ -106,9 +108,12 @@ async def list_clients(
 @router.post("")
 async def create_client(
     request: Request,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "platform_admin")),
 ) -> dict:
-    """Create a new client company."""
+    """Create a new client company.
+
+    Requires owner or platform_admin role.
+    """
     body = await request.json()
 
     # Accept both "name" and "company_name" for compatibility
@@ -205,9 +210,12 @@ async def create_client(
 @router.get("/{client_id}")
 async def get_client(
     client_id: int,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "platform_admin")),
 ) -> dict:
-    """Get a specific client company by ID."""
+    """Get a specific client company by ID.
+
+    Requires owner, hr_manager, or platform_admin role.
+    """
     validate_company_access(current_user, requested_company_id=client_id)
 
     try:
@@ -229,9 +237,12 @@ async def get_client(
 async def update_client(
     client_id: int,
     request: Request,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "platform_admin")),
 ) -> dict:
-    """Update an existing client company."""
+    """Update an existing client company.
+
+    Requires owner or platform_admin role.
+    """
     validate_company_access(current_user, requested_company_id=client_id)
     body = await request.json()
 

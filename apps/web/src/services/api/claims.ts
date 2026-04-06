@@ -20,22 +20,21 @@ export interface ClaimItem {
   category_name: string;
   description: string;
   amount: number;
-  expense_date: string;
-  receipt_url: string | null;
+  receipt_date: string;
+  receipt_files: string[] | null;
 }
 
 export interface Claim {
   id: number;
   employee_id: number;
   employee_name: string;
-  title: string;
-  status: "draft" | "pending" | "approved" | "rejected";
+  claim_month: string;
+  status: "draft" | "pending_approval" | "approved" | "rejected";
   total_amount: number;
   items: ClaimItem[];
-  approver_id: number | null;
-  approver_name: string | null;
-  approved_at: string | null;
-  rejection_reason: string | null;
+  reviewed_by: number | null;
+  reviewed_at: string | null;
+  reviewer_remarks: string | null;
   submitted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -50,14 +49,14 @@ export interface AuditTrailEntry {
 }
 
 export interface CreateClaimData {
-  title: string;
+  claim_month: string;
 }
 
 export interface AddClaimItemData {
   category_id: number;
   description: string;
   amount: number;
-  expense_date: string;
+  receipt_date: string;
 }
 
 /* ── API Methods ─────────────────────────────────────────── */
@@ -69,8 +68,9 @@ export const claimsApi = {
   },
 
   /** Create a new claim (starts as draft). */
-  createClaim(data: CreateClaimData): Promise<Claim> {
-    return apiClient.post<Claim>("/claims", data);
+  async createClaim(data: CreateClaimData): Promise<Claim> {
+    const response = await apiClient.post<{ claim: Claim }>("/claims", data);
+    return response.claim;
   },
 
   /** List claims with optional filters. */
@@ -82,8 +82,12 @@ export const claimsApi = {
   },
 
   /** Get a single claim with full details. */
-  getClaim(claimId: number): Promise<Claim> {
-    return apiClient.get<Claim>(`/claims/${claimId}`);
+  async getClaim(claimId: number): Promise<Claim> {
+    const response = await apiClient.get<{
+      claim: Record<string, unknown>;
+      items: ClaimItem[];
+    }>(`/claims/${claimId}`);
+    return { ...response.claim, items: response.items } as Claim;
   },
 
   /** Submit a draft claim for approval. */
@@ -98,7 +102,9 @@ export const claimsApi = {
 
   /** Reject a claim (admin). */
   rejectClaim(claimId: number, reason: string): Promise<Claim> {
-    return apiClient.patch<Claim>(`/claims/${claimId}/reject`, { reason });
+    return apiClient.patch<Claim>(`/claims/${claimId}/reject`, {
+      reviewer_remarks: reason,
+    });
   },
 
   /** Add a line item to a draft claim. */

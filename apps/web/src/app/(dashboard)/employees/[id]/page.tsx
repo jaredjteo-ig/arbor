@@ -4639,10 +4639,10 @@ export default function EmployeeDetailPage({
         setEditModal("statutory");
         break;
       case "run_payroll":
-        toast.info("Run Payroll - coming soon");
+        window.location.href = "/payroll";
         break;
       case "generate_payslip":
-        toast.info("Generate Payslip - coming soon");
+        window.location.href = "/payroll";
         break;
       case "terminate":
         setEditModal("terminate");

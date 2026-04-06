@@ -190,6 +190,15 @@ _blocklist_instance: TokenBlocklist | None = None
 _blocklist_lock = threading.Lock()
 
 
+def _validate_redis_url(url: str) -> None:
+    """Validate that a Redis URL uses an expected scheme.
+
+    Raises ValueError if the URL does not start with redis:// or rediss://.
+    """
+    if not url.startswith(("redis://", "rediss://")):
+        raise ValueError(f"Invalid Redis URL scheme: {url}")
+
+
 def get_blocklist() -> TokenBlocklist:
     """Get the singleton blocklist instance.
 
@@ -228,6 +237,12 @@ def _try_redis_blocklist() -> RedisBlocklist | None:
 
     redis_url = os.environ.get("REDIS_URL")
     if not redis_url:
+        return None
+
+    try:
+        _validate_redis_url(redis_url)
+    except ValueError as exc:
+        logger.error("Redis URL validation failed for token blocklist: %s", exc)
         return None
 
     try:

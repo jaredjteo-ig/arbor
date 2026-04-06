@@ -344,10 +344,7 @@ export default function MyPayslipsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await payrollApi.myPayslips();
-      const list = Array.isArray(data)
-        ? data
-        : ((data as unknown as { payslips: Payslip[] }).payslips ?? []);
+      const list = await payrollApi.myPayslips();
       setPayslips(list);
     } catch (err: unknown) {
       const message =

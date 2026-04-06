@@ -7,18 +7,21 @@ rate limiting in production.
 
 import time
 import logging
-from collections import defaultdict
+from collections import OrderedDict
 from fastapi import HTTPException, Request
 
 logger = logging.getLogger(__name__)
 
 # Store: {key: [timestamp1, timestamp2, ...]}
-_request_log: dict[str, list[float]] = defaultdict(list)
+# Using OrderedDict with a size cap to prevent unbounded memory growth.
+_request_log: OrderedDict[str, list[float]] = OrderedDict()
+MAX_RATE_KEYS = 50_000
 
 def _clean_old_entries(key: str, window_seconds: int) -> None:
     """Remove entries older than the window."""
     cutoff = time.time() - window_seconds
-    _request_log[key] = [t for t in _request_log[key] if t > cutoff]
+    if key in _request_log:
+        _request_log[key] = [t for t in _request_log[key] if t > cutoff]
 
 def check_rate_limit(
     identifier: str,
@@ -36,7 +39,7 @@ def check_rate_limit(
     """
     _clean_old_entries(identifier, window_seconds)
 
-    if len(_request_log[identifier]) >= max_requests:
+    if len(_request_log.get(identifier, [])) >= max_requests:
         retry_after = window_seconds
         logger.warning(
             "Rate limit exceeded: %s (key=%s, limit=%d/%ds)",
@@ -48,4 +51,12 @@ def check_rate_limit(
             headers={"Retry-After": str(retry_after)},
         )
 
+    # Evict oldest entries if at capacity
+    while len(_request_log) >= MAX_RATE_KEYS:
+        _request_log.popitem(last=False)
+
+    if identifier not in _request_log:
+        _request_log[identifier] = []
     _request_log[identifier].append(time.time())
+    # Move to end so LRU eviction removes least-recently-used keys
+    _request_log.move_to_end(identifier)

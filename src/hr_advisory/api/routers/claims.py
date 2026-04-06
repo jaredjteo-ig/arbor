@@ -170,13 +170,20 @@ async def create_claim_category(
     if not name:
         raise HTTPException(status_code=400, detail="Category name is required.")
 
+    monthly_limit = float(body.get("monthly_limit", 0.0))
+    if not math.isfinite(monthly_limit):
+        raise HTTPException(status_code=400, detail="monthly_limit must be a finite number")
+    per_claim_limit = float(body.get("per_claim_limit", 0.0))
+    if not math.isfinite(per_claim_limit):
+        raise HTTPException(status_code=400, detail="per_claim_limit must be a finite number")
+
     category = _dataflow_create(
         "ClaimCategoryCreateNode",
         {
             "company_id": company_id,
             "name": name,
-            "monthly_limit": float(body.get("monthly_limit", 0.0)),
-            "per_claim_limit": float(body.get("per_claim_limit", 0.0)),
+            "monthly_limit": monthly_limit,
+            "per_claim_limit": per_claim_limit,
             "requires_receipt": body.get("requires_receipt", True),
             "is_active": True,
         },
@@ -201,6 +208,15 @@ async def update_claim_category(
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    if "monthly_limit" in updates:
+        updates["monthly_limit"] = float(updates["monthly_limit"])
+        if not math.isfinite(updates["monthly_limit"]):
+            raise HTTPException(status_code=400, detail="monthly_limit must be a finite number")
+    if "per_claim_limit" in updates:
+        updates["per_claim_limit"] = float(updates["per_claim_limit"])
+        if not math.isfinite(updates["per_claim_limit"]):
+            raise HTTPException(status_code=400, detail="per_claim_limit must be a finite number")
 
     _dataflow_update("ClaimCategoryUpdateNode", category_id, updates)
     updated = _dataflow_read("ClaimCategoryReadNode", category_id)

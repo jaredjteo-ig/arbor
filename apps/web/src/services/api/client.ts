@@ -9,12 +9,20 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export class ApiRequestError extends Error {
   status: number;
   detail: string;
+  /** Populated when the backend returns a typed error code (e.g. "budget_exceeded"). */
+  errorCode?: string;
 
-  constructor(message: string, status: number, detail?: string) {
+  constructor(
+    message: string,
+    status: number,
+    detail?: string,
+    errorCode?: string,
+  ) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
     this.detail = detail ?? message;
+    this.errorCode = errorCode;
   }
 }
 
@@ -157,31 +165,53 @@ export function unwrapNexusResponse(body: any): any {
 
 /* ── Response handler ────────────────────────────────────── */
 
-async function parseErrorBody(response: Response): Promise<string> {
+async function parseErrorBody(
+  response: Response,
+): Promise<{ detail: string; errorCode?: string }> {
   try {
-    const body = (await response.json()) as { detail?: unknown };
-    if (body.detail)
-      return typeof body.detail === "string"
-        ? body.detail
-        : JSON.stringify(body.detail);
+    const body = (await response.json()) as {
+      detail?: unknown;
+      error?: string;
+      message?: string;
+    };
+
+    /* Budget-exceeded uses { error: "budget_exceeded", message: "..." } */
+    if (body.error === "budget_exceeded") {
+      return {
+        detail:
+          body.message ??
+          "Your free advisory allowance has been used this month.",
+        errorCode: "budget_exceeded",
+      };
+    }
+
+    /* Standard FastAPI HTTPException uses { detail: "..." } */
+    if (body.detail) {
+      const detail =
+        typeof body.detail === "string"
+          ? body.detail
+          : JSON.stringify(body.detail);
+      return { detail };
+    }
   } catch {
     /* response body may not be JSON */
   }
 
   if (response.status === 400)
-    return "Invalid request. Please check your input.";
+    return { detail: "Invalid request. Please check your input." };
   if (response.status === 403)
-    return "You do not have permission for this action.";
-  if (response.status === 404) return "The requested resource was not found.";
+    return { detail: "You do not have permission for this action." };
+  if (response.status === 404)
+    return { detail: "The requested resource was not found." };
   if (response.status >= 500)
-    return "A server error occurred. Please try again later.";
-  return "An unexpected error occurred.";
+    return { detail: "A server error occurred. Please try again later." };
+  return { detail: "An unexpected error occurred." };
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const detail = await parseErrorBody(response);
-    throw new ApiRequestError(detail, response.status, detail);
+    const { detail, errorCode } = await parseErrorBody(response);
+    throw new ApiRequestError(detail, response.status, detail, errorCode);
   }
   const body = await response.json();
   return unwrapNexusResponse(body) as T;

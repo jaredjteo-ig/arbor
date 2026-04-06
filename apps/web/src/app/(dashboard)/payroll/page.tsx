@@ -136,11 +136,7 @@ export default function PayrollPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await payrollApi.listRuns();
-      /* The API may return an array directly or wrapped in { runs: [...] }. */
-      const list = Array.isArray(data)
-        ? data
-        : ((data as unknown as { runs: PayrollRun[] }).runs ?? []);
+      const list = await payrollApi.listRuns();
       setRuns(list);
     } catch (err: unknown) {
       const message =
@@ -190,13 +186,7 @@ export default function PayrollPage() {
         payroll_type: "monthly",
       });
       toast.success("Payroll calculated successfully");
-      // Backend returns { payroll_run: {...}, payslips: [...] }
-      const runId = result.id || (result as any).payroll_run?.id;
-      if (!runId) {
-        toast.error("Could not create payroll run");
-        return;
-      }
-      router.push(`/payroll/${runId}`);
+      router.push(`/payroll/${result.id}`);
     } catch (err: unknown) {
       const message =
         err instanceof Error

@@ -7,6 +7,7 @@ preview, and download with company-specific customisation.
 import hashlib
 import logging
 import re
+from collections import OrderedDict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -20,8 +21,35 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# In-memory document store for generated documents (production: use object storage)
-_generated_docs: dict[str, dict] = {}
+# In-memory document store for generated documents (production: use object storage).
+# Bounded to prevent memory exhaustion in long-running processes.
+_generated_docs: OrderedDict[str, dict] = OrderedDict()
+MAX_GENERATED_DOCS = 1000
+
+
+def _sanitize_filename(title: str, extension: str = ".txt") -> str:
+    """Sanitize a title for use in Content-Disposition headers.
+
+    Removes all characters except alphanumeric, hyphen, underscore, dot, and space.
+    Replaces spaces with hyphens, truncates to 100 characters, and ensures the
+    correct file extension.
+    """
+    # Keep only safe characters
+    safe = re.sub(r"[^a-zA-Z0-9\-_. ]", "", title)
+    # Replace spaces with hyphens
+    safe = safe.replace(" ", "-")
+    # Collapse multiple hyphens
+    safe = re.sub(r"-+", "-", safe).strip("-")
+    # Truncate (leaving room for extension)
+    max_base = 100 - len(extension)
+    safe = safe[:max_base] if len(safe) > max_base else safe
+    # Ensure it has the correct extension
+    if not safe.endswith(extension):
+        safe = safe + extension
+    # Fallback if empty
+    if safe == extension:
+        safe = "document" + extension
+    return safe
 
 
 def _template_to_dict(idx: int, t: TemplateDefinition) -> dict:
@@ -195,6 +223,10 @@ async def generate_document(
         "fields": field_values,
     }
 
+    # Evict oldest entries if at capacity
+    while len(_generated_docs) >= MAX_GENERATED_DOCS:
+        _generated_docs.popitem(last=False)
+
     # Store for later download
     _generated_docs[document_id] = doc_record
 
@@ -231,7 +263,7 @@ async def download_document(
     # Enforce tenant isolation: user can only download their company's documents
     validate_company_access(current_user, requested_company_id=doc.get("company_id"))
 
-    filename = doc["title"].replace(" ", "_").replace("/", "-") + ".txt"
+    filename = _sanitize_filename(doc["title"], ".txt")
 
     return PlainTextResponse(
         content=doc["content"],

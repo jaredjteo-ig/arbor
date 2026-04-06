@@ -838,10 +838,7 @@ function ApplicationHistory({
 
 export default function LeavePage() {
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
@@ -861,7 +858,7 @@ export default function LeavePage() {
         leaveApi.listTypes(),
         leaveApi.listApplications(),
       ]);
-      setLeaveTypes(typesRes.types ?? (typesRes as any).leave_types ?? []);
+      setLeaveTypes(typesRes.leave_types ?? []);
       setApplications(appsRes.applications ?? []);
 
       if (!isAdmin) {

@@ -325,13 +325,8 @@ export default function PayrollRunDetailPage({
     setIsLoading(true);
     setError(null);
     try {
-      const data = (await payrollApi.getRun(runId)) as any;
-      // Backend returns { run: {...}, payslips: [...] } — flatten into PayrollRunDetail
-      if (data.run && data.payslips) {
-        setRun({ ...data.run, payslips: data.payslips });
-      } else {
-        setRun(data);
-      }
+      const data = await payrollApi.getRun(runId);
+      setRun(data);
     } catch (err: unknown) {
       const message =
         err instanceof Error

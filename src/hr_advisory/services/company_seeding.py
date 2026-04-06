@@ -52,6 +52,7 @@ def seed_company_defaults(company_id: int) -> dict:
     for name, fn in [
         ("policies", _seed_policies),
         ("leave_types", _seed_leave_types),
+        ("public_holidays", _seed_public_holidays),
         ("claim_categories", _seed_claim_categories),
         ("attendance_settings", _seed_attendance_settings),
         ("cost_centres", _seed_demo_cost_centres),
@@ -167,6 +168,53 @@ def _seed_leave_types(company_id: int) -> dict:
 
     created = _seed_statutory_leave_types(company_id)
     return {"created": len(created)}
+
+
+# ---------------------------------------------------------------------------
+# Public holiday seeding (Singapore 2026 gazetted holidays from MOM)
+# ---------------------------------------------------------------------------
+
+SG_PUBLIC_HOLIDAYS_2026 = [
+    {"name": "New Year's Day", "date": "2026-01-01"},
+    {"name": "Chinese New Year", "date": "2026-02-17"},
+    {"name": "Chinese New Year (2nd day)", "date": "2026-02-18"},
+    {"name": "Hari Raya Puasa", "date": "2026-03-20"},
+    {"name": "Good Friday", "date": "2026-04-03"},
+    {"name": "Labour Day", "date": "2026-05-01"},
+    {"name": "Vesak Day", "date": "2026-05-12"},
+    {"name": "Hari Raya Haji", "date": "2026-06-27"},
+    {"name": "National Day", "date": "2026-08-09"},
+    {"name": "Deepavali", "date": "2026-10-18"},
+    {"name": "Christmas Day", "date": "2026-12-25"},
+]
+
+
+def _seed_public_holidays(company_id: int) -> dict:
+    existing = _extract_records(
+        _execute_node(
+            "PublicHolidayListNode",
+            "check_public_holidays",
+            {"filter": {"company_id": company_id}, "limit": 1, "enable_cache": False},
+        )
+    )
+    if existing:
+        return {"skipped": True, "reason": "public holidays already exist"}
+
+    count = 0
+    for holiday in SG_PUBLIC_HOLIDAYS_2026:
+        _execute_node(
+            "PublicHolidayCreateNode",
+            "create_public_holiday",
+            {
+                "company_id": company_id,
+                "name": holiday["name"],
+                "date": holiday["date"],
+                "year": 2026,
+                "is_gazetted": True,
+            },
+        )
+        count += 1
+    return {"created": count}
 
 
 # ---------------------------------------------------------------------------

@@ -120,6 +120,15 @@ class InMemorySessionStore:
             del self._sessions[sid]
 
 
+def _validate_redis_url(url: str) -> None:
+    """Validate that a Redis URL uses an expected scheme.
+
+    Raises ValueError if the URL does not start with redis:// or rediss://.
+    """
+    if not url.startswith(("redis://", "rediss://")):
+        raise ValueError(f"Invalid Redis URL scheme: {url}")
+
+
 class RedisSessionStore:
     """Redis-backed session store for production deployments.
 
@@ -137,6 +146,14 @@ class RedisSessionStore:
 
     def _connect(self) -> None:
         """Attempt to connect to Redis."""
+        try:
+            _validate_redis_url(self._redis_url)
+        except ValueError as exc:
+            logger.error("Redis URL validation failed for session store: %s", exc)
+            self._redis = None
+            self._using_fallback = True
+            return
+
         try:
             import redis
 

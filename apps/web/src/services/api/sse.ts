@@ -4,6 +4,7 @@
 /* supports GET without custom headers).                      */
 
 import { refreshAccessToken, getValidAccessToken } from "./client";
+import { BudgetExceededError } from "./errors";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -125,10 +126,34 @@ export function createSSEStream<TStart = unknown, TComplete = unknown>(
             return;
           }
         } else {
+          /* Try to parse JSON error body */
           let detail = "Streaming request failed";
           try {
-            const errorBody = (await response.json()) as { detail?: string };
+            const errorBody = (await response.json()) as {
+              detail?: string;
+              error?: string;
+              message?: string;
+            };
+            /* Backend returns { error: "budget_exceeded", message: "..." } on 429 */
+            if (
+              response.status === 429 &&
+              errorBody.error === "budget_exceeded"
+            ) {
+              callbacks.onError?.(
+                new BudgetExceededError(errorBody.message ?? undefined),
+              );
+              return;
+            }
+            /* FastAPI HTTPException uses { detail: "..." } */
             if (errorBody.detail) detail = errorBody.detail;
+            /* Streaming 429 from HTTPException also contains the message in detail */
+            if (
+              response.status === 429 &&
+              detail.toLowerCase().includes("allowance")
+            ) {
+              callbacks.onError?.(new BudgetExceededError(detail));
+              return;
+            }
           } catch {
             /* body may not be JSON */
           }

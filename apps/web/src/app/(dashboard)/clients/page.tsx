@@ -392,12 +392,7 @@ export default function ClientsPage() {
                     {filtered.map((client) => (
                       <tr
                         key={client.id}
-                        className="border-b border-[var(--color-gray-100)] hover:bg-[var(--color-gray-50)] transition-colors cursor-pointer"
-                        onClick={() =>
-                          toast.info(
-                            `${client.name} -- client detail view coming soon`,
-                          )
-                        }
+                        className="border-b border-[var(--color-gray-100)] hover:bg-[var(--color-gray-50)] transition-colors"
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -507,17 +502,9 @@ export default function ClientsPage() {
                           No compliance check yet
                         </span>
                       )}
-                      <AppButton
-                        variant="text"
-                        size="sm"
-                        onClick={() =>
-                          toast.info(
-                            `${client.name} -- client detail view coming soon`,
-                          )
-                        }
-                      >
-                        View <ChevronRight className="h-3 w-3 ml-1" />
-                      </AppButton>
+                      <span className="text-xs text-[var(--color-gray-400)]">
+                        {client.sector || ""}
+                      </span>
                     </div>
                   </div>
                 </AppCard>

@@ -78,14 +78,11 @@ export const recruitmentApi = {
   /* Job Listings */
   listJobs: () =>
     apiClient.get<{ jobs: JobListing[]; count: number }>("/recruitment/jobs"),
-  getJob: async (id: number): Promise<JobListing> => {
-    const resp = await apiClient.get<{ jobs: JobListing[]; count: number }>(
-      "/recruitment/jobs",
+  getJob: async (id: number | string): Promise<JobListing> => {
+    const resp = await apiClient.get<{ job: JobListing }>(
+      `/recruitment/jobs/${id}`,
     );
-    const jobs = (resp as { jobs: JobListing[]; count: number }).jobs ?? [];
-    const found = jobs.find((j) => j.id === id);
-    if (!found) throw new Error(`Job ${id} not found`);
-    return found;
+    return (resp as { job: JobListing }).job;
   },
   createJob: (data: Partial<JobListing>) =>
     apiClient.post<JobListing>("/recruitment/jobs", data),
@@ -113,16 +110,11 @@ export const recruitmentApi = {
       params,
     );
   },
-  getCandidate: async (id: number): Promise<Candidate> => {
-    const resp = await apiClient.get<{
-      candidates: Candidate[];
-      count: number;
-    }>("/recruitment/candidates");
-    const candidates =
-      (resp as { candidates: Candidate[]; count: number }).candidates ?? [];
-    const found = candidates.find((c) => c.id === id);
-    if (!found) throw new Error(`Candidate ${id} not found`);
-    return found;
+  getCandidate: async (id: number | string): Promise<Candidate> => {
+    const resp = await apiClient.get<{ candidate: Candidate }>(
+      `/recruitment/candidates/${id}`,
+    );
+    return (resp as { candidate: Candidate }).candidate;
   },
   createCandidate: (data: Partial<Candidate>) =>
     apiClient.post<Candidate>(

@@ -1,11 +1,13 @@
 """Leave management endpoints.
 
 Handles leave types, applications (apply/approve/reject/withdraw/cancel),
-balances, public holidays, leave policies, and team calendar.
+balances, public holidays, leave policies, team calendar, and attachment uploads.
 """
 
 import logging
 import math
+import os
+import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -20,6 +22,20 @@ router = APIRouter()
 # Input length limits
 MAX_TEXT_LENGTH = 2000
 MAX_NAME_LENGTH = 200
+
+# Upload directory for leave attachments (medical certs, supporting docs)
+LEAVE_UPLOAD_DIR = os.path.join(
+    os.environ.get("UPLOAD_DIR", os.path.join(os.getcwd(), "uploads", "documents")),
+    "leave-attachments",
+)
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_ATTACHMENT_MIME_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".docx"}
 
 
 def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_LENGTH) -> str:
@@ -111,6 +127,56 @@ def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
     return records[0] if records else None
 
 
+def _enrich_leave_applications(apps: list, company_id: int) -> list:
+    """Enrich leave application records with employee_name and leave_type_name.
+
+    Collects unique employee_ids and leave_type_ids from the applications,
+    fetches the names in bulk, and maps them onto each record.
+    """
+    if not apps:
+        return apps
+
+    # Collect unique IDs
+    employee_ids = {a.get("employee_id") for a in apps if a.get("employee_id")}
+    leave_type_ids = {a.get("leave_type_id") for a in apps if a.get("leave_type_id")}
+
+    # Build employee_id -> name lookup
+    emp_name_map: dict[int, str] = {}
+    if employee_ids:
+        employees = _dataflow_list(
+            "EmployeeListNode",
+            {"company_id": company_id},
+        )
+        for emp in employees:
+            eid = emp.get("id")
+            if eid in employee_ids:
+                name = emp.get("name", "")
+                if not name:
+                    first = emp.get("first_name", "")
+                    last = emp.get("last_name", "")
+                    name = f"{first} {last}".strip()
+                emp_name_map[eid] = name
+
+    # Build leave_type_id -> name lookup
+    lt_name_map: dict[int, str] = {}
+    if leave_type_ids:
+        leave_types = _dataflow_list(
+            "LeaveTypeConfigListNode",
+            {"company_id": company_id},
+        )
+        for lt in leave_types:
+            lt_id = lt.get("id")
+            if lt_id in leave_type_ids:
+                lt_name_map[lt_id] = lt.get("name", lt.get("code", ""))
+
+    # Map names onto each application record
+    for app in apps:
+        app["employee_name"] = emp_name_map.get(app.get("employee_id"), "")
+        app["leave_type_name"] = lt_name_map.get(app.get("leave_type_id"), "")
+
+    return apps
+
+
 # --------------------------------------------------------------------------
 # Business-logic helpers
 # --------------------------------------------------------------------------
@@ -167,17 +233,22 @@ def _calculate_working_days(
             continue
 
         day_value = 1.0
-        if current == sd and start_half in ("first_half", "second_half"):
-            day_value = 0.5
-        if current == ed and end_half in ("first_half", "second_half"):
-            day_value = 0.5
-        # If start and end are the same day and both are half, still 0.5
-        if (
-            current == sd == ed
-            and start_half in ("first_half", "second_half")
-            and end_half in ("first_half", "second_half")
-        ):
-            day_value = 0.5
+        if current == sd == ed:
+            # Single-day leave: check half-day combinations
+            if (
+                start_half in ("first_half", "second_half")
+                and end_half in ("first_half", "second_half")
+                and start_half != end_half
+            ):
+                # first_half + second_half (or vice versa) = full day
+                day_value = 1.0
+            elif start_half in ("first_half", "second_half") or end_half in ("first_half", "second_half"):
+                day_value = 0.5
+        else:
+            if current == sd and start_half in ("first_half", "second_half"):
+                day_value = 0.5
+            if current == ed and end_half in ("first_half", "second_half"):
+                day_value = 0.5
 
         total += day_value
         current += timedelta(days=1)
@@ -759,6 +830,9 @@ async def apply_leave(
         {"pending_days": balance.get("pending_days", 0.0) + total_days},
     )
 
+    # Enrich with human-readable names
+    _enrich_leave_applications([application], company_id)
+
     return {"application": application}
 
 
@@ -796,6 +870,10 @@ async def list_applications(
         filter_dict["status"] = status
 
     apps = _dataflow_list("LeaveApplicationListNode", filter_dict)
+
+    # Enrich with human-readable names
+    _enrich_leave_applications(apps, company_id)
+
     apps.sort(key=lambda a: a.get("applied_at", ""), reverse=True)
     return {"applications": apps, "count": len(apps)}
 
@@ -1625,3 +1703,115 @@ async def update_leave_type_config(
     _dataflow_update("LeaveTypeConfigUpdateNode", config_id, updates)
     updated = _dataflow_read("LeaveTypeConfigReadNode", config_id)
     return {"type_config": updated}
+
+
+# --------------------------------------------------------------------------
+# POST /applications/{application_id}/attachment — Upload leave attachment
+# --------------------------------------------------------------------------
+
+
+@router.post("/applications/{application_id}/attachment")
+async def upload_leave_attachment(
+    application_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Upload a supporting document (medical cert, etc.) for a leave application.
+
+    Accepts multipart/form-data with a single ``file`` field.
+    Allowed types: PDF, JPG, PNG, DOCX. Max size: 10 MB.
+
+    The applicant (employee) or an admin (owner/hr_manager) may upload.
+    The file is saved with a UUID-based filename and the leave application's
+    ``attachment_path`` field is updated.
+
+    Status codes:
+        200: Attachment saved
+        400: Validation error (missing file, wrong type, too large)
+        403: Not allowed to attach to this application
+        404: Leave application not found
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    # Fetch the leave application and verify tenant ownership
+    app_record = _dataflow_read("LeaveApplicationReadNode", application_id)
+    if app_record is None or app_record.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Leave application not found.")
+
+    # Authorisation: employee can only upload to their own application;
+    # owner/hr_manager can upload to any application in their company.
+    role = current_user.get("role", "employee")
+    if role not in ("owner", "hr_manager"):
+        user_id = int(current_user.get("sub", 0))
+        employee = _get_employee_for_user(user_id, company_id)
+        if employee is None or employee.get("id") != app_record.get("employee_id"):
+            raise HTTPException(
+                status_code=403,
+                detail="You can only upload attachments to your own leave applications.",
+            )
+
+    # --- Parse multipart form ---
+    form = await request.form()
+    file = form.get("file")
+    if file is None:
+        raise HTTPException(status_code=400, detail="File is required.")
+
+    # Read content with size guard
+    content = await file.read()
+    if len(content) > MAX_ATTACHMENT_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File exceeds {MAX_ATTACHMENT_SIZE // (1024 * 1024)}MB limit.",
+        )
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    # MIME type validation
+    content_type = getattr(file, "content_type", "application/octet-stream")
+    if content_type not in ALLOWED_ATTACHMENT_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{content_type}' not allowed. Use PDF, JPG, PNG, or DOCX.",
+        )
+
+    # Extension validation (defence in depth — don't trust content_type alone)
+    original_filename = getattr(file, "filename", None) or "attachment"
+    file_ext = os.path.splitext(original_filename)[1].lower()
+    if file_ext not in ALLOWED_ATTACHMENT_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File extension '{file_ext}' not allowed. Use PDF, JPG, PNG, or DOCX.",
+        )
+
+    # Save with UUID-based filename to prevent path traversal
+    os.makedirs(LEAVE_UPLOAD_DIR, exist_ok=True)
+    stored_name = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(LEAVE_UPLOAD_DIR, stored_name)
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # Update the leave application's attachment_path
+    _dataflow_update(
+        "LeaveApplicationUpdateNode",
+        application_id,
+        {"attachment_path": file_path},
+    )
+
+    logger.info(
+        "Leave attachment uploaded: application_id=%s, file='%s', size=%d, company_id=%s",
+        application_id,
+        stored_name,
+        len(content),
+        company_id,
+    )
+
+    return {
+        "message": "Attachment uploaded successfully.",
+        "application_id": application_id,
+        "file_name": original_filename,
+        "stored_name": stored_name,
+        "file_size": len(content),
+        "mime_type": content_type,
+    }

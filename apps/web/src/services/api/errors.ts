@@ -5,7 +5,30 @@
  * that avoid leaking internal details (stack traces, endpoint paths, etc.).
  */
 
+/* ── Budget Exceeded Error ──────────────────────────────────── */
+
+/**
+ * Thrown when the free-tier LLM budget has been exhausted.
+ * ChatContainer detects this by type to render a helpful info card
+ * instead of a generic error message.
+ */
+export class BudgetExceededError extends Error {
+  constructor(message?: string) {
+    super(
+      message ??
+        "You\u2019ve reached the free advisory limit for this month. " +
+          "To continue using the AI advisor, go to Settings \u203A AI to " +
+          "add your own API key or set up a local AI model.",
+    );
+    this.name = "BudgetExceededError";
+  }
+}
+
 export function humanizeError(error: unknown): string {
+  /* Budget exceeded has its own UI treatment — pass through the message */
+  if (error instanceof BudgetExceededError) {
+    return error.message;
+  }
   // HTTP response errors (Response object or error-like with `status`)
   if (
     error instanceof Response ||

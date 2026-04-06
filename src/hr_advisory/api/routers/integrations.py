@@ -8,12 +8,13 @@ admin dashboard and shadow agent.
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ async def list_resources(
 @router.post("/tools/call")
 async def call_tool(
     request: ToolCallRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Invoke an MCP tool. Used by the shadow agent for integration operations."""
     from hr_advisory.mcp_servers.registry import call_tool as mcp_call_tool
@@ -277,7 +278,7 @@ async def get_saga_detail(
 @router.post("/sagas/{saga_id}/resume")
 async def resume_saga(
     saga_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Resume a failed saga from its last successful step."""
     from hr_advisory.mcp_servers.saga import get_saga_orchestrator
@@ -340,7 +341,7 @@ async def list_connections(
 @router.delete("/connections/{provider}")
 async def disconnect_provider(
     provider: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Disconnect an integration provider (revoke OAuth token)."""
     from hr_advisory.mcp_servers.auth.token_store import get_token_manager
@@ -389,9 +390,11 @@ async def reset_circuit_breaker(
 # ── Webhook Endpoints ──────────────────────────────────────
 
 
-# Simple per-IP rate limiter for unauthenticated webhook endpoint
-_webhook_rate: dict[str, list[float]] = {}
+# Simple per-IP rate limiter for unauthenticated webhook endpoint.
+# Bounded to prevent memory exhaustion from spoofed IPs.
+_webhook_rate: OrderedDict[str, list[float]] = OrderedDict()
 _WEBHOOK_MAX_PER_MINUTE = 100
+_WEBHOOK_MAX_KEYS = 50_000
 
 
 def _check_webhook_rate(client_ip: str) -> bool:
@@ -403,8 +406,14 @@ def _check_webhook_rate(client_ip: str) -> bool:
     calls = [t for t in _webhook_rate.get(client_ip, []) if t > cutoff]
     if len(calls) >= _WEBHOOK_MAX_PER_MINUTE:
         return False
+
+    # Evict oldest entries if at capacity
+    while len(_webhook_rate) >= _WEBHOOK_MAX_KEYS:
+        _webhook_rate.popitem(last=False)
+
     calls.append(now)
     _webhook_rate[client_ip] = calls
+    _webhook_rate.move_to_end(client_ip)
     return True
 
 
@@ -491,7 +500,7 @@ async def get_approval_status(
 @router.post("/approvals/{approval_id}/approve")
 async def approve_action(
     approval_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Approve a pending action (human-in-the-loop confirmation).
 
@@ -583,7 +592,7 @@ async def accounting_sync_status(
 @router.post("/accounting-sync/{run_id}")
 async def trigger_accounting_sync(
     run_id: int,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Trigger accounting sync for a specific payroll run.
 

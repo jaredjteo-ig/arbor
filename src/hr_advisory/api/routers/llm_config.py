@@ -16,7 +16,10 @@ Encrypted keys are never returned — only a masked preview.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import socket
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -39,6 +42,93 @@ router = APIRouter()
 _MAX_KEY_LENGTH = 512
 _MAX_URL_LENGTH = 2048
 _MAX_MODEL_LENGTH = 256
+
+# ---------------------------------------------------------------------------
+# SSRF protection — blocked IP networks
+# ---------------------------------------------------------------------------
+
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),       # Loopback
+    ipaddress.ip_network("::1/128"),            # IPv6 loopback
+    ipaddress.ip_network("10.0.0.0/8"),         # Private (RFC 1918)
+    ipaddress.ip_network("172.16.0.0/12"),      # Private (RFC 1918)
+    ipaddress.ip_network("192.168.0.0/16"),     # Private (RFC 1918)
+    ipaddress.ip_network("169.254.0.0/16"),     # Link-local / cloud metadata
+    ipaddress.ip_network("fe80::/10"),          # IPv6 link-local
+    ipaddress.ip_network("fc00::/7"),           # IPv6 unique-local (ULA)
+    ipaddress.ip_network("0.0.0.0/8"),          # "This" network
+    ipaddress.ip_network("::/128"),             # IPv6 unspecified
+]
+
+
+def _is_ip_blocked(ip_str: str) -> bool:
+    """Check if an IP address falls within any blocked network range.
+
+    Handles IPv4-mapped IPv6 addresses (e.g., ::ffff:169.254.169.254)
+    by extracting and checking the embedded IPv4 address.
+    """
+    try:
+        addr = ipaddress.ip_address(ip_str)
+    except ValueError:
+        # Unparseable IP — fail closed (block it)
+        return True
+
+    # For IPv4-mapped IPv6 (::ffff:x.x.x.x), extract and also check the IPv4 part
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        ipv4_addr = addr.ipv4_mapped
+        for network in _BLOCKED_NETWORKS:
+            if ipv4_addr in network:
+                return True
+
+    for network in _BLOCKED_NETWORKS:
+        try:
+            if addr in network:
+                return True
+        except TypeError:
+            # Mismatched address family (e.g., IPv4 addr vs IPv6 network) — skip
+            continue
+
+    return False
+
+
+def _resolve_and_validate_url(url: str) -> str:
+    """Resolve the hostname in *url* via DNS and validate that no resolved IP
+    falls within a blocked private/link-local/loopback/metadata range.
+
+    This is the security-critical SSRF layer. It runs AFTER the fast-path
+    string checks in ``_validate_base_url()`` and catches bypasses via
+    IPv4-mapped IPv6, DNS rebinding, and other hostname tricks.
+
+    Returns the original *url* unchanged if all resolved IPs are safe.
+    Raises ``ValueError`` if any resolved IP is in a blocked range.
+    """
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL has no hostname.")
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+    try:
+        addrinfos = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise ValueError(f"Cannot resolve hostname: {hostname}") from exc
+
+    if not addrinfos:
+        raise ValueError(f"DNS resolution returned no results for: {hostname}")
+
+    for family, _type, _proto, _canonname, sockaddr in addrinfos:
+        ip_str = sockaddr[0]
+        if _is_ip_blocked(ip_str):
+            logger.warning(
+                "SSRF blocked: hostname=%s resolved to blocked IP=%s (url=%s)",
+                hostname,
+                ip_str,
+                url,
+            )
+            raise ValueError("This endpoint address is not allowed (resolved to a blocked IP range).")
+
+    return url
 
 
 # ---------------------------------------------------------------------------
@@ -84,9 +174,10 @@ def _validate_provider(provider: str) -> None:
 def _validate_base_url(base_url: str, provider: str) -> None:
     """Validate base_url format and requirement.
 
-    Note: Private/internal IPs are intentionally ALLOWED because the Ollama
-    endpoint is often on a private network (e.g., institution DGX server).
-    Only cloud metadata endpoints are blocked (SSRF via 169.254.169.254).
+    This is a fast-path filter for obvious issues (missing URL, wrong scheme,
+    known metadata hostnames). The security-critical DNS-resolution check is
+    in ``_resolve_and_validate_url()`` which must be called before any HTTP
+    request is made to a user-supplied URL.
     """
     if provider in ("ollama", "custom") and not base_url:
         raise HTTPException(
@@ -103,10 +194,8 @@ def _validate_base_url(base_url: str, provider: str) -> None:
             status_code=400,
             detail="base_url must start with http:// or https://",
         )
-    # Block cloud metadata endpoints (SSRF protection)
+    # Block cloud metadata endpoints (fast-path SSRF protection)
     if base_url:
-        from urllib.parse import urlparse
-
         parsed = urlparse(base_url)
         host = parsed.hostname or ""
         _blocked = {"169.254.169.254", "metadata.google.internal", "100.100.100.200"}
@@ -397,6 +486,12 @@ async def _validate_ollama(base_url: str) -> dict:
     if not base_url:
         return {"valid": False, "message": "base_url is required for Ollama."}
 
+    # SSRF protection: resolve hostname and validate IPs before making request
+    try:
+        _resolve_and_validate_url(base_url)
+    except ValueError as exc:
+        return {"valid": False, "message": str(exc)}
+
     import httpx
 
     try:
@@ -479,6 +574,14 @@ async def _validate_openai_compatible(
     url = (base_url or default_urls.get(provider, "")).rstrip("/")
     if not url:
         return {"valid": False, "message": "base_url is required for custom providers."}
+
+    # SSRF protection: resolve hostname and validate IPs before making request
+    # (only for user-supplied base_url; default provider URLs are trusted)
+    if base_url:
+        try:
+            _resolve_and_validate_url(base_url)
+        except ValueError as exc:
+            return {"valid": False, "message": str(exc)}
 
     default_models = {
         "openai": "gpt-4o-mini",

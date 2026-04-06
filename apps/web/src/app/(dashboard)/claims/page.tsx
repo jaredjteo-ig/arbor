@@ -27,7 +27,7 @@ import {
 /* -- Currency formatter --------------------------------------------- */
 
 function formatCurrency(amount: number): string {
-  return `$${(amount ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${(amount ?? 0).toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /* -- Status badge -------------------------------------------------- */
@@ -35,18 +35,25 @@ function formatCurrency(amount: number): string {
 const STATUS_STYLES: Record<string, string> = {
   draft:
     "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] border-[var(--color-gray-200)]",
-  pending: "bg-amber-50 text-amber-700 border-amber-200",
+  pending_approval: "bg-amber-50 text-amber-700 border-amber-200",
   approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
   rejected: "bg-red-50 text-red-700 border-red-200",
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  pending_approval: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
+};
+
 function StatusBadge({ status }: { status: string }) {
-  const s = status || "pending";
+  const s = status || "pending_approval";
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[s] || STATUS_STYLES.draft}`}
     >
-      {s.charAt(0).toUpperCase() + s.slice(1)}
+      {STATUS_LABELS[s] || s.charAt(0).toUpperCase() + s.slice(1)}
     </span>
   );
 }
@@ -82,27 +89,27 @@ function AddItemRow({
     category_id: number;
     description: string;
     amount: number;
-    expense_date: string;
+    receipt_date: string;
   }) => void;
 }) {
   const [categoryId, setCategoryId] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
-  const [expenseDate, setExpenseDate] = useState("");
+  const [receiptDate, setReceiptDate] = useState("");
 
   function handleAdd() {
-    if (!categoryId || !description.trim() || !amount || !expenseDate) return;
+    if (!categoryId || !description.trim() || !amount || !receiptDate) return;
 
     onAdd({
       category_id: Number(categoryId),
       description: description.trim(),
       amount: parseFloat(amount),
-      expense_date: expenseDate,
+      receipt_date: receiptDate,
     });
     setCategoryId("");
     setDescription("");
     setAmount("");
-    setExpenseDate("");
+    setReceiptDate("");
   }
 
   return (
@@ -160,8 +167,8 @@ function AddItemRow({
       />
       <input
         type="date"
-        value={expenseDate}
-        onChange={(e) => setExpenseDate(e.target.value)}
+        value={receiptDate}
+        onChange={(e) => setReceiptDate(e.target.value)}
         className="
           w-40 rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
           bg-[var(--color-surface-input)] text-[var(--foreground)]
@@ -175,7 +182,7 @@ function AddItemRow({
         variant="primary"
         size="sm"
         onClick={handleAdd}
-        disabled={!categoryId || !description.trim() || !amount || !expenseDate}
+        disabled={!categoryId || !description.trim() || !amount || !receiptDate}
       >
         <Plus className="h-4 w-4" />
       </AppButton>
@@ -196,13 +203,15 @@ function NewClaimModal({
   onSuccess: () => void;
   categories: ClaimCategory[];
 }) {
-  const [title, setTitle] = useState("");
+  const [claimMonth, setClaimMonth] = useState(() =>
+    new Date().toISOString().slice(0, 7),
+  );
   const [items, setItems] = useState<
     {
       category_id: number;
       description: string;
       amount: number;
-      expense_date: string;
+      receipt_date: string;
     }[]
   >([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -215,7 +224,7 @@ function NewClaimModal({
     category_id: number;
     description: string;
     amount: number;
-    expense_date: string;
+    receipt_date: string;
   }) {
     setItems([...items, item]);
   }
@@ -226,11 +235,13 @@ function NewClaimModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || items.length === 0) return;
+    if (!claimMonth || items.length === 0) return;
 
     setIsSubmitting(true);
     try {
-      const claim = await claimsApi.createClaim({ title: title.trim() });
+      const claim = await claimsApi.createClaim({
+        claim_month: claimMonth,
+      });
 
       for (const item of items) {
         await claimsApi.addItem(claim.id, item);
@@ -239,7 +250,7 @@ function NewClaimModal({
       await claimsApi.submitClaim(claim.id);
 
       toast.success("Claim submitted successfully");
-      setTitle("");
+      setClaimMonth(new Date().toISOString().slice(0, 7));
       setItems([]);
       onSuccess();
       onClose();
@@ -278,15 +289,25 @@ function NewClaimModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <AppInput
-            label="Claim Title"
-            value={title}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setTitle(e.target.value)
-            }
-            placeholder="e.g. March business travel expenses"
-            required
-          />
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-gray-700)] mb-1">
+              Claim Month
+            </label>
+            <input
+              type="month"
+              value={claimMonth}
+              onChange={(e) => setClaimMonth(e.target.value)}
+              required
+              className="
+                w-full rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+                bg-[var(--color-surface-input)] text-[var(--foreground)]
+                border-[var(--color-surface-input-border)]
+                transition-colors
+                focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                focus:border-[var(--color-surface-input-focus)]
+              "
+            />
+          </div>
 
           {/* Items List */}
           <div>
@@ -308,7 +329,7 @@ function NewClaimModal({
                           {item.description}
                         </p>
                         <p className="text-xs text-[var(--color-gray-500)]">
-                          {cat?.name ?? "Unknown"} &middot; {item.expense_date}
+                          {cat?.name ?? "Unknown"} &middot; {item.receipt_date}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -359,7 +380,7 @@ function NewClaimModal({
               variant="primary"
               size="sm"
               loading={isSubmitting}
-              disabled={!title.trim() || items.length === 0}
+              disabled={!claimMonth || items.length === 0}
               className="flex-1"
             >
               Submit Claim
@@ -445,7 +466,7 @@ function PendingClaims({
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [showRejectModal, setShowRejectModal] = useState<number | null>(null);
 
-  const pending = claims.filter((c) => c.status === "pending");
+  const pending = claims.filter((c) => c.status === "pending_approval");
 
   if (pending.length === 0) {
     return (
@@ -517,8 +538,9 @@ function PendingClaims({
                   {claim.employee_name}
                 </p>
                 <p className="text-xs text-[var(--color-gray-500)]">
-                  {claim.title} &middot; {formatCurrency(claim.total_amount)}{" "}
-                  &middot; {(claim.items ?? []).length} item
+                  {claim.claim_month} &middot;{" "}
+                  {formatCurrency(claim.total_amount)} &middot;{" "}
+                  {(claim.items ?? []).length} item
                   {(claim.items ?? []).length !== 1 ? "s" : ""}
                 </p>
               </div>
@@ -612,7 +634,7 @@ function ClaimsList({
                 </th>
               )}
               <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                Title
+                Month
               </th>
               <th className="text-right py-3 px-3 font-medium text-[var(--color-gray-500)]">
                 Amount
@@ -645,7 +667,7 @@ function ClaimsList({
                   )}
                   <td className="py-3 px-5 text-[var(--color-gray-900)]">
                     <div className="flex items-center gap-2">
-                      {claim.title}
+                      {claim.claim_month}
                       {expandedId === claim.id ? (
                         <ChevronUp className="h-4 w-4 text-[var(--color-gray-400)]" />
                       ) : (
@@ -688,18 +710,22 @@ function ClaimsList({
                                 </p>
                                 <p className="text-xs text-[var(--color-gray-500)]">
                                   {item.category_name} &middot;{" "}
-                                  {item.expense_date}
+                                  {item.receipt_date}
                                 </p>
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="font-medium text-[var(--color-gray-900)]">
                                   {formatCurrency(item.amount)}
                                 </span>
-                                {item.receipt_url && (
-                                  <span className="text-xs text-emerald-600">
-                                    Receipt
-                                  </span>
-                                )}
+                                {item.receipt_files &&
+                                  item.receipt_files.length > 0 && (
+                                    <span className="text-xs text-emerald-600">
+                                      {item.receipt_files.length} receipt
+                                      {item.receipt_files.length !== 1
+                                        ? "s"
+                                        : ""}
+                                    </span>
+                                  )}
                               </div>
                             </div>
                           ))}
@@ -710,24 +736,13 @@ function ClaimsList({
                         </p>
                       )}
 
-                      {claim.rejection_reason && (
+                      {claim.reviewer_remarks && (
                         <div className="mt-3">
                           <p className="text-xs font-medium text-[var(--color-gray-500)] mb-0.5">
-                            Rejection Reason
+                            Reviewer Remarks
                           </p>
                           <p className="text-sm text-red-700">
-                            {claim.rejection_reason}
-                          </p>
-                        </div>
-                      )}
-
-                      {claim.approver_name && (
-                        <div className="mt-2">
-                          <p className="text-xs font-medium text-[var(--color-gray-500)] mb-0.5">
-                            Reviewed By
-                          </p>
-                          <p className="text-sm text-[var(--color-gray-700)]">
-                            {claim.approver_name}
+                            {claim.reviewer_remarks}
                           </p>
                         </div>
                       )}
@@ -747,10 +762,7 @@ function ClaimsList({
 
 export default function ClaimsPage() {
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
   const [categories, setCategories] = useState<ClaimCategory[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
@@ -786,7 +798,9 @@ export default function ClaimsPage() {
     fetchData();
   }, [fetchData]);
 
-  const totalPending = claims.filter((c) => c.status === "pending").length;
+  const totalPending = claims.filter(
+    (c) => c.status === "pending_approval",
+  ).length;
   const totalApproved = claims
     .filter((c) => c.status === "approved")
     .reduce((sum, c) => sum + c.total_amount, 0);
@@ -835,7 +849,7 @@ export default function ClaimsPage() {
             </p>
           </div>
         </div>
-        {!isAdmin && (
+        {
           <AppButton
             variant="primary"
             size="sm"
@@ -844,7 +858,7 @@ export default function ClaimsPage() {
             <Plus className="h-4 w-4 mr-1" />
             New Claim
           </AppButton>
-        )}
+        }
       </div>
 
       {/* Quick Stats */}
@@ -907,7 +921,7 @@ export default function ClaimsPage() {
         >
           <option value="">All statuses</option>
           <option value="draft">Draft</option>
-          <option value="pending">Pending</option>
+          <option value="pending_approval">Pending</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
         </select>

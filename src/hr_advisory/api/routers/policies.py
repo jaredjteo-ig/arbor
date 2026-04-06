@@ -172,6 +172,11 @@ def _validate_category(category: str) -> None:
         logger.info("Custom policy category used: '%s'", category)
 
 
+def _strip_policy_internals(policy: dict) -> dict:
+    """Remove internal fields (e.g. file_path) from a policy record before returning."""
+    return {k: v for k, v in policy.items() if k not in ("file_path",)}
+
+
 def _truncate_content(content: str, max_length: int = 200) -> str:
     """Truncate content for list-view summaries."""
     if len(content) <= max_length:
@@ -385,7 +390,7 @@ async def get_policy(
         if policy.get("status") != "active" or not policy.get("is_active", True):
             raise HTTPException(status_code=404, detail="Policy not found.")
 
-    return {"policy": {k: v for k, v in policy.items() if k != "file_path"}}
+    return {"policy": _strip_policy_internals(policy)}
 
 
 # --------------------------------------------------------------------------
@@ -514,7 +519,7 @@ async def create_policy(
             )
 
     return {
-        "policy": policy,
+        "policy": _strip_policy_internals(policy),
         "message": "Policy created successfully.",
         "statutory_floor_warnings": statutory_floor_warnings,
     }
@@ -753,7 +758,7 @@ async def upload_policy(
             )
 
     return {
-        "policy": {k: v for k, v in policy.items() if k != "file_path"},
+        "policy": _strip_policy_internals(policy),
         "extraction_status": extraction_status,
         "message": (
             "Policy uploaded and text extracted successfully."
@@ -904,7 +909,7 @@ async def update_policy(
             company_id,
         )
         return {
-            "policy": {k: v for k, v in new_policy.items() if k != "file_path"},
+            "policy": _strip_policy_internals(new_policy),
             "previous_version_id": policy_id,
             "message": f"New version (v{current_version + 1}) created. Previous version archived.",
         }
@@ -968,7 +973,7 @@ async def update_policy(
         company_id,
     )
     return {
-        "policy": {k: v for k, v in updated_policy.items() if k != "file_path"},
+        "policy": _strip_policy_internals(updated_policy),
         "message": "Policy updated.",
     }
 

@@ -80,8 +80,10 @@ export interface ApplyLeaveData {
 
 export const leaveApi = {
   /** List all leave types configured for the company. */
-  listTypes(): Promise<{ types: LeaveType[] }> {
-    return apiClient.get<{ types: LeaveType[] }>("/leave/types");
+  listTypes(): Promise<{ leave_types: LeaveType[]; count: number }> {
+    return apiClient.get<{ leave_types: LeaveType[]; count: number }>(
+      "/leave/types",
+    );
   },
 
   /** Apply for leave. */

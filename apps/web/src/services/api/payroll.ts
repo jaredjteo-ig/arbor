@@ -75,63 +75,94 @@ export interface PayslipDetail extends Payslip {
   items: PayslipItem[];
 }
 
-export interface CpfYtd {
+export interface CpfYtdRecord {
   employee_id: number;
+  company_id: number;
   year: number;
-  total_ow: number;
-  total_aw: number;
-  total_employer_cpf: number;
-  total_employee_cpf: number;
-  months: Record<string, unknown>[];
+  month: number;
+  ow_subject_to_cpf: number;
+  aw_subject_to_cpf: number;
+  ytd_ow_total: number;
+  ytd_aw_total: number;
+  employer_cpf: number;
+  employee_cpf: number;
+  payslip_id: number;
 }
 
-export interface SummaryReport {
-  run_id: number;
-  period_start: string;
-  period_end: string;
+export interface CpfYtd {
+  year: number;
+  records: CpfYtdRecord[];
+}
+
+export interface DepartmentSummary {
+  department: string;
+  employee_count: number;
   total_gross: number;
   total_net: number;
   total_employer_cpf: number;
   total_employee_cpf: number;
-  total_sdl: number;
-  total_fwl: number;
-  total_shg: number;
-  employee_count: number;
-  payslips: PayslipSummary[];
+}
+
+export interface SummaryReport {
+  run: PayrollRun;
+  by_department: DepartmentSummary[];
+}
+
+export interface YtdEmployee {
+  employee_id: number;
+  name: string;
+  department: string;
+  ytd_gross: number;
+  ytd_net: number;
+  ytd_employer_cpf: number;
+  ytd_employee_cpf: number;
+  months_paid: number;
 }
 
 export interface YtdReport {
   year: number;
-  total_gross: number;
-  total_net: number;
-  total_employer_cpf: number;
-  total_employee_cpf: number;
-  months: Record<string, unknown>[];
+  employees: YtdEmployee[];
 }
 
 /* ── API Methods ─────────────────────────────────────────── */
 
 export const payrollApi = {
-  /** Calculate a new payroll run. */
-  calculatePayroll(data: CalculatePayrollData): Promise<PayrollRun> {
-    return apiClient.post<PayrollRun>("/payroll/calculate", data);
+  /** Calculate a new payroll run. Returns the payroll_run object. */
+  async calculatePayroll(data: CalculatePayrollData): Promise<PayrollRun> {
+    const resp = await apiClient.post<{
+      payroll_run: PayrollRun;
+      payslips: PayslipSummary[];
+    }>("/payroll/calculate", data);
+    return resp.payroll_run;
   },
 
   /** List all payroll runs for the current company. */
-  listRuns(): Promise<PayrollRun[]> {
-    return apiClient.get<PayrollRun[]>("/payroll/runs");
+  async listRuns(): Promise<PayrollRun[]> {
+    const resp = await apiClient.get<{ runs: PayrollRun[]; count: number }>(
+      "/payroll/runs",
+    );
+    return resp.runs;
   },
 
   /** Get a single payroll run with payslip summaries. */
-  getRun(id: number): Promise<PayrollRunDetail> {
-    return apiClient.get<PayrollRunDetail>(`/payroll/runs/${id}`);
+  async getRun(id: number): Promise<PayrollRunDetail> {
+    const resp = await apiClient.get<{
+      run: PayrollRun;
+      payslips: PayslipSummary[];
+    }>(`/payroll/runs/${id}`);
+    return { ...resp.run, payslips: resp.payslips };
   },
 
   /** Get full payslip detail including line items. */
-  getPayslipDetail(runId: number, payslipId: number): Promise<PayslipDetail> {
-    return apiClient.get<PayslipDetail>(
-      `/payroll/runs/${runId}/payslips/${payslipId}`,
-    );
+  async getPayslipDetail(
+    runId: number,
+    payslipId: number,
+  ): Promise<PayslipDetail> {
+    const resp = await apiClient.get<{
+      payslip: Payslip;
+      items: PayslipItem[];
+    }>(`/payroll/runs/${runId}/payslips/${payslipId}`);
+    return { ...resp.payslip, items: resp.items };
   },
 
   /** Approve a payroll run. */
@@ -150,13 +181,20 @@ export const payrollApi = {
   },
 
   /** Employee: list own payslips. */
-  myPayslips(): Promise<Payslip[]> {
-    return apiClient.get<Payslip[]>("/payroll/my-payslips");
+  async myPayslips(): Promise<Payslip[]> {
+    const resp = await apiClient.get<{ payslips: Payslip[] }>(
+      "/payroll/my-payslips",
+    );
+    return resp.payslips;
   },
 
   /** Employee: get own payslip detail with items. */
-  myPayslipDetail(id: number): Promise<PayslipDetail> {
-    return apiClient.get<PayslipDetail>(`/payroll/my-payslips/${id}`);
+  async myPayslipDetail(id: number): Promise<PayslipDetail> {
+    const resp = await apiClient.get<{
+      payslip: Payslip;
+      items: PayslipItem[];
+    }>(`/payroll/my-payslips/${id}`);
+    return { ...resp.payslip, items: resp.items };
   },
 
   /** CPF year-to-date for an employee. */
