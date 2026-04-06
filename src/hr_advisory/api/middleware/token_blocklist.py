@@ -223,11 +223,20 @@ def _try_redis_blocklist() -> RedisBlocklist | None:
     """Attempt to create a Redis-backed blocklist.
 
     Returns None if Redis is unavailable or redis package is not installed.
+    Validates that the Redis URL uses a safe scheme (redis:// or rediss://).
     """
     import os
 
     redis_url = os.environ.get("REDIS_URL")
     if not redis_url:
+        return None
+
+    # Validate URL scheme to prevent injection via malformed URLs
+    if not redis_url.startswith(("redis://", "rediss://")):
+        logger.warning(
+            "REDIS_URL has invalid scheme (must be redis:// or rediss://). "
+            "Falling back to in-memory blocklist."
+        )
         return None
 
     try:

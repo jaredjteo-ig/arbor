@@ -228,10 +228,7 @@ function CreateProjectModal({
 export default function ProjectsPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);

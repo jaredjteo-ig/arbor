@@ -4,6 +4,7 @@
 /* supports GET without custom headers).                      */
 
 import { refreshAccessToken, getValidAccessToken } from "./client";
+import { BudgetExceededError } from "./errors";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -124,6 +125,28 @@ export function createSSEStream<TStart = unknown, TComplete = unknown>(
             );
             return;
           }
+        } else if (response.status === 429) {
+          /* Budget exceeded — surface a specific error the UI can detect */
+          let errorCode = "";
+          try {
+            const errorBody = (await response.json()) as {
+              detail?: string;
+              error_code?: string;
+            };
+            errorCode = errorBody.error_code ?? "";
+          } catch {
+            /* body may not be JSON */
+          }
+          if (errorCode === "budget_exceeded") {
+            callbacks.onError?.(new BudgetExceededError());
+          } else {
+            callbacks.onError?.(
+              new Error(
+                "You have sent too many requests. Please wait a moment.",
+              ),
+            );
+          }
+          return;
         } else {
           let detail = "Streaming request failed";
           try {

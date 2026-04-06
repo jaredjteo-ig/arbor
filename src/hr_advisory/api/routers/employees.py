@@ -3244,3 +3244,195 @@ async def get_employee_leave_balances(
         "balances": balances,
         "count": len(balances),
     }
+
+
+# ==========================================================================
+# Exit Processing
+# ==========================================================================
+
+
+# --------------------------------------------------------------------------
+# POST /employees/{id}/exit — Process employee exit (admin)
+# --------------------------------------------------------------------------
+
+
+@router.post("/{employee_id}/exit")
+async def process_employee_exit(
+    employee_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Process an employee exit (resignation, termination, retrenchment, contract end).
+
+    Calculates a final settlement breakdown including:
+    - Pro-rated salary for the final partial month
+    - Leave encashment for unused annual leave
+    - Notice period payment or deduction (depending on who shortens notice)
+    - Retrenchment benefit (if applicable, per MOM guidelines)
+
+    Updates the employee to inactive and creates an EmploymentEvent record.
+    """
+    from hr_advisory.services import dataflow_crud
+    from hr_advisory.services.payroll_calculator import prorate_salary
+
+    company_id = get_current_company_id(current_user)
+    emp = _find_employee_by_id(employee_id)
+    if emp is None or emp.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    if not emp.get("is_active", True):
+        raise HTTPException(status_code=400, detail="Employee is already inactive.")
+
+    body = await request.json()
+
+    exit_type = body.get("exit_type", "").strip()
+    last_working_day = body.get("last_working_day", "").strip()
+    notice_served = body.get("notice_served", True)
+    reason = body.get("reason", "").strip()
+
+    valid_exit_types = ("resignation", "termination", "retrenchment", "contract_end")
+    if exit_type not in valid_exit_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"exit_type must be one of: {', '.join(valid_exit_types)}.",
+        )
+
+    if not last_working_day:
+        raise HTTPException(status_code=400, detail="last_working_day is required.")
+
+    _validate_text_length(reason, "reason")
+
+    try:
+        from datetime import date as date_cls
+        lwd = date_cls.fromisoformat(last_working_day)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    monthly_salary = emp.get("salary_monthly", 0.0)
+    if not math.isfinite(monthly_salary) or monthly_salary < 0:
+        monthly_salary = 0.0
+
+    notice_period_days = emp.get("notice_period_days", 0) or 0
+    start_date = emp.get("start_date", "")
+
+    # ---- 1. Pro-rated salary for the final month ----
+    from datetime import date as date_cls
+    period_start = date_cls(lwd.year, lwd.month, 1)
+    if lwd.month == 12:
+        period_end = date_cls(lwd.year, 12, 31)
+    else:
+        period_end = date_cls(lwd.year, lwd.month + 1, 1) - timedelta(days=1)
+
+    prorated_salary = prorate_salary(
+        monthly_salary,
+        start_date,
+        last_working_day,
+        period_start.isoformat(),
+        period_end.isoformat(),
+    )
+
+    # ---- 2. Leave encashment (unused annual leave) ----
+    leave_encashment = 0.0
+    daily_rate = round(monthly_salary / 26, 2) if monthly_salary > 0 else 0.0  # 26 working days
+    unused_annual_leave_days = 0.0
+
+    balances = dataflow_crud.list_records(
+        "LeaveBalance",
+        {"employee_id": employee_id, "leave_type": "annual", "year": lwd.year},
+        limit=1,
+    )
+    if balances:
+        bal = balances[0]
+        unused_annual_leave_days = max(
+            0.0,
+            bal.get("entitlement_days", 0.0)
+            - bal.get("used_days", 0.0)
+            - bal.get("pending_days", 0.0),
+        )
+        leave_encashment = round(unused_annual_leave_days * daily_rate, 2)
+
+    # ---- 3. Notice period payment / deduction ----
+    notice_pay = 0.0
+    if not notice_served and notice_period_days > 0:
+        # Daily rate based on calendar days (MOM standard)
+        notice_daily_rate = round(monthly_salary / 30, 2) if monthly_salary > 0 else 0.0
+        if exit_type == "resignation":
+            # Employee didn't serve notice — employer deducts salary in lieu
+            notice_pay = -round(notice_period_days * notice_daily_rate, 2)
+        else:
+            # Employer didn't let employee serve notice — pays salary in lieu
+            notice_pay = round(notice_period_days * notice_daily_rate, 2)
+
+    # ---- 4. Retrenchment benefit ----
+    retrenchment_benefit = 0.0
+    if exit_type == "retrenchment":
+        # MOM norm: 2 weeks to 1 month per year of service (we use 2 weeks)
+        years_of_service = 0.0
+        if start_date:
+            try:
+                sd = date_cls.fromisoformat(start_date)
+                years_of_service = (lwd - sd).days / 365.25
+            except ValueError:
+                pass
+        if years_of_service >= 2:  # Typically eligible after 2+ years
+            weeks_per_year = 2
+            retrenchment_benefit = round(
+                years_of_service * weeks_per_year * (monthly_salary / 4.33), 2
+            )
+
+    total_settlement = round(
+        prorated_salary + leave_encashment + notice_pay + retrenchment_benefit, 2
+    )
+
+    # ---- Update employee to inactive ----
+    now = datetime.now(timezone.utc).isoformat()
+    _update_employee(employee_id, {
+        "is_active": False,
+        "end_date": last_working_day,
+    })
+
+    # ---- Create EmploymentEvent record ----
+    event_type_map = {
+        "resignation": "resigned",
+        "termination": "terminated",
+        "retrenchment": "retrenched",
+        "contract_end": "contract_ended",
+    }
+    _create_employment_event({
+        "employee_id": employee_id,
+        "company_id": company_id,
+        "event_type": event_type_map.get(exit_type, exit_type),
+        "event_date": now,
+        "description": reason or f"Employee exit: {exit_type}",
+        "effective_date": last_working_day,
+        "approved_by": int(current_user.get("sub", 0)),
+    })
+
+    # ---- Create EmployeeEvent timeline entry ----
+    _create_employee_event({
+        "employee_id": employee_id,
+        "company_id": company_id,
+        "event_type": "terminated",
+        "description": f"Exit processed: {exit_type}. Reason: {reason or 'N/A'}",
+        "changed_by": int(current_user.get("sub", 0)),
+    })
+
+    settlement = {
+        "exit_type": exit_type,
+        "last_working_day": last_working_day,
+        "notice_served": notice_served,
+        "monthly_salary": monthly_salary,
+        "prorated_salary": prorated_salary,
+        "unused_annual_leave_days": unused_annual_leave_days,
+        "leave_encashment": leave_encashment,
+        "notice_period_days": notice_period_days,
+        "notice_pay": notice_pay,
+        "retrenchment_benefit": retrenchment_benefit,
+        "total_settlement": total_settlement,
+    }
+
+    return {
+        "message": f"Employee exit processed ({exit_type}).",
+        "employee_id": employee_id,
+        "settlement": settlement,
+    }

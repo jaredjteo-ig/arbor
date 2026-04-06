@@ -353,6 +353,94 @@ def _quick_stats(company_id: int) -> dict[str, Any]:
     return stats
 
 
+# ── CPF validation ────────────────────────────────────────────
+
+
+def _cpf_validation(company_id: int) -> list[dict[str, Any]]:
+    """Check CPF-related items that need attention.
+
+    Checks:
+    - Whether the CPF submission deadline is approaching (within 7 days)
+    - Month-over-month payroll variance for CPF contribution anomalies
+    """
+    items: list[dict[str, Any]] = []
+    today = date.today()
+
+    # CPF deadline reminder (14th of each month)
+    try:
+        day_of_month = 14
+        try:
+            this_month_deadline = date(today.year, today.month, day_of_month)
+        except ValueError:
+            this_month_deadline = date(today.year, today.month, 28)
+
+        if today.month == 12:
+            next_deadline = date(today.year + 1, 1, day_of_month)
+        else:
+            try:
+                next_deadline = date(today.year, today.month + 1, day_of_month)
+            except ValueError:
+                next_deadline = date(today.year, today.month + 1, 28)
+
+        target = this_month_deadline if this_month_deadline >= today else next_deadline
+        days_left = (target - today).days
+
+        if days_left <= 7:
+            items.append(
+                {
+                    "id": "cpf-deadline-check",
+                    "category": "attention_needed",
+                    "title": f"CPF submission due in {days_left} day{'s' if days_left != 1 else ''}",
+                    "description": "Ensure payroll is processed and CPF contributions are submitted on time. Late payment incurs 18% p.a. interest.",
+                    "action_type": "navigate",
+                    "route": "/payroll",
+                    "priority": "high" if days_left <= 3 else "medium",
+                }
+            )
+    except Exception:
+        logger.debug("Failed to compute CPF deadline for briefing", exc_info=True)
+
+    # Month-over-month payroll comparison for CPF anomalies
+    try:
+        runs = dataflow_crud.list_records(
+            "PayrollRun",
+            {"company_id": company_id},
+            limit=100,
+        )
+        # Sort by period_start descending to get the two most recent
+        sorted_runs = sorted(runs, key=lambda r: r.get("period_start", ""), reverse=True)
+        completed_runs = [r for r in sorted_runs if r.get("status") in ("approved", "paid")]
+
+        if len(completed_runs) >= 2:
+            current = completed_runs[0]
+            previous = completed_runs[1]
+            curr_total = float(current.get("total_gross", 0) or 0)
+            prev_total = float(previous.get("total_gross", 0) or 0)
+
+            if prev_total > 0:
+                variance_pct = abs(curr_total - prev_total) / prev_total * 100
+                if variance_pct > 15:
+                    direction = "increased" if curr_total > prev_total else "decreased"
+                    items.append(
+                        {
+                            "id": "cpf-variance-check",
+                            "category": "attention_needed",
+                            "title": f"Payroll {direction} {variance_pct:.0f}% from last month",
+                            "description": (
+                                f"Total gross went from ${prev_total:,.2f} to ${curr_total:,.2f}. "
+                                "Review for accuracy before CPF submission."
+                            ),
+                            "action_type": "navigate",
+                            "route": "/payroll",
+                            "priority": "high" if variance_pct > 30 else "medium",
+                        }
+                    )
+    except Exception:
+        logger.debug("Failed to compute payroll variance for CPF check", exc_info=True)
+
+    return items
+
+
 # ── Date helpers ──────────────────────────────────────────────
 
 
@@ -425,6 +513,12 @@ def generate_briefing(company_id: int, user_role: str) -> dict[str, Any]:
     pending = _pending_actions(company_id, user_role)
     deadlines = _upcoming_deadlines(company_id)
     attention = _attention_needed(company_id)
+    cpf_items = _cpf_validation(company_id)
+    # Merge CPF items into attention, avoiding duplicate IDs
+    existing_ids = {item.get("id") for item in attention}
+    for item in cpf_items:
+        if item.get("id") not in existing_ids:
+            attention.append(item)
     stats = _quick_stats(company_id)
 
     # Compute total action count for headline

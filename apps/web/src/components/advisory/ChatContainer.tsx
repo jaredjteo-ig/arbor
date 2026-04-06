@@ -2,13 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { ChatBubble, ChatInput, toast } from "@/components/design-system";
-import { Info, AlertCircle, RefreshCw, Loader2 } from "lucide-react";
+import { Info, AlertCircle, RefreshCw, Loader2, Settings } from "lucide-react";
 import { SystemMessage } from "./SystemMessage";
 import { ContextBar } from "./ContextBar";
 import { advisoryApi } from "@/services/api/advisory";
 import { learningApi } from "@/services/api/learning";
-import { humanizeError } from "@/services/api/errors";
+import { humanizeError, BudgetExceededError } from "@/services/api/errors";
 import { useAuth } from "@/contexts/AuthContext";
 import type {
   AdvisoryMessage,
@@ -170,6 +171,7 @@ export function ChatContainer({
     conversationId,
   );
   const [isListening, setIsListening] = useState(false);
+  const [budgetExceeded, setBudgetExceeded] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prefillHandled = useRef(false);
@@ -288,19 +290,35 @@ export function ChatContainer({
             abortRef.current = null;
           },
           onError: (error: Error) => {
-            setMessages((prev) => {
-              const updated = [...prev];
-              const last = updated[updated.length - 1];
-              if (last.role === "assistant") {
-                updated[updated.length - 1] = {
-                  ...last,
-                  content: humanizeError(error),
-                  riskTier: undefined,
-                  streaming: false,
-                };
-              }
-              return updated;
-            });
+            if (error instanceof BudgetExceededError) {
+              setBudgetExceeded(true);
+              /* Remove the streaming placeholder */
+              setMessages((prev) => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (
+                  last.role === "assistant" &&
+                  (last as AssistantMessage).streaming
+                ) {
+                  updated.pop();
+                }
+                return updated;
+              });
+            } else {
+              setMessages((prev) => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (last.role === "assistant") {
+                  updated[updated.length - 1] = {
+                    ...last,
+                    content: humanizeError(error),
+                    riskTier: undefined,
+                    streaming: false,
+                  };
+                }
+                return updated;
+              });
+            }
             setIsStreaming(false);
             abortRef.current = null;
           },
@@ -418,6 +436,41 @@ export function ChatContainer({
     <div className="flex flex-col h-full">
       {/* Context bar */}
       <ContextBar />
+
+      {/* Budget exceeded info card */}
+      {budgetExceeded && (
+        <div className="mx-4 mt-4 rounded-[12px] border border-[var(--color-risk-amber-border)] bg-[var(--color-risk-amber-bg)] p-4">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-[var(--color-risk-amber)] mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                Advisory usage limit reached
+              </p>
+              <p className="text-xs text-[var(--color-gray-600)] mt-1">
+                You have used all your advisory queries for this billing period.
+                You can review your usage and plan in Settings.
+              </p>
+              <Link
+                href="/settings"
+                className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
+              >
+                <Settings className="h-3.5 w-3.5" />
+                Go to Settings
+              </Link>
+            </div>
+            <button
+              type="button"
+              onClick={() => setBudgetExceeded(false)}
+              className="shrink-0 p-1 rounded hover:bg-[var(--color-risk-amber-border)] transition-colors"
+              aria-label="Dismiss"
+            >
+              <span className="text-[var(--color-gray-500)] text-sm">
+                &times;
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-6">

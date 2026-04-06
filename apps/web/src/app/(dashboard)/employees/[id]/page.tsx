@@ -56,6 +56,7 @@ import {
   type CustomFieldValue,
   type AdminLeaveBalance,
   type FamilyMember,
+  type ExitSettlement,
 } from "@/services/api/employees";
 
 /* ── Constants ──────────────────────────────────────────────── */
@@ -69,6 +70,7 @@ type TabKey =
   | "leave"
   | "documents"
   | "timeline"
+  | "lifecycle"
   | "notes"
   | "onboarding"
   | "custom_fields"
@@ -83,6 +85,7 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: "leave", label: "Leave", icon: Calendar },
   { key: "documents", label: "Documents", icon: FileText },
   { key: "timeline", label: "Timeline", icon: Clock },
+  { key: "lifecycle", label: "Lifecycle", icon: TrendingUp },
   { key: "notes", label: "Notes", icon: StickyNote },
   { key: "onboarding", label: "Onboarding", icon: ClipboardCheck },
   { key: "custom_fields", label: "Custom Fields", icon: Settings },
@@ -4432,6 +4435,364 @@ function TerminateEmployeeForm({
   );
 }
 
+/* ── Lifecycle Tab ───────────────────────────────────────────── */
+
+function LifecycleTab({
+  employee,
+  employeeId,
+  isAdmin,
+  onRefresh,
+}: {
+  employee: EmployeeDetail;
+  employeeId: number;
+  isAdmin: boolean;
+  onRefresh: () => void;
+}) {
+  const [events, setEvents] = useState<EmploymentEvent[]>([]);
+
+  useEffect(() => {
+    employeesApi
+      .listEmploymentHistory(employeeId)
+      .then((data) => setEvents(data.events ?? []))
+      .catch(() => {});
+  }, [employeeId]);
+  const [showExitForm, setShowExitForm] = useState(false);
+  const [exitType, setExitType] = useState<string>("resignation");
+  const [lastWorkingDay, setLastWorkingDay] = useState("");
+  const [noticeServed, setNoticeServed] = useState(true);
+  const [payInLieuDays, setPayInLieuDays] = useState("");
+  const [exitReason, setExitReason] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [settlement, setSettlement] = useState<ExitSettlement | null>(null);
+
+  /* Employment status derived from employee data */
+  const isActive = employee.is_active;
+  const statusColor = isActive
+    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+    : "bg-red-50 text-red-700 border-red-200";
+  const statusLabel = isActive ? "Active" : "Separated";
+
+  const startDate = employee.start_date
+    ? new Date(employee.start_date).toLocaleDateString("en-SG", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "-";
+
+  const tenure = employee.start_date
+    ? (() => {
+        const start = new Date(employee.start_date);
+        const now = new Date();
+        const months =
+          (now.getFullYear() - start.getFullYear()) * 12 +
+          (now.getMonth() - start.getMonth());
+        const years = Math.floor(months / 12);
+        const rem = months % 12;
+        return years > 0
+          ? `${years} year${years !== 1 ? "s" : ""}${rem > 0 ? `, ${rem} month${rem !== 1 ? "s" : ""}` : ""}`
+          : `${rem} month${rem !== 1 ? "s" : ""}`;
+      })()
+    : "-";
+
+  async function handleProcessExit() {
+    setIsProcessing(true);
+    try {
+      const result = await employeesApi.processExit(employeeId, {
+        exit_type: exitType as
+          | "resignation"
+          | "termination"
+          | "end_of_contract"
+          | "retirement",
+        last_working_day: lastWorkingDay,
+        notice_served: noticeServed,
+        pay_in_lieu_days: payInLieuDays
+          ? parseInt(payInLieuDays, 10)
+          : undefined,
+        reason: exitReason || undefined,
+      });
+      setSettlement(result);
+      setShowExitForm(false);
+      toast.success("Exit processed successfully");
+      onRefresh();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to process exit";
+      toast.error(message);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  function formatCurrency(amount: number): string {
+    return `$${amount.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Employment Status Card */}
+      <AppCard variant="flat">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
+              <TrendingUp className="h-5 w-5 text-[var(--color-primary)]" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-[var(--color-gray-900)]">
+                Employment Status
+              </h3>
+              <div className="flex items-center gap-3 mt-1 text-sm text-[var(--color-gray-500)]">
+                <span>Started: {startDate}</span>
+                <span>Tenure: {tenure}</span>
+                {employee.confirmation_status && (
+                  <span>
+                    Probation:{" "}
+                    {employee.confirmation_status === "confirmed"
+                      ? "Confirmed"
+                      : "On probation"}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <span
+            className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${statusColor}`}
+          >
+            {statusLabel}
+          </span>
+        </div>
+      </AppCard>
+
+      {/* Employment Timeline */}
+      <AppCard
+        variant="standard"
+        header={
+          <h3 className="text-base font-semibold text-[var(--color-gray-900)]">
+            Employment Timeline
+          </h3>
+        }
+      >
+        {events.length === 0 ? (
+          <div className="py-6 text-center">
+            <Clock className="h-8 w-8 text-[var(--color-gray-300)] mx-auto mb-2" />
+            <p className="text-sm text-[var(--color-gray-500)]">
+              No employment events recorded yet.
+            </p>
+          </div>
+        ) : (
+          <div className="relative pl-6 space-y-4 -mx-5 -my-4 px-8 py-4">
+            {/* Timeline line */}
+            <div className="absolute left-8 top-4 bottom-4 w-px bg-[var(--color-gray-200)]" />
+
+            {events.map((event) => (
+              <div key={event.id} className="relative flex gap-3">
+                <div className="absolute -left-5 mt-1.5 w-2.5 h-2.5 rounded-full bg-[var(--color-primary)] border-2 border-white" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-[var(--color-gray-900)]">
+                      {event.event_type
+                        .replace(/_/g, " ")
+                        .replace(/\b\w/g, (c) => c.toUpperCase())}
+                    </span>
+                    <span className="text-xs text-[var(--color-gray-400)]">
+                      {new Date(event.event_date).toLocaleDateString("en-SG", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  </div>
+                  {event.description && (
+                    <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                      {event.description}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </AppCard>
+
+      {/* Settlement Result */}
+      {settlement && (
+        <AppCard variant="flat">
+          <h3 className="text-base font-semibold text-[var(--color-gray-900)] mb-3">
+            Exit Settlement
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <p className="text-xs text-[var(--color-gray-500)]">
+                Final Salary
+              </p>
+              <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                {formatCurrency(settlement.final_salary)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--color-gray-500)]">
+                Leave Encashment
+              </p>
+              <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                {formatCurrency(settlement.leave_encashment)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--color-gray-500)]">Notice Pay</p>
+              <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                {formatCurrency(settlement.notice_pay)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--color-gray-500)]">
+                Total Settlement
+              </p>
+              <p className="text-sm font-bold text-[var(--color-primary)]">
+                {formatCurrency(settlement.total_settlement)}
+              </p>
+            </div>
+          </div>
+        </AppCard>
+      )}
+
+      {/* Exit Processing Form (admin only) */}
+      {isAdmin && isActive && !settlement && (
+        <AppCard variant="standard">
+          {!showExitForm ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-[var(--color-gray-900)]">
+                  Exit Processing
+                </h3>
+                <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                  Process resignation, termination, or end of contract
+                </p>
+              </div>
+              <AppButton
+                variant="danger"
+                size="sm"
+                onClick={() => setShowExitForm(true)}
+              >
+                <AlertTriangle className="h-4 w-4 mr-1" />
+                Process Exit
+              </AppButton>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold text-[var(--color-gray-900)]">
+                  Process Exit
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowExitForm(false)}
+                  className="p-1 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+                >
+                  <X className="h-4 w-4 text-[var(--color-gray-500)]" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-[var(--color-gray-700)]">
+                    Exit Type
+                  </label>
+                  <select
+                    value={exitType}
+                    onChange={(e) => setExitType(e.target.value)}
+                    className="
+                      rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+                      bg-[var(--color-surface-input)] text-[var(--foreground)]
+                      border-[var(--color-surface-input-border)]
+                      transition-colors
+                      focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                      focus:border-[var(--color-surface-input-focus)]
+                    "
+                  >
+                    <option value="resignation">Resignation</option>
+                    <option value="termination">Termination</option>
+                    <option value="end_of_contract">End of Contract</option>
+                    <option value="retirement">Retirement</option>
+                  </select>
+                </div>
+
+                <AppInput
+                  label="Last Working Day"
+                  variant="date"
+                  value={lastWorkingDay}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setLastWorkingDay(e.target.value)
+                  }
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="notice-served"
+                    checked={noticeServed}
+                    onChange={(e) => setNoticeServed(e.target.checked)}
+                    className="h-4 w-4 rounded border-[var(--color-gray-300)] text-[var(--color-primary)]"
+                  />
+                  <label
+                    htmlFor="notice-served"
+                    className="text-sm text-[var(--color-gray-700)]"
+                  >
+                    Notice period fully served
+                  </label>
+                </div>
+
+                {!noticeServed && (
+                  <AppInput
+                    label="Pay in Lieu (days)"
+                    variant="number"
+                    value={payInLieuDays}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setPayInLieuDays(e.target.value)
+                    }
+                    placeholder="e.g. 30"
+                  />
+                )}
+              </div>
+
+              <AppInput
+                label="Reason (optional)"
+                variant="textarea"
+                value={exitReason}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                  setExitReason(e.target.value)
+                }
+                placeholder="Reason for separation..."
+              />
+
+              <div className="flex gap-3">
+                <AppButton
+                  variant="outlined"
+                  size="sm"
+                  onClick={() => setShowExitForm(false)}
+                >
+                  Cancel
+                </AppButton>
+                <AppButton
+                  variant="danger"
+                  size="sm"
+                  onClick={handleProcessExit}
+                  loading={isProcessing}
+                  disabled={!lastWorkingDay}
+                >
+                  Confirm Exit
+                </AppButton>
+              </div>
+            </div>
+          )}
+        </AppCard>
+      )}
+    </div>
+  );
+}
+
 /* ── Page ────────────────────────────────────────────────────── */
 
 interface EmployeeDetailPageProps {
@@ -4533,10 +4894,10 @@ export default function EmployeeDetailPage({
         setEditModal("statutory");
         break;
       case "run_payroll":
-        toast.info("Run Payroll - coming soon");
+        window.location.href = "/payroll";
         break;
       case "generate_payslip":
-        toast.info("Generate Payslip - coming soon");
+        window.location.href = "/payroll";
         break;
       case "terminate":
         setEditModal("terminate");
@@ -4733,6 +5094,14 @@ export default function EmployeeDetailPage({
         <DocumentsTab employeeId={employeeId} isAdmin={isAdmin} />
       )}
       {activeTab === "timeline" && <TimelineTab employeeId={employeeId} />}
+      {activeTab === "lifecycle" && (
+        <LifecycleTab
+          employee={employee}
+          employeeId={employeeId}
+          isAdmin={isAdmin}
+          onRefresh={fetchEmployee}
+        />
+      )}
       {activeTab === "notes" && (
         <NotesTab employeeId={employeeId} isAdmin={isAdmin} />
       )}

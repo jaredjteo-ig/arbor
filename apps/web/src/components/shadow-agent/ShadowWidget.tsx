@@ -10,6 +10,8 @@ interface ShadowWidgetProps {
   hasAttention?: boolean;
   /** Whether the advisory deep workspace page is active */
   isAdvisoryPage?: boolean;
+  /** Number of unseen nudges — shows a pulsing badge when > 0 */
+  nudgeCount?: number;
   /** Callback to toggle the command surface */
   onToggle: () => void;
 }
@@ -30,6 +32,7 @@ export function ShadowWidget({
   isCommandOpen,
   hasAttention = false,
   isAdvisoryPage = false,
+  nudgeCount = 0,
   onToggle,
 }: ShadowWidgetProps) {
   // Global keyboard shortcut: Ctrl+Shift+A
@@ -107,6 +110,24 @@ export function ShadowWidget({
           <ellipse cx="12" cy="9" rx="4" ry="3.5" fill="white" opacity="0.3" />
         </svg>
       </button>
+
+      {/* Nudge count badge — pulsing dot when unseen nudges exist */}
+      {nudgeCount > 0 && (
+        <span
+          className={clsx(
+            "absolute -top-1 -right-1",
+            "flex items-center justify-center",
+            "min-w-[18px] h-[18px] px-1 rounded-full",
+            "bg-[var(--color-risk-red)] text-white",
+            "text-[10px] font-bold leading-none",
+            "shadow-nudge-badge-in",
+            "animate-shadow-nudge-pulse",
+          )}
+          aria-label={`${nudgeCount} unseen notification${nudgeCount !== 1 ? "s" : ""}`}
+        >
+          {nudgeCount > 9 ? "9+" : nudgeCount}
+        </span>
+      )}
     </div>
   );
 }

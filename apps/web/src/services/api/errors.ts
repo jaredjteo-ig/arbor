@@ -5,6 +5,20 @@
  * that avoid leaking internal details (stack traces, endpoint paths, etc.).
  */
 
+/**
+ * Raised when the advisory SSE stream returns a 429 with a
+ * `budget_exceeded` error code. The ChatContainer uses this to
+ * render a friendly upgrade/settings card instead of a generic error.
+ */
+export class BudgetExceededError extends Error {
+  constructor(message?: string) {
+    super(
+      message ?? "You have reached your advisory usage limit for this period.",
+    );
+    this.name = "BudgetExceededError";
+  }
+}
+
 export function humanizeError(error: unknown): string {
   // HTTP response errors (Response object or error-like with `status`)
   if (

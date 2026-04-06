@@ -12,6 +12,7 @@ import { classifyIntent, type ClassifiedIntent } from "./action-registry";
 import { calculatorsApi } from "@/services/api/calculators";
 import { complianceApi } from "@/services/api/compliance";
 import { useAuth } from "@/contexts/AuthContext";
+import { useShadowNudges } from "@/hooks/useShadowNudges";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -46,6 +47,8 @@ interface ShadowAgentState {
   recentCommands: string[];
   /** Current user role for role-aware suggestions */
   userRole: string | null;
+  /** Number of unseen nudges from the shadow nudge poller */
+  nudgeCount: number;
 }
 
 interface ShadowAgentActions {
@@ -59,6 +62,8 @@ interface ShadowAgentActions {
   submitCommand: (query: string) => Promise<CommandResult | null>;
   /** Set attention state (agent has something to surface) */
   setAttention: (value: boolean) => void;
+  /** Mark all current nudges as seen (resets the badge count) */
+  markNudgesSeen: () => void;
 }
 
 type ShadowAgentContextValue = ShadowAgentState & ShadowAgentActions;
@@ -373,6 +378,7 @@ export function ShadowAgentProvider({ children }: { children: ReactNode }) {
   const isAdvisoryPage = pathname === "/advisory";
   const userRole = user?.role ?? null;
   const isEmployee = userRole === "employee";
+  const { nudgeCount, markNudgesSeen } = useShadowNudges();
 
   const openCommand = useCallback(() => setIsCommandOpen(true), []);
   const closeCommand = useCallback(() => setIsCommandOpen(false), []);
@@ -472,11 +478,13 @@ export function ShadowAgentProvider({ children }: { children: ReactNode }) {
     isAdvisoryPage,
     recentCommands,
     userRole,
+    nudgeCount,
     openCommand,
     closeCommand,
     toggleCommand,
     submitCommand,
     setAttention,
+    markNudgesSeen,
   };
 
   return (

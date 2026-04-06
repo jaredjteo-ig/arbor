@@ -484,7 +484,7 @@ export default function DashboardPage() {
               step={1}
               title="Create your company profile"
               description="Unlock payroll, leave, claims, attendance, and all HR features"
-              href="/payroll"
+              href="/settings"
               icon={Building2}
               completed={false}
             />

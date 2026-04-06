@@ -62,6 +62,8 @@ dependencies = [
     "tiktoken>=0.7.0",
     "python-multipart>=0.0.7",
     "email-validator>=2.0.0",
+    # PDF generation (payslips, reports)
+    "reportlab>=4.0.4",
 ]
 
 [project.optional-dependencies]

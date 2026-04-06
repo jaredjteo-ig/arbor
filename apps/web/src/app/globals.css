@@ -260,6 +260,26 @@ body {
   animation: shadow-scale-in var(--shadow-transition-normal) ease-out;
 }
 
+/* ── Shadow Nudge badge animations ─────────────────────────── */
+
+@keyframes shadow-nudge-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+}
+
+@keyframes shadow-badge-in {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-shadow-nudge-pulse {
+  animation: shadow-nudge-pulse 2s ease-in-out infinite;
+}
+
+.shadow-nudge-badge-in {
+  animation: shadow-badge-in 200ms ease-out;
+}
+
 /* ── Reduced motion ─────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

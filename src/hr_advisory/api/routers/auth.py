@@ -172,7 +172,9 @@ async def refresh_token(
     Status codes:
         200: Success
         401: Invalid/expired/wrong-type token
+        429: Rate limited
     """
+    _check_auth_rate_limit(request)
     body = await request.json()
     token = body.get("refresh_token", "")
 
@@ -680,11 +682,15 @@ async def google_exchange(request: Request):
     auth_service = _get_auth_service()
     user = auth_service._find_user_by_email(email)
     if user is None:
+        # New Google SSO users default to "employee" role. They can be
+        # promoted to owner/hr_manager by an existing admin. Setting
+        # owner by default would grant full admin access to anyone who
+        # signs up via Google — a privilege escalation risk.
         user = auth_service._create_user(
             email=email,
             name=name,
             password_hash="",
-            role="owner",
+            role="employee",
         )
         logger.info("Google SSO: created new user email=%s, id=%s", email, user.get("id"))
     else:

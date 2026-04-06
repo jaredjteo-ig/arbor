@@ -27,7 +27,7 @@ import {
 /* -- Currency formatter --------------------------------------------- */
 
 function formatCurrency(amount: number): string {
-  return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${amount.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /* -- Status badge -------------------------------------------------- */
@@ -746,10 +746,7 @@ function ClaimsList({
 
 export default function ClaimsPage() {
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
   const [categories, setCategories] = useState<ClaimCategory[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);

@@ -5,9 +5,6 @@ import {
   AppCard,
   AppButton,
   AppInput,
-  BarChart,
-  DonutChart,
-  TrendLine,
   toast,
 } from "@/components/design-system";
 import {
@@ -18,7 +15,6 @@ import {
   Clock,
   Receipt,
   FolderKanban,
-  TrendingUp,
   ArrowLeft,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -46,6 +42,7 @@ const REPORTS: ReportDef[] = [
     bgColor: "bg-blue-50",
     category: "workforce",
   },
+  /* Turnover report disabled — no backend endpoint yet
   {
     id: "turnover",
     title: "Turnover Analysis",
@@ -55,6 +52,7 @@ const REPORTS: ReportDef[] = [
     bgColor: "bg-violet-50",
     category: "workforce",
   },
+  */
   {
     id: "payroll",
     title: "Payroll Summary",
@@ -172,7 +170,6 @@ function ReportViewer({
         (p?: Record<string, string>) => Promise<unknown>
       > = {
         employees: reportsApi.employees,
-        turnover: reportsApi.turnover,
         payroll: reportsApi.payrollSummary,
         leave: reportsApi.leaveUtilization,
         attendance: reportsApi.attendance,
@@ -183,7 +180,6 @@ function ReportViewer({
       /* Keys in the response that contain the data array */
       const dataKeyMap: Record<string, string> = {
         employees: "employees",
-        turnover: "rows",
         payroll: "runs",
         leave: "applications",
         attendance: "records",
@@ -349,10 +345,7 @@ function ReportViewer({
 
 export default function ReportsPage() {
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
   const [selectedReport, setSelectedReport] = useState<ReportDef | null>(null);
 
   if (selectedReport) {
@@ -381,54 +374,6 @@ export default function ReportsPage() {
           <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
             Workforce insights, financial summaries, and compliance checks
           </p>
-        </div>
-      </div>
-
-      {/* Dashboard Charts */}
-      <div>
-        <h2 className="text-sm font-semibold text-[var(--color-gray-500)] uppercase tracking-wider mb-3">
-          Dashboard
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <AppCard variant="flat">
-            <BarChart
-              title="Headcount by Department"
-              data={[
-                { label: "Engineering", value: 12, color: "#3b82f6" },
-                { label: "Operations", value: 8, color: "#8b5cf6" },
-                { label: "Sales", value: 6, color: "#10b981" },
-                { label: "HR", value: 3, color: "#f59e0b" },
-                { label: "Finance", value: 4, color: "#ef4444" },
-              ]}
-              height={160}
-            />
-          </AppCard>
-          <AppCard variant="flat">
-            <DonutChart
-              title="Leave Utilisation"
-              data={[
-                { label: "Annual Used", value: 45, color: "#3b82f6" },
-                { label: "Sick Used", value: 12, color: "#f59e0b" },
-                { label: "Remaining", value: 143, color: "#d1d5db" },
-              ]}
-              size={130}
-            />
-          </AppCard>
-          <AppCard variant="flat">
-            <TrendLine
-              title="Payroll Trend"
-              data={[
-                { label: "Jan", value: 120000 },
-                { label: "Feb", value: 122000 },
-                { label: "Mar", value: 125000 },
-                { label: "Apr", value: 124000 },
-                { label: "May", value: 128000 },
-                { label: "Jun", value: 130000 },
-              ]}
-              color="#10b981"
-              height={100}
-            />
-          </AppCard>
         </div>
       </div>
 

@@ -16,9 +16,19 @@ import {
   DollarSign,
   ArrowRight,
   RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  Upload,
+  GitCompare,
+  CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { payrollApi, type PayrollRun } from "@/services/api/payroll";
+import {
+  payrollApi,
+  type PayrollRun,
+  type ParallelRunComparison,
+} from "@/services/api/payroll";
 
 /* ── Helpers ──────────────────────────────────────────────── */
 
@@ -107,6 +117,254 @@ function StatsSkeleton() {
         </div>
       ))}
     </div>
+  );
+}
+
+/* ── Parallel Run Card ────────────────────────────────────── */
+
+function ParallelRunCard({ runs }: { runs: PayrollRun[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<number | "">("");
+  const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isComparing, setIsComparing] = useState(false);
+  const [uploadedRunId, setUploadedRunId] = useState<number | null>(null);
+  const [comparison, setComparison] = useState<ParallelRunComparison | null>(
+    null,
+  );
+
+  async function handleUpload() {
+    if (!file || !selectedRunId) return;
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      await payrollApi.uploadParallelRun(Number(selectedRunId), formData);
+      setUploadedRunId(Number(selectedRunId));
+      toast.success("File uploaded. You can now run the comparison.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Upload failed. Please try again.";
+      toast.error(message);
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  async function handleCompare() {
+    if (!uploadedRunId) return;
+    setIsComparing(true);
+    try {
+      const result = await payrollApi.compareParallelRun(uploadedRunId);
+      setComparison(result);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Comparison failed. Please try again.";
+      toast.error(message);
+    } finally {
+      setIsComparing(false);
+    }
+  }
+
+  const paidOrApprovedRuns = runs.filter(
+    (r) => r.status === "paid" || r.status === "approved",
+  );
+
+  return (
+    <AppCard variant="flat">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between text-left"
+      >
+        <div className="flex items-center gap-2">
+          <GitCompare
+            className="h-5 w-5 text-[var(--color-primary)]"
+            aria-hidden="true"
+          />
+          <div>
+            <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+              Parallel Run
+            </h2>
+            <p className="text-xs text-[var(--color-gray-500)]">
+              Compare against your previous payroll provider
+            </p>
+          </div>
+        </div>
+        {expanded ? (
+          <ChevronUp className="h-5 w-5 text-[var(--color-gray-400)]" />
+        ) : (
+          <ChevronDown className="h-5 w-5 text-[var(--color-gray-400)]" />
+        )}
+      </button>
+
+      {expanded && (
+        <div className="mt-4 pt-4 border-t border-[var(--color-gray-200)] space-y-4">
+          {/* Step 1: Select a run and upload */}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
+              <label
+                htmlFor="parallel-run"
+                className="text-sm font-medium text-[var(--color-gray-700)]"
+              >
+                Payroll Run
+              </label>
+              <select
+                id="parallel-run"
+                value={selectedRunId}
+                onChange={(e) =>
+                  setSelectedRunId(e.target.value ? Number(e.target.value) : "")
+                }
+                className="
+                  rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+                  bg-[var(--color-surface-input)] text-[var(--foreground)]
+                  border-[var(--color-surface-input-border)]
+                  transition-colors
+                  focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                  focus:border-[var(--color-surface-input-focus)]
+                "
+              >
+                <option value="">Select a run...</option>
+                {paidOrApprovedRuns.map((run) => (
+                  <option key={run.id} value={run.id}>
+                    {formatPeriod(run.period_start, run.period_end)} (
+                    {run.status})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
+              <label
+                htmlFor="parallel-file"
+                className="text-sm font-medium text-[var(--color-gray-700)]"
+              >
+                Legacy Payroll File (CSV/Excel)
+              </label>
+              <input
+                id="parallel-file"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="
+                  rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+                  bg-[var(--color-surface-input)] text-[var(--foreground)]
+                  border-[var(--color-surface-input-border)]
+                  file:mr-3 file:rounded file:border-0 file:bg-[var(--color-primary-bg)] file:px-2 file:py-1 file:text-xs file:font-medium file:text-[var(--color-primary)]
+                "
+              />
+            </div>
+
+            <AppButton
+              variant="primary"
+              size="sm"
+              onClick={handleUpload}
+              loading={isUploading}
+              disabled={!file || !selectedRunId}
+            >
+              <Upload className="h-4 w-4 mr-1" />
+              Upload
+            </AppButton>
+          </div>
+
+          {/* Step 2: Compare */}
+          {uploadedRunId && !comparison && (
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-[var(--color-gray-600)]">
+                File uploaded. Ready to compare.
+              </p>
+              <AppButton
+                variant="secondary"
+                size="sm"
+                onClick={handleCompare}
+                loading={isComparing}
+              >
+                <GitCompare className="h-4 w-4 mr-1" />
+                Compare
+              </AppButton>
+            </div>
+          )}
+
+          {/* Step 3: Results */}
+          {comparison && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                {comparison.status === "matched" ? (
+                  <>
+                    <CheckCircle2 className="h-5 w-5 text-[var(--color-success)]" />
+                    <span className="text-sm font-medium text-[var(--color-success)]">
+                      All {comparison.total_employees} employees matched
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="h-5 w-5 text-[var(--color-warning)]" />
+                    <span className="text-sm font-medium text-[var(--color-warning)]">
+                      {comparison.variances.length} variance
+                      {comparison.variances.length !== 1 ? "s" : ""} found
+                      across {comparison.total_employees} employees
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {comparison.variances.length > 0 && (
+                <div className="overflow-x-auto rounded-lg border border-[var(--color-gray-200)]">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-[var(--color-gray-50)] border-b border-[var(--color-gray-200)]">
+                        <th className="text-left py-2 px-3 font-medium text-[var(--color-gray-500)]">
+                          Employee
+                        </th>
+                        <th className="text-left py-2 px-3 font-medium text-[var(--color-gray-500)]">
+                          Field
+                        </th>
+                        <th className="text-right py-2 px-3 font-medium text-[var(--color-gray-500)]">
+                          Arbor
+                        </th>
+                        <th className="text-right py-2 px-3 font-medium text-[var(--color-gray-500)]">
+                          Uploaded
+                        </th>
+                        <th className="text-right py-2 px-3 font-medium text-[var(--color-gray-500)]">
+                          Diff
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {comparison.variances.map((v, i) => (
+                        <tr
+                          key={i}
+                          className="border-b border-[var(--color-gray-100)] last:border-0"
+                        >
+                          <td className="py-2 px-3 text-[var(--color-gray-900)]">
+                            {v.employee_name}
+                          </td>
+                          <td className="py-2 px-3 text-[var(--color-gray-600)]">
+                            {v.field.replace(/_/g, " ")}
+                          </td>
+                          <td className="py-2 px-3 text-right text-[var(--color-gray-900)]">
+                            {formatCurrency(v.arbor_value)}
+                          </td>
+                          <td className="py-2 px-3 text-right text-[var(--color-gray-900)]">
+                            {formatCurrency(v.uploaded_value)}
+                          </td>
+                          <td className="py-2 px-3 text-right font-medium text-[var(--color-risk-red)]">
+                            {formatCurrency(v.difference)} (
+                            {v.percentage_diff.toFixed(1)}%)
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </AppCard>
   );
 }
 
@@ -363,6 +621,11 @@ export default function PayrollPage() {
             </AppButton>
           </div>
         </AppCard>
+      )}
+
+      {/* Parallel Run */}
+      {isAdmin && !isLoading && runs.length > 0 && (
+        <ParallelRunCard runs={runs} />
       )}
 
       {/* Quick Stats Cards */}

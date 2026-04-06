@@ -1,14 +1,16 @@
 """Leave management endpoints.
 
 Handles leave types, applications (apply/approve/reject/withdraw/cancel),
-balances, public holidays, leave policies, and team calendar.
+balances, public holidays, leave policies, team calendar, and attachments.
 """
 
 import logging
 import math
+import os
+import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
@@ -17,6 +19,18 @@ from hr_advisory.services import dataflow_crud
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Upload directory for leave attachments
+LEAVE_UPLOAD_DIR = os.environ.get(
+    "LEAVE_UPLOAD_DIR", os.path.join(os.getcwd(), "uploads", "leave_attachments")
+)
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_ATTACHMENT_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
 
 # Input length limits
 MAX_TEXT_LENGTH = 2000
@@ -271,6 +285,79 @@ def ensure_leave_balances(employee_id: int, company_id: int, year: int | None = 
         balances.append(balance)
 
     return balances
+
+
+# --------------------------------------------------------------------------
+# Enrichment: map employee and leave type names onto applications
+# --------------------------------------------------------------------------
+
+
+def _enrich_leave_applications(applications: list[dict], company_id: int) -> list[dict]:
+    """Bulk-enrich leave applications with employee names and leave type names.
+
+    Performs at most 2 bulk queries (employees + leave types) regardless of
+    application count, then maps names onto each application record.
+    Returns the enriched list (mutated in place for efficiency).
+    """
+    if not applications:
+        return applications
+
+    # Collect unique IDs
+    employee_ids: set[int] = set()
+    leave_type_ids: set[int] = set()
+    for app in applications:
+        eid = app.get("employee_id")
+        if eid:
+            employee_ids.add(int(eid))
+        ltid = app.get("leave_type_id")
+        if ltid:
+            leave_type_ids.add(int(ltid))
+
+    # Bulk-fetch employees and their linked users
+    emp_name_map: dict[int, str] = {}
+    if employee_ids:
+        employees = dataflow_crud.list_records("Employee", {"company_id": company_id})
+        # Collect user_ids for name lookup
+        user_ids: set[int] = set()
+        emp_user_map: dict[int, int] = {}  # employee_id -> user_id
+        for emp in employees:
+            eid = emp.get("id")
+            uid = emp.get("user_id")
+            if eid in employee_ids and uid:
+                emp_user_map[eid] = int(uid)
+                user_ids.add(int(uid))
+
+        # Fetch user records for names
+        user_name_map: dict[int, str] = {}
+        if user_ids:
+            users = dataflow_crud.list_records("User", {})
+            for u in users:
+                uid = u.get("id")
+                if uid and int(uid) in user_ids:
+                    user_name_map[int(uid)] = u.get("name", "")
+
+        for eid, uid in emp_user_map.items():
+            emp_name_map[eid] = user_name_map.get(uid, "")
+
+    # Bulk-fetch leave type configs
+    lt_name_map: dict[int, str] = {}
+    if leave_type_ids:
+        configs = dataflow_crud.list_records("LeaveTypeConfig", {"company_id": company_id})
+        for cfg in configs:
+            cfg_id = cfg.get("id")
+            if cfg_id and int(cfg_id) in leave_type_ids:
+                lt_name_map[int(cfg_id)] = cfg.get("name", "")
+
+    # Apply names to each application
+    for app in applications:
+        eid = app.get("employee_id")
+        if eid:
+            app["employee_name"] = emp_name_map.get(int(eid), "")
+        ltid = app.get("leave_type_id")
+        if ltid:
+            app["leave_type_name"] = lt_name_map.get(int(ltid), "")
+
+    return applications
 
 
 # --------------------------------------------------------------------------
@@ -676,6 +763,9 @@ async def apply_leave(
         {"pending_days": balance.get("pending_days", 0.0) + total_days},
     )
 
+    # Enrich with names before returning
+    _enrich_leave_applications([application], company_id)
+
     return {"application": application}
 
 
@@ -714,6 +804,7 @@ async def list_applications(
 
     apps = dataflow_crud.list_records("LeaveApplication", filter_dict)
     apps.sort(key=lambda a: a.get("applied_at", ""), reverse=True)
+    _enrich_leave_applications(apps, company_id)
     return {"applications": apps, "count": len(apps)}
 
 
@@ -937,6 +1028,101 @@ async def cancel_application(
     )
 
     return {"message": "Leave cancelled.", "id": application_id, "status": "cancelled"}
+
+
+# --------------------------------------------------------------------------
+# POST /applications/{id}/attachment — Upload attachment for a leave app
+# --------------------------------------------------------------------------
+
+
+@router.post("/applications/{application_id}/attachment")
+async def upload_leave_attachment(
+    application_id: int,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Upload a supporting document for a leave application.
+
+    Validates file type (PDF, JPG, PNG, DOCX), size (max 10MB), and
+    that the current user owns the application.  Saves with a UUID-based
+    filename and updates the application's attachment_path field.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    role = current_user.get("role", "employee")
+
+    app = dataflow_crud.read("LeaveApplication", application_id)
+    if app is None or app.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Leave application not found.")
+
+    # Ownership check: employees can only upload to their own applications
+    if role not in ("owner", "hr_manager"):
+        employee = _get_employee_for_user(user_id, company_id)
+        if employee is None or employee.get("id") != app.get("employee_id"):
+            raise HTTPException(
+                status_code=403,
+                detail="You can only upload attachments to your own applications.",
+            )
+
+    # Validate file type
+    content_type = file.content_type or ""
+    if content_type not in ALLOWED_ATTACHMENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"File type '{content_type}' is not allowed. "
+                f"Accepted: PDF, JPG, PNG, DOCX."
+            ),
+        )
+
+    # Read and validate file size
+    contents = await file.read()
+    if len(contents) > MAX_ATTACHMENT_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File size exceeds the maximum of {MAX_ATTACHMENT_SIZE // (1024 * 1024)}MB.",
+        )
+
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    # Determine extension from content type
+    ext_map = {
+        "application/pdf": ".pdf",
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    }
+    ext = ext_map.get(content_type, "")
+
+    # Save with UUID-based filename
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    company_dir = os.path.join(LEAVE_UPLOAD_DIR, str(company_id))
+    os.makedirs(company_dir, exist_ok=True)
+    file_path = os.path.join(company_dir, unique_name)
+
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    # Update the application's attachment_path
+    dataflow_crud.update("LeaveApplication", application_id, {
+        "attachment_path": file_path,
+    })
+
+    return {
+        "message": "Attachment uploaded.",
+        "application_id": application_id,
+        "attachment": {
+            "filename": file.filename or unique_name,
+            "stored_name": unique_name,
+            "content_type": content_type,
+            "size_bytes": len(contents),
+            "path": file_path,
+        },
+    }
 
 
 # ==========================================================================

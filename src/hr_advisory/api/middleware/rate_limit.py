@@ -3,22 +3,35 @@
 Uses a sliding window approach with per-company-id tracking.
 Not suitable for multi-process deployments — use Redis-based
 rate limiting in production.
+
+Uses an OrderedDict with LRU eviction to bound memory usage.
+Maximum of MAX_RATE_KEYS entries; oldest keys are evicted when
+the limit is reached.
 """
 
 import time
 import logging
-from collections import defaultdict
+from collections import OrderedDict
 from fastapi import HTTPException, Request
 
 logger = logging.getLogger(__name__)
 
-# Store: {key: [timestamp1, timestamp2, ...]}
-_request_log: dict[str, list[float]] = defaultdict(list)
+# Maximum number of rate-limit keys tracked in memory.
+# Prevents unbounded memory growth in long-running processes.
+MAX_RATE_KEYS = 50000
+
+# Store: {key: [timestamp1, timestamp2, ...]} with LRU eviction
+_request_log: OrderedDict[str, list[float]] = OrderedDict()
 
 def _clean_old_entries(key: str, window_seconds: int) -> None:
     """Remove entries older than the window."""
+    if key not in _request_log:
+        return
     cutoff = time.time() - window_seconds
     _request_log[key] = [t for t in _request_log[key] if t > cutoff]
+    # Remove the key entirely if no entries remain
+    if not _request_log[key]:
+        del _request_log[key]
 
 def check_rate_limit(
     identifier: str,
@@ -36,7 +49,7 @@ def check_rate_limit(
     """
     _clean_old_entries(identifier, window_seconds)
 
-    if len(_request_log[identifier]) >= max_requests:
+    if identifier in _request_log and len(_request_log[identifier]) >= max_requests:
         retry_after = window_seconds
         logger.warning(
             "Rate limit exceeded: %s (key=%s, limit=%d/%ds)",
@@ -48,4 +61,13 @@ def check_rate_limit(
             headers={"Retry-After": str(retry_after)},
         )
 
+    # LRU eviction: if at capacity, remove the oldest key
+    while len(_request_log) >= MAX_RATE_KEYS:
+        evicted_key, _ = _request_log.popitem(last=False)
+        logger.debug("Rate limiter evicted oldest key: %s", evicted_key)
+
+    # Record the request and move to end for LRU ordering
+    if identifier not in _request_log:
+        _request_log[identifier] = []
     _request_log[identifier].append(time.time())
+    _request_log.move_to_end(identifier)

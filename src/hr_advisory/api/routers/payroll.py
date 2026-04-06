@@ -4,10 +4,16 @@ Handles payroll run lifecycle: calculate, review, approve, mark paid.
 Also handles payslip access, CPF YTD tracking, and payroll reports.
 """
 
+import csv
+import io
 import logging
+import math
+import re
+import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import Response
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
@@ -22,6 +28,29 @@ router = APIRouter()
 
 def _find_user_by_id(user_id: int) -> dict | None:
     return dataflow_crud.read("User", user_id)
+
+
+def _sanitize_filename(name: str) -> str:
+    """Sanitize a string for safe use in Content-Disposition filenames."""
+    # Remove anything that is not alphanumeric, dash, underscore, or dot
+    sanitized = re.sub(r"[^\w\-.]", "_", name)
+    # Collapse consecutive underscores
+    sanitized = re.sub(r"_+", "_", sanitized)
+    return sanitized.strip("_") or "file"
+
+
+# Bounded in-memory store for parallel payroll comparison runs.
+# Keys are session IDs (str), values are dicts with uploaded/compared data.
+# Bounded at 10 entries; oldest evicted on overflow.
+_MAX_PARALLEL_RUNS = 10
+_parallel_runs: OrderedDict[str, dict] = OrderedDict()
+
+
+def _store_parallel_run(session_id: str, data: dict) -> None:
+    """Store a parallel run result, evicting oldest if at capacity."""
+    while len(_parallel_runs) >= _MAX_PARALLEL_RUNS:
+        _parallel_runs.popitem(last=False)
+    _parallel_runs[session_id] = data
 
 
 # --------------------------------------------------------------------------
@@ -1928,4 +1957,735 @@ async def generate_ir21(
         "filing_id": result.get("id"),
         "status": "draft",
         "ir21": ir21,
+    }
+
+
+# ==========================================================================
+# CPF RECONCILIATION REPORT
+# ==========================================================================
+
+
+@router.get("/reports/cpf-reconciliation")
+async def cpf_reconciliation_report(
+    year: int = Query(..., description="Tax year"),
+    month: int = Query(0, description="Month (1-12). 0 = full year."),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Compare payslip CPF totals against CpfYtdRecord for a year/month.
+
+    Highlights discrepancies between calculated payslip CPF amounts and
+    the CPF YTD records used for regulatory submission.
+    """
+    company_id = get_current_company_id(current_user)
+
+    employees = dataflow_crud.list_records(
+        "Employee", {"company_id": company_id, "is_active": True}
+    )
+
+    discrepancies: list[dict] = []
+    summary = {
+        "total_employees_checked": 0,
+        "total_discrepancies": 0,
+        "total_payslip_employer_cpf": 0.0,
+        "total_payslip_employee_cpf": 0.0,
+        "total_ytd_employer_cpf": 0.0,
+        "total_ytd_employee_cpf": 0.0,
+    }
+
+    for emp in employees:
+        emp_id = emp.get("id")
+        user = _find_user_by_id(emp.get("user_id"))
+        emp_name = user.get("name", "") if user else ""
+
+        # Get payslips for the period
+        all_payslips = dataflow_crud.list_records("Payslip", {"employee_id": emp_id})
+        if month > 0:
+            period_prefix = f"{year}-{month:02d}"
+            filtered_payslips = [
+                ps for ps in all_payslips
+                if ps.get("period_start", "").startswith(period_prefix)
+            ]
+        else:
+            filtered_payslips = [
+                ps for ps in all_payslips
+                if ps.get("period_start", "").startswith(str(year))
+            ]
+
+        payslip_employer_cpf = sum(ps.get("employer_cpf", 0.0) for ps in filtered_payslips)
+        payslip_employee_cpf = sum(ps.get("employee_cpf", 0.0) for ps in filtered_payslips)
+
+        # Get CPF YTD records for the period
+        ytd_filter: dict = {"employee_id": emp_id, "year": year}
+        if month > 0:
+            ytd_filter["month"] = month
+        ytd_records = dataflow_crud.list_records("CpfYtdRecord", ytd_filter)
+
+        ytd_employer_cpf = sum(r.get("employer_cpf", 0.0) for r in ytd_records)
+        ytd_employee_cpf = sum(r.get("employee_cpf", 0.0) for r in ytd_records)
+
+        summary["total_employees_checked"] += 1
+        summary["total_payslip_employer_cpf"] += payslip_employer_cpf
+        summary["total_payslip_employee_cpf"] += payslip_employee_cpf
+        summary["total_ytd_employer_cpf"] += ytd_employer_cpf
+        summary["total_ytd_employee_cpf"] += ytd_employee_cpf
+
+        employer_diff = round(payslip_employer_cpf - ytd_employer_cpf, 2)
+        employee_diff = round(payslip_employee_cpf - ytd_employee_cpf, 2)
+
+        if abs(employer_diff) > 0.01 or abs(employee_diff) > 0.01:
+            summary["total_discrepancies"] += 1
+            discrepancies.append(
+                {
+                    "employee_id": emp_id,
+                    "employee_name": emp_name,
+                    "payslip_employer_cpf": round(payslip_employer_cpf, 2),
+                    "payslip_employee_cpf": round(payslip_employee_cpf, 2),
+                    "ytd_employer_cpf": round(ytd_employer_cpf, 2),
+                    "ytd_employee_cpf": round(ytd_employee_cpf, 2),
+                    "employer_cpf_difference": employer_diff,
+                    "employee_cpf_difference": employee_diff,
+                }
+            )
+
+    # Round summary totals
+    for key in (
+        "total_payslip_employer_cpf",
+        "total_payslip_employee_cpf",
+        "total_ytd_employer_cpf",
+        "total_ytd_employee_cpf",
+    ):
+        summary[key] = round(summary[key], 2)
+
+    return {
+        "year": year,
+        "month": month if month > 0 else None,
+        "summary": summary,
+        "discrepancies": discrepancies,
+    }
+
+
+# ==========================================================================
+# IR8A CSV EXPORT (IRAS AIS format)
+# ==========================================================================
+
+
+@router.post("/tax/ir8a-csv")
+async def export_ir8a_csv(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> Response:
+    """Export IR8A data as CSV in IRAS AIS (Auto-Inclusion Scheme) format.
+
+    Request body:
+      - year (int): Tax year (required)
+      - employee_ids (list[int], optional): Specific employees; omit for all
+    """
+    from hr_advisory.services.statutory_files import generate_ir8a_data
+
+    company_id = get_current_company_id(current_user)
+    body = await request.json()
+    year = body.get("year", 0)
+    if not year:
+        raise HTTPException(status_code=400, detail="year is required.")
+
+    employee_ids = body.get("employee_ids")
+
+    # Fetch employees
+    if employee_ids:
+        employees = []
+        for eid in employee_ids:
+            emp_records = dataflow_crud.list_records("Employee", {"id": eid}, limit=1)
+            if emp_records and emp_records[0].get("company_id") == company_id:
+                employees.append(emp_records[0])
+    else:
+        employees = dataflow_crud.list_records(
+            "Employee", {"company_id": company_id, "is_active": True}
+        )
+
+    if not employees:
+        raise HTTPException(status_code=400, detail="No employees found.")
+
+    # IRAS AIS CSV columns
+    ais_columns = [
+        "Record Type",
+        "NRIC/FIN",
+        "Full Name",
+        "Date of Birth",
+        "Gender",
+        "Nationality",
+        "Designation",
+        "Period From",
+        "Period To",
+        "Gross Salary/Wages",
+        "Bonus",
+        "Director Fees",
+        "Commission",
+        "Overtime Pay",
+        "Pension/Provident Fund",
+        "Transport Allowance",
+        "Entertainment Allowance",
+        "Other Allowances",
+        "Total Allowances",
+        "Employer CPF",
+        "Employee CPF",
+        "Total Gross Income",
+        "Months Paid",
+    ]
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(ais_columns)
+
+    for emp in employees:
+        emp_id = emp.get("id")
+        user = _find_user_by_id(emp.get("user_id"))
+        if user:
+            emp["name"] = user.get("name", "")
+
+        all_payslips = dataflow_crud.list_records("Payslip", {"employee_id": emp_id})
+        year_payslips = [
+            ps for ps in all_payslips
+            if ps.get("period_start", "").startswith(str(year))
+        ]
+
+        all_items: list[dict] = []
+        for ps in year_payslips:
+            ps_items = dataflow_crud.list_records(
+                "PayslipItem", {"payslip_id": ps.get("id")}
+            )
+            all_items.extend(ps_items)
+
+        ir8a = generate_ir8a_data(emp, year_payslips, all_items, year)
+
+        writer.writerow(
+            [
+                "D",  # Detail record
+                ir8a.get("nric_fin", ""),
+                ir8a.get("employee_name", ""),
+                ir8a.get("date_of_birth", ""),
+                ir8a.get("gender", ""),
+                ir8a.get("nationality", ""),
+                ir8a.get("designation", ""),
+                ir8a.get("period_from", ""),
+                ir8a.get("period_to", ""),
+                f"{ir8a.get('gross_salary_wages', 0.0):.2f}",
+                f"{ir8a.get('bonus', 0.0):.2f}",
+                f"{ir8a.get('director_fees', 0.0):.2f}",
+                f"{ir8a.get('commission', 0.0):.2f}",
+                f"{ir8a.get('overtime_pay', 0.0):.2f}",
+                f"{ir8a.get('pension_provident_fund', 0.0):.2f}",
+                f"{ir8a.get('transport_allowance', 0.0):.2f}",
+                f"{ir8a.get('entertainment_allowance', 0.0):.2f}",
+                f"{ir8a.get('other_allowances', 0.0):.2f}",
+                f"{ir8a.get('total_allowances', 0.0):.2f}",
+                f"{ir8a.get('employer_cpf', 0.0):.2f}",
+                f"{ir8a.get('employee_cpf', 0.0):.2f}",
+                f"{ir8a.get('total_gross_income', 0.0):.2f}",
+                ir8a.get("months_paid", 0),
+            ]
+        )
+
+    filename = _sanitize_filename(f"ir8a_ais_{year}")
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
+
+
+# ==========================================================================
+# APPENDIX 8A — Benefits-in-Kind
+# ==========================================================================
+
+
+@router.get("/tax/appendix-8a/{employee_id}")
+async def get_appendix_8a(
+    employee_id: int,
+    year: int = Query(0),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get Appendix 8A (Benefits-in-Kind) data for a specific employee."""
+    from hr_advisory.services.statutory_files import generate_appendix_8a
+
+    company_id = get_current_company_id(current_user)
+    if year == 0:
+        year = datetime.now(timezone.utc).year
+
+    # Verify employee belongs to company
+    emp_records = dataflow_crud.list_records("Employee", {"id": employee_id}, limit=1)
+    if not emp_records or emp_records[0].get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    emp = emp_records[0]
+    user = _find_user_by_id(emp.get("user_id"))
+    if user:
+        emp["name"] = user.get("name", "")
+
+    # Fetch all payslips and items for the employee in the year
+    all_payslips = dataflow_crud.list_records("Payslip", {"employee_id": employee_id})
+    year_payslips = [
+        ps for ps in all_payslips
+        if ps.get("period_start", "").startswith(str(year))
+    ]
+
+    all_items: list[dict] = []
+    for ps in year_payslips:
+        ps_items = dataflow_crud.list_records(
+            "PayslipItem", {"payslip_id": ps.get("id")}
+        )
+        all_items.extend(ps_items)
+
+    appendix = generate_appendix_8a(emp, year_payslips, all_items, year)
+
+    return {
+        "year": year,
+        "employee_id": employee_id,
+        "appendix_8a": appendix,
+    }
+
+
+# ==========================================================================
+# PAYROLL CSV EXPORT
+# ==========================================================================
+
+
+@router.get("/export")
+async def export_payroll_csv(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> Response:
+    """Export all payslips in a date range as CSV.
+
+    Returns a CSV with one row per payslip including employee name,
+    period, gross/net salary, CPF breakdowns, and all deductions.
+    """
+    company_id = get_current_company_id(current_user)
+
+    # Validate date format
+    from datetime import date as _date
+
+    try:
+        _date.fromisoformat(start_date)
+        _date.fromisoformat(end_date)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=400,
+            detail="start_date and end_date must be valid ISO dates (YYYY-MM-DD).",
+        )
+
+    # Fetch all payroll runs for the company in the date range
+    all_runs = dataflow_crud.list_records("PayrollRun", {"company_id": company_id})
+    matching_runs = [
+        r for r in all_runs
+        if r.get("period_start", "") >= start_date and r.get("period_end", "") <= end_date
+    ]
+
+    if not matching_runs:
+        raise HTTPException(
+            status_code=404,
+            detail="No payroll runs found in the specified date range.",
+        )
+
+    # Collect all payslips from matching runs
+    all_payslips: list[dict] = []
+    for run in matching_runs:
+        payslips = dataflow_crud.list_records(
+            "Payslip", {"payroll_run_id": run.get("id")}
+        )
+        for ps in payslips:
+            ps["_run_pay_date"] = run.get("pay_date", "")
+            ps["_run_type"] = run.get("payroll_type", "monthly")
+        all_payslips.extend(payslips)
+
+    # Build CSV
+    csv_columns = [
+        "Payslip ID",
+        "Employee ID",
+        "Employee Name",
+        "Period Start",
+        "Period End",
+        "Pay Date",
+        "Payroll Type",
+        "Basic Salary",
+        "Gross Salary",
+        "Net Salary",
+        "Employer CPF",
+        "Employee CPF",
+        "SDL",
+        "FWL",
+        "SHG Amount",
+        "Status",
+    ]
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(csv_columns)
+
+    for ps in all_payslips:
+        emp_id = ps.get("employee_id")
+        emp_records = dataflow_crud.list_records("Employee", {"id": emp_id}, limit=1)
+        emp = emp_records[0] if emp_records else {}
+        user = _find_user_by_id(emp.get("user_id")) if emp else None
+        emp_name = user.get("name", "") if user else ""
+
+        writer.writerow(
+            [
+                ps.get("id", ""),
+                emp_id,
+                emp_name,
+                ps.get("period_start", ""),
+                ps.get("period_end", ""),
+                ps.get("_run_pay_date", ""),
+                ps.get("_run_type", ""),
+                f"{ps.get('basic_salary', 0.0):.2f}",
+                f"{ps.get('gross_salary', 0.0):.2f}",
+                f"{ps.get('net_salary', 0.0):.2f}",
+                f"{ps.get('employer_cpf', 0.0):.2f}",
+                f"{ps.get('employee_cpf', 0.0):.2f}",
+                f"{ps.get('sdl', 0.0):.2f}",
+                f"{ps.get('fwl', 0.0):.2f}",
+                f"{ps.get('shg_amount', 0.0):.2f}",
+                ps.get("status", ""),
+            ]
+        )
+
+    filename = _sanitize_filename(f"payroll_export_{start_date}_to_{end_date}")
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
+
+
+# ==========================================================================
+# EMPLOYEE PAYSLIP PDF (self-service)
+# ==========================================================================
+
+
+@router.get("/my-payslips/{payslip_id}/pdf")
+async def get_my_payslip_pdf(
+    payslip_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> Response:
+    """Download a PDF of the employee's own payslip (self-service).
+
+    Only payslips with status 'confirmed' or 'paid' are accessible.
+    """
+    from hr_advisory.services.statutory_files import generate_payslip_pdf as gen_pdf
+
+    user_id = int(current_user.get("sub", 0))
+    company_id = current_user.get("company_id")
+
+    payslip = dataflow_crud.read("Payslip", payslip_id)
+    if payslip is None:
+        raise HTTPException(status_code=404, detail="Payslip not found.")
+
+    # Verify this payslip belongs to the current user
+    emp_records = dataflow_crud.list_records(
+        "Employee",
+        {"user_id": user_id, "company_id": company_id},
+        limit=1,
+    )
+    if not emp_records or emp_records[0].get("id") != payslip.get("employee_id"):
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    # Only show paid/confirmed payslips
+    if payslip.get("status") not in ("confirmed", "paid"):
+        raise HTTPException(
+            status_code=403,
+            detail="This payslip is not yet available for download.",
+        )
+
+    emp = emp_records[0]
+    user = _find_user_by_id(emp.get("user_id"))
+    if user:
+        emp["name"] = user.get("name", "")
+
+    # Fetch payslip items
+    items = dataflow_crud.list_records("PayslipItem", {"payslip_id": payslip_id})
+
+    # Fetch company
+    company = dataflow_crud.read("Company", company_id) or {}
+
+    # Add pay_date from the payroll run
+    run = dataflow_crud.read("PayrollRun", payslip.get("payroll_run_id"))
+    if run:
+        payslip["pay_date"] = run.get("pay_date", "")
+
+    pdf_bytes = gen_pdf(payslip, items, emp, company)
+
+    period = payslip.get("period_start", "").replace("-", "")
+    filename = _sanitize_filename(f"payslip_{period}")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
+    )
+
+
+# ==========================================================================
+# PARALLEL PAYROLL RUNS (upload external CSV + compare)
+# ==========================================================================
+
+
+# --- Column name normalization for flexible CSV matching ---
+_COLUMN_ALIASES: dict[str, list[str]] = {
+    "employee_id": ["employee_id", "emp_id", "id", "employee id", "empid", "staff_id", "staff id"],
+    "nric_fin": ["nric_fin", "nric", "fin", "nric/fin", "nric fin", "ic"],
+    "employee_name": ["employee_name", "name", "full_name", "full name", "employee name", "staff_name"],
+    "basic_salary": ["basic_salary", "basic salary", "basic", "base_salary", "base salary"],
+    "gross_salary": ["gross_salary", "gross salary", "gross", "gross_pay", "gross pay"],
+    "net_salary": ["net_salary", "net salary", "net", "net_pay", "net pay", "take_home", "take home"],
+    "employer_cpf": ["employer_cpf", "employer cpf", "er_cpf", "er cpf", "employer_cpf_contribution"],
+    "employee_cpf": ["employee_cpf", "employee cpf", "ee_cpf", "ee cpf", "employee_cpf_contribution"],
+}
+
+
+def _normalize_column(header: str) -> str:
+    """Map a CSV column header to a canonical field name."""
+    h = header.strip().lower().replace("-", "_")
+    for canonical, aliases in _COLUMN_ALIASES.items():
+        if h in aliases:
+            return canonical
+    return h
+
+
+@router.post("/parallel/upload")
+async def parallel_upload(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Upload an external payroll CSV for parallel comparison.
+
+    The CSV should contain at minimum: an employee identifier column
+    (employee_id, nric_fin, or employee_name) plus salary columns.
+    Column headers are matched flexibly (see _COLUMN_ALIASES).
+
+    Returns a session_id to use with /parallel/compare.
+    """
+    company_id = get_current_company_id(current_user)
+    check_rate_limit(
+        f"parallel_upload:{company_id}",
+        max_requests=20,
+        window_seconds=3600,
+        action_name="parallel payroll upload",
+    )
+
+    # Read and parse CSV
+    contents = await file.read()
+    try:
+        text = contents.decode("utf-8-sig")  # handle BOM
+    except UnicodeDecodeError:
+        text = contents.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV file has no headers.")
+
+    # Build column mapping
+    col_map: dict[str, str] = {}
+    for raw_header in reader.fieldnames:
+        canonical = _normalize_column(raw_header)
+        col_map[raw_header] = canonical
+
+    rows: list[dict] = []
+    for row in reader:
+        normalized_row: dict = {}
+        for raw_key, value in row.items():
+            canonical_key = col_map.get(raw_key, raw_key)
+            normalized_row[canonical_key] = value
+        rows.append(normalized_row)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="CSV file contains no data rows.")
+
+    # Validate monetary values
+    for row in rows:
+        for money_field in ("basic_salary", "gross_salary", "net_salary", "employer_cpf", "employee_cpf"):
+            raw_val = row.get(money_field)
+            if raw_val is not None and raw_val != "":
+                try:
+                    parsed = float(str(raw_val).replace(",", "").replace("$", ""))
+                    if not math.isfinite(parsed):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Non-finite value in {money_field}: {raw_val}",
+                        )
+                    row[money_field] = parsed
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid numeric value in {money_field}: {raw_val}",
+                    )
+
+    session_id = str(uuid.uuid4())
+    _store_parallel_run(
+        session_id,
+        {
+            "company_id": company_id,
+            "rows": rows,
+            "column_mapping": col_map,
+            "filename": file.filename or "upload.csv",
+            "row_count": len(rows),
+        },
+    )
+
+    return {
+        "session_id": session_id,
+        "rows_parsed": len(rows),
+        "columns_detected": {v: k for k, v in col_map.items()},
+        "message": "Upload successful. Use POST /payroll/parallel/compare with this session_id.",
+    }
+
+
+@router.post("/parallel/compare")
+async def parallel_compare(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Compare uploaded external payroll data against Arbor's payslips.
+
+    Request body:
+      - session_id (str): From /parallel/upload
+      - period_start (str): Payroll period start (YYYY-MM-DD)
+      - period_end (str): Payroll period end (YYYY-MM-DD)
+      - match_by (str, optional): "employee_id", "nric_fin", or "name" (default: "employee_id")
+    """
+    company_id = get_current_company_id(current_user)
+    body = await request.json()
+    session_id = body.get("session_id", "")
+    period_start = body.get("period_start", "")
+    period_end = body.get("period_end", "")
+    match_by = body.get("match_by", "employee_id")
+
+    if not session_id or session_id not in _parallel_runs:
+        raise HTTPException(
+            status_code=404,
+            detail="Parallel run session not found. Upload a CSV first.",
+        )
+
+    session_data = _parallel_runs[session_id]
+    if session_data.get("company_id") != company_id:
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    if not period_start or not period_end:
+        raise HTTPException(
+            status_code=400,
+            detail="period_start and period_end are required.",
+        )
+
+    external_rows = session_data.get("rows", [])
+
+    # Fetch Arbor payslips for the period
+    all_runs = dataflow_crud.list_records("PayrollRun", {"company_id": company_id})
+    matching_runs = [
+        r for r in all_runs
+        if r.get("period_start") == period_start and r.get("period_end") == period_end
+    ]
+
+    arbor_payslips: list[dict] = []
+    for run in matching_runs:
+        payslips = dataflow_crud.list_records(
+            "Payslip", {"payroll_run_id": run.get("id")}
+        )
+        arbor_payslips.extend(payslips)
+
+    # Build Arbor lookup by the chosen match key
+    arbor_lookup: dict[str, dict] = {}
+    for ps in arbor_payslips:
+        emp_id = ps.get("employee_id")
+        emp_records = dataflow_crud.list_records("Employee", {"id": emp_id}, limit=1)
+        emp = emp_records[0] if emp_records else {}
+        user = _find_user_by_id(emp.get("user_id")) if emp else None
+
+        if match_by == "nric_fin":
+            key = emp.get("nric_fin", "").upper().strip()
+        elif match_by == "name":
+            key = (user.get("name", "") if user else "").lower().strip()
+        else:
+            key = str(emp_id)
+
+        if key:
+            arbor_lookup[key] = {
+                **ps,
+                "_employee_name": user.get("name", "") if user else "",
+            }
+
+    # Compare
+    comparisons: list[dict] = []
+    matched = 0
+    unmatched_external = 0
+
+    for ext_row in external_rows:
+        if match_by == "nric_fin":
+            ext_key = str(ext_row.get("nric_fin", "")).upper().strip()
+        elif match_by == "name":
+            ext_key = str(ext_row.get("employee_name", "")).lower().strip()
+        else:
+            ext_key = str(ext_row.get("employee_id", "")).strip()
+
+        arbor_ps = arbor_lookup.get(ext_key)
+
+        if arbor_ps is None:
+            unmatched_external += 1
+            comparisons.append(
+                {
+                    "external_key": ext_key,
+                    "external_name": ext_row.get("employee_name", ""),
+                    "matched": False,
+                    "arbor_payslip": None,
+                    "differences": [],
+                }
+            )
+            continue
+
+        matched += 1
+        differences: list[dict] = []
+
+        for field in ("basic_salary", "gross_salary", "net_salary", "employer_cpf", "employee_cpf"):
+            ext_val = ext_row.get(field)
+            if ext_val is None or ext_val == "":
+                continue
+            ext_num = float(ext_val) if isinstance(ext_val, (int, float)) else 0.0
+            arbor_num = arbor_ps.get(field, 0.0)
+            diff = round(ext_num - arbor_num, 2)
+            if abs(diff) > 0.01:
+                differences.append(
+                    {
+                        "field": field,
+                        "external": round(ext_num, 2),
+                        "arbor": round(arbor_num, 2),
+                        "difference": diff,
+                    }
+                )
+
+        comparisons.append(
+            {
+                "external_key": ext_key,
+                "external_name": ext_row.get("employee_name", ""),
+                "matched": True,
+                "arbor_employee_name": arbor_ps.get("_employee_name", ""),
+                "differences": differences,
+                "has_discrepancy": len(differences) > 0,
+            }
+        )
+
+    total_with_discrepancies = sum(
+        1 for c in comparisons if c.get("has_discrepancy", False)
+    )
+
+    return {
+        "session_id": session_id,
+        "period_start": period_start,
+        "period_end": period_end,
+        "match_by": match_by,
+        "summary": {
+            "external_rows": len(external_rows),
+            "arbor_payslips": len(arbor_payslips),
+            "matched": matched,
+            "unmatched_external": unmatched_external,
+            "with_discrepancies": total_with_discrepancies,
+        },
+        "comparisons": comparisons,
     }

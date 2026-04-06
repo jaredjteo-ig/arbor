@@ -30,6 +30,7 @@ def seed_company_defaults(company_id: int) -> dict:
     for name, fn in [
         ("policies", _seed_policies),
         ("leave_types", _seed_leave_types),
+        ("public_holidays", _seed_public_holidays),
         ("claim_categories", _seed_claim_categories),
         ("attendance_settings", _seed_attendance_settings),
         ("cost_centres", _seed_demo_cost_centres),
@@ -129,6 +130,72 @@ def _seed_leave_types(company_id: int) -> dict:
 
     created = _seed_statutory_leave_types(company_id)
     return {"created": len(created)}
+
+
+# ---------------------------------------------------------------------------
+# Public holiday seeding (Singapore 2026 gazetted holidays)
+# ---------------------------------------------------------------------------
+
+# Singapore 2026 gazetted public holidays (MOM)
+# 11 holidays as per the Holidays Act (Cap 126)
+SINGAPORE_2026_PUBLIC_HOLIDAYS = [
+    {"name": "New Year's Day", "date": "2026-01-01"},
+    {"name": "Chinese New Year", "date": "2026-02-17"},
+    {"name": "Chinese New Year (2nd day)", "date": "2026-02-18"},
+    {"name": "Good Friday", "date": "2026-04-03"},
+    {"name": "Hari Raya Puasa", "date": "2026-03-20"},
+    {"name": "Labour Day", "date": "2026-05-01"},
+    {"name": "Vesak Day", "date": "2026-05-12"},
+    {"name": "Hari Raya Haji", "date": "2026-05-27"},
+    {"name": "National Day", "date": "2026-08-09"},
+    {"name": "Deepavali", "date": "2026-10-19"},
+    {"name": "Christmas Day", "date": "2026-12-25"},
+]
+
+
+def _seed_public_holidays(company_id: int) -> dict:
+    """Seed Singapore 2026 gazetted public holidays for a company.
+
+    Idempotent: skips holidays that already exist for the year/company.
+    Uses company_id=0 for national holidays so they are visible to all
+    companies in the leave calculator.
+    """
+    year = 2026
+
+    # Check if national holidays for 2026 already exist
+    existing = dataflow_crud.list_records(
+        "PublicHoliday", {"company_id": 0, "year": year}
+    )
+    existing_dates = {h.get("date") for h in existing}
+
+    # Also check company-specific holidays to avoid duplicating if someone
+    # already seeded them under this company_id
+    company_existing = dataflow_crud.list_records(
+        "PublicHoliday", {"company_id": company_id, "year": year}
+    )
+    company_existing_dates = {h.get("date") for h in company_existing}
+
+    all_existing_dates = existing_dates | company_existing_dates
+
+    count = 0
+    for holiday in SINGAPORE_2026_PUBLIC_HOLIDAYS:
+        if holiday["date"] in all_existing_dates:
+            continue
+        dataflow_crud.create(
+            "PublicHoliday",
+            {
+                "company_id": 0,  # National — visible to all companies
+                "name": holiday["name"],
+                "date": holiday["date"],
+                "year": year,
+                "is_gazetted": True,
+            },
+        )
+        count += 1
+
+    if count == 0:
+        return {"skipped": True, "reason": "public holidays already exist"}
+    return {"created": count}
 
 
 # ---------------------------------------------------------------------------

@@ -726,10 +726,7 @@ function CandidatePipeline({
 
 export default function RecruitmentPage() {
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
   const [tab, setTab] = useState<Tab>("jobs");
   const [jobs, setJobs] = useState<JobListing[]>([]);

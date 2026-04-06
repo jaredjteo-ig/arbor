@@ -828,3 +828,359 @@ def _html_row(label: str, amount: float) -> str:
         f"      <td>${amount:,.2f}</td>\n"
         f"    </tr>\n"
     )
+
+
+# ---------------------------------------------------------------------------
+# Payslip PDF generation (reportlab)
+# ---------------------------------------------------------------------------
+
+
+def generate_payslip_pdf(
+    payslip: dict,
+    items: list[dict],
+    employee: dict,
+    company: dict,
+) -> bytes:
+    """Generate a PDF payslip for a single employee using reportlab.
+
+    Produces a professional, EA s88A-compliant payslip PDF.
+    Returns PDF content as bytes.
+    """
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Table,
+        TableStyle,
+        Paragraph,
+        Spacer,
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm,
+    )
+
+    styles = getSampleStyleSheet()
+    style_title = ParagraphStyle(
+        "PayslipTitle",
+        parent=styles["Heading1"],
+        fontSize=16,
+        spaceAfter=4,
+        textColor=colors.HexColor("#2c3e50"),
+    )
+    style_subtitle = ParagraphStyle(
+        "PayslipSubtitle",
+        parent=styles["Normal"],
+        fontSize=9,
+        textColor=colors.HexColor("#666666"),
+    )
+    style_normal = styles["Normal"]
+    style_bold = ParagraphStyle(
+        "BoldNormal",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+    )
+
+    elements: list = []
+
+    # --- Header ---
+    company_name = company.get("name", "Company")
+    company_uen = company.get("uen", "")
+    period_start = payslip.get("period_start", "")
+    period_end = payslip.get("period_end", "")
+
+    elements.append(Paragraph(company_name, style_title))
+    if company_uen:
+        elements.append(Paragraph(f"UEN: {company_uen}", style_subtitle))
+    elements.append(Spacer(1, 4 * mm))
+    elements.append(
+        Paragraph(
+            f"Payslip for {_format_display_date(period_start)} to {_format_display_date(period_end)}",
+            style_subtitle,
+        )
+    )
+    elements.append(Spacer(1, 6 * mm))
+
+    # --- Employee info ---
+    emp_name = _get_employee_display_name(employee)
+    nric_masked = _mask_nric(employee.get("nric_fin", ""))
+    pay_date = _format_display_date(payslip.get("pay_date", period_end))
+
+    info_data = [
+        ["Employee Name", emp_name, "Date of Payment", pay_date],
+        ["NRIC/FIN", nric_masked, "Department", employee.get("department", "")],
+        [
+            "Employee ID",
+            employee.get("employee_id_internal", ""),
+            "Designation",
+            employee.get("designation", ""),
+        ],
+    ]
+    info_table = Table(info_data, colWidths=[80, 140, 90, 140])
+    info_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#555555")),
+                ("TEXTCOLOR", (2, 0), (2, -1), colors.HexColor("#555555")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8f9fa")),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    elements.append(info_table)
+    elements.append(Spacer(1, 6 * mm))
+
+    # --- Classify items ---
+    earnings: list[dict] = []
+    deductions: list[dict] = []
+    employer_contributions: list[dict] = []
+
+    for item in items:
+        item_type = item.get("item_type", "")
+        amount = item.get("amount", 0.0)
+        if item_type in ("employer_cpf", "sdl", "fwl"):
+            employer_contributions.append(item)
+        elif amount < 0:
+            deductions.append(item)
+        else:
+            earnings.append(item)
+
+    # --- Earnings table ---
+    elements.append(Paragraph("EARNINGS", style_bold))
+    elements.append(Spacer(1, 2 * mm))
+
+    earn_data = [[item.get("name", ""), f"${item.get('amount', 0.0):,.2f}"] for item in earnings]
+    earn_data.append(["Gross Salary", f"${payslip.get('gross_salary', 0.0):,.2f}"])
+    earn_table = Table(earn_data, colWidths=[340, 110])
+    earn_table.setStyle(
+        TableStyle(
+            [
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("LINEBELOW", (0, -1), (-1, -1), 1, colors.HexColor("#999999")),
+                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    elements.append(earn_table)
+    elements.append(Spacer(1, 4 * mm))
+
+    # --- Deductions table ---
+    elements.append(Paragraph("DEDUCTIONS", style_bold))
+    elements.append(Spacer(1, 2 * mm))
+
+    total_deductions = sum(abs(item.get("amount", 0.0)) for item in deductions)
+    ded_data = [[item.get("name", ""), f"${abs(item.get('amount', 0.0)):,.2f}"] for item in deductions]
+    ded_data.append(["Total Deductions", f"${total_deductions:,.2f}"])
+    ded_table = Table(ded_data, colWidths=[340, 110])
+    ded_table.setStyle(
+        TableStyle(
+            [
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("LINEBELOW", (0, -1), (-1, -1), 1, colors.HexColor("#999999")),
+                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    elements.append(ded_table)
+    elements.append(Spacer(1, 4 * mm))
+
+    # --- Net salary ---
+    net_data = [["Net Salary", f"${payslip.get('net_salary', 0.0):,.2f}"]]
+    net_table = Table(net_data, colWidths=[340, 110])
+    net_table.setStyle(
+        TableStyle(
+            [
+                ("FONTSIZE", (0, 0), (-1, -1), 11),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("LINEABOVE", (0, 0), (-1, 0), 2, colors.HexColor("#2c3e50")),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#2c3e50")),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    elements.append(net_table)
+    elements.append(Spacer(1, 4 * mm))
+
+    # --- Employer contributions ---
+    if employer_contributions:
+        elements.append(Paragraph("EMPLOYER CONTRIBUTIONS (for reference)", style_bold))
+        elements.append(Spacer(1, 2 * mm))
+        ec_data = [
+            [item.get("name", ""), f"${abs(item.get('amount', 0.0)):,.2f}"]
+            for item in employer_contributions
+        ]
+        ec_table = Table(ec_data, colWidths=[340, 110])
+        ec_table.setStyle(
+            TableStyle(
+                [
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ]
+            )
+        )
+        elements.append(ec_table)
+        elements.append(Spacer(1, 4 * mm))
+
+    # --- Footer ---
+    elements.append(Spacer(1, 6 * mm))
+    elements.append(
+        Paragraph(
+            "This is a computer-generated payslip. No signature is required. "
+            "Issued in compliance with Singapore Employment Act s88A.",
+            ParagraphStyle(
+                "Footer",
+                parent=styles["Normal"],
+                fontSize=8,
+                textColor=colors.HexColor("#888888"),
+                alignment=1,  # center
+            ),
+        )
+    )
+
+    doc.build(elements)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Appendix 8A — Benefits-in-Kind
+# ---------------------------------------------------------------------------
+
+
+def generate_appendix_8a(
+    employee: dict,
+    payslips: list[dict],
+    items: list[dict],
+    tax_year: int,
+) -> dict:
+    """Generate Appendix 8A (Benefits-in-Kind) data for a single employee.
+
+    Appendix 8A covers non-cash benefits provided by the employer:
+    - Place of residence (Section A)
+    - Furniture and fittings (Section B)
+    - Motor vehicle (Section C)
+    - Other non-monetary benefits (Section D)
+    - Gains/profits from share options (Section E)
+
+    For payroll data, we derive BIK from payslip items tagged as benefits.
+    Returns dict matching Appendix 8A form fields.
+    """
+    # Filter payslips to the tax year
+    year_payslips = [
+        ps for ps in payslips if ps.get("period_start", "").startswith(str(tax_year))
+    ]
+    year_payslip_ids = {ps.get("id") for ps in year_payslips}
+    year_items = [item for item in items if item.get("payslip_id") in year_payslip_ids]
+
+    # Classify benefit items
+    housing_benefit = 0.0
+    furniture_benefit = 0.0
+    vehicle_benefit = 0.0
+    utilities_benefit = 0.0
+    driver_benefit = 0.0
+    entertainment_benefit = 0.0
+    holiday_benefit = 0.0
+    education_benefit = 0.0
+    insurance_benefit = 0.0
+    other_benefits = 0.0
+
+    for item in year_items:
+        item_type = item.get("item_type", "")
+        name_lower = item.get("name", "").lower()
+        amount = abs(item.get("amount", 0.0))
+
+        if item_type != "benefit" and "benefit" not in name_lower and "bik" not in name_lower:
+            continue
+
+        if "housing" in name_lower or "accommodation" in name_lower or "residence" in name_lower:
+            housing_benefit += amount
+        elif "furniture" in name_lower or "fitting" in name_lower:
+            furniture_benefit += amount
+        elif "vehicle" in name_lower or "car" in name_lower or "motor" in name_lower:
+            vehicle_benefit += amount
+        elif "utilit" in name_lower:
+            utilities_benefit += amount
+        elif "driver" in name_lower or "chauffeur" in name_lower:
+            driver_benefit += amount
+        elif "entertainment" in name_lower:
+            entertainment_benefit += amount
+        elif "holiday" in name_lower or "vacation" in name_lower:
+            holiday_benefit += amount
+        elif "education" in name_lower or "school" in name_lower:
+            education_benefit += amount
+        elif "insurance" in name_lower:
+            insurance_benefit += amount
+        else:
+            other_benefits += amount
+
+    total_bik = (
+        housing_benefit
+        + furniture_benefit
+        + vehicle_benefit
+        + utilities_benefit
+        + driver_benefit
+        + entertainment_benefit
+        + holiday_benefit
+        + education_benefit
+        + insurance_benefit
+        + other_benefits
+    )
+
+    emp_start = employee.get("start_date", "")
+    emp_end = employee.get("end_date", "")
+    period_from = f"{tax_year}-01-01"
+    period_to = f"{tax_year}-12-31"
+    if emp_start and emp_start > period_from:
+        period_from = emp_start
+    if emp_end and emp_end < period_to:
+        period_to = emp_end
+
+    return {
+        "filing_type": "appendix_8a",
+        "tax_year": tax_year,
+        "employee_name": _get_employee_display_name(employee),
+        "nric_fin": employee.get("nric_fin", ""),
+        "period_from": period_from,
+        "period_to": period_to,
+        # Section A: Place of Residence
+        "section_a_housing": round(housing_benefit, 2),
+        "section_a_furniture": round(furniture_benefit, 2),
+        "section_a_utilities": round(utilities_benefit, 2),
+        "section_a_total": round(housing_benefit + furniture_benefit + utilities_benefit, 2),
+        # Section B: Motor Vehicle
+        "section_b_vehicle": round(vehicle_benefit, 2),
+        "section_b_driver": round(driver_benefit, 2),
+        "section_b_total": round(vehicle_benefit + driver_benefit, 2),
+        # Section C: Other Benefits
+        "section_c_entertainment": round(entertainment_benefit, 2),
+        "section_c_holiday": round(holiday_benefit, 2),
+        "section_c_education": round(education_benefit, 2),
+        "section_c_insurance": round(insurance_benefit, 2),
+        "section_c_other": round(other_benefits, 2),
+        "section_c_total": round(
+            entertainment_benefit + holiday_benefit + education_benefit + insurance_benefit + other_benefits,
+            2,
+        ),
+        # Totals
+        "total_bik_value": round(total_bik, 2),
+    }

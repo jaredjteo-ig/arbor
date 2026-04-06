@@ -111,6 +111,32 @@ export interface YtdReport {
 
 /* ── API Methods ─────────────────────────────────────────── */
 
+/* ── Parallel Run Types ──────────────────────────────────── */
+
+export interface ParallelRunUploadResult {
+  id: number;
+  filename: string;
+  rows_parsed: number;
+  status: "uploaded" | "error";
+}
+
+export interface ParallelRunVariance {
+  employee_name: string;
+  field: string;
+  arbor_value: number;
+  uploaded_value: number;
+  difference: number;
+  percentage_diff: number;
+}
+
+export interface ParallelRunComparison {
+  id: number;
+  total_employees: number;
+  matched: number;
+  variances: ParallelRunVariance[];
+  status: "matched" | "has_variances";
+}
+
 export const payrollApi = {
   /** Calculate a new payroll run. */
   calculatePayroll(data: CalculatePayrollData): Promise<PayrollRun> {
@@ -178,5 +204,61 @@ export const payrollApi = {
     return apiClient.get<YtdReport>("/payroll/reports/ytd", {
       year: String(year),
     });
+  },
+
+  /* ── Parallel Run ──────────────────────────────────────── */
+
+  /** Upload a legacy payroll file for parallel comparison. */
+  uploadParallelRun(
+    runId: number,
+    formData: FormData,
+  ): Promise<ParallelRunUploadResult> {
+    return apiClient.postFormData<ParallelRunUploadResult>(
+      `/payroll/runs/${runId}/parallel-upload`,
+      formData,
+    );
+  },
+
+  /** Compare the uploaded file against the Arbor payroll run. */
+  compareParallelRun(runId: number): Promise<ParallelRunComparison> {
+    return apiClient.post<ParallelRunComparison>(
+      `/payroll/runs/${runId}/parallel-compare`,
+    );
+  },
+
+  /* ── Payslip PDF Downloads ─────────────────────────────── */
+
+  /** Employee: download own payslip as PDF. */
+  async downloadMyPayslipPdf(payslipId: number): Promise<Blob> {
+    const token =
+      typeof window !== "undefined"
+        ? localStorage.getItem("access_token")
+        : null;
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const res = await fetch(
+      `${API_BASE}/payroll/my-payslips/${payslipId}/pdf`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      },
+    );
+    if (!res.ok) throw new Error("Failed to download payslip PDF");
+    return res.blob();
+  },
+
+  /** Admin: download a payslip PDF for a specific run/payslip. */
+  async downloadPayslipPdf(runId: number, payslipId: number): Promise<Blob> {
+    const token =
+      typeof window !== "undefined"
+        ? localStorage.getItem("access_token")
+        : null;
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const res = await fetch(
+      `${API_BASE}/payroll/runs/${runId}/payslips/${payslipId}/pdf`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      },
+    );
+    if (!res.ok) throw new Error("Failed to download payslip PDF");
+    return res.blob();
   },
 };

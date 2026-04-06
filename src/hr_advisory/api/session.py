@@ -136,7 +136,21 @@ class RedisSessionStore:
         self._connect()
 
     def _connect(self) -> None:
-        """Attempt to connect to Redis."""
+        """Attempt to connect to Redis.
+
+        Validates that the Redis URL uses a safe scheme (redis:// or rediss://)
+        before attempting to connect.
+        """
+        # Validate URL scheme to prevent injection via malformed URLs
+        if not self._redis_url.startswith(("redis://", "rediss://")):
+            logger.warning(
+                "Redis URL has invalid scheme (must be redis:// or rediss://). "
+                "Falling back to in-memory sessions."
+            )
+            self._redis = None
+            self._using_fallback = True
+            return
+
         try:
             import redis
 

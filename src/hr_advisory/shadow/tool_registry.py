@@ -354,6 +354,17 @@ class ToolRegistry:
         self.register(
             ToolDefinition(
                 module="payroll",
+                action="validate",
+                method="GET",
+                path="/shadow/payroll/validate",
+                params=[],
+                trust_level="autonomous",
+                description="Validate the latest payroll run for compliance issues",
+            )
+        )
+        self.register(
+            ToolDefinition(
+                module="payroll",
                 action="generate_ir8a",
                 method="POST",
                 path="/payroll/tax/generate-ir8a",
@@ -527,6 +538,17 @@ class ToolRegistry:
                 params=[],
                 trust_level="autonomous",
                 description="View company leave policies",
+            )
+        )
+        self.register(
+            ToolDefinition(
+                module="leave",
+                action="team_balances",
+                method="GET",
+                path="/shadow/leave/team-balances",
+                params=[],
+                trust_level="autonomous",
+                description="View team leave balances and low-balance alerts",
             )
         )
 

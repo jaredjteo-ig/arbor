@@ -234,6 +234,19 @@ export interface AdminLeaveBalance {
   pending_days: number;
 }
 
+export interface ExitSettlement {
+  employee_id: number;
+  exit_type: string;
+  last_working_day: string;
+  notice_served: boolean;
+  pay_in_lieu_days: number;
+  final_salary: number;
+  leave_encashment: number;
+  notice_pay: number;
+  total_settlement: number;
+  status: "pending" | "processed";
+}
+
 /* ── Public (no-auth) helpers ─────────────────────────────── */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -670,6 +683,29 @@ export const employeesApi = {
   ): Promise<{ balances: AdminLeaveBalance[] }> {
     return apiClient.get<{ balances: AdminLeaveBalance[] }>(
       `/employees/${employeeId}/leave-balances`,
+    );
+  },
+
+  /* ── Exit Processing ───────────────────────────────────── */
+
+  /** Process employee exit (termination / resignation settlement). */
+  processExit(
+    employeeId: number,
+    data: {
+      exit_type:
+        | "resignation"
+        | "termination"
+        | "end_of_contract"
+        | "retirement";
+      last_working_day: string;
+      notice_served: boolean;
+      pay_in_lieu_days?: number;
+      reason?: string;
+    },
+  ): Promise<ExitSettlement> {
+    return apiClient.post<ExitSettlement>(
+      `/employees/${employeeId}/exit`,
+      data,
     );
   },
 };

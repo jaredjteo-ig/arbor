@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { AppCard, AppButton, EmptyState } from "@/components/design-system";
+import {
+  AppCard,
+  AppButton,
+  EmptyState,
+  toast,
+} from "@/components/design-system";
 import {
   Receipt,
   ChevronDown,
@@ -76,6 +81,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<PayslipDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   async function handleToggle() {
     if (expanded) {
@@ -273,16 +279,35 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
                 </span>
               </div>
 
-              {/* Download placeholder */}
+              {/* Download PDF */}
               <div className="pt-2">
                 <AppButton
                   variant="outlined"
                   size="sm"
-                  onClick={(e) => {
+                  loading={downloadingPdf}
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    /* PDF generation to be implemented in a later task */
+                    setDownloadingPdf(true);
+                    try {
+                      const blob = await payrollApi.downloadMyPayslipPdf(
+                        payslip.payslip_id,
+                      );
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `payslip-${formatPeriod(payslip.period_start, payslip.period_end).replace(/\s+/g, "-")}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      URL.revokeObjectURL(url);
+                    } catch {
+                      toast.error(
+                        "Could not download payslip. Please try again.",
+                      );
+                    } finally {
+                      setDownloadingPdf(false);
+                    }
                   }}
-                  disabled
                 >
                   <Download className="h-4 w-4 mr-1" />
                   Download PDF

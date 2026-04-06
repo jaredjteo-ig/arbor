@@ -560,10 +560,7 @@ function MonthlySummary({ records }: { records: AttendanceRecord[] }) {
 
 export default function AttendancePage() {
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);

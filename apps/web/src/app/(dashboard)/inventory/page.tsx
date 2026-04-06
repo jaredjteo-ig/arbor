@@ -372,10 +372,7 @@ function IssueItemModal({
 
 export default function InventoryPage() {
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
   const [locations, setLocations] = useState<InventoryLocation[]>([]);
   const [categories, setCategories] = useState<InventoryCategory[]>([]);

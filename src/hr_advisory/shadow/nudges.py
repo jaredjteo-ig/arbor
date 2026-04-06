@@ -175,8 +175,8 @@ def _nudges_payroll(company_id: int) -> list[dict[str, Any]]:
     if today.day >= 20:
         try:
             period_start = today.replace(day=1).isoformat()
-            all_runs = _dataflow_list(
-                "PayrollRunListNode",
+            all_runs = dataflow_crud.list_records(
+                "PayrollRun",
                 {"company_id": company_id},
                 limit=100,
             )
@@ -271,6 +271,101 @@ def _nudges_claims(company_id: int, user_role: str) -> list[dict[str, Any]]:
     return nudges
 
 
+# ── Observation-based personalisation ─────────────────────────
+
+
+def _generate_suggestions_from_observations(
+    user_id: str,
+) -> list[dict[str, Any]]:
+    """Generate nudge suggestions based on the user's 30-day observation history.
+
+    Reads observations from the observation store and maps high-frequency
+    page visits to actionable suggestions. This enables personalised nudges
+    that reflect the user's actual workflow patterns.
+
+    Returns:
+        A list of nudge dicts derived from observation frequency analysis.
+    """
+    suggestions: list[dict[str, Any]] = []
+
+    try:
+        from hr_advisory.shadow.observation import get_observation_store
+
+        store = get_observation_store()
+        observations = store.get_user_observations(user_id, since_hours=24 * 30)
+    except Exception:
+        logger.debug("Failed to load observations for nudge personalization", exc_info=True)
+        return suggestions
+
+    if not observations:
+        return suggestions
+
+    # Count page visit frequency
+    from collections import Counter
+
+    page_counts: Counter[str] = Counter()
+    for obs in observations:
+        page = obs.get("page", "")
+        if page:
+            page_counts[page] += 1
+
+    # Map high-frequency pages to suggestions
+    _PAGE_SUGGESTIONS: dict[str, dict[str, Any]] = {
+        "payroll": {
+            "id": "nudge-obs-payroll",
+            "type": "completion",
+            "message": "You visit payroll frequently. Consider setting up a payroll schedule to streamline your workflow.",
+            "action_type": "navigate",
+            "route": "/payroll",
+            "dismissible": True,
+            "priority": 3,
+        },
+        "leave": {
+            "id": "nudge-obs-leave",
+            "type": "completion",
+            "message": "You check leave often. The leave calendar view gives a quick team overview.",
+            "action_type": "navigate",
+            "route": "/leave",
+            "dismissible": True,
+            "priority": 3,
+        },
+        "employees": {
+            "id": "nudge-obs-employees",
+            "type": "completion",
+            "message": "You browse employees regularly. Try the search bar for faster lookups.",
+            "action_type": "navigate",
+            "route": "/employees",
+            "dismissible": True,
+            "priority": 3,
+        },
+        "compliance": {
+            "id": "nudge-obs-compliance",
+            "type": "regulatory",
+            "message": "You monitor compliance closely. The advisory chat can answer specific regulatory questions.",
+            "action_type": "navigate",
+            "route": "/advisory",
+            "dismissible": True,
+            "priority": 3,
+        },
+        "reports": {
+            "id": "nudge-obs-reports",
+            "type": "completion",
+            "message": "You view reports often. You can schedule automated report delivery in settings.",
+            "action_type": "navigate",
+            "route": "/reports",
+            "dismissible": True,
+            "priority": 3,
+        },
+    }
+
+    threshold = 5  # Minimum visits to trigger a suggestion
+    for page, count in page_counts.most_common(3):
+        if count >= threshold and page in _PAGE_SUGGESTIONS:
+            suggestions.append(_PAGE_SUGGESTIONS[page])
+
+    return suggestions
+
+
 # ── Page routing table ────────────────────────────────────────
 
 _PAGE_NUDGE_GENERATORS: dict[str, Any] = {
@@ -319,7 +414,18 @@ def get_nudges(
         nudges = generator(company_id, user_id, user_role)
     except Exception:
         logger.warning("Failed to generate nudges for page=%s", page_context, exc_info=True)
-        return []
+        nudges = []
+
+    # Merge observation-based personalised suggestions (lower priority than data-driven nudges)
+    try:
+        obs_suggestions = _generate_suggestions_from_observations(user_id)
+        # Avoid duplicating nudge IDs already present
+        existing_ids = {n.get("id") for n in nudges}
+        for suggestion in obs_suggestions:
+            if suggestion.get("id") not in existing_ids:
+                nudges.append(suggestion)
+    except Exception:
+        logger.debug("Failed to merge observation-based suggestions", exc_info=True)
 
     # Sort by priority (lower = more urgent) and cap at max
     nudges.sort(key=lambda n: n.get("priority", 99))

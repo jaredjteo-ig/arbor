@@ -83,12 +83,85 @@ def _validate_provider(provider: str) -> None:
         )
 
 
+def _resolve_and_validate_url(url: str) -> None:
+    """Resolve the hostname in a URL via DNS and check against blocked IP ranges.
+
+    Prevents SSRF by resolving the actual IP address that the hostname points
+    to and blocking requests to internal/cloud metadata IP ranges. This catches
+    DNS rebinding attacks where a hostname resolves to an internal address.
+
+    Raises:
+        HTTPException: If the resolved IP is in a blocked range or DNS fails.
+    """
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    if not hostname:
+        return
+
+    # Resolve hostname to IP addresses
+    try:
+        results = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot resolve hostname: {hostname}",
+        )
+
+    # Blocked IP ranges: link-local, loopback (except when explicitly private
+    # which is allowed for Ollama), and cloud metadata endpoints.
+    _BLOCKED_METADATA = {
+        "169.254.169.254",   # AWS/Azure/GCP metadata
+        "100.100.100.200",   # Alibaba Cloud metadata
+        "fd00::1",           # IPv6 cloud metadata (some providers)
+    }
+
+    for family, socktype, proto, canonname, sockaddr in results:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+
+        # Block cloud metadata endpoints
+        if ip_str in _BLOCKED_METADATA:
+            raise HTTPException(
+                status_code=400,
+                detail="This endpoint address is not allowed.",
+            )
+
+        # Block link-local addresses (169.254.x.x, fe80::)
+        if ip.is_link_local:
+            raise HTTPException(
+                status_code=400,
+                detail="This endpoint address is not allowed.",
+            )
+
+        # Block multicast
+        if ip.is_multicast:
+            raise HTTPException(
+                status_code=400,
+                detail="This endpoint address is not allowed.",
+            )
+
+    # Also check hostname directly for known metadata hostnames
+    _BLOCKED_HOSTNAMES = {"metadata.google.internal"}
+    if hostname.lower() in _BLOCKED_HOSTNAMES:
+        raise HTTPException(
+            status_code=400,
+            detail="This endpoint address is not allowed.",
+        )
+
+
 def _validate_base_url(base_url: str, provider: str) -> None:
     """Validate base_url format and requirement.
 
     Note: Private/internal IPs are intentionally ALLOWED because the Ollama
     endpoint is often on a private network (e.g., institution DGX server).
-    Only cloud metadata endpoints are blocked (SSRF via 169.254.169.254).
+    Only cloud metadata endpoints are blocked (SSRF via DNS resolution check).
     """
     if provider in ("ollama", "custom") and not base_url:
         raise HTTPException(
@@ -105,18 +178,9 @@ def _validate_base_url(base_url: str, provider: str) -> None:
             status_code=400,
             detail="base_url must start with http:// or https://",
         )
-    # Block cloud metadata endpoints (SSRF protection)
+    # Resolve and validate against blocked IP ranges (SSRF protection)
     if base_url:
-        from urllib.parse import urlparse
-
-        parsed = urlparse(base_url)
-        host = parsed.hostname or ""
-        _blocked = {"169.254.169.254", "metadata.google.internal", "100.100.100.200"}
-        if host in _blocked:
-            raise HTTPException(
-                status_code=400,
-                detail="This endpoint address is not allowed.",
-            )
+        _resolve_and_validate_url(base_url)
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +463,12 @@ async def _validate_ollama(base_url: str) -> dict:
     if not base_url:
         return {"valid": False, "message": "base_url is required for Ollama."}
 
+    # SSRF check: resolve hostname and validate against blocked IP ranges
+    try:
+        _resolve_and_validate_url(base_url)
+    except HTTPException as exc:
+        return {"valid": False, "message": exc.detail}
+
     import httpx
 
     try:
@@ -472,6 +542,13 @@ async def _validate_openai_compatible(
 ) -> dict:
     """Validate OpenAI-compatible API (OpenAI, DeepSeek, Mistral, custom)."""
     import httpx
+
+    # SSRF check for custom base URLs (well-known provider URLs are trusted)
+    if base_url and provider == "custom":
+        try:
+            _resolve_and_validate_url(base_url)
+        except HTTPException as exc:
+            return {"valid": False, "message": exc.detail}
 
     default_urls = {
         "openai": "https://api.openai.com/v1",

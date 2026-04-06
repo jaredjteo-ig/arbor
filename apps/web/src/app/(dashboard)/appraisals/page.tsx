@@ -378,10 +378,7 @@ type Tab = "templates" | "periods" | "my-appraisals";
 
 export default function AppraisalsPage() {
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "owner" ||
-    user?.role === "hr_manager" ||
-    user?.role === "consultant";
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
   const [tab, setTab] = useState<Tab>(isAdmin ? "templates" : "my-appraisals");
   const [templates, setTemplates] = useState<AppraisalTemplate[]>([]);

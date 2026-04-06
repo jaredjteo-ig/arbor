@@ -27,7 +27,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 from hr_advisory.workflows.guardrails import check_rate_limit
 from hr_advisory.workflows.compliance_checker import (
@@ -459,6 +459,129 @@ def _build_annotations(
     return result
 
 
+# ── HRIS data-driven compliance context ──────────────────────
+
+
+def _build_compliance_context(company_id: int) -> dict[str, Any]:
+    """Query real HRIS data to build a compliance context profile.
+
+    Fetches up to 8 data sources via dataflow_crud and returns a dict
+    with the company's actual compliance posture. This replaces the
+    hardcoded defaults in the shadow context endpoint so compliance
+    insights reflect the real state of the company's data.
+
+    Returns:
+        A dict with compliance-relevant fields derived from HRIS records.
+    """
+    from hr_advisory.services import dataflow_crud
+
+    ctx: dict[str, Any] = {
+        "company_size": 0,
+        "has_foreign_workers": False,
+        "sector": "general",
+        "has_ket_issued": False,
+        "has_written_contracts": False,
+        "has_payslip_system": False,
+        "has_leave_records": False,
+        "has_ot_records": False,
+        "has_safety_policy": False,
+        "has_grievance_process": False,
+        "has_cpf_registered": False,
+        "has_fwa_policy": False,
+    }
+
+    # 1. Company profile
+    try:
+        companies = dataflow_crud.list_records(
+            "Company", {"id": company_id}, limit=1
+        )
+        if companies:
+            company = companies[0]
+            ctx["sector"] = company.get("sector", "general") or "general"
+            total_headcount = (
+                (company.get("headcount_local", 0) or 0)
+                + (company.get("headcount_pr", 0) or 0)
+                + (company.get("headcount_ep", 0) or 0)
+                + (company.get("headcount_sp", 0) or 0)
+                + (company.get("headcount_wp", 0) or 0)
+            )
+            ctx["company_size"] = total_headcount
+            foreign = (
+                (company.get("headcount_ep", 0) or 0)
+                + (company.get("headcount_sp", 0) or 0)
+                + (company.get("headcount_wp", 0) or 0)
+            )
+            ctx["has_foreign_workers"] = foreign > 0
+    except Exception:
+        logger.debug("Compliance context: failed to load company profile", exc_info=True)
+
+    # 2. Employee count fallback
+    if ctx["company_size"] == 0:
+        try:
+            employees = dataflow_crud.list_records(
+                "Employee", {"company_id": company_id, "is_active": True}, limit=10000
+            )
+            ctx["company_size"] = len(employees)
+        except Exception:
+            logger.debug("Compliance context: failed to count employees", exc_info=True)
+
+    # 3. Policies / KET documents
+    try:
+        policies = dataflow_crud.list_records(
+            "CompanyPolicy", {"company_id": company_id}, limit=100
+        )
+        policy_types = {p.get("policy_type", "").lower() for p in policies}
+        ctx["has_safety_policy"] = "wsh" in policy_types or "safety" in policy_types
+        ctx["has_grievance_process"] = "grievance" in policy_types
+        ctx["has_fwa_policy"] = "fwa" in policy_types or "flexible_work" in policy_types
+        ctx["has_written_contracts"] = "employment_contract" in policy_types or "ket" in policy_types
+        ctx["has_ket_issued"] = "ket" in policy_types
+    except Exception:
+        logger.debug("Compliance context: failed to load policies", exc_info=True)
+
+    # 4. Payroll runs (implies payslip system)
+    try:
+        runs = dataflow_crud.list_records(
+            "PayrollRun", {"company_id": company_id}, limit=10
+        )
+        if runs:
+            ctx["has_payslip_system"] = True
+            ctx["has_cpf_registered"] = True
+    except Exception:
+        logger.debug("Compliance context: failed to load payroll runs", exc_info=True)
+
+    # 5. Leave configurations (implies leave records)
+    try:
+        leave_configs = dataflow_crud.list_records(
+            "LeaveTypeConfig", {"company_id": company_id}, limit=10
+        )
+        ctx["has_leave_records"] = len(leave_configs) > 0
+    except Exception:
+        logger.debug("Compliance context: failed to load leave configs", exc_info=True)
+
+    # 6. Shift templates (implies OT records tracking)
+    try:
+        shifts = dataflow_crud.list_records(
+            "ShiftTemplate", {"company_id": company_id}, limit=5
+        )
+        ctx["has_ot_records"] = len(shifts) > 0
+    except Exception:
+        logger.debug("Compliance context: failed to load shift templates", exc_info=True)
+
+    # 7. Content updates (regulatory awareness)
+    try:
+        updates = dataflow_crud.list_records(
+            "ContentUpdate", {"company_id": company_id}, limit=5
+        )
+        # Just informational — included in return for transparency
+        ctx["recent_content_updates"] = len(updates)
+    except Exception:
+        ctx["recent_content_updates"] = 0
+        logger.debug("Compliance context: failed to load content updates", exc_info=True)
+
+    return ctx
+
+
 # ── Endpoints ─────────────────────────────────────────────────
 
 
@@ -483,24 +606,39 @@ async def shadow_context(
         company_id = None
     page_domains = _PAGE_DOMAINS.get(page, _PAGE_DOMAINS["dashboard"])
 
-    # Run compliance check with a default input profile.
-    # In production this would load the company's actual compliance state
-    # from the database. For now we use a conservative default that
-    # surfaces the most common gaps.
-    compliance_input = ComplianceCheckInput(
-        company_size=10,
-        has_foreign_workers=True,
-        sector="general",
-        has_ket_issued=False,
-        has_written_contracts=False,
-        has_payslip_system=True,
-        has_leave_records=True,
-        has_ot_records=False,
-        has_safety_policy=False,
-        has_grievance_process=False,
-        has_cpf_registered=True,
-        has_fwa_policy=False,
-    )
+    # Build compliance input from real HRIS data when a company is available,
+    # falling back to conservative defaults that surface common gaps.
+    if company_id:
+        ctx = _build_compliance_context(company_id)
+        compliance_input = ComplianceCheckInput(
+            company_size=ctx.get("company_size", 10) or 10,
+            has_foreign_workers=ctx.get("has_foreign_workers", True),
+            sector=ctx.get("sector", "general") or "general",
+            has_ket_issued=ctx.get("has_ket_issued", False),
+            has_written_contracts=ctx.get("has_written_contracts", False),
+            has_payslip_system=ctx.get("has_payslip_system", True),
+            has_leave_records=ctx.get("has_leave_records", True),
+            has_ot_records=ctx.get("has_ot_records", False),
+            has_safety_policy=ctx.get("has_safety_policy", False),
+            has_grievance_process=ctx.get("has_grievance_process", False),
+            has_cpf_registered=ctx.get("has_cpf_registered", True),
+            has_fwa_policy=ctx.get("has_fwa_policy", False),
+        )
+    else:
+        compliance_input = ComplianceCheckInput(
+            company_size=10,
+            has_foreign_workers=True,
+            sector="general",
+            has_ket_issued=False,
+            has_written_contracts=False,
+            has_payslip_system=True,
+            has_leave_records=True,
+            has_ot_records=False,
+            has_safety_policy=False,
+            has_grievance_process=False,
+            has_cpf_registered=True,
+            has_fwa_policy=False,
+        )
 
     result = check_compliance(compliance_input)
 
@@ -526,6 +664,256 @@ async def shadow_context(
         "alerts": alerts,
         "annotations": annotations,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ── Shadow payroll validation ────────────────────────────────
+
+
+@router.get("/payroll/validate")
+async def shadow_payroll_validate(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Validate the latest payroll run against common compliance checks.
+
+    Runs 4 checks on the most recent payroll run:
+    1. Employee coverage -- are all active employees included?
+    2. CPF rate sanity -- are CPF contributions within expected ranges?
+    3. Zero-salary detection -- flag employees with zero gross pay
+    4. Month-over-month variance -- large swings from the previous run
+
+    Requires owner or hr_manager role.
+    """
+    from hr_advisory.services import dataflow_crud
+
+    company_id = get_current_company_id(current_user)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No company associated with your account.")
+
+    issues: list[dict[str, Any]] = []
+
+    # Fetch the latest payroll run
+    try:
+        runs = dataflow_crud.list_records(
+            "PayrollRun", {"company_id": company_id}, limit=100
+        )
+    except Exception as exc:
+        logger.error("Payroll validate: failed to fetch runs: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to load payroll data.") from exc
+
+    if not runs:
+        return {
+            "valid": True,
+            "issues": [],
+            "message": "No payroll runs found. Nothing to validate.",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    sorted_runs = sorted(runs, key=lambda r: r.get("period_start", ""), reverse=True)
+    latest = sorted_runs[0]
+    run_id = latest.get("id")
+
+    # Fetch payslips for the latest run
+    payslips: list[dict] = []
+    try:
+        payslips = dataflow_crud.list_records(
+            "Payslip", {"payroll_run_id": run_id}, limit=10000
+        )
+    except Exception:
+        logger.debug("Payroll validate: failed to fetch payslips", exc_info=True)
+
+    # Fetch active employees for coverage check
+    active_employees: list[dict] = []
+    try:
+        active_employees = dataflow_crud.list_records(
+            "Employee", {"company_id": company_id, "is_active": True}, limit=10000
+        )
+    except Exception:
+        logger.debug("Payroll validate: failed to fetch employees", exc_info=True)
+
+    # Check 1: Employee coverage
+    if active_employees and payslips:
+        payslip_emp_ids = {p.get("employee_id") for p in payslips}
+        active_emp_ids = {e.get("id") for e in active_employees}
+        missing = active_emp_ids - payslip_emp_ids
+        if missing:
+            issues.append({
+                "check": "employee_coverage",
+                "severity": "high",
+                "message": f"{len(missing)} active employee(s) not included in the latest payroll run.",
+                "count": len(missing),
+            })
+
+    # Check 2: CPF rate sanity (employee CPF should be 5-20% of gross for most workers)
+    for slip in payslips:
+        gross = float(slip.get("gross_pay", 0) or 0)
+        cpf_employee = float(slip.get("cpf_employee", 0) or 0)
+        if gross > 0 and cpf_employee > 0:
+            rate = cpf_employee / gross * 100
+            if rate > 25 or rate < 3:
+                emp_id = slip.get("employee_id", "?")
+                issues.append({
+                    "check": "cpf_rate",
+                    "severity": "medium",
+                    "message": f"Employee #{emp_id}: CPF rate {rate:.1f}% is outside the normal 5-20% range.",
+                    "employee_id": emp_id,
+                    "rate": round(rate, 1),
+                })
+
+    # Check 3: Zero-salary detection
+    zero_salary = [s for s in payslips if float(s.get("gross_pay", 0) or 0) == 0]
+    if zero_salary:
+        issues.append({
+            "check": "zero_salary",
+            "severity": "high",
+            "message": f"{len(zero_salary)} employee(s) have zero gross pay in the latest run.",
+            "count": len(zero_salary),
+        })
+
+    # Check 4: Month-over-month variance
+    completed = [r for r in sorted_runs if r.get("status") in ("approved", "paid")]
+    if len(completed) >= 2:
+        curr_total = float(completed[0].get("total_gross", 0) or 0)
+        prev_total = float(completed[1].get("total_gross", 0) or 0)
+        if prev_total > 0:
+            variance_pct = abs(curr_total - prev_total) / prev_total * 100
+            if variance_pct > 15:
+                direction = "increased" if curr_total > prev_total else "decreased"
+                issues.append({
+                    "check": "month_variance",
+                    "severity": "medium" if variance_pct <= 30 else "high",
+                    "message": f"Total gross {direction} {variance_pct:.0f}% from last month (${prev_total:,.2f} to ${curr_total:,.2f}).",
+                    "variance_percent": round(variance_pct, 1),
+                })
+
+    return {
+        "valid": len(issues) == 0,
+        "issues": issues,
+        "payroll_run_id": run_id,
+        "period_start": latest.get("period_start", ""),
+        "period_end": latest.get("period_end", ""),
+        "payslip_count": len(payslips),
+        "employee_count": len(active_employees),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ── Shadow leave team balances ───────────────────────────────
+
+
+@router.get("/leave/team-balances")
+async def shadow_leave_team_balances(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Aggregate leave balances for all employees, with low-balance alerts.
+
+    Returns per-employee leave balance summaries and flags employees
+    whose remaining balance is below a configurable threshold.
+    Also includes a count of pending approval requests.
+
+    Requires owner or hr_manager role.
+    """
+    from hr_advisory.services import dataflow_crud
+
+    company_id = get_current_company_id(current_user)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No company associated with your account.")
+
+    # Fetch active employees
+    try:
+        employees = dataflow_crud.list_records(
+            "Employee", {"company_id": company_id, "is_active": True}, limit=10000
+        )
+    except Exception as exc:
+        logger.error("Leave team balances: failed to fetch employees: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to load employee data.") from exc
+
+    # Fetch leave balances
+    balances: list[dict] = []
+    try:
+        balances = dataflow_crud.list_records(
+            "LeaveBalance", {"company_id": company_id}, limit=10000
+        )
+    except Exception:
+        logger.debug("Leave team balances: failed to fetch balances", exc_info=True)
+
+    # Fetch pending leave applications
+    pending_count = 0
+    try:
+        pending = dataflow_crud.list_records(
+            "LeaveApplication", {"company_id": company_id, "status": "pending"}, limit=10000
+        )
+        pending_count = len(pending)
+    except Exception:
+        logger.debug("Leave team balances: failed to count pending", exc_info=True)
+
+    # Build employee lookup
+    emp_lookup = {e.get("id"): e for e in employees}
+
+    # Aggregate balances by employee
+    LOW_BALANCE_THRESHOLD = 3  # days
+    employee_balances: list[dict[str, Any]] = []
+    low_balance_alerts: list[dict[str, Any]] = []
+
+    # Group balances by employee_id
+    from collections import defaultdict
+
+    by_employee: dict[int, list[dict]] = defaultdict(list)
+    for bal in balances:
+        emp_id = bal.get("employee_id")
+        if emp_id is not None:
+            by_employee[emp_id].append(bal)
+
+    for emp_id, emp_balances in by_employee.items():
+        emp = emp_lookup.get(emp_id, {})
+        name = emp.get("full_name") or emp.get("designation") or f"Employee #{emp_id}"
+
+        total_entitled = 0.0
+        total_used = 0.0
+        total_remaining = 0.0
+        leave_types: list[dict] = []
+
+        for bal in emp_balances:
+            entitled = float(bal.get("entitled_days", 0) or 0)
+            used = float(bal.get("used_days", 0) or 0)
+            remaining = entitled - used
+
+            total_entitled += entitled
+            total_used += used
+            total_remaining += remaining
+
+            leave_types.append({
+                "leave_type_id": bal.get("leave_type_config_id"),
+                "entitled": entitled,
+                "used": used,
+                "remaining": remaining,
+            })
+
+        employee_entry = {
+            "employee_id": emp_id,
+            "name": name,
+            "total_entitled": round(total_entitled, 1),
+            "total_used": round(total_used, 1),
+            "total_remaining": round(total_remaining, 1),
+            "leave_types": leave_types,
+        }
+        employee_balances.append(employee_entry)
+
+        if total_remaining <= LOW_BALANCE_THRESHOLD and total_entitled > 0:
+            low_balance_alerts.append({
+                "employee_id": emp_id,
+                "name": name,
+                "remaining_days": round(total_remaining, 1),
+                "message": f"{name} has only {total_remaining:.1f} day(s) of leave remaining.",
+            })
+
+    return {
+        "employee_balances": employee_balances,
+        "low_balance_alerts": low_balance_alerts,
+        "pending_approval_count": pending_count,
+        "total_employees": len(employees),
+        "company_id": company_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
