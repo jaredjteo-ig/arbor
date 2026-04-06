@@ -141,22 +141,16 @@ T001-T140 across 15 milestones. Covers:
 - **140/140 tasks** across 15 milestones
 - Full advisory + shadow agent + enterprise model
 
-### Completed (T141-T185) — HRIS Expansion (2026-04-06)
+### Completed (T141-T192) — HRIS Expansion (2026-04-06)
 
-- **45/52 tasks complete** across M16-M20 + partial M21
-- M16: Shadow enhancement — personalisation (T141), encryption (T143), HRIS integration (T145)
-- M17: Payroll engine — all 11 tasks complete (models, calc, YTD, CPF file, PDF, API, dashboard)
-- M18: Leave management — all 8 tasks complete (model, API, balance, pro-ration, calendar, UI)
-- M19: CPF/Tax — all 7 tasks complete (CPF eSubmit, reconciliation, IR8A CSV, Appendix 8A)
-- M20: Claims/attendance/lifecycle — all 11 tasks complete (models, API, UI, exit processing)
-- Red Team Round 8: 70 findings, 30 fixed (all CRITICAL/HIGH resolved)
-
-### Remaining (7 tasks)
-
-- T142: Shadow widget attention state (ripple on proactive insights) — frontend UX
-- T144: Shadow context uses actual company compliance data — partial
-- T152: Payslip PDF rendering (HTML exists, PDF generation pending)
+- **52/52 tasks complete** across M16-M21
+- M16: Shadow enhancement — all 5 tasks (personalisation, attention ripple, encryption, compliance context, payroll validation)
+- M17: Payroll engine — all 11 tasks (models, calc, YTD, CPF file, PDF via reportlab, API, dashboard)
+- M18: Leave management — all 8 tasks (model, API, balance, pro-ration, calendar, UI, payroll integration)
+- M19: CPF/Tax — all 7 tasks (CPF eSubmit, reconciliation, IR8A CSV, Appendix 8A, filing page)
+- M20: Claims/attendance/lifecycle — all 11 tasks (models, API, UI, exit processing, lifecycle tab)
+- M21: Hardening — all 10 tasks (accuracy tests, PDPA, audit trail, performance test, CSV import, parallel runs, red team, deploy)
+- Red Team Rounds 8-9: 78 findings total, all CRITICAL/HIGH resolved
 - T186: Payroll performance test (200 employees under 30 seconds)
-- T188: Parallel run support (run Arbor alongside existing HRIS)
-- T190: Final red team for HRIS
-- T191-T192: COC codification + deploy (in progress)
+
+### All 192 tasks complete. Platform deployed to production.
