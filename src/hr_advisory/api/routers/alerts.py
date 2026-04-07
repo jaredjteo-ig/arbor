@@ -28,6 +28,11 @@ router = APIRouter(tags=["alerts"])
 
 _alert_status: dict[tuple[str, str], str] = {}
 
+# ── Dynamic alerts store ────────────────────────────────────
+# Escalation alerts and other dynamic alerts are pushed here at runtime.
+# Bounded to prevent OOM — oldest alerts evicted when over limit.
+_MAX_DYNAMIC_ALERTS = 100
+_alerts_store: list[dict] = []
 
 # ── Seed data ────────────────────────────────────────────────
 # Pre-populate with published regulatory updates so users see alerts
@@ -254,6 +259,16 @@ def _get_seed_alerts() -> list[dict]:
                 "impact_summary": update.impact_summary,
                 "actions": [],
             })
+
+    # Include dynamic alerts (escalations, etc.)
+    existing_ids = {a["id"] for a in alerts}
+    for alert in _alerts_store:
+        if alert["id"] not in existing_ids:
+            alerts.append(alert)
+
+    # Evict oldest dynamic alerts if over limit
+    while len(_alerts_store) > _MAX_DYNAMIC_ALERTS:
+        _alerts_store.pop(0)
 
     return alerts
 

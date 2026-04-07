@@ -53,8 +53,67 @@ from hr_advisory.agents.memory.short_term import ShortTermMemory
 from hr_advisory.services.llm_config import build_llm_context
 from hr_advisory.services.llm_budget import check_budget, record_usage
 from hr_advisory.services.llm_metrics import log_llm_call, log_budget_warning, log_budget_exceeded
+from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
+
+
+def _record_escalation(
+    query: str,
+    screening_result: str,
+    reason: str,
+    escalation_reason: str | None,
+    user_id: int,
+    company_id: int,
+) -> None:
+    """Store escalated query in FlaggedQueryRecord and notify admins via alerts."""
+    import hashlib
+
+    try:
+        # 1. Store in FlaggedQueryRecord for QA review
+        query_hash = hashlib.sha256(query.encode()).hexdigest()[:16]
+        dataflow_crud.create("FlaggedQueryRecord", {
+            "query_hash": query_hash,
+            "user_id": user_id,
+            "company_id": company_id,
+            "query_text": query[:2000],
+            "screening_result": screening_result,
+            "reason": reason[:500],
+            "matched_patterns": json.dumps([escalation_reason or "unknown"]),
+            "reviewed": False,
+            "flagged_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+        # 2. Create in-app alert for owners and HR managers
+        from hr_advisory.api.routers.alerts import _alerts_store
+        alert_id = f"escalation-{query_hash}-{int(datetime.now(timezone.utc).timestamp())}"
+        user_record = dataflow_crud.read("User", user_id)
+        user_name = user_record.get("name", "An employee") if user_record else "An employee"
+
+        _alerts_store.append({
+            "id": alert_id,
+            "title": f"Sensitive query flagged: {escalation_reason or 'escalation'}",
+            "description": (
+                f"{user_name} asked a question that was flagged as sensitive "
+                f"({escalation_reason or 'requires review'}). "
+                f"Query: \"{query[:100]}{'...' if len(query) > 100 else ''}\""
+            ),
+            "source": "Advisory Safety Chain",
+            "urgency": "high",
+            "effective_date": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "domains_affected": ["HR Advisory"],
+            "impact_summary": "Review this query in Admin > QA to determine if follow-up is needed.",
+            "actions": ["Review in Admin QA dashboard"],
+            "company_id": company_id,
+        })
+
+        logger.info(
+            "Escalation recorded: company_id=%s user_id=%s reason=%s",
+            company_id, user_id, escalation_reason,
+        )
+    except Exception as exc:
+        logger.warning("Failed to record escalation: %s", exc)
 
 router = APIRouter()
 
@@ -293,15 +352,22 @@ async def advisory_query(
         }
 
     if screening.result == ScreeningResult.ESCALATE:
+        esc_reason = screening.escalation_reason.value if screening.escalation_reason else None
+        _record_escalation(
+            query=query,
+            screening_result="escalate",
+            reason=screening.reason[:500],
+            escalation_reason=esc_reason,
+            user_id=int(current_user.get("sub", 0)),
+            company_id=company_id,
+        )
         return {
             "query": query,
             "response": screening.reason,
             "risk_tier": "red",
             "confidence_score": 0.0,
             "escalated": True,
-            "escalation_reason": (
-                screening.escalation_reason.value if screening.escalation_reason else None
-            ),
+            "escalation_reason": esc_reason,
             "provisions_cited": [],
             "company_id": company_id,
             "conversation_id": conversation_id,
@@ -668,6 +734,15 @@ async def advisory_stream(
     # ── Step 3: Query screening (circumvention + escalation) ──
     screening = screen_query(query, user_id=user_id)
     if screening.result in (ScreeningResult.BLOCK, ScreeningResult.ESCALATE):
+        if screening.result == ScreeningResult.ESCALATE:
+            _record_escalation(
+                query=query,
+                screening_result="escalate",
+                reason=screening.reason[:500],
+                escalation_reason=screening.escalation_reason.value if screening.escalation_reason else None,
+                user_id=int(current_user.get("sub", 0)),
+                company_id=company_id,
+            )
 
         async def _screening_decline():
             start_data = json.dumps({"conversation_id": conversation_id})
