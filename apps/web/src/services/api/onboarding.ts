@@ -394,7 +394,7 @@ export const onboardingApi = {
 
   /* ── Import ─────────────────────────────────────────────── */
 
-  /** Import a template from a file (JSON/CSV). */
+  /** Import a template from an Excel (.xlsx) file. */
   importTemplate(formData: FormData): Promise<ImportResult> {
     return apiClient.postFormData<ImportResult>(
       "/onboarding/templates/import",

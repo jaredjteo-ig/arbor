@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import clsx from "clsx";
 import {
@@ -156,20 +156,12 @@ const adminManagementNavItems: NavItem[] = [
     label: "Employees",
     href: "/employees",
     icon: Users,
-    children: [
-      {
-        labelKey: "nav.employees.directory",
-        label: "Directory",
-        href: "/employees",
-        icon: Users,
-      },
-      {
-        labelKey: "nav.employees.onboarding",
-        label: "Onboarding",
-        href: "/employees",
-        icon: UserPlus,
-      },
-    ],
+  },
+  {
+    labelKey: "nav.onboarding",
+    label: "Onboarding",
+    href: "/employees?tab=onboarding",
+    icon: ClipboardCheck,
   },
   {
     labelKey: "nav.appraisals",
@@ -324,14 +316,51 @@ export interface NavigationSidebarProps {
   onToggle: () => void;
 }
 
-function isRouteActive(pathname: string, href: string): boolean {
+function isRouteActive(
+  pathname: string,
+  href: string,
+  searchParams?: URLSearchParams | null,
+): boolean {
   if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(href + "/");
+
+  // Parse href to separate path from query params
+  const [hrefPath, hrefQuery] = href.split("?");
+
+  if (hrefQuery) {
+    // For hrefs with query params (e.g. "/employees?tab=onboarding"),
+    // match both pathname AND the query param
+    if (pathname !== hrefPath) return false;
+    if (!searchParams) return false;
+    const expectedParams = new URLSearchParams(hrefQuery);
+    for (const [key, value] of expectedParams.entries()) {
+      if (searchParams.get(key) !== value) return false;
+    }
+    return true;
+  }
+
+  // For plain hrefs, match pathname but NOT if a "tab" query param is set
+  // (meaning a sibling nav item specifically targets this path + tab combo)
+  const pathMatch =
+    pathname === hrefPath || pathname.startsWith(hrefPath + "/");
+  if (!pathMatch) return false;
+
+  // If the current URL has a "tab" query param and this href is an exact path
+  // match (not a prefix), defer to the tab-specific nav item
+  if (searchParams?.has("tab") && pathname === hrefPath) return false;
+
+  return true;
 }
 
-function isGroupActive(pathname: string, item: NavItem): boolean {
-  if (isRouteActive(pathname, item.href)) return true;
-  return item.children?.some((c) => isRouteActive(pathname, c.href)) ?? false;
+function isGroupActive(
+  pathname: string,
+  item: NavItem,
+  searchParams?: URLSearchParams | null,
+): boolean {
+  if (isRouteActive(pathname, item.href, searchParams)) return true;
+  return (
+    item.children?.some((c) => isRouteActive(pathname, c.href, searchParams)) ??
+    false
+  );
 }
 
 export function NavigationSidebar({
@@ -339,6 +368,7 @@ export function NavigationSidebar({
   onToggle,
 }: NavigationSidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
 
   const isEmployee = user?.role === "employee";
@@ -390,7 +420,7 @@ export function NavigationSidebar({
             <NavLink
               key={item.href}
               item={item}
-              active={isRouteActive(pathname, item.href)}
+              active={isRouteActive(pathname, item.href, searchParams)}
               collapsed={collapsed}
             />
           ))}
@@ -406,7 +436,7 @@ export function NavigationSidebar({
                 <NavLink
                   key={item.href}
                   item={item}
-                  active={isRouteActive(pathname, item.href)}
+                  active={isRouteActive(pathname, item.href, searchParams)}
                   collapsed={collapsed}
                 />
               ))}
@@ -422,12 +452,13 @@ export function NavigationSidebar({
                     item={item}
                     pathname={pathname}
                     collapsed={collapsed}
+                    searchParams={searchParams}
                   />
                 ) : (
                   <NavLink
                     key={item.href}
                     item={item}
-                    active={isGroupActive(pathname, item)}
+                    active={isGroupActive(pathname, item, searchParams)}
                     collapsed={collapsed}
                   />
                 ),
@@ -445,7 +476,7 @@ export function NavigationSidebar({
             <NavLink
               key={item.href}
               item={item}
-              active={isRouteActive(pathname, item.href)}
+              active={isRouteActive(pathname, item.href, searchParams)}
               collapsed={collapsed}
             />
           ))}
@@ -500,12 +531,14 @@ function ExpandableNavLink({
   item,
   pathname,
   collapsed,
+  searchParams,
 }: {
   item: NavItem;
   pathname: string;
   collapsed: boolean;
+  searchParams?: URLSearchParams | null;
 }) {
-  const active = isGroupActive(pathname, item);
+  const active = isGroupActive(pathname, item, searchParams);
   const [expanded, setExpanded] = useState(active);
   const Icon = item.icon;
 
@@ -544,7 +577,7 @@ function ExpandableNavLink({
                 className={clsx(
                   "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs",
                   "transition-colors duration-200",
-                  isRouteActive(pathname, child.href)
+                  isRouteActive(pathname, child.href, searchParams)
                     ? "text-white bg-white/10"
                     : "text-white/60 hover:text-white hover:bg-white/5",
                 )}

@@ -1,55 +1,38 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   AppCard,
   AppButton,
-  AppInput,
   EmptyState,
   toast,
 } from "@/components/design-system";
 import {
-  Plus,
   ChevronDown,
   ChevronRight,
-  Trash2,
   Copy,
   Star,
-  GripVertical,
-  Pencil,
   Archive,
-  X,
   Upload,
+  Download,
   Layers,
   ListChecks,
+  Clock,
+  CheckCircle,
+  FileText,
+  ClipboardList,
+  FileSpreadsheet,
+  AlertTriangle,
 } from "lucide-react";
 import {
   onboardingApi,
   type OnboardingTemplate,
   type OnboardingModule,
   type OnboardingStep,
+  type ImportResult,
 } from "@/services/api/onboarding";
 
 /* ── Constants ───────────────────────────────────────────── */
-
-const PHASES = [
-  { value: "orientation", label: "Orientation" },
-  { value: "compliance", label: "Compliance" },
-  { value: "benefits", label: "Benefits" },
-  { value: "probation", label: "Probation" },
-  { value: "custom", label: "Custom" },
-];
-
-const STEP_TYPES = [
-  { value: "content", label: "Content" },
-  { value: "checklist", label: "Checklist" },
-  { value: "document_upload", label: "Document Upload" },
-  { value: "policy_acknowledgment", label: "Policy Acknowledgment" },
-  { value: "form", label: "Form" },
-  { value: "approval", label: "Approval" },
-];
-
-/* ── Phase badge ─────────────────────────────────────────── */
 
 const PHASE_STYLES: Record<string, string> = {
   orientation: "bg-blue-50 text-blue-700 border-blue-200",
@@ -59,6 +42,17 @@ const PHASE_STYLES: Record<string, string> = {
   custom:
     "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] border-[var(--color-gray-200)]",
 };
+
+const STEP_TYPE_ICONS: Record<string, typeof FileText> = {
+  content: FileText,
+  checklist: ClipboardList,
+  document_upload: Upload,
+  policy_acknowledgment: CheckCircle,
+  form: FileSpreadsheet,
+  approval: CheckCircle,
+};
+
+/* ── Phase badge ─────────────────────────────────────────── */
 
 function PhaseBadge({ phase }: { phase: string }) {
   return (
@@ -73,502 +67,48 @@ function PhaseBadge({ phase }: { phase: string }) {
 /* ── Step type badge ─────────────────────────────────────── */
 
 function StepTypeBadge({ type }: { type: string }) {
+  const Icon = STEP_TYPE_ICONS[type] || FileText;
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] text-[var(--color-gray-500)] bg-[var(--color-gray-50)] border border-[var(--color-gray-100)]">
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--color-gray-500)] bg-[var(--color-gray-50)] border border-[var(--color-gray-100)]">
+      <Icon className="h-3 w-3" />
       {type.replace(/_/g, " ")}
     </span>
   );
 }
 
-/* ── Module + steps in editor ────────────────────────────── */
+/* ── Module + steps for detail view ──────────────────────── */
 
 interface ModuleWithSteps {
   module: OnboardingModule;
   steps: OnboardingStep[];
 }
 
-/* ── Step Editor Row ─────────────────────────────────────── */
+/* ── Template Detail View (read-only) ───────────────────── */
 
-function StepEditorRow({
-  step,
-  templateId,
-  moduleId,
-  onUpdate,
-  onDelete,
-}: {
-  step: OnboardingStep;
-  templateId: number;
-  moduleId: number;
-  onUpdate: (updated: OnboardingStep) => void;
-  onDelete: (stepId: number) => void;
-}) {
-  const [isEditing, setIsEditing] = useState(!step.title);
-  const [title, setTitle] = useState(step.title);
-  const [stepType, setStepType] = useState(step.step_type || "content");
-  const [bodyContent, setBodyContent] = useState(step.body_content || "");
-  const [checklistItems, setChecklistItems] = useState(
-    step.checklist_items || "",
-  );
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  async function handleSave() {
-    if (!title.trim()) {
-      toast.error("Step title is required.");
-      return;
-    }
-    setIsSaving(true);
-    try {
-      const data: Partial<OnboardingStep> = {
-        title: title.trim(),
-        step_type: stepType,
-        body_content: bodyContent,
-        checklist_items: checklistItems,
-      };
-      const updated = await onboardingApi.updateStep(
-        templateId,
-        moduleId,
-        step.id,
-        data,
-      );
-      onUpdate(updated);
-      setIsEditing(false);
-      toast.success("Step saved.");
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to save step";
-      toast.error(message);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleDelete() {
-    setIsDeleting(true);
-    try {
-      await onboardingApi.deleteStep(templateId, moduleId, step.id);
-      onDelete(step.id);
-      toast.success("Step deleted.");
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to delete step";
-      toast.error(message);
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
-  if (!isEditing) {
-    return (
-      <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--color-gray-50)] group">
-        <GripVertical className="h-3.5 w-3.5 text-[var(--color-gray-300)] flex-shrink-0" />
-        <span className="text-sm text-[var(--color-gray-800)] flex-1">
-          {step.title}
-        </span>
-        <StepTypeBadge type={step.step_type || "content"} />
-        <button
-          type="button"
-          onClick={() => setIsEditing(true)}
-          className="p-1 rounded hover:bg-[var(--color-gray-100)] opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Edit step"
-        >
-          <Pencil className="h-3.5 w-3.5 text-[var(--color-gray-500)]" />
-        </button>
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={isDeleting}
-          className="p-1 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
-          title="Delete step"
-        >
-          <Trash2 className="h-3.5 w-3.5 text-[var(--color-gray-500)] hover:text-red-600" />
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="border border-[var(--color-gray-200)] rounded-lg p-3 space-y-3 bg-[var(--color-gray-50)]">
-      <div className="grid grid-cols-2 gap-3">
-        <AppInput
-          label="Step title"
-          value={title}
-          onChange={(e) => setTitle((e.target as HTMLInputElement).value)}
-          placeholder="e.g. Read employee handbook"
-        />
-        <AppInput
-          variant="select"
-          label="Step type"
-          value={stepType}
-          onChange={(e) => setStepType((e.target as HTMLSelectElement).value)}
-          options={STEP_TYPES}
-        />
-      </div>
-
-      {(stepType === "content" || stepType === "form") && (
-        <AppInput
-          variant="textarea"
-          label="Body content"
-          value={bodyContent}
-          onChange={(e) =>
-            setBodyContent((e.target as HTMLTextAreaElement).value)
-          }
-          placeholder="Instructions or content for this step..."
-        />
-      )}
-
-      {stepType === "checklist" && (
-        <AppInput
-          variant="textarea"
-          label="Checklist items (one per line)"
-          value={checklistItems}
-          onChange={(e) =>
-            setChecklistItems((e.target as HTMLTextAreaElement).value)
-          }
-          placeholder={
-            "Complete tax form\nSet up direct deposit\nReview safety guidelines"
-          }
-          helperText="Enter each checklist item on a separate line."
-        />
-      )}
-
-      {stepType === "policy_acknowledgment" && (
-        <AppInput
-          variant="number"
-          label="Policy ID (optional)"
-          value={step.policy_id ?? ""}
-          onChange={() => {}}
-          placeholder="Enter the policy ID to link"
-          helperText="Link to a specific company policy for acknowledgment."
-          disabled
-        />
-      )}
-
-      <div className="flex items-center gap-2 justify-end">
-        <AppButton
-          variant="outlined"
-          size="sm"
-          onClick={() => {
-            if (step.title) {
-              setIsEditing(false);
-              setTitle(step.title);
-              setStepType(step.step_type || "content");
-              setBodyContent(step.body_content || "");
-              setChecklistItems(step.checklist_items || "");
-            } else {
-              handleDelete();
-            }
-          }}
-        >
-          Cancel
-        </AppButton>
-        <AppButton
-          variant="primary"
-          size="sm"
-          onClick={handleSave}
-          loading={isSaving}
-        >
-          Save Step
-        </AppButton>
-      </div>
-    </div>
-  );
-}
-
-/* ── Module Editor ───────────────────────────────────────── */
-
-function ModuleEditor({
-  templateId,
-  mod,
-  steps,
-  onModuleUpdate,
-  onModuleDelete,
-  onStepsChange,
-}: {
-  templateId: number;
-  mod: OnboardingModule;
-  steps: OnboardingStep[];
-  onModuleUpdate: (updated: OnboardingModule) => void;
-  onModuleDelete: (moduleId: number) => void;
-  onStepsChange: (moduleId: number, steps: OnboardingStep[]) => void;
-}) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isEditingModule, setIsEditingModule] = useState(false);
-  const [name, setName] = useState(mod.name);
-  const [phase, setPhase] = useState(mod.phase || "custom");
-  const [duration, setDuration] = useState(
-    String(mod.estimated_duration_minutes || 30),
-  );
-  const [isMandatory, setIsMandatory] = useState(mod.is_mandatory);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isAddingStep, setIsAddingStep] = useState(false);
-
-  async function handleSaveModule() {
-    if (!name.trim()) {
-      toast.error("Module name is required.");
-      return;
-    }
-    setIsSaving(true);
-    try {
-      const updated = await onboardingApi.updateModule(templateId, mod.id, {
-        name: name.trim(),
-        phase,
-        estimated_duration_minutes: parseInt(duration, 10) || 30,
-        is_mandatory: isMandatory,
-      });
-      onModuleUpdate(updated);
-      setIsEditingModule(false);
-      toast.success("Module saved.");
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to save module";
-      toast.error(message);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleDeleteModule() {
-    setIsDeleting(true);
-    try {
-      await onboardingApi.deleteModule(templateId, mod.id);
-      onModuleDelete(mod.id);
-      toast.success("Module deleted.");
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to delete module";
-      toast.error(message);
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
-  async function handleAddStep() {
-    setIsAddingStep(true);
-    try {
-      const newStep = await onboardingApi.addStep(templateId, mod.id, {
-        title: "",
-        step_type: "content",
-        order: steps.length + 1,
-      });
-      onStepsChange(mod.id, [...steps, newStep]);
-      setIsExpanded(true);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to add step";
-      toast.error(message);
-    } finally {
-      setIsAddingStep(false);
-    }
-  }
-
-  function handleStepUpdate(updated: OnboardingStep) {
-    const newSteps = steps.map((s) => (s.id === updated.id ? updated : s));
-    onStepsChange(mod.id, newSteps);
-  }
-
-  function handleStepDelete(stepId: number) {
-    const newSteps = steps.filter((s) => s.id !== stepId);
-    onStepsChange(mod.id, newSteps);
-  }
-
-  return (
-    <div className="border border-[var(--color-gray-200)] rounded-[12px] overflow-hidden">
-      {/* Module header */}
-      <div className="flex items-center gap-2 px-4 py-3 bg-[var(--color-gray-50)]">
-        <GripVertical className="h-4 w-4 text-[var(--color-gray-300)] flex-shrink-0 cursor-grab" />
-        <button
-          type="button"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="flex-shrink-0"
-        >
-          {isExpanded ? (
-            <ChevronDown className="h-4 w-4 text-[var(--color-gray-500)]" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-[var(--color-gray-500)]" />
-          )}
-        </button>
-
-        <div
-          className="flex-1 min-w-0 cursor-pointer"
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-[var(--color-gray-900)] truncate">
-              {mod.name || "Untitled Module"}
-            </span>
-            <PhaseBadge phase={mod.phase || "custom"} />
-            {mod.is_mandatory && (
-              <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                Required
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-[var(--color-gray-500)]">
-            {steps.length} step{steps.length !== 1 ? "s" : ""}
-            {" / "}
-            {mod.estimated_duration_minutes || 0} min
-          </p>
-        </div>
-
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsEditingModule(!isEditingModule)}
-            className="p-1.5 rounded-lg hover:bg-[var(--color-gray-200)] transition-colors"
-            title="Edit module"
-          >
-            <Pencil className="h-3.5 w-3.5 text-[var(--color-gray-500)]" />
-          </button>
-          <button
-            type="button"
-            onClick={handleDeleteModule}
-            disabled={isDeleting}
-            className="p-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-            title="Delete module"
-          >
-            <Trash2 className="h-3.5 w-3.5 text-[var(--color-gray-500)] hover:text-red-600" />
-          </button>
-        </div>
-      </div>
-
-      {/* Module edit form */}
-      {isEditingModule && (
-        <div className="px-4 py-3 border-t border-[var(--color-gray-200)] bg-white space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <AppInput
-              label="Module name"
-              value={name}
-              onChange={(e) => setName((e.target as HTMLInputElement).value)}
-              placeholder="e.g. Day 1 Orientation"
-            />
-            <AppInput
-              variant="select"
-              label="Phase"
-              value={phase}
-              onChange={(e) => setPhase((e.target as HTMLSelectElement).value)}
-              options={PHASES}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <AppInput
-              variant="number"
-              label="Duration (minutes)"
-              value={duration}
-              onChange={(e) =>
-                setDuration((e.target as HTMLInputElement).value)
-              }
-              placeholder="30"
-            />
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-[var(--color-gray-700)]">
-                Required
-              </label>
-              <label className="flex items-center gap-2 min-h-[44px]">
-                <input
-                  type="checkbox"
-                  checked={isMandatory}
-                  onChange={(e) => setIsMandatory(e.target.checked)}
-                  className="h-4 w-4 rounded border-[var(--color-gray-300)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-                />
-                <span className="text-sm text-[var(--color-gray-600)]">
-                  Mandatory for all employees
-                </span>
-              </label>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 justify-end">
-            <AppButton
-              variant="outlined"
-              size="sm"
-              onClick={() => {
-                setIsEditingModule(false);
-                setName(mod.name);
-                setPhase(mod.phase || "custom");
-                setDuration(String(mod.estimated_duration_minutes || 30));
-                setIsMandatory(mod.is_mandatory);
-              }}
-            >
-              Cancel
-            </AppButton>
-            <AppButton
-              variant="primary"
-              size="sm"
-              onClick={handleSaveModule}
-              loading={isSaving}
-            >
-              Save Module
-            </AppButton>
-          </div>
-        </div>
-      )}
-
-      {/* Steps */}
-      {isExpanded && (
-        <div className="px-4 py-3 border-t border-[var(--color-gray-200)] space-y-2">
-          {steps.length === 0 ? (
-            <p className="text-xs text-[var(--color-gray-500)] text-center py-2">
-              No steps yet. Add one to get started.
-            </p>
-          ) : (
-            steps.map((step) => (
-              <StepEditorRow
-                key={step.id}
-                step={step}
-                templateId={templateId}
-                moduleId={mod.id}
-                onUpdate={handleStepUpdate}
-                onDelete={handleStepDelete}
-              />
-            ))
-          )}
-
-          <AppButton
-            variant="text"
-            size="sm"
-            onClick={handleAddStep}
-            loading={isAddingStep}
-            className="w-full"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            Add Step
-          </AppButton>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Template Editor ─────────────────────────────────────── */
-
-function TemplateEditor({
+function TemplateDetailView({
   template,
   onClose,
-  onSaved,
 }: {
   template: OnboardingTemplate;
   onClose: () => void;
-  onSaved: () => void;
 }) {
-  const [templateName, setTemplateName] = useState(template.name);
-  const [description, setDescription] = useState(template.description || "");
   const [modules, setModules] = useState<ModuleWithSteps[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSavingHeader, setIsSavingHeader] = useState(false);
-  const [isAddingModule, setIsAddingModule] = useState(false);
+  const [expandedModules, setExpandedModules] = useState<Set<number>>(
+    new Set(),
+  );
 
   const fetchTemplate = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await onboardingApi.getTemplate(template.id);
-      setModules(
-        (data.modules || []).map((m) => ({
-          module: m.module,
-          steps: m.steps || [],
-        })),
-      );
-      setTemplateName(data.template.name);
-      setDescription(data.template.description || "");
+      const mods = (data.modules || []).map((m) => ({
+        module: m.module,
+        steps: m.steps || [],
+      }));
+      setModules(mods);
+      // Auto-expand all modules on load
+      setExpandedModules(new Set(mods.map((m) => m.module.id)));
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to load template details";
@@ -582,299 +122,262 @@ function TemplateEditor({
     fetchTemplate();
   }, [fetchTemplate]);
 
-  async function handleSaveHeader() {
-    if (!templateName.trim()) {
-      toast.error("Template name is required.");
-      return;
-    }
-    setIsSavingHeader(true);
-    try {
-      await onboardingApi.updateTemplate(template.id, {
-        name: templateName.trim(),
-        description: description.trim(),
-      });
-      toast.success("Template details saved.");
-      onSaved();
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to save template";
-      toast.error(message);
-    } finally {
-      setIsSavingHeader(false);
-    }
-  }
-
-  async function handleAddModule() {
-    setIsAddingModule(true);
-    try {
-      const newModule = await onboardingApi.addModule(template.id, {
-        name: "New Module",
-        phase: "custom",
-        order: modules.length + 1,
-        estimated_duration_minutes: 30,
-        is_mandatory: true,
-      });
-      setModules([...modules, { module: newModule, steps: [] }]);
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to add module";
-      toast.error(message);
-    } finally {
-      setIsAddingModule(false);
-    }
-  }
-
-  function handleModuleUpdate(updated: OnboardingModule) {
-    setModules(
-      modules.map((m) =>
-        m.module.id === updated.id ? { ...m, module: updated } : m,
-      ),
-    );
-  }
-
-  function handleModuleDelete(moduleId: number) {
-    setModules(modules.filter((m) => m.module.id !== moduleId));
-  }
-
-  function handleStepsChange(moduleId: number, steps: OnboardingStep[]) {
-    setModules(
-      modules.map((m) => (m.module.id === moduleId ? { ...m, steps } : m)),
-    );
+  function toggleModule(moduleId: number) {
+    setExpandedModules((prev) => {
+      const next = new Set(prev);
+      if (next.has(moduleId)) {
+        next.delete(moduleId);
+      } else {
+        next.add(moduleId);
+      }
+      return next;
+    });
   }
 
   const totalSteps = modules.reduce((sum, m) => sum + m.steps.length, 0);
+  const totalDuration = modules.reduce(
+    (sum, m) => sum + (m.module.estimated_duration_minutes || 0),
+    0,
+  );
 
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
             title="Back to templates"
           >
-            <X className="h-5 w-5 text-[var(--color-gray-500)]" />
+            <ChevronRight className="h-5 w-5 text-[var(--color-gray-500)] rotate-180" />
           </button>
-          <h3 className="text-lg font-semibold text-[var(--color-gray-900)]">
-            Edit Template
-          </h3>
+          <div>
+            <h3 className="text-lg font-semibold text-[var(--color-gray-900)]">
+              {template.name}
+            </h3>
+            {template.description && (
+              <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                {template.description}
+              </p>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-[var(--color-gray-500)]">
-          <span>
+        <div className="flex items-center gap-3 text-xs text-[var(--color-gray-500)]">
+          <span className="flex items-center gap-1">
+            <Layers className="h-3.5 w-3.5" />
             {modules.length} module{modules.length !== 1 ? "s" : ""}
           </span>
-          <span className="text-[var(--color-gray-300)]">/</span>
-          <span>
+          <span className="flex items-center gap-1">
+            <ListChecks className="h-3.5 w-3.5" />
             {totalSteps} step{totalSteps !== 1 ? "s" : ""}
           </span>
+          {totalDuration > 0 && (
+            <span className="flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" />
+              {totalDuration} min
+            </span>
+          )}
         </div>
       </div>
-
-      {/* Template name and description */}
-      <AppCard variant="standard">
-        <div className="space-y-3">
-          <AppInput
-            label="Template name"
-            value={templateName}
-            onChange={(e) =>
-              setTemplateName((e.target as HTMLInputElement).value)
-            }
-            placeholder="e.g. Standard Employee Onboarding"
-          />
-          <AppInput
-            variant="textarea"
-            label="Description"
-            value={description}
-            onChange={(e) =>
-              setDescription((e.target as HTMLTextAreaElement).value)
-            }
-            placeholder="Describe the purpose and scope of this onboarding template..."
-          />
-          <div className="flex justify-end">
-            <AppButton
-              variant="primary"
-              size="sm"
-              onClick={handleSaveHeader}
-              loading={isSavingHeader}
-            >
-              Save Details
-            </AppButton>
-          </div>
-        </div>
-      </AppCard>
 
       {/* Modules */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-[var(--color-gray-700)]">
-            Modules
-          </h4>
-          <AppButton
-            variant="outlined"
-            size="sm"
-            onClick={handleAddModule}
-            loading={isAddingModule}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Add Module
-          </AppButton>
+      {isLoading ? (
+        <div className="py-8 text-center">
+          <span className="inline-block h-5 w-5 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
         </div>
+      ) : modules.length === 0 ? (
+        <div className="py-8 text-center border-2 border-dashed border-[var(--color-gray-200)] rounded-[12px]">
+          <Layers className="h-8 w-8 text-[var(--color-gray-300)] mx-auto mb-2" />
+          <p className="text-sm text-[var(--color-gray-500)]">
+            This template has no modules. Upload a new version to add content.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {modules.map((m) => {
+            const isExpanded = expandedModules.has(m.module.id);
+            return (
+              <div
+                key={m.module.id}
+                className="border border-[var(--color-gray-200)] rounded-[12px] overflow-hidden"
+              >
+                {/* Module header */}
+                <button
+                  type="button"
+                  onClick={() => toggleModule(m.module.id)}
+                  className="w-full flex items-center gap-2 px-4 py-3 bg-[var(--color-gray-50)] hover:bg-[var(--color-gray-100)] transition-colors text-left"
+                >
+                  <div className="flex-shrink-0">
+                    {isExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-[var(--color-gray-500)]" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-[var(--color-gray-500)]" />
+                    )}
+                  </div>
 
-        {isLoading ? (
-          <div className="py-8 text-center">
-            <span className="inline-block h-5 w-5 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : modules.length === 0 ? (
-          <div className="py-8 text-center border-2 border-dashed border-[var(--color-gray-200)] rounded-[12px]">
-            <Layers className="h-8 w-8 text-[var(--color-gray-300)] mx-auto mb-2" />
-            <p className="text-sm text-[var(--color-gray-500)]">
-              No modules yet. Add a module to start building this template.
-            </p>
-          </div>
-        ) : (
-          modules.map((m) => (
-            <ModuleEditor
-              key={m.module.id}
-              templateId={template.id}
-              mod={m.module}
-              steps={m.steps}
-              onModuleUpdate={handleModuleUpdate}
-              onModuleDelete={handleModuleDelete}
-              onStepsChange={handleStepsChange}
-            />
-          ))
-        )}
-      </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-[var(--color-gray-900)] truncate">
+                        {m.module.name || "Untitled Module"}
+                      </span>
+                      <PhaseBadge phase={m.module.phase || "custom"} />
+                      {m.module.is_mandatory && (
+                        <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                          Required
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[var(--color-gray-500)]">
+                      {m.steps.length} step{m.steps.length !== 1 ? "s" : ""}
+                      {m.module.estimated_duration_minutes
+                        ? ` / ${m.module.estimated_duration_minutes} min`
+                        : ""}
+                    </p>
+                  </div>
+                </button>
+
+                {/* Steps (read-only) */}
+                {isExpanded && (
+                  <div className="px-4 py-3 border-t border-[var(--color-gray-200)] space-y-1.5">
+                    {m.steps.length === 0 ? (
+                      <p className="text-xs text-[var(--color-gray-500)] text-center py-2">
+                        No steps in this module.
+                      </p>
+                    ) : (
+                      m.steps.map((step, idx) => (
+                        <div
+                          key={step.id}
+                          className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--color-gray-50)]"
+                        >
+                          <span className="text-[10px] font-mono text-[var(--color-gray-400)] w-5 text-right flex-shrink-0">
+                            {idx + 1}.
+                          </span>
+                          <span className="text-sm text-[var(--color-gray-800)] flex-1">
+                            {step.title}
+                          </span>
+                          <StepTypeBadge type={step.step_type || "content"} />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="text-xs text-[var(--color-gray-400)] text-center">
+        To edit this template, update the Excel file and re-upload a new
+        version.
+      </p>
     </div>
   );
 }
 
-/* ── Create Template Modal ───────────────────────────────── */
+/* ── Import Summary ─────────────────────────────────────── */
 
-function CreateTemplateModal({
-  isOpen,
-  onClose,
-  onCreated,
+function ImportSummary({
+  result,
+  onDismiss,
 }: {
-  isOpen: boolean;
-  onClose: () => void;
-  onCreated: (template: OnboardingTemplate) => void;
+  result: ImportResult;
+  onDismiss: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  if (!isOpen) return null;
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) {
-      toast.error("Template name is required.");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const created = await onboardingApi.createTemplate({
-        name: name.trim(),
-        description: description.trim(),
-      });
-      toast.success("Template created. You can now add modules and steps.");
-      setName("");
-      setDescription("");
-      onCreated(created);
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to create template";
-      toast.error(message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
+  const hasErrors = result.errors.length > 0;
+  const hasWarnings = result.warnings.length > 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <div className="relative w-full max-w-md mx-4 rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] shadow-[var(--shadow-raised)] p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <ListChecks className="h-5 w-5 text-[var(--color-primary)]" />
-            <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
-              Create Template
-            </h2>
+    <div
+      className={`rounded-[12px] border p-4 space-y-3 ${
+        hasErrors
+          ? "border-red-200 bg-red-50"
+          : hasWarnings
+            ? "border-amber-200 bg-amber-50"
+            : "border-emerald-200 bg-emerald-50"
+      }`}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2">
+          {hasErrors ? (
+            <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0" />
+          ) : (
+            <CheckCircle className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+          )}
+          <div>
+            <p
+              className={`text-sm font-medium ${hasErrors ? "text-red-800" : "text-emerald-800"}`}
+            >
+              {hasErrors ? "Import completed with errors" : "Template imported"}
+            </p>
+            <p
+              className={`text-xs mt-0.5 ${hasErrors ? "text-red-600" : "text-emerald-600"}`}
+            >
+              {result.modules_created} module
+              {result.modules_created !== 1 ? "s" : ""}, {result.steps_created}{" "}
+              step
+              {result.steps_created !== 1 ? "s" : ""} created
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
-          >
-            <X className="h-5 w-5 text-[var(--color-gray-500)]" />
-          </button>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <AppInput
-            label="Template name"
-            value={name}
-            onChange={(e) => setName((e.target as HTMLInputElement).value)}
-            placeholder="e.g. Standard Employee Onboarding"
-          />
-          <AppInput
-            variant="textarea"
-            label="Description (optional)"
-            value={description}
-            onChange={(e) =>
-              setDescription((e.target as HTMLTextAreaElement).value)
-            }
-            placeholder="Describe the purpose of this template..."
-          />
-          <div className="flex gap-3 pt-2">
-            <AppButton
-              type="button"
-              variant="outlined"
-              size="sm"
-              onClick={onClose}
-              className="flex-1"
-            >
-              Cancel
-            </AppButton>
-            <AppButton
-              type="submit"
-              variant="primary"
-              size="sm"
-              loading={isSubmitting}
-              className="flex-1"
-            >
-              Create Template
-            </AppButton>
-          </div>
-        </form>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-xs text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)] transition-colors"
+        >
+          Dismiss
+        </button>
       </div>
+
+      {hasWarnings && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-amber-700">Warnings:</p>
+          <ul className="list-disc list-inside text-xs text-amber-600 space-y-0.5">
+            {result.warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {hasErrors && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-red-700">Errors:</p>
+          <ul className="list-disc list-inside text-xs text-red-600 space-y-0.5">
+            {result.errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════
-   TemplateBuilder — main export
+   TemplateBuilder — main export (upload + list view)
    ═══════════════════════════════════════════════════════════ */
 
 export function TemplateBuilder({
-  onImportClick,
+  refreshKey,
 }: {
-  onImportClick: () => void;
+  /** Increment to trigger a template list re-fetch from the parent. */
+  refreshKey?: number;
 }) {
   const [templates, setTemplates] = useState<OnboardingTemplate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingTemplate, setEditingTemplate] =
+  const [viewingTemplate, setViewingTemplate] =
     useState<OnboardingTemplate | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  /* Upload state */
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchTemplates = useCallback(async () => {
     setIsLoading(true);
@@ -895,6 +398,70 @@ export function TemplateBuilder({
   useEffect(() => {
     fetchTemplates();
   }, [fetchTemplates]);
+
+  /* Re-fetch when parent signals via refreshKey change */
+  useEffect(() => {
+    if (refreshKey !== undefined && refreshKey > 0) {
+      fetchTemplates();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
+
+  /* ── Upload handler ───────────────────────────────────── */
+
+  async function handleUpload(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    if (!file.name.endsWith(".xlsx")) {
+      toast.error("Please upload an .xlsx file (Excel format).");
+      return;
+    }
+
+    setIsUploading(true);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await onboardingApi.importTemplate(formData);
+      setImportResult(result);
+
+      if (result.errors.length > 0) {
+        toast.error("Import completed with errors. See details below.");
+      } else {
+        toast.success(
+          `Template imported: ${result.modules_created} modules, ${result.steps_created} steps.`,
+        );
+      }
+      fetchTemplates();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to import template";
+      toast.error(message);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave() {
+    setIsDragOver(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    handleUpload(e.dataTransfer.files);
+  }
+
+  /* ── Template actions ─────────────────────────────────── */
 
   async function handleDuplicate(t: OnboardingTemplate) {
     setActionLoading(`dup-${t.id}`);
@@ -946,25 +513,21 @@ export function TemplateBuilder({
     }
   }
 
-  function handleCreated(template: OnboardingTemplate) {
-    setShowCreateModal(false);
-    setTemplates((prev) => [...prev, template]);
-    setEditingTemplate(template);
-  }
+  /* ── Detail view ──────────────────────────────────────── */
 
-  // If we're editing a template, show the editor
-  if (editingTemplate) {
+  if (viewingTemplate) {
     return (
-      <TemplateEditor
-        template={editingTemplate}
+      <TemplateDetailView
+        template={viewingTemplate}
         onClose={() => {
-          setEditingTemplate(null);
+          setViewingTemplate(null);
           fetchTemplates();
         }}
-        onSaved={fetchTemplates}
       />
     );
   }
+
+  /* ── Main view ────────────────────────────────────────── */
 
   return (
     <div className="space-y-4">
@@ -975,24 +538,68 @@ export function TemplateBuilder({
             Onboarding Templates
           </h3>
           <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-            Create and manage onboarding templates for new employees
+            Upload and manage onboarding templates from your LIA Excel file
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <AppButton variant="outlined" size="sm" onClick={onImportClick}>
-            <Upload className="h-4 w-4 mr-1" />
-            Import
-          </AppButton>
-          <AppButton
-            variant="primary"
-            size="sm"
-            onClick={() => setShowCreateModal(true)}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Create Template
-          </AppButton>
-        </div>
+        <a
+          href="/templates/LIA_Onboarding_Template.xlsx"
+          download="LIA_Onboarding_Template.xlsx"
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[8px] text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary-bg)] transition-colors border border-[var(--color-primary)]/20"
+        >
+          <Download className="h-4 w-4" />
+          Download Template
+        </a>
       </div>
+
+      {/* Upload zone */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={`relative border-2 border-dashed rounded-[12px] p-8 text-center transition-colors cursor-pointer ${
+          isDragOver
+            ? "border-[var(--color-primary)] bg-[var(--color-primary-bg)]"
+            : "border-[var(--color-gray-200)] hover:border-[var(--color-gray-300)] hover:bg-[var(--color-gray-50)]"
+        }`}
+      >
+        {isUploading ? (
+          <div className="flex flex-col items-center gap-2">
+            <span className="inline-block h-6 w-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-[var(--color-gray-600)]">
+              Importing template...
+            </p>
+          </div>
+        ) : (
+          <>
+            <Upload className="h-8 w-8 text-[var(--color-gray-400)] mx-auto mb-2" />
+            <p className="text-sm font-medium text-[var(--color-gray-700)]">
+              Upload Onboarding Template
+            </p>
+            <p className="text-xs text-[var(--color-gray-500)] mt-1">
+              Upload your completed LIA Onboarding Template (.xlsx)
+            </p>
+            <p className="text-xs text-[var(--color-gray-400)] mt-0.5">
+              Drop file here, or click to browse
+            </p>
+          </>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx"
+          className="hidden"
+          onChange={(e) => handleUpload(e.target.files)}
+        />
+      </div>
+
+      {/* Import result summary */}
+      {importResult && (
+        <ImportSummary
+          result={importResult}
+          onDismiss={() => setImportResult(null)}
+        />
+      )}
 
       {/* Template list */}
       {isLoading ? (
@@ -1018,28 +625,14 @@ export function TemplateBuilder({
           </div>
         </AppCard>
       ) : templates.length === 0 ? (
-        <div className="py-8 text-center border-2 border-dashed border-[var(--color-gray-200)] rounded-[12px]">
+        <div className="py-6 text-center border-2 border-dashed border-[var(--color-gray-200)] rounded-[12px]">
           <ListChecks className="h-10 w-10 text-[var(--color-gray-300)] mx-auto mb-3" />
           <p className="text-sm text-[var(--color-gray-600)] mb-1">
             No onboarding templates yet
           </p>
-          <p className="text-xs text-[var(--color-gray-500)] mb-4">
-            Create a template to define the onboarding journey for new hires.
+          <p className="text-xs text-[var(--color-gray-500)]">
+            Download the template above, fill it out, then upload it here.
           </p>
-          <div className="flex items-center justify-center gap-2">
-            <AppButton variant="outlined" size="sm" onClick={onImportClick}>
-              <Upload className="h-4 w-4 mr-1" />
-              Import from File
-            </AppButton>
-            <AppButton
-              variant="primary"
-              size="sm"
-              onClick={() => setShowCreateModal(true)}
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Create Template
-            </AppButton>
-          </div>
         </div>
       ) : (
         <AppCard variant="standard">
@@ -1068,22 +661,28 @@ export function TemplateBuilder({
                     className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
                   >
                     <td className="py-3 px-5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-[var(--color-gray-900)]">
-                          {t.name}
-                        </span>
-                        {t.is_default && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary)]/20">
-                            <Star className="h-3 w-3" />
-                            Default
+                      <button
+                        type="button"
+                        onClick={() => setViewingTemplate(t)}
+                        className="text-left group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-[var(--color-gray-900)] group-hover:text-[var(--color-primary)] transition-colors">
+                            {t.name}
                           </span>
+                          {t.is_default && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary)]/20">
+                              <Star className="h-3 w-3" />
+                              Default
+                            </span>
+                          )}
+                        </div>
+                        {t.description && (
+                          <p className="text-xs text-[var(--color-gray-500)] mt-0.5 truncate max-w-xs">
+                            {t.description}
+                          </p>
                         )}
-                      </div>
-                      {t.description && (
-                        <p className="text-xs text-[var(--color-gray-500)] mt-0.5 truncate max-w-xs">
-                          {t.description}
-                        </p>
-                      )}
+                      </button>
                     </td>
                     <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
                       v{t.version}
@@ -1103,11 +702,11 @@ export function TemplateBuilder({
                       <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
-                          onClick={() => setEditingTemplate(t)}
+                          onClick={() => setViewingTemplate(t)}
                           className="p-1.5 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)]"
-                          title="Edit template"
+                          title="View details"
                         >
-                          <Pencil className="h-4 w-4" />
+                          <Layers className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
@@ -1147,13 +746,6 @@ export function TemplateBuilder({
           </div>
         </AppCard>
       )}
-
-      {/* Create modal */}
-      <CreateTemplateModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onCreated={handleCreated}
-      />
     </div>
   );
 }

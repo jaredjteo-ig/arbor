@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AppCard,
   AppButton,
@@ -21,7 +21,6 @@ import {
   Check,
   RefreshCw,
   Trash2,
-  Clock,
   Mail,
   Shield,
   ClipboardList,
@@ -38,7 +37,6 @@ import {
   onboardingApi,
   type OnboardingAssignment,
   type MyOnboardingProgress,
-  type ImportResult,
 } from "@/services/api/onboarding";
 import { TemplateBuilder } from "@/components/onboarding/TemplateBuilder";
 import { AssignTemplateModal } from "@/components/onboarding/AssignTemplateModal";
@@ -996,7 +994,12 @@ function DirectoryTab({
    Onboarding Tab
    ═══════════════════════════════════════════════════════════ */
 
-function OnboardingTab() {
+function OnboardingTab({
+  refreshKey,
+}: {
+  /** Increment from parent to trigger assignment list re-fetch. */
+  refreshKey?: number;
+}) {
   const [assignments, setAssignments] = useState<OnboardingAssignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1004,8 +1007,6 @@ function OnboardingTab() {
   const [expandedDetail, setExpandedDetail] =
     useState<MyOnboardingProgress | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchAssignments = useCallback(async () => {
     setIsLoading(true);
@@ -1029,6 +1030,14 @@ function OnboardingTab() {
     fetchAssignments();
   }, [fetchAssignments]);
 
+  /* Re-fetch assignments when parent signals (e.g. after assigning a template) */
+  useEffect(() => {
+    if (refreshKey !== undefined && refreshKey > 0) {
+      fetchAssignments();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
+
   async function handleExpand(assignment: OnboardingAssignment) {
     if (expandedId === assignment.id) {
       setExpandedId(null);
@@ -1046,42 +1055,6 @@ function OnboardingTab() {
       toast.error("Unable to load onboarding details.");
     } finally {
       setIsLoadingDetail(false);
-    }
-  }
-
-  async function handleImportTemplate(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const file = files[0];
-
-    setIsImporting(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const result: ImportResult = await onboardingApi.importTemplate(formData);
-
-      if (result.errors.length > 0) {
-        toast.error(
-          `Import completed with errors: ${result.errors.join(", ")}`,
-        );
-      } else {
-        const warningNote =
-          result.warnings.length > 0
-            ? ` (${result.warnings.length} warning${result.warnings.length !== 1 ? "s" : ""})`
-            : "";
-        toast.success(
-          `Template imported: ${result.modules_created} modules, ${result.steps_created} steps${warningNote}`,
-        );
-      }
-      fetchAssignments();
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to import template";
-      toast.error(message);
-    } finally {
-      setIsImporting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
     }
   }
 
@@ -1112,15 +1085,8 @@ function OnboardingTab() {
 
   return (
     <div className="space-y-6">
-      {/* Template Builder */}
-      <TemplateBuilder onImportClick={() => fileInputRef.current?.click()} />
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".json,.csv,.xlsx"
-        className="hidden"
-        onChange={(e) => handleImportTemplate(e.target.files)}
-      />
+      {/* Template Builder (upload + list) */}
+      <TemplateBuilder />
 
       {/* Divider */}
       <div className="border-t border-[var(--color-gray-200)]" />
@@ -1525,7 +1491,13 @@ function InvitationsTab({
    ═══════════════════════════════════════════════════════════ */
 
 export default function EmployeesPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("directory");
+  const searchParams = useSearchParams();
+  const initialTab = (searchParams.get("tab") as TabId) || "directory";
+  const [activeTab, setActiveTab] = useState<TabId>(
+    ["directory", "onboarding", "invitations"].includes(initialTab)
+      ? initialTab
+      : "directory",
+  );
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1543,6 +1515,22 @@ export default function EmployeesPage() {
     employeeId: number;
     employeeName: string;
   } | null>(null);
+
+  /* Key to signal OnboardingTab to re-fetch assignments */
+  const [assignmentRefreshKey, setAssignmentRefreshKey] = useState(0);
+
+  /* Sync tab with URL search param when it changes (e.g. sidebar click) */
+  useEffect(() => {
+    const tabParam = searchParams.get("tab") as TabId | null;
+    if (
+      tabParam &&
+      ["directory", "onboarding", "invitations"].includes(tabParam)
+    ) {
+      setActiveTab(tabParam);
+    } else if (!tabParam) {
+      setActiveTab("directory");
+    }
+  }, [searchParams]);
 
   /* Invitations state */
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -1683,7 +1671,9 @@ export default function EmployeesPage() {
             }
           />
         )}
-        {activeTab === "onboarding" && <OnboardingTab />}
+        {activeTab === "onboarding" && (
+          <OnboardingTab refreshKey={assignmentRefreshKey} />
+        )}
         {activeTab === "invitations" && (
           <InvitationsTab
             invitations={invitations}
@@ -1722,6 +1712,7 @@ export default function EmployeesPage() {
         onAssigned={() => {
           setAssignTarget(null);
           fetchEmployees();
+          setAssignmentRefreshKey((k) => k + 1);
         }}
       />
     </div>
