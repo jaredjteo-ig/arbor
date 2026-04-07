@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -289,7 +290,7 @@ class ChangeDetectionEngine:
         return {
             "User-Agent": (
                 "Mozilla/5.0 (compatible; Arbor-Regulatory-Monitor/1.0; "
-                "+https://central.kailash.ai; legal-compliance-monitoring)"
+                f"+{os.environ.get('APP_BASE_URL', 'http://localhost:8000')}; legal-compliance-monitoring)"
             ),
             "Accept": "text/html, application/xhtml+xml, */*",
             "Accept-Language": "en-SG,en;q=0.9",

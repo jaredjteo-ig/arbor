@@ -10,6 +10,7 @@ T246: Microsoft Teams Bot Connector (C06)
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -45,7 +46,7 @@ class TeamsAdapter:
         card = adapter.create_adaptive_card(
             title="Leave Approved",
             body="Your annual leave from 15-17 Mar has been approved.",
-            actions=[{"title": "View in Arbor", "url": "https://central.kailash.ai/leave"}],
+            actions=[{"title": "View in Arbor", "url": f"{os.environ.get('APP_BASE_URL', 'http://localhost:8000')}/leave"}],
         )
         result = await adapter.send_webhook(webhook_url, card)
     """
@@ -246,7 +247,7 @@ class TeamsAdapter:
             title=title,
             body=body,
             facts=facts,
-            actions=[{"title": "View in Arbor", "url": "https://central.kailash.ai/leave"}],
+            actions=[{"title": "View in Arbor", "url": f"{os.environ.get('APP_BASE_URL', 'http://localhost:8000')}/leave"}],
             color=color,
         )
         return await self.send_webhook(webhook_url, card, tenant_id=tenant_id)
@@ -270,7 +271,7 @@ class TeamsAdapter:
                 {"title": "Period", "value": period},
                 {"title": "Employees", "value": str(employee_count)},
             ],
-            actions=[{"title": "View in Arbor", "url": "https://central.kailash.ai/payroll"}],
+            actions=[{"title": "View in Arbor", "url": f"{os.environ.get('APP_BASE_URL', 'http://localhost:8000')}/payroll"}],
         )
         return await self.send_webhook(webhook_url, card, tenant_id=tenant_id)
 
@@ -287,7 +288,7 @@ class TeamsAdapter:
         card = self.create_adaptive_card(
             title=f"Compliance Alert: {alert_title}",
             body=alert_body,
-            actions=[{"title": "Review in Arbor", "url": "https://central.kailash.ai/compliance"}],
+            actions=[{"title": "Review in Arbor", "url": f"{os.environ.get('APP_BASE_URL', 'http://localhost:8000')}/compliance"}],
             color=color_map.get(severity, "warning"),
         )
         return await self.send_webhook(webhook_url, card, tenant_id=tenant_id)

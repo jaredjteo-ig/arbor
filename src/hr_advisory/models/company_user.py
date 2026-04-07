@@ -1868,12 +1868,17 @@ class Project:
 
     company_id: int
     name: str = ""
+    code: str = ""
     description: str = ""
+    status: str = "active"  # active, completed, on_hold, archived
+    client_name: str = ""
     start_date: str = ""
     end_date: str = ""
     branch_id: int = 0
     auto_assign_new_employees: bool = False
     budget_amount: float = 0.0
+    actual_cost: float = 0.0
+    manager_id: Optional[int] = None
     is_archived: bool = False
 
     __dataflow__ = {

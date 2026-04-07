@@ -64,8 +64,11 @@ async def turnover_report(
     # Build month buckets between start_date and end_date
     from datetime import date as _d
 
-    start = _d.fromisoformat(start_date).replace(day=1)
-    end = _d.fromisoformat(end_date)
+    try:
+        start = _d.fromisoformat(start_date).replace(day=1)
+        end = _d.fromisoformat(end_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
     months: list[str] = []
     cursor = start
     while cursor <= end:

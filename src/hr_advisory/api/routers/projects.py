@@ -237,7 +237,7 @@ async def list_project_roles(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    roles = dataflow_crud.list_records("ProjectRole", {"company_id": company_id})
+    roles = dataflow_crud.list_records("ProjectRole", {"company_id": company_id, "is_archived": False})
     return {"roles": roles, "count": len(roles)}
 
 
@@ -951,5 +951,5 @@ async def archive_project(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     _verify_project_ownership(project_id, company_id)
-    dataflow_crud.update("Project", project_id, {"status": "archived"})
+    dataflow_crud.update("Project", project_id, {"is_archived": True})
     return {"detail": "Project archived."}

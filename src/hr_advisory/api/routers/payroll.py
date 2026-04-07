@@ -1233,7 +1233,7 @@ async def list_pay_items(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    items = dataflow_crud.list_records("PayItem", {"company_id": company_id, "is_active": True})
+    items = dataflow_crud.list_records("PayItem", {"company_id": company_id, "is_archived": False})
     return {"pay_items": items, "count": len(items)}
 
 
@@ -1312,7 +1312,7 @@ async def archive_pay_item(
     if item is None or item.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Pay item not found.")
 
-    dataflow_crud.update("PayItem", pay_item_id, {"is_active": False})
+    dataflow_crud.update("PayItem", pay_item_id, {"is_archived": True})
     return {"message": "Pay item archived."}
 
 
@@ -1331,7 +1331,7 @@ async def list_pay_schemes(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     schemes = dataflow_crud.list_records(
-        "PayScheme", {"company_id": company_id, "is_active": True}
+        "PayScheme", {"company_id": company_id, "is_archived": False}
     )
     return {"pay_schemes": schemes, "count": len(schemes)}
 
@@ -1399,7 +1399,7 @@ async def archive_pay_scheme(
     if scheme is None or scheme.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Pay scheme not found.")
 
-    dataflow_crud.update("PayScheme", scheme_id, {"is_active": False})
+    dataflow_crud.update("PayScheme", scheme_id, {"is_archived": True})
     return {"message": "Pay scheme archived."}
 
 

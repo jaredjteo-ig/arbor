@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -219,7 +220,7 @@ class SSORSSAdapter:
         return {
             "User-Agent": (
                 "Mozilla/5.0 (compatible; Arbor-Regulatory-Monitor/1.0; "
-                "+https://central.kailash.ai; legal-compliance-monitoring)"
+                f"+{os.environ.get('APP_BASE_URL', 'http://localhost:8000')}; legal-compliance-monitoring)"
             ),
             "Accept": "application/rss+xml, application/xml, text/xml, */*",
             "Accept-Language": "en-SG,en;q=0.9",

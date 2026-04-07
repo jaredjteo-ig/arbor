@@ -266,9 +266,13 @@ def _bulk_find_users(user_ids: list[int]) -> dict[int, dict]:
     """Bulk-fetch users by IDs. Returns {user_id: user_dict}."""
     if not user_ids:
         return {}
-    all_users = dataflow_crud.list_records("User", {}, limit=10000)
-    id_set = set(user_ids)
-    return {u["id"]: u for u in all_users if u.get("id") in id_set}
+    # Fetch only the users we need, not all users across all tenants
+    result = {}
+    for uid in user_ids:
+        user = dataflow_crud.read("User", uid)
+        if user:
+            result[user["id"]] = user
+    return result
 
 
 def _serialize_employee_summary(emp: dict, user: dict | None = None) -> dict:
