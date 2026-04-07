@@ -33,6 +33,7 @@ from hr_advisory.api.routers import (
     integrations_router,
     inventory_router,
     kb_router,
+    onboarding_router,
     learning_router,
     leave_router,
     llm_config_router,
@@ -174,6 +175,7 @@ def _register_routers(app: Nexus) -> None:
     api.include_router(appraisals_router, prefix="/appraisals", tags=["Appraisals"])
     api.include_router(approval_groups_router, prefix="/approval-groups", tags=["Approval Groups"])
     api.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])
+    api.include_router(onboarding_router, prefix="/onboarding", tags=["Onboarding"])
     api.include_router(projects_router, prefix="/projects", tags=["Projects"])
     api.include_router(recruitment_router, prefix="/recruitment", tags=["Recruitment"])
     api.include_router(reports_router, prefix="/reports", tags=["Reports"])

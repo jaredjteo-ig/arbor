@@ -19,6 +19,7 @@ from hr_advisory.api.routers.emergency import router as emergency_router
 from hr_advisory.api.routers.help import router as help_router
 from hr_advisory.api.routers.inventory import router as inventory_router
 from hr_advisory.api.routers.kb import router as kb_router
+from hr_advisory.api.routers.onboarding import router as onboarding_router
 from hr_advisory.api.routers.learning import router as learning_router
 from hr_advisory.api.routers.leave import router as leave_router
 from hr_advisory.api.routers.llm_config import router as llm_config_router
@@ -56,6 +57,7 @@ __all__ = [
     "help_router",
     "inventory_router",
     "kb_router",
+    "onboarding_router",
     "learning_router",
     "leave_router",
     "llm_config_router",

@@ -2482,3 +2482,153 @@ class ActionHistoryRecord:
             {"name": "idx_actionhist_timestamp", "fields": ["timestamp"]},
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Onboarding models
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class OnboardingTemplate:
+    """Reusable onboarding configuration for a company."""
+
+    company_id: int = 0
+    name: str = ""
+    description: str = ""
+    is_default: bool = False
+    version: int = 1
+    is_active: bool = True
+    created_by: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_onbtemplate_company", "fields": ["company_id"]},
+            {"name": "idx_onbtemplate_default", "fields": ["is_default"]},
+        ],
+    }
+
+
+@db.model
+class OnboardingModule:
+    """A group of related onboarding steps within a template."""
+
+    template_id: int = 0
+    company_id: int = 0
+    name: str = ""
+    description: str = ""
+    phase: str = "custom"  # orientation, compliance, benefits, probation, custom
+    order: int = 0
+    estimated_duration_minutes: int = 0
+    is_mandatory: bool = True
+    is_role_specific: bool = False
+    role_filter: str = ""  # JSON array of designations/departments, empty = all roles
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_onbmodule_template", "fields": ["template_id"]},
+            {"name": "idx_onbmodule_company", "fields": ["company_id"]},
+            {"name": "idx_onbmodule_order", "fields": ["order"]},
+        ],
+    }
+
+
+@db.model
+class OnboardingStep:
+    """A single action or content item within an onboarding module."""
+
+    module_id: int = 0
+    title: str = ""
+    description: str = ""
+    order: int = 0
+    step_type: str = "content"  # content, checklist, document_upload, policy_acknowledgment, form, approval
+    body_content: str = ""  # markdown/HTML content for content steps
+    checklist_items: str = ""  # JSON array of checklist items
+    media_url: str = ""
+    requires_completion: bool = True
+    policy_id: Optional[int] = None  # FK to CompanyPolicy for acknowledgment steps
+    requires_previous_completion: bool = False  # sequential enforcement
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_onbstep_module", "fields": ["module_id"]},
+            {"name": "idx_onbstep_order", "fields": ["order"]},
+        ],
+    }
+
+
+@db.model
+class OnboardingAssignment:
+    """Tracks an employee's assignment to an onboarding template."""
+
+    employee_id: int = 0
+    template_id: int = 0
+    template_version: int = 1  # snapshot at assignment time
+    company_id: int = 0
+    assigned_by: Optional[int] = None
+    assigned_at: Optional[datetime] = None
+    due_date: Optional[datetime] = None
+    status: str = "in_progress"  # in_progress, completed, overdue
+    completed_at: Optional[datetime] = None
+    completion_percentage: float = 0.0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_onbassign_employee", "fields": ["employee_id"]},
+            {"name": "idx_onbassign_company", "fields": ["company_id"]},
+            {"name": "idx_onbassign_status", "fields": ["status"]},
+            {"name": "idx_onbassign_template", "fields": ["template_id"]},
+        ],
+    }
+
+
+@db.model
+class OnboardingStepProgress:
+    """Tracks an employee's progress on a specific onboarding step."""
+
+    assignment_id: int = 0
+    step_id: int = 0
+    employee_id: int = 0
+    status: str = "pending"  # pending, in_progress, completed, skipped
+    completed_at: Optional[datetime] = None
+    completed_by: Optional[int] = None  # for approval steps (manager/HR)
+    document_url: str = ""  # for document_upload steps
+    form_data: str = ""  # JSON for form steps
+    notes: str = ""
+    acknowledged_at: Optional[datetime] = None  # for policy acknowledgment steps
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_onbprog_assignment", "fields": ["assignment_id"]},
+            {"name": "idx_onbprog_step", "fields": ["step_id"]},
+            {"name": "idx_onbprog_employee", "fields": ["employee_id"]},
+            {"name": "idx_onbprog_status", "fields": ["status"]},
+        ],
+    }
+
+
+@db.model
+class PreboardingTaskInstance:
+    """Tracks a specific pre-boarding task for an incoming employee."""
+
+    company_id: int = 0
+    template_id: int = 0
+    employee_id: int = 0
+    task_name: str = ""
+    owner_role: str = "hr"  # hr, manager, it, office_manager
+    trigger: str = ""  # e.g. "offer_accepted", "7_days_before_start"
+    deadline_date: Optional[datetime] = None  # absolute, calculated from start_date
+    status: str = "pending"  # pending, done
+    completed_at: Optional[datetime] = None
+    completed_by: Optional[int] = None
+    notes: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_preboard_company", "fields": ["company_id"]},
+            {"name": "idx_preboard_employee", "fields": ["employee_id"]},
+            {"name": "idx_preboard_status", "fields": ["status"]},
+        ],
+    }
