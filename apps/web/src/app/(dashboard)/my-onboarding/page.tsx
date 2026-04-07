@@ -20,6 +20,8 @@ import {
   CheckCircle2,
   PartyPopper,
   RefreshCw,
+  Mail,
+  Users,
 } from "lucide-react";
 import {
   onboardingApi,
@@ -590,6 +592,58 @@ function ModuleCard({
   );
 }
 
+/* ── Buddy Card ─────────────────────────────────────────── */
+
+function BuddyCard({
+  name,
+  email,
+  designation,
+  department,
+}: {
+  name: string;
+  email: string;
+  designation?: string;
+  department?: string;
+}) {
+  const subtitle = [designation, department].filter(Boolean).join(" - ");
+  return (
+    <AppCard variant="flat">
+      <div className="flex items-start gap-4">
+        <div className="flex items-center justify-center h-10 w-10 rounded-full bg-[var(--color-primary-bg)] shrink-0">
+          <Users
+            className="h-5 w-5 text-[var(--color-primary)]"
+            aria-hidden="true"
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-semibold text-[var(--color-gray-900)]">
+            Your Onboarding Buddy
+          </h3>
+          <p className="text-base font-medium text-[var(--color-gray-900)] mt-1">
+            {name}
+          </p>
+          {subtitle && (
+            <p className="text-sm text-[var(--color-gray-500)]">{subtitle}</p>
+          )}
+          {email && (
+            <a
+              href={`mailto:${email}`}
+              className="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline mt-2"
+            >
+              <Mail className="h-3.5 w-3.5" />
+              {email}
+            </a>
+          )}
+          <p className="text-xs text-[var(--color-gray-500)] mt-2">
+            Your buddy is here to help you settle in. Don&apos;t hesitate to
+            reach out!
+          </p>
+        </div>
+      </div>
+    </AppCard>
+  );
+}
+
 /* ── Celebration ─────────────────────────────────────────── */
 
 function CelebrationBanner() {
@@ -726,6 +780,16 @@ export default function MyOnboardingPage() {
             completed
           </p>
         </AppCard>
+      )}
+
+      {/* Onboarding buddy */}
+      {!isLoading && !noAssignment && !error && assignment?.buddy_name && (
+        <BuddyCard
+          name={assignment.buddy_name}
+          email={assignment.buddy_email ?? ""}
+          designation={assignment.buddy_designation}
+          department={assignment.buddy_department}
+        />
       )}
 
       {/* Celebration */}

@@ -12,6 +12,7 @@ import {
   onboardingApi,
   type OnboardingTemplate,
 } from "@/services/api/onboarding";
+import { employeesApi, type Employee } from "@/services/api/employees";
 
 /* ═══════════════════════════════════════════════════════════
    AssignTemplateModal
@@ -35,6 +36,8 @@ export function AssignTemplateModal({
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [dueDate, setDueDate] = useState("");
+  const [buddyEmployeeId, setBuddyEmployeeId] = useState<string>("");
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchTemplates = useCallback(async () => {
@@ -57,12 +60,26 @@ export function AssignTemplateModal({
     }
   }, []);
 
+  const fetchEmployees = useCallback(async () => {
+    try {
+      const data = await employeesApi.list();
+      const active = (data.employees ?? []).filter(
+        (e) => e.status === "active" && e.id !== employeeId,
+      );
+      setEmployees(active);
+    } catch {
+      // Non-critical — buddy is optional
+    }
+  }, [employeeId]);
+
   useEffect(() => {
     if (isOpen) {
       fetchTemplates();
+      fetchEmployees();
       setDueDate("");
+      setBuddyEmployeeId("");
     }
-  }, [isOpen, fetchTemplates]);
+  }, [isOpen, fetchTemplates, fetchEmployees]);
 
   if (!isOpen) return null;
 
@@ -78,6 +95,9 @@ export function AssignTemplateModal({
         employee_id: employeeId,
         template_id: parseInt(selectedTemplateId, 10),
         due_date: dueDate || undefined,
+        buddy_employee_id: buddyEmployeeId
+          ? parseInt(buddyEmployeeId, 10)
+          : undefined,
       });
       toast.success(`Onboarding assigned to ${employeeName}.`);
       onAssigned();
@@ -166,6 +186,26 @@ export function AssignTemplateModal({
             placeholder="Select due date"
             helperText="When the employee should complete onboarding by."
           />
+
+          {/* Buddy picker */}
+          {employees.length > 0 && (
+            <AppInput
+              variant="select"
+              label="Assign buddy (optional)"
+              value={buddyEmployeeId}
+              onChange={(e) =>
+                setBuddyEmployeeId((e.target as HTMLSelectElement).value)
+              }
+              options={employees.map((emp) => ({
+                value: String(emp.id),
+                label: emp.department
+                  ? `${emp.name} - ${emp.department}`
+                  : emp.name,
+              }))}
+              placeholder="Select a buddy..."
+              helperText="A colleague who will help the new hire settle in."
+            />
+          )}
 
           {/* Actions */}
           <div className="flex gap-3 pt-2">

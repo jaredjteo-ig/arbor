@@ -2573,6 +2573,7 @@ class OnboardingAssignment:
     status: str = "in_progress"  # in_progress, completed, overdue
     completed_at: Optional[datetime] = None
     completion_percentage: float = 0.0
+    buddy_employee_id: Optional[int] = None  # optional onboarding buddy
 
     __dataflow__ = {
         "indexes": [

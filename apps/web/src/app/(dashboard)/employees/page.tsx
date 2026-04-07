@@ -27,6 +27,10 @@ import {
   ClipboardCheck,
   ChevronDown,
   ChevronRight,
+  Calendar,
+  AlertTriangle,
+  Loader2,
+  Download,
 } from "lucide-react";
 import {
   employeesApi,
@@ -37,6 +41,8 @@ import {
   onboardingApi,
   type OnboardingAssignment,
   type MyOnboardingProgress,
+  type PreboardingTask,
+  type PreboardingListResponse,
 } from "@/services/api/onboarding";
 import { TemplateBuilder } from "@/components/onboarding/TemplateBuilder";
 import { AssignTemplateModal } from "@/components/onboarding/AssignTemplateModal";
@@ -990,6 +996,305 @@ function DirectoryTab({
   );
 }
 
+/* ── Owner role badge for pre-boarding tasks ─────────────── */
+
+const OWNER_ROLE_STYLES: Record<string, string> = {
+  hr: "bg-blue-50 text-blue-700 border-blue-200",
+  manager: "bg-purple-50 text-purple-700 border-purple-200",
+  it: "bg-cyan-50 text-cyan-700 border-cyan-200",
+  office_manager: "bg-amber-50 text-amber-700 border-amber-200",
+};
+
+const OWNER_ROLE_LABELS: Record<string, string> = {
+  hr: "HR",
+  manager: "Manager",
+  it: "IT",
+  office_manager: "Operations",
+};
+
+function OwnerRoleBadge({ role }: { role: string }) {
+  const normalised = role.toLowerCase();
+  return (
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${OWNER_ROLE_STYLES[normalised] || "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] border-[var(--color-gray-200)]"}`}
+    >
+      {OWNER_ROLE_LABELS[normalised] || role}
+    </span>
+  );
+}
+
+/* ── Pre-boarding task deadline colour helper ─────────────── */
+
+function getDeadlineStatus(
+  task: PreboardingTask,
+): "done" | "overdue" | "due_soon" | "normal" {
+  if (task.status === "done") return "done";
+  if (task.is_overdue) return "overdue";
+  if (task.deadline_date) {
+    const deadline = new Date(task.deadline_date);
+    const now = new Date();
+    const daysUntil = Math.ceil(
+      (deadline.getTime() - now.getTime()) / 86400000,
+    );
+    if (daysUntil <= 3) return "due_soon";
+  }
+  return "normal";
+}
+
+/* ── Pre-boarding section inside expanded assignment ──────── */
+
+function PreboardingSection({ employeeId }: { employeeId: number }) {
+  const [data, setData] = useState<PreboardingListResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [completingId, setCompletingId] = useState<number | null>(null);
+
+  const fetchTasks = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await onboardingApi.getPreboarding(employeeId);
+      setData(result);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to load pre-boarding tasks.";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [employeeId]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  async function handleComplete(taskId: number) {
+    setCompletingId(taskId);
+    try {
+      const result = await onboardingApi.completePreboardingTask(taskId);
+      // Update local state to reflect the change immediately
+      setData((prev) => {
+        if (!prev) return prev;
+        const updatedTasks = prev.tasks.map((t) =>
+          t.id === taskId ? { ...t, ...result.task } : t,
+        );
+        const pending = updatedTasks.filter(
+          (t) => t.status === "pending",
+        ).length;
+        const done = updatedTasks.filter((t) => t.status === "done").length;
+        return {
+          tasks: updatedTasks,
+          total: updatedTasks.length,
+          pending,
+          done,
+        };
+      });
+      toast.success("Task marked as done.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to complete task. Please try again.";
+      toast.error(message);
+    } finally {
+      setCompletingId(null);
+    }
+  }
+
+  function formatDeadline(isoDate: string | null): string {
+    if (!isoDate) return "-";
+    try {
+      return new Date(isoDate).toLocaleDateString("en-SG", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return isoDate;
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="py-3 text-center">
+        <span className="inline-block h-4 w-4 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="py-3 text-center">
+        <p className="text-xs text-[var(--color-error)]">{error}</p>
+        <button
+          type="button"
+          onClick={fetchTasks}
+          className="mt-1 text-xs text-[var(--color-primary)] hover:underline"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!data || data.tasks.length === 0) {
+    return (
+      <p className="text-xs text-[var(--color-gray-500)] py-2">
+        No pre-boarding tasks.
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      {/* Summary counts */}
+      <div className="flex items-center gap-3 mb-3">
+        <span className="text-xs text-[var(--color-gray-600)]">
+          {data.done}/{data.total} completed
+        </span>
+        {data.pending > 0 && (
+          <span className="text-xs text-amber-600 font-medium">
+            {data.pending} remaining
+          </span>
+        )}
+      </div>
+
+      {/* Task list */}
+      <div className="space-y-1.5">
+        {data.tasks.map((task) => {
+          const deadlineStatus = getDeadlineStatus(task);
+          const isDone = task.status === "done";
+          const isCompleting = completingId === task.id;
+
+          return (
+            <div
+              key={task.id}
+              className={`flex items-center gap-3 py-2 px-3 rounded-[8px] border transition-colors ${
+                isDone
+                  ? "bg-emerald-50/50 border-emerald-100"
+                  : deadlineStatus === "overdue"
+                    ? "bg-red-50/50 border-red-100"
+                    : deadlineStatus === "due_soon"
+                      ? "bg-amber-50/50 border-amber-100"
+                      : "bg-[var(--color-gray-50)] border-[var(--color-gray-100)]"
+              }`}
+            >
+              {/* Checkbox */}
+              <button
+                type="button"
+                disabled={isDone || isCompleting}
+                onClick={() => handleComplete(task.id)}
+                className={`h-5 w-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                  isDone
+                    ? "bg-emerald-500 border-emerald-500 cursor-default"
+                    : isCompleting
+                      ? "border-[var(--color-gray-300)] cursor-wait"
+                      : "border-[var(--color-gray-300)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-bg)] cursor-pointer"
+                }`}
+                title={isDone ? "Completed" : "Mark as done"}
+              >
+                {isDone ? (
+                  <Check className="h-3 w-3 text-white" />
+                ) : isCompleting ? (
+                  <Loader2 className="h-3 w-3 text-[var(--color-gray-400)] animate-spin" />
+                ) : null}
+              </button>
+
+              {/* Task name */}
+              <span
+                className={`flex-1 text-xs ${
+                  isDone
+                    ? "text-[var(--color-gray-500)] line-through"
+                    : "text-[var(--color-gray-800)]"
+                }`}
+              >
+                {task.task_name}
+              </span>
+
+              {/* Owner role badge */}
+              <OwnerRoleBadge role={task.owner_role} />
+
+              {/* Deadline */}
+              {task.deadline_date && (
+                <span
+                  className={`inline-flex items-center gap-1 text-[10px] font-medium flex-shrink-0 ${
+                    isDone
+                      ? "text-[var(--color-gray-400)]"
+                      : deadlineStatus === "overdue"
+                        ? "text-red-600"
+                        : deadlineStatus === "due_soon"
+                          ? "text-amber-600"
+                          : "text-[var(--color-gray-500)]"
+                  }`}
+                >
+                  {deadlineStatus === "overdue" && !isDone && (
+                    <AlertTriangle className="h-3 w-3" />
+                  )}
+                  <Calendar className="h-3 w-3" />
+                  {formatDeadline(task.deadline_date)}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Pre-boarding summary for assignment cards ───────────── */
+
+function PreboardingSummary({ employeeId }: { employeeId: number }) {
+  const [summary, setSummary] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    onboardingApi
+      .getPreboarding(employeeId)
+      .then((result) => {
+        if (!cancelled) {
+          setSummary({ done: result.done, total: result.total });
+        }
+      })
+      .catch(() => {
+        // Silently fail -- this is a supplementary indicator
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [employeeId]);
+
+  if (!summary || summary.total === 0) return null;
+
+  const pct = Math.round((summary.done / summary.total) * 100);
+  const allDone = summary.done === summary.total;
+
+  return (
+    <div
+      className="flex items-center gap-1.5 flex-shrink-0"
+      title={`Pre-boarding: ${summary.done}/${summary.total} tasks done`}
+    >
+      <ClipboardCheck
+        className={`h-3.5 w-3.5 ${allDone ? "text-emerald-500" : "text-[var(--color-gray-400)]"}`}
+      />
+      <div className="w-10 h-1.5 bg-[var(--color-gray-100)] rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${allDone ? "bg-emerald-500" : "bg-[var(--color-primary)]"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-[10px] text-[var(--color-gray-500)] whitespace-nowrap">
+        {summary.done}/{summary.total}
+      </span>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════
    Onboarding Tab
    ═══════════════════════════════════════════════════════════ */
@@ -1007,6 +1312,12 @@ function OnboardingTab({
   const [expandedDetail, setExpandedDetail] =
     useState<MyOnboardingProgress | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+
+  /* ── Filter state ───────────────────────────────────────── */
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
 
   const fetchAssignments = useCallback(async () => {
     setIsLoading(true);
@@ -1083,6 +1394,55 @@ function OnboardingTab({
     return a.status;
   }
 
+  /* ── Derive unique departments from assignment data ─────── */
+  const departments = Array.from(
+    new Set(
+      assignments
+        .map((a) => a.department)
+        .filter((d): d is string => Boolean(d)),
+    ),
+  ).sort();
+
+  /* ── Client-side filtering ─────────────────────────────── */
+  const filteredAssignments = assignments.filter((a) => {
+    // Status filter
+    if (statusFilter) {
+      const effective = getEffectiveStatus(a);
+      if (effective !== statusFilter) return false;
+    }
+    // Department filter
+    if (departmentFilter) {
+      const dept = a.department ?? "";
+      if (dept.toLowerCase() !== departmentFilter.toLowerCase()) return false;
+    }
+    // Search by employee name
+    if (searchQuery) {
+      const name = (a.employee_name ?? "").toLowerCase();
+      if (!name.includes(searchQuery.toLowerCase())) return false;
+    }
+    return true;
+  });
+
+  /* ── Export handler ─────────────────────────────────────── */
+  async function handleExport() {
+    setIsExporting(true);
+    try {
+      await onboardingApi.exportAssignments({
+        status: statusFilter || undefined,
+        department: departmentFilter || undefined,
+      });
+      toast.success("Export downloaded successfully.");
+    } catch {
+      toast.error("Unable to export assignments. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  const hasActiveFilters = Boolean(
+    searchQuery || statusFilter || departmentFilter,
+  );
+
   return (
     <div className="space-y-6">
       {/* Template Builder (upload + list) */}
@@ -1102,6 +1462,101 @@ function OnboardingTab({
               Track employee onboarding progress
             </p>
           </div>
+          <AppButton
+            variant="outlined"
+            size="sm"
+            onClick={handleExport}
+            disabled={isExporting || assignments.length === 0}
+          >
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 mr-1" />
+            )}
+            Export CSV
+          </AppButton>
+        </div>
+
+        {/* Filters bar */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-gray-400)]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by employee name..."
+              className="
+                w-full rounded-[8px] border px-3 py-2 pl-9 text-sm min-h-[36px]
+                bg-[var(--color-surface-input)] text-[var(--foreground)]
+                border-[var(--color-surface-input-border)]
+                placeholder:text-[var(--color-gray-400)]
+                transition-colors
+                focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                focus:border-[var(--color-surface-input-focus)]
+              "
+            />
+          </div>
+
+          {/* Status filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="
+              rounded-[8px] border px-3 py-2 text-sm min-h-[36px]
+              bg-[var(--color-surface-input)] text-[var(--foreground)]
+              border-[var(--color-surface-input-border)]
+              transition-colors
+              focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+              focus:border-[var(--color-surface-input-focus)]
+            "
+          >
+            <option value="">All Statuses</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="overdue">Overdue</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+
+          {/* Department filter */}
+          {departments.length > 0 && (
+            <select
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              className="
+                rounded-[8px] border px-3 py-2 text-sm min-h-[36px]
+                bg-[var(--color-surface-input)] text-[var(--foreground)]
+                border-[var(--color-surface-input-border)]
+                transition-colors
+                focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                focus:border-[var(--color-surface-input-focus)]
+              "
+            >
+              <option value="">All Departments</option>
+              {departments.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Clear filters */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setStatusFilter("");
+                setDepartmentFilter("");
+              }}
+              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-[var(--color-gray-600)] hover:bg-[var(--color-gray-100)] transition-colors"
+            >
+              <X className="h-3 w-3" />
+              Clear filters
+            </button>
+          )}
         </div>
       </div>
 
@@ -1127,9 +1582,28 @@ function OnboardingTab({
           message="No employees are currently onboarding"
           description="Assign a template from the Directory tab to start tracking onboarding progress."
         />
+      ) : filteredAssignments.length === 0 ? (
+        <AppCard variant="standard">
+          <div className="py-8 text-center">
+            <p className="text-sm text-[var(--color-gray-500)] mb-3">
+              No assignments match the current filters.
+            </p>
+            <AppButton
+              variant="outlined"
+              size="sm"
+              onClick={() => {
+                setSearchQuery("");
+                setStatusFilter("");
+                setDepartmentFilter("");
+              }}
+            >
+              Clear filters
+            </AppButton>
+          </div>
+        </AppCard>
       ) : (
         <div className="space-y-3">
-          {assignments.map((assignment) => {
+          {filteredAssignments.map((assignment) => {
             const isExpanded = expandedId === assignment.id;
             const effectiveStatus = getEffectiveStatus(assignment);
             const pct = assignment.completion_percentage;
@@ -1165,6 +1639,9 @@ function OnboardingTab({
                         : ""}
                     </p>
                   </div>
+
+                  {/* Pre-boarding summary */}
+                  <PreboardingSummary employeeId={assignment.employee_id} />
 
                   {/* Progress bar */}
                   <div className="flex items-center gap-2 flex-shrink-0 w-36">
@@ -1264,6 +1741,19 @@ function OnboardingTab({
                             );
                           },
                         )}
+
+                        {/* Pre-boarding Tasks */}
+                        <div className="pt-3 border-t border-[var(--color-gray-100)]">
+                          <div className="flex items-center gap-2 mb-3">
+                            <ClipboardCheck className="h-4 w-4 text-[var(--color-gray-500)]" />
+                            <h4 className="text-xs font-semibold text-[var(--color-gray-700)] uppercase tracking-wider">
+                              Pre-boarding Tasks
+                            </h4>
+                          </div>
+                          <PreboardingSection
+                            employeeId={assignment.employee_id}
+                          />
+                        </div>
                       </div>
                     ) : (
                       <p className="text-xs text-[var(--color-gray-500)] text-center py-4">

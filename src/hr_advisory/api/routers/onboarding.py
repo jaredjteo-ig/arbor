@@ -8,6 +8,8 @@ Roles:
     employee — self-service progress, step completion, document upload, policy acknowledgment
 """
 
+import csv
+import io
 import json
 import logging
 import os
@@ -16,6 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
+from fastapi.responses import Response
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
@@ -214,19 +217,20 @@ def _update_assignment_status(assignment_id: int) -> dict:
         return {}
 
     percentage, completed, total = _calculate_completion(assignment_id)
-    now = datetime.utcnow().isoformat()
+    now_dt = datetime.utcnow()
+    now = now_dt.isoformat()
     updates: dict = {"completion_percentage": percentage}
 
     if completed == total and total > 0:
         updates["status"] = "completed"
-        updates["completed_at"] = now.isoformat()
+        updates["completed_at"] = now
     elif assignment.get("due_date"):
         due_str = assignment["due_date"]
         try:
             due_date = datetime.fromisoformat(due_str)
-            if due_date.tzinfo is None:
-                due_date = due_date.replace(tzinfo=timezone.utc)
-            if now > due_date and assignment.get("status") != "completed":
+            if due_date.tzinfo:
+                due_date = due_date.replace(tzinfo=None)
+            if now_dt > due_date and assignment.get("status") != "completed":
                 updates["status"] = "overdue"
         except (ValueError, TypeError):
             pass
@@ -258,17 +262,31 @@ def _enrich_assignment(assignment: dict) -> dict:
         except (ValueError, TypeError):
             pass
 
-    # Enrich with employee name
+    # Enrich with employee name and department
     employee = dataflow_crud.read("Employee", assignment.get("employee_id"))
     if employee:
-        first = employee.get("first_name", "")
-        last = employee.get("last_name", "")
-        assignment["employee_name"] = f"{first} {last}".strip()
+        user = dataflow_crud.read("User", employee.get("user_id"))
+        assignment["employee_name"] = user.get("name", "") if user else ""
+        assignment["department"] = employee.get("department", "")
+    else:
+        assignment["employee_name"] = ""
+        assignment["department"] = ""
 
     # Enrich with template name
     template = dataflow_crud.read("OnboardingTemplate", assignment.get("template_id"))
     if template:
         assignment["template_name"] = template.get("name", "")
+
+    # Enrich with buddy details
+    buddy_eid = assignment.get("buddy_employee_id")
+    if buddy_eid:
+        buddy_emp = dataflow_crud.read("Employee", buddy_eid)
+        if buddy_emp:
+            buddy_user = dataflow_crud.read("User", buddy_emp.get("user_id"))
+            assignment["buddy_name"] = buddy_user.get("name", "") if buddy_user else ""
+            assignment["buddy_email"] = buddy_user.get("email", "") if buddy_user else ""
+            assignment["buddy_department"] = buddy_emp.get("department", "")
+            assignment["buddy_designation"] = buddy_emp.get("designation", "")
 
     return assignment
 
@@ -276,6 +294,23 @@ def _enrich_assignment(assignment: dict) -> dict:
 def _sanitize_filename(extension: str) -> str:
     """Generate a UUID-based safe filename with the given extension."""
     return f"{uuid.uuid4().hex}{extension}"
+
+
+def _sanitize_csv_filename(title: str, extension: str = ".csv") -> str:
+    """Sanitize a title for use in Content-Disposition headers.
+
+    Removes all characters except alphanumeric, hyphen, underscore, dot, and space.
+    Replaces spaces with hyphens, truncates to 100 characters.
+    """
+    safe = re.sub(r"[^a-zA-Z0-9\-_. ]", "", title)
+    safe = safe.replace(" ", "-")
+    safe = re.sub(r"-+", "-", safe).strip("-")
+    max_base = 100 - len(extension)
+    if len(safe) > max_base:
+        safe = safe[:max_base]
+    if not safe:
+        safe = "export"
+    return safe + extension
 
 
 # ==========================================================================
@@ -588,6 +623,8 @@ async def import_template(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
+    check_rate_limit(f"onboarding_upload:{company_id}", max_requests=10, window_seconds=300, action_name="template upload")
+
     # Validate file extension
     original_filename = file.filename or ""
     _, ext = os.path.splitext(original_filename.lower())
@@ -613,7 +650,8 @@ async def import_template(
     try:
         parsed = parse_onboarding_template(file_bytes)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        logger.warning("Template import validation failed: %s", exc)
+        raise HTTPException(status_code=400, detail="Invalid template format. Please check the file and try again.")
     except ImportError as exc:
         raise HTTPException(
             status_code=500,
@@ -1827,6 +1865,7 @@ async def assign_template(
     employee_id = body.get("employee_id")
     template_id = body.get("template_id")
     due_date = body.get("due_date")
+    buddy_employee_id = body.get("buddy_employee_id")
 
     if not employee_id or not template_id:
         raise HTTPException(
@@ -1843,6 +1882,20 @@ async def assign_template(
     template = _verify_template_ownership(template_id, company_id)
     if not template.get("is_active", True):
         raise HTTPException(status_code=400, detail="Cannot assign an archived template.")
+
+    # Verify buddy if provided
+    if buddy_employee_id:
+        buddy_employee_id = int(buddy_employee_id)
+        if buddy_employee_id == employee_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Buddy cannot be the same as the assigned employee.",
+            )
+        buddy = dataflow_crud.read("Employee", buddy_employee_id)
+        if not buddy or buddy.get("company_id") != company_id:
+            raise HTTPException(status_code=404, detail="Buddy employee not found in this company.")
+        if not buddy.get("is_active", True):
+            raise HTTPException(status_code=400, detail="Buddy employee is not active.")
 
     # Check for existing active assignment for this employee + template
     existing = dataflow_crud.list_records(
@@ -1874,6 +1927,7 @@ async def assign_template(
             "status": "in_progress",
             "completed_at": None,
             "completion_percentage": 0.0,
+            "buddy_employee_id": buddy_employee_id or None,
         },
     )
     assignment_id = assignment.get("id")
@@ -2087,6 +2141,105 @@ async def list_assignments(
     enriched = [_enrich_assignment(a) for a in assignments]
 
     return {"assignments": enriched, "count": len(enriched)}
+
+
+@router.get("/assignments/export")
+async def export_assignments_csv(
+    status: str = Query(None, description="Filter by status: in_progress, completed, overdue"),
+    department: str = Query(None, description="Filter by employee department"),
+    template_id: int = Query(None, description="Filter by template ID"),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> Response:
+    """Export onboarding assignments as a downloadable CSV file.
+
+    Returns a CSV with columns: Employee Name, Department, Template,
+    Assigned Date, Due Date, Status, Completion %, Days Since Start.
+    Supports optional filtering by status, department, and template.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    # Build base filters
+    filters: dict = {"company_id": company_id}
+    if status:
+        valid_statuses = {"in_progress", "completed", "overdue", "cancelled"}
+        if status not in valid_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status filter. Must be one of: {', '.join(sorted(valid_statuses))}.",
+            )
+        filters["status"] = status
+    if template_id:
+        filters["template_id"] = template_id
+
+    assignments = dataflow_crud.list_records("OnboardingAssignment", filters)
+
+    # Enrich each assignment (adds employee_name, department, template_name, etc.)
+    enriched = [_enrich_assignment(a) for a in assignments]
+
+    # Apply department filter (post-enrichment since department comes from Employee)
+    if department:
+        dept_lower = department.lower()
+        enriched = [
+            a for a in enriched
+            if (a.get("department", "") or "").lower() == dept_lower
+        ]
+
+    # CSV injection prevention
+    def _safe_csv(value: str) -> str:
+        if value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
+            return "'" + value
+        return value
+
+    # Build CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Employee Name",
+        "Department",
+        "Template",
+        "Assigned Date",
+        "Due Date",
+        "Status",
+        "Completion %",
+        "Days Since Start",
+    ])
+
+    now = datetime.now(timezone.utc)
+    for a in enriched:
+        # Calculate days since start
+        days_since_start = ""
+        assigned_at = a.get("assigned_at")
+        if assigned_at:
+            try:
+                assigned_dt = datetime.fromisoformat(assigned_at)
+                if assigned_dt.tzinfo is None:
+                    assigned_dt = assigned_dt.replace(tzinfo=timezone.utc)
+                days_since_start = str((now - assigned_dt).days)
+            except (ValueError, TypeError):
+                pass
+
+        writer.writerow([
+            _safe_csv(a.get("employee_name", "")),
+            _safe_csv(a.get("department", "")),
+            _safe_csv(a.get("template_name", "")),
+            a.get("assigned_at", "")[:10] if a.get("assigned_at") else "",
+            a.get("due_date", "")[:10] if a.get("due_date") else "",
+            a.get("status", ""),
+            f"{a.get('completion_percentage', 0):.1f}",
+            days_since_start,
+        ])
+
+    csv_content = output.getvalue()
+    today_str = now.strftime("%Y-%m-%d")
+    filename = _sanitize_csv_filename(f"onboarding-assignments-{today_str}", ".csv")
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/assignments/{assignment_id}")

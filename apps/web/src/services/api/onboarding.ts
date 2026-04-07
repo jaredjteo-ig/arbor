@@ -1,6 +1,6 @@
 /* ── Onboarding API Service ───────────────────────────────── */
 
-import { apiClient } from "./client";
+import { apiClient, getValidAccessToken } from "./client";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -55,6 +55,12 @@ export interface OnboardingAssignment {
   completed_at: string | null;
   employee_name?: string;
   template_name?: string;
+  department?: string;
+  buddy_employee_id?: number | null;
+  buddy_name?: string;
+  buddy_email?: string;
+  buddy_department?: string;
+  buddy_designation?: string;
 }
 
 export interface OnboardingStepProgress {
@@ -129,17 +135,34 @@ export interface ImportResult {
   template_id: number;
   modules_created: number;
   steps_created: number;
+  preboarding_tasks_created: number;
+  policy_steps_created: number;
   warnings: string[];
   errors: string[];
 }
 
 export interface PreboardingTask {
   id: number;
+  company_id: number;
+  template_id: number;
+  employee_id: number;
   task_name: string;
-  owner_role: string;
+  owner_role: string; // hr, manager, it, office_manager
+  trigger: string;
   deadline_date: string | null;
-  status: string;
+  status: string; // pending, done
   completed_at: string | null;
+  completed_by: number | null;
+  notes: string;
+  /** Computed by backend overdue detection */
+  is_overdue?: boolean;
+}
+
+export interface PreboardingListResponse {
+  tasks: PreboardingTask[];
+  total: number;
+  pending: number;
+  done: number;
 }
 
 /* ── API Methods ─────────────────────────────────────────── */
@@ -298,11 +321,9 @@ export const onboardingApi = {
     employee_id: number;
     template_id: number;
     due_date?: string;
+    buddy_employee_id?: number;
   }): Promise<OnboardingAssignment> {
-    return apiClient.post<OnboardingAssignment>(
-      "/onboarding/assignments",
-      data,
-    );
+    return apiClient.post<OnboardingAssignment>("/onboarding/assign", data);
   },
 
   /** Bulk assign a template to multiple employees. */
@@ -314,7 +335,7 @@ export const onboardingApi = {
     return apiClient.post<{
       assignments: OnboardingAssignment[];
       count: number;
-    }>("/onboarding/assignments/bulk", data);
+    }>("/onboarding/assign-bulk", data);
   },
 
   /** List all assignments (admin view). */
@@ -404,22 +425,64 @@ export const onboardingApi = {
 
   /* ── Pre-boarding ───────────────────────────────────────── */
 
-  /** Get pre-boarding tasks for an assignment. */
-  getPreboarding(
-    assignmentId: number,
-  ): Promise<{ tasks: PreboardingTask[]; count: number }> {
-    return apiClient.get<{ tasks: PreboardingTask[]; count: number }>(
-      `/onboarding/assignments/${assignmentId}/preboarding`,
+  /** Get pre-boarding tasks for an employee (with overdue detection). */
+  getPreboarding(employeeId: number): Promise<PreboardingListResponse> {
+    return apiClient.get<PreboardingListResponse>(
+      `/onboarding/preboarding/${employeeId}`,
     );
   },
 
-  /** Mark a pre-boarding task as complete. */
-  completePreboardingTask(
-    assignmentId: number,
-    taskId: number,
-  ): Promise<PreboardingTask> {
-    return apiClient.post<PreboardingTask>(
-      `/onboarding/assignments/${assignmentId}/preboarding/${taskId}/complete`,
+  /** Mark a pre-boarding task as done. */
+  completePreboardingTask(taskId: number): Promise<{ task: PreboardingTask }> {
+    return apiClient.patch<{ task: PreboardingTask }>(
+      `/onboarding/preboarding/${taskId}`,
+      { status: "done" },
     );
+  },
+
+  /* ── Export ─────────────────────────────────────────────── */
+
+  /**
+   * Export onboarding assignments as CSV.
+   * Triggers a browser download of the file.
+   */
+  async exportAssignments(params?: {
+    status?: string;
+    department?: string;
+    template_id?: number;
+  }): Promise<void> {
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const token = await getValidAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const query = new URLSearchParams();
+    if (params?.status) query.set("status", params.status);
+    if (params?.department) query.set("department", params.department);
+    if (params?.template_id)
+      query.set("template_id", String(params.template_id));
+
+    const qs = query.toString();
+    const url = `${API_BASE}/onboarding/assignments/export${qs ? `?${qs}` : ""}`;
+
+    const response = await fetch(url, { method: "GET", headers });
+
+    if (!response.ok) {
+      throw new Error(`Failed to export assignments (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch?.[1] ?? "onboarding-assignments.csv";
+
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
   },
 };
