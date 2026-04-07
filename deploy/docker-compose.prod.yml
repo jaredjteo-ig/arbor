@@ -34,10 +34,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - APP_ENV=production
       - DEBUG=false
-      - CORS_ORIGINS=https://central.kailash.ai
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://136.110.51.61}
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
-      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-https://central.kailash.ai/api/auth/google/callback}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-${NEXT_PUBLIC_API_URL:-http://136.110.51.61/api}/auth/google/callback}
       - KAILASH_RUNTIME=async
     depends_on:
       postgres:
@@ -56,11 +56,11 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.frontend
       args:
-        NEXT_PUBLIC_API_URL: https://central.kailash.ai/api
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://136.110.51.61/api}
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
     container_name: arbor-frontend
     environment:
-      - NEXT_PUBLIC_API_URL=https://central.kailash.ai/api
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://136.110.51.61/api}
       - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
     restart: unless-stopped
 
