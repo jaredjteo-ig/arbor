@@ -8,6 +8,7 @@ Roles:
     employee — self-service progress, step completion, document upload, policy acknowledgment
 """
 
+import json
 import logging
 import os
 import re
@@ -758,11 +759,607 @@ async def import_template(
         )
         steps_created += 1
 
+    # Counters for additionally created records
+    preboarding_tasks_created = 0
+    policy_steps_created = 0
+
+    # ------------------------------------------------------------------
+    # Sheet 1 — Company Profile: enrich template description
+    # ------------------------------------------------------------------
+    if company_profile:
+        desc_parts = [f"Imported from {original_filename}"]
+        if company_profile.get("company_name"):
+            desc_parts.append(f"Company: {company_profile['company_name']}")
+        if company_profile.get("mission"):
+            desc_parts.append(f"Mission: {company_profile['mission']}")
+        if company_profile.get("vision"):
+            desc_parts.append(f"Vision: {company_profile['vision']}")
+        core_values = company_profile.get("core_values", [])
+        if core_values:
+            desc_parts.append(f"Core Values: {', '.join(core_values)}")
+        enriched_desc = "\n".join(desc_parts)
+        dataflow_crud.update(
+            "OnboardingTemplate",
+            template_id,
+            {"description": enriched_desc[:MAX_BODY_CONTENT_LENGTH], "updated_at": now},
+        )
+
+    # ------------------------------------------------------------------
+    # Sheet 2 — Org Structure: add department overview step
+    # ------------------------------------------------------------------
+    departments = parsed.get("departments", [])
+    if departments:
+        # Find the first Orientation module
+        orientation_module_id = None
+        all_modules = _get_modules_for_template(template_id)
+        for m in all_modules:
+            if m.get("phase") == "orientation":
+                orientation_module_id = m.get("id")
+                break
+
+        if orientation_module_id is None and module_id_map:
+            # Fallback: use the first module
+            orientation_module_id = next(iter(module_id_map.values()))
+
+        if orientation_module_id is not None:
+            dept_lines = ["## Department Overview\n"]
+            for dept in departments:
+                name = dept.get("department_name", "Unknown")
+                head = dept.get("department_head", "")
+                title = dept.get("head_title", "")
+                desc = dept.get("description", "")
+                size = dept.get("team_size", "")
+                line = f"**{name}**"
+                if head:
+                    head_str = f"{head} ({title})" if title else head
+                    line += f" — Led by {head_str}"
+                if size:
+                    line += f" | Team size: {size}"
+                if desc:
+                    line += f"\n{desc}"
+                dept_lines.append(line)
+            dept_body = "\n\n".join(dept_lines)
+
+            order = step_order_by_module.get(orientation_module_id, 0)
+            step_order_by_module[orientation_module_id] = order + 1
+            dataflow_crud.create(
+                "OnboardingStep",
+                {
+                    "module_id": orientation_module_id,
+                    "title": "Department Overview",
+                    "description": "Overview of company departments and leadership",
+                    "sort_order": order,
+                    "step_type": "content",
+                    "body_content": dept_body[:MAX_BODY_CONTENT_LENGTH],
+                    "checklist_items": "",
+                    "media_url": "",
+                    "requires_completion": True,
+                    "policy_id": None,
+                    "requires_previous_completion": False,
+                },
+            )
+            steps_created += 1
+
+    # ------------------------------------------------------------------
+    # Sheet 5 — Role Configuration: set role_filter + store metadata
+    # ------------------------------------------------------------------
+    role_configs = parsed.get("role_configs", [])
+    if role_configs:
+        # Set role_filter on matching modules
+        all_modules = _get_modules_for_template(template_id)
+        for rc in role_configs:
+            role_name = rc.get("role", "")
+            additional_modules = rc.get("additional_modules", [])
+            if role_name and additional_modules:
+                for mod in all_modules:
+                    if mod.get("name") in additional_modules:
+                        existing_filter = mod.get("role_filter", "")
+                        try:
+                            roles = json.loads(existing_filter) if existing_filter else []
+                        except (json.JSONDecodeError, TypeError):
+                            roles = []
+                        if role_name not in roles:
+                            roles.append(role_name)
+                        dataflow_crud.update(
+                            "OnboardingModule",
+                            mod.get("id"),
+                            {"role_filter": json.dumps(roles)},
+                        )
+
+        # Store buddy info and 30-60-90 goals as template metadata
+        metadata_parts = []
+        for rc in role_configs:
+            role_name = rc.get("role", "Unknown")
+            buddy = rc.get("buddy_assignment", "")
+            goals = rc.get("goals_summary", "")
+            if buddy or goals:
+                part = f"Role: {role_name}"
+                if buddy:
+                    part += f" | Buddy: {buddy}"
+                if goals:
+                    part += f" | Goals: {goals}"
+                metadata_parts.append(part)
+        if metadata_parts:
+            # Append role metadata to template description
+            tmpl = dataflow_crud.read("OnboardingTemplate", template_id)
+            current_desc = tmpl.get("description", "") if tmpl else ""
+            role_section = "\n\n--- Role Configuration ---\n" + "\n".join(metadata_parts)
+            updated_desc = (current_desc + role_section)[:MAX_BODY_CONTENT_LENGTH]
+            dataflow_crud.update(
+                "OnboardingTemplate",
+                template_id,
+                {"description": updated_desc, "updated_at": now},
+            )
+
+    # ------------------------------------------------------------------
+    # Sheet 6 — IT Provisioning: create PreboardingTaskInstance records
+    # ------------------------------------------------------------------
+    it_tasks = parsed.get("it_tasks", [])
+    for it_task in it_tasks:
+        tool_name = it_task.get("tool", "")
+        if not tool_name:
+            continue
+        trigger_val = it_task.get("sla", "") or ""
+        notes_parts = []
+        if it_task.get("category"):
+            notes_parts.append(f"Category: {it_task['category']}")
+        if it_task.get("access_level"):
+            notes_parts.append(f"Access: {it_task['access_level']}")
+        if it_task.get("setup_url"):
+            notes_parts.append(f"Setup: {it_task['setup_url']}")
+        if it_task.get("notes"):
+            notes_parts.append(it_task["notes"])
+
+        dataflow_crud.create(
+            "PreboardingTaskInstance",
+            {
+                "company_id": company_id,
+                "template_id": template_id,
+                "employee_id": 0,
+                "task_name": f"Provision: {tool_name}"[:MAX_NAME_LENGTH],
+                "owner_role": "it",
+                "trigger": str(trigger_val)[:MAX_TEXT_LENGTH],
+                "deadline_date": None,
+                "status": "pending",
+                "completed_at": None,
+                "completed_by": None,
+                "notes": " | ".join(notes_parts)[:MAX_NOTES_LENGTH] if notes_parts else "",
+            },
+        )
+        preboarding_tasks_created += 1
+
+    # ------------------------------------------------------------------
+    # Sheet 7 — Policies: create policy_acknowledgment steps
+    # ------------------------------------------------------------------
+    policies = parsed.get("policies", [])
+    if policies:
+        # Pre-fetch existing company policies for matching
+        existing_policies = dataflow_crud.list_records(
+            "CompanyPolicy",
+            {"company_id": company_id},
+        )
+        # Build a lookup by normalised title
+        policy_lookup: dict[str, dict] = {}
+        for ep in existing_policies:
+            normalised = (ep.get("title") or "").strip().lower()
+            if normalised:
+                policy_lookup[normalised] = ep
+
+        # Find or create a compliance module for policy steps
+        compliance_module_id = None
+        all_modules = _get_modules_for_template(template_id)
+        for m in all_modules:
+            if m.get("phase") == "compliance":
+                compliance_module_id = m.get("id")
+                break
+        if compliance_module_id is None:
+            # Create a compliance module
+            new_compliance = dataflow_crud.create(
+                "OnboardingModule",
+                {
+                    "template_id": template_id,
+                    "company_id": company_id,
+                    "name": "Policies & Compliance",
+                    "description": "Company policies requiring review and acknowledgment",
+                    "phase": "compliance",
+                    "sort_order": modules_created,
+                    "estimated_duration_minutes": 30,
+                    "is_mandatory": True,
+                    "is_role_specific": False,
+                    "role_filter": "",
+                },
+            )
+            compliance_module_id = new_compliance.get("id")
+            module_id_map["Policies & Compliance"] = compliance_module_id
+            modules_created += 1
+
+        for pol in policies:
+            policy_name = pol.get("policy_name", "")
+            if not policy_name:
+                continue
+
+            ack_required = pol.get("acknowledgement_required", "")
+            is_ack = True
+            if isinstance(ack_required, str):
+                is_ack = ack_required.strip().lower() not in ("no", "false", "")
+            elif isinstance(ack_required, bool):
+                is_ack = ack_required
+
+            # Try to match against existing CompanyPolicy records
+            matched_policy = policy_lookup.get(policy_name.strip().lower())
+            matched_policy_id = matched_policy.get("id") if matched_policy else None
+
+            order = step_order_by_module.get(compliance_module_id, 0)
+            step_order_by_module[compliance_module_id] = order + 1
+
+            if is_ack and matched_policy_id:
+                # Policy acknowledgment step linked to existing policy
+                dataflow_crud.create(
+                    "OnboardingStep",
+                    {
+                        "module_id": compliance_module_id,
+                        "title": f"Acknowledge: {policy_name}"[:MAX_NAME_LENGTH],
+                        "description": pol.get("description", "") or "",
+                        "sort_order": order,
+                        "step_type": "policy_acknowledgment",
+                        "body_content": "",
+                        "checklist_items": "",
+                        "media_url": "",
+                        "requires_completion": True,
+                        "policy_id": matched_policy_id,
+                        "requires_previous_completion": False,
+                    },
+                )
+            else:
+                # Content step with policy description
+                body_parts = []
+                if pol.get("description"):
+                    body_parts.append(pol["description"])
+                if pol.get("category"):
+                    body_parts.append(f"Category: {pol['category']}")
+                if pol.get("document_url"):
+                    body_parts.append(f"Document: {pol['document_url']}")
+                if pol.get("review_deadline"):
+                    body_parts.append(f"Review by: {pol['review_deadline']}")
+                body = "\n\n".join(body_parts) if body_parts else policy_name
+
+                step_type = "policy_acknowledgment" if is_ack else "content"
+                dataflow_crud.create(
+                    "OnboardingStep",
+                    {
+                        "module_id": compliance_module_id,
+                        "title": f"Review: {policy_name}"[:MAX_NAME_LENGTH],
+                        "description": "",
+                        "sort_order": order,
+                        "step_type": step_type,
+                        "body_content": body[:MAX_BODY_CONTENT_LENGTH],
+                        "checklist_items": "",
+                        "media_url": "",
+                        "requires_completion": True,
+                        "policy_id": None,
+                        "requires_previous_completion": False,
+                    },
+                )
+
+            steps_created += 1
+            policy_steps_created += 1
+
+    # ------------------------------------------------------------------
+    # Sheet 8 — Benefits: create content steps in a Benefits module
+    # ------------------------------------------------------------------
+    benefits = parsed.get("benefits", [])
+    if benefits:
+        # Find or create a benefits module
+        benefits_module_id = None
+        all_modules = _get_modules_for_template(template_id)
+        for m in all_modules:
+            if m.get("phase") == "benefits":
+                benefits_module_id = m.get("id")
+                break
+        if benefits_module_id is None:
+            new_benefits = dataflow_crud.create(
+                "OnboardingModule",
+                {
+                    "template_id": template_id,
+                    "company_id": company_id,
+                    "name": "Benefits Overview",
+                    "description": "Company benefits and enrollment information",
+                    "phase": "benefits",
+                    "sort_order": modules_created,
+                    "estimated_duration_minutes": 15,
+                    "is_mandatory": True,
+                    "is_role_specific": False,
+                    "role_filter": "",
+                },
+            )
+            benefits_module_id = new_benefits.get("id")
+            module_id_map["Benefits Overview"] = benefits_module_id
+            modules_created += 1
+
+        for ben in benefits:
+            benefit_name = ben.get("benefit_name", "")
+            if not benefit_name:
+                continue
+
+            body_parts = []
+            if ben.get("description"):
+                body_parts.append(ben["description"])
+            if ben.get("category"):
+                body_parts.append(f"**Category:** {ben['category']}")
+            if ben.get("eligibility"):
+                body_parts.append(f"**Eligibility:** {ben['eligibility']}")
+            if ben.get("enrollment_deadline"):
+                body_parts.append(f"**Enrollment Deadline:** {ben['enrollment_deadline']}")
+            if ben.get("provider"):
+                body_parts.append(f"**Provider:** {ben['provider']}")
+            if ben.get("contact_url"):
+                body_parts.append(f"**More Info:** {ben['contact_url']}")
+            body = "\n\n".join(body_parts) if body_parts else benefit_name
+
+            order = step_order_by_module.get(benefits_module_id, 0)
+            step_order_by_module[benefits_module_id] = order + 1
+            dataflow_crud.create(
+                "OnboardingStep",
+                {
+                    "module_id": benefits_module_id,
+                    "title": benefit_name[:MAX_NAME_LENGTH],
+                    "description": "",
+                    "sort_order": order,
+                    "step_type": "content",
+                    "body_content": body[:MAX_BODY_CONTENT_LENGTH],
+                    "checklist_items": "",
+                    "media_url": "",
+                    "requires_completion": True,
+                    "policy_id": None,
+                    "requires_previous_completion": False,
+                },
+            )
+            steps_created += 1
+
+    # ------------------------------------------------------------------
+    # Sheet 9 — Probation: create checklist steps for 30/60/90 goals
+    # ------------------------------------------------------------------
+    probation_config = parsed.get("probation_config", {})
+    if probation_config:
+        goal_fields = [
+            ("goal_30_day", "30-Day Goals"),
+            ("goal_60_day", "60-Day Goals"),
+            ("goal_90_day", "90-Day Goals"),
+        ]
+        goal_steps_to_create = []
+        for field_key, step_title in goal_fields:
+            goal_text = probation_config.get(field_key, "")
+            if goal_text:
+                goal_steps_to_create.append((step_title, goal_text))
+
+        if goal_steps_to_create:
+            # Find or create a probation module
+            probation_module_id = None
+            all_modules = _get_modules_for_template(template_id)
+            for m in all_modules:
+                if m.get("phase") == "probation":
+                    probation_module_id = m.get("id")
+                    break
+            if probation_module_id is None:
+                new_probation = dataflow_crud.create(
+                    "OnboardingModule",
+                    {
+                        "template_id": template_id,
+                        "company_id": company_id,
+                        "name": "Probation & Goals",
+                        "description": "Probation milestones and goal tracking",
+                        "phase": "probation",
+                        "sort_order": modules_created,
+                        "estimated_duration_minutes": 0,
+                        "is_mandatory": True,
+                        "is_role_specific": False,
+                        "role_filter": "",
+                    },
+                )
+                probation_module_id = new_probation.get("id")
+                module_id_map["Probation & Goals"] = probation_module_id
+                modules_created += 1
+
+            for step_title, goal_text in goal_steps_to_create:
+                # Split goal text into checklist items (by newline or semicolon)
+                items = re.split(r"[;\n]+", goal_text)
+                checklist_str = "\n".join(item.strip() for item in items if item.strip())
+
+                order = step_order_by_module.get(probation_module_id, 0)
+                step_order_by_module[probation_module_id] = order + 1
+                dataflow_crud.create(
+                    "OnboardingStep",
+                    {
+                        "module_id": probation_module_id,
+                        "title": step_title[:MAX_NAME_LENGTH],
+                        "description": "",
+                        "sort_order": order,
+                        "step_type": "checklist",
+                        "body_content": "",
+                        "checklist_items": checklist_str[:MAX_CHECKLIST_LENGTH],
+                        "media_url": "",
+                        "requires_completion": True,
+                        "policy_id": None,
+                        "requires_previous_completion": False,
+                    },
+                )
+                steps_created += 1
+
+    # ------------------------------------------------------------------
+    # Sheet 10 — Communications: content step in Orientation module
+    # ------------------------------------------------------------------
+    communications = parsed.get("communications", [])
+    if communications:
+        # Find the Orientation module (or first module)
+        orientation_module_id = None
+        all_modules = _get_modules_for_template(template_id)
+        for m in all_modules:
+            if m.get("phase") == "orientation":
+                orientation_module_id = m.get("id")
+                break
+        if orientation_module_id is None and module_id_map:
+            orientation_module_id = next(iter(module_id_map.values()))
+
+        if orientation_module_id is not None:
+            comms_lines = ["## Communication Channels & Meeting Cadences\n"]
+            for comm in communications:
+                channel = comm.get("channel", "Unknown")
+                comm_type = comm.get("type", "")
+                purpose = comm.get("purpose", "")
+                frequency = comm.get("frequency", "")
+                platform = comm.get("platform", "")
+                line = f"**{channel}**"
+                if comm_type:
+                    line += f" ({comm_type})"
+                if purpose:
+                    line += f"\n{purpose}"
+                details = []
+                if frequency:
+                    details.append(f"Frequency: {frequency}")
+                if platform:
+                    details.append(f"Platform: {platform}")
+                if comm.get("access_instructions"):
+                    details.append(f"Access: {comm['access_instructions']}")
+                if details:
+                    line += "\n" + " | ".join(details)
+                comms_lines.append(line)
+            comms_body = "\n\n".join(comms_lines)
+
+            order = step_order_by_module.get(orientation_module_id, 0)
+            step_order_by_module[orientation_module_id] = order + 1
+            dataflow_crud.create(
+                "OnboardingStep",
+                {
+                    "module_id": orientation_module_id,
+                    "title": "Communication Channels",
+                    "description": "Company communication tools and meeting schedule",
+                    "sort_order": order,
+                    "step_type": "content",
+                    "body_content": comms_body[:MAX_BODY_CONTENT_LENGTH],
+                    "checklist_items": "",
+                    "media_url": "",
+                    "requires_completion": True,
+                    "policy_id": None,
+                    "requires_previous_completion": False,
+                },
+            )
+            steps_created += 1
+
+    # ------------------------------------------------------------------
+    # Sheet 11 — Key Contacts: content step listing contacts
+    # ------------------------------------------------------------------
+    contacts = parsed.get("contacts", [])
+    if contacts:
+        # Find the Orientation module (or first module)
+        orientation_module_id = None
+        all_modules = _get_modules_for_template(template_id)
+        for m in all_modules:
+            if m.get("phase") == "orientation":
+                orientation_module_id = m.get("id")
+                break
+        if orientation_module_id is None and module_id_map:
+            orientation_module_id = next(iter(module_id_map.values()))
+
+        if orientation_module_id is not None:
+            contact_lines = ["## Key Contacts\n"]
+            for ct in contacts:
+                name = ct.get("name", "Unknown")
+                role = ct.get("role", "")
+                dept = ct.get("department", "")
+                email = ct.get("email", "")
+                line = f"**{name}**"
+                if role:
+                    line += f" — {role}"
+                if dept:
+                    line += f" ({dept})"
+                if email:
+                    line += f"\nEmail: {email}"
+                if ct.get("notes"):
+                    line += f"\n{ct['notes']}"
+                contact_lines.append(line)
+            contacts_body = "\n\n".join(contact_lines)
+
+            order = step_order_by_module.get(orientation_module_id, 0)
+            step_order_by_module[orientation_module_id] = order + 1
+            dataflow_crud.create(
+                "OnboardingStep",
+                {
+                    "module_id": orientation_module_id,
+                    "title": "Key Contacts",
+                    "description": "Important contacts for new employees",
+                    "sort_order": order,
+                    "step_type": "content",
+                    "body_content": contacts_body[:MAX_BODY_CONTENT_LENGTH],
+                    "checklist_items": "",
+                    "media_url": "",
+                    "requires_completion": True,
+                    "policy_id": None,
+                    "requires_previous_completion": False,
+                },
+            )
+            steps_created += 1
+
+    # ------------------------------------------------------------------
+    # Sheet 12 — Pre-boarding Checklist: create PreboardingTaskInstance
+    # ------------------------------------------------------------------
+    preboarding_tasks = parsed.get("preboarding_tasks", [])
+    for pb_task in preboarding_tasks:
+        task_name = pb_task.get("task", "")
+        if not task_name:
+            continue
+
+        owner = str(pb_task.get("owner", "hr")).strip().lower()
+        # Normalise owner to valid enum values
+        valid_owners = {"hr", "manager", "it", "office_manager"}
+        if owner not in valid_owners:
+            owner = "hr"
+
+        trigger_val = str(pb_task.get("trigger", "")).strip()
+
+        # Parse deadline column (values like "-14", "-7", "-1" = days relative to start)
+        deadline_raw = pb_task.get("deadline")
+        relative_days_note = ""
+        if deadline_raw is not None:
+            try:
+                days = int(str(deadline_raw).strip())
+                relative_days_note = f"Relative deadline: {days} days from start date"
+            except (ValueError, TypeError):
+                relative_days_note = f"Deadline: {deadline_raw}"
+
+        notes_parts = []
+        if relative_days_note:
+            notes_parts.append(relative_days_note)
+        if pb_task.get("dependency"):
+            notes_parts.append(f"Depends on: {pb_task['dependency']}")
+        if pb_task.get("notes"):
+            notes_parts.append(pb_task["notes"])
+
+        dataflow_crud.create(
+            "PreboardingTaskInstance",
+            {
+                "company_id": company_id,
+                "template_id": template_id,
+                "employee_id": 0,
+                "task_name": task_name[:MAX_NAME_LENGTH],
+                "owner_role": owner,
+                "trigger": trigger_val[:MAX_TEXT_LENGTH] if trigger_val else "",
+                "deadline_date": None,
+                "status": "pending",
+                "completed_at": None,
+                "completed_by": None,
+                "notes": " | ".join(notes_parts)[:MAX_NOTES_LENGTH] if notes_parts else "",
+            },
+        )
+        preboarding_tasks_created += 1
+
     logger.info(
-        "Onboarding template imported: template_id=%s, modules=%d, steps=%d, warnings=%d, errors=%d",
+        "Onboarding template imported: template_id=%s, modules=%d, steps=%d, "
+        "preboarding_tasks=%d, policy_steps=%d, warnings=%d, errors=%d",
         template_id,
         modules_created,
         steps_created,
+        preboarding_tasks_created,
+        policy_steps_created,
         len(parse_warnings),
         len(parse_errors),
     )
@@ -770,6 +1367,8 @@ async def import_template(
         "template_id": template_id,
         "modules_created": modules_created,
         "steps_created": steps_created,
+        "preboarding_tasks_created": preboarding_tasks_created,
+        "policy_steps_created": policy_steps_created,
         "warnings": parse_warnings,
         "errors": parse_errors,
     }
