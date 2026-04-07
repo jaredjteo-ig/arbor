@@ -274,7 +274,7 @@ export const onboardingApi = {
     id: number,
     data: Partial<OnboardingTemplate>,
   ): Promise<OnboardingTemplate> {
-    return apiClient.patch<OnboardingTemplate>(
+    return apiClient.put<OnboardingTemplate>(
       `/onboarding/templates/${id}`,
       data,
     );
@@ -307,23 +307,23 @@ export const onboardingApi = {
 
   /** Update a module. */
   updateModule(
-    templateId: number,
+    _templateId: number,
     moduleId: number,
     data: Partial<OnboardingModule>,
   ): Promise<OnboardingModule> {
-    return apiClient.patch<OnboardingModule>(
-      `/onboarding/templates/${templateId}/modules/${moduleId}`,
+    return apiClient.put<OnboardingModule>(
+      `/onboarding/modules/${moduleId}`,
       data,
     );
   },
 
   /** Delete a module. */
   deleteModule(
-    templateId: number,
+    _templateId: number,
     moduleId: number,
   ): Promise<{ message: string }> {
     return apiClient.delete<{ message: string }>(
-      `/onboarding/templates/${templateId}/modules/${moduleId}`,
+      `/onboarding/modules/${moduleId}`,
     );
   },
 
@@ -332,8 +332,8 @@ export const onboardingApi = {
     templateId: number,
     moduleIds: number[],
   ): Promise<{ message: string }> {
-    return apiClient.post<{ message: string }>(
-      `/onboarding/templates/${templateId}/modules/reorder`,
+    return apiClient.patch<{ message: string }>(
+      `/onboarding/templates/${templateId}/reorder`,
       { module_ids: moduleIds },
     );
   },
@@ -342,48 +342,43 @@ export const onboardingApi = {
 
   /** Add a step to a module. */
   addStep(
-    templateId: number,
+    _templateId: number,
     moduleId: number,
     data: Partial<OnboardingStep>,
   ): Promise<OnboardingStep> {
     return apiClient.post<OnboardingStep>(
-      `/onboarding/templates/${templateId}/modules/${moduleId}/steps`,
+      `/onboarding/modules/${moduleId}/steps`,
       data,
     );
   },
 
   /** Update a step. */
   updateStep(
-    templateId: number,
-    moduleId: number,
+    _templateId: number,
+    _moduleId: number,
     stepId: number,
     data: Partial<OnboardingStep>,
   ): Promise<OnboardingStep> {
-    return apiClient.patch<OnboardingStep>(
-      `/onboarding/templates/${templateId}/modules/${moduleId}/steps/${stepId}`,
-      data,
-    );
+    return apiClient.put<OnboardingStep>(`/onboarding/steps/${stepId}`, data);
   },
 
   /** Delete a step. */
   deleteStep(
-    templateId: number,
-    moduleId: number,
+    _templateId: number,
+    _moduleId: number,
     stepId: number,
   ): Promise<{ message: string }> {
-    return apiClient.delete<{ message: string }>(
-      `/onboarding/templates/${templateId}/modules/${moduleId}/steps/${stepId}`,
-    );
+    return apiClient.delete<{ message: string }>(`/onboarding/steps/${stepId}`);
   },
 
   /** Reorder steps within a module. */
   reorderSteps(
-    templateId: number,
+    _templateId: number,
     moduleId: number,
     stepIds: number[],
   ): Promise<{ message: string }> {
-    return apiClient.post<{ message: string }>(
-      `/onboarding/templates/${templateId}/modules/${moduleId}/steps/reorder`,
+    return apiClient.patch<{ message: string }>(
+      `/onboarding/modules/${moduleId}/reorder-steps`,
       { step_ids: stepIds },
     );
   },
