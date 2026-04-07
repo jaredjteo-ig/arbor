@@ -347,22 +347,49 @@ _ESCALATION_PATTERNS: list[tuple[str, EscalationReason, str]] = [
     (
         r"(?i)(lawsuit|litigation|su(ed|ing)|court\s+case|legal\s+proceedings|tadm\s+claim|wrongful\s+dismissal|unfair\s+dismissal|mediation\s+claim|ect\s+claim)",
         EscalationReason.ACTIVE_LITIGATION,
-        "This query involves active or potential litigation. Please consult an employment law specialist.",
+        "This topic touches on potential wrongful dismissal or litigation.\n\n"
+        "**What Singapore law says:**\n"
+        "- Under the Employment Act (Part IV), an employer cannot compel overtime beyond limits (72 hrs/month) or dismiss an employee for refusing unlawful overtime.\n"
+        "- Wrongful dismissal claims can be filed with TADM (Tripartite Alliance for Dispute Management) within 1 month of dismissal.\n"
+        "- The Employment Claims Tribunal (ECT) handles unresolved cases up to $20,000 (or $30,000 with union assistance).\n\n"
+        "**Important:** If this involves an active or pending case, please consult an employment law specialist for advice specific to your situation. "
+        "We recommend contacting the Law Society of Singapore (lawsociety.org.sg) or TADM (tal.sg/tadm) for a referral.",
     ),
     (
         r"(?i)(criminal|police\s+report|investigation|fraud|embezzlement)",
         EscalationReason.CRIMINAL_LIABILITY,
-        "This query involves potential criminal liability. Please consult a legal professional immediately.",
+        "This topic involves potential criminal liability.\n\n"
+        "**What you should know:**\n"
+        "- Workplace fraud and embezzlement are criminal offences under the Penal Code (Chapter 224).\n"
+        "- Employers have a duty to report workplace safety incidents resulting in death or serious injury to MOM within 10 days.\n"
+        "- Police reports should be filed at the nearest Neighbourhood Police Centre.\n\n"
+        "**Important:** Criminal matters require proper legal representation. "
+        "Please consult a criminal law practitioner through the Law Society of Singapore (lawsociety.org.sg).",
     ),
     (
         r"(?i)(discriminat(e|ion)|harass(ment)?|racial|sexual\s+harassment)",
         EscalationReason.DISCRIMINATION_ALLEGATION,
-        "Discrimination and harassment cases require careful handling. We recommend consulting a specialist.",
+        "This topic relates to workplace discrimination or harassment.\n\n"
+        "**What Singapore law says:**\n"
+        "- TAFEP (Tripartite Alliance for Fair & Progressive Employment Practices) investigates complaints of workplace discrimination.\n"
+        "- The Workplace Fairness Act (effective 2026) prohibits discrimination based on age, race, gender, religion, disability, and other protected characteristics.\n"
+        "- Harassment is covered under the Protection from Harassment Act (POHA).\n\n"
+        "**What to do:**\n"
+        "- File a complaint with TAFEP (tal.sg/tafep) for discrimination matters.\n"
+        "- For harassment, consider filing a Protection Order under POHA.\n"
+        "- Document all incidents with dates, witnesses, and evidence.\n\n"
+        "We strongly recommend consulting a specialist for advice specific to your situation.",
     ),
     (
         r"(?i)(cross.?border|overseas|foreign\s+jurisdiction|international\s+employment)",
         EscalationReason.MULTI_JURISDICTION,
-        "Multi-jurisdiction employment matters require specialist legal advice.",
+        "This topic involves employment across multiple jurisdictions.\n\n"
+        "**Key considerations:**\n"
+        "- Singapore employment law generally applies to work performed in Singapore, regardless of the employee's nationality.\n"
+        "- Overseas postings may be governed by the host country's laws — Singapore EA protections do not automatically extend abroad.\n"
+        "- Tax obligations (IRAS) differ for Singapore tax residents vs non-residents.\n\n"
+        "**Important:** Cross-border employment involves complex interactions between multiple legal systems. "
+        "We recommend consulting a firm with international employment law expertise.",
     ),
 ]
 
