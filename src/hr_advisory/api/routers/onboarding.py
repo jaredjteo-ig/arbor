@@ -213,7 +213,7 @@ def _update_assignment_status(assignment_id: int) -> dict:
         return {}
 
     percentage, completed, total = _calculate_completion(assignment_id)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.utcnow().isoformat()
     updates: dict = {"completion_percentage": percentage}
 
     if completed == total and total > 0:
@@ -319,7 +319,7 @@ async def create_template(
     _validate_text_length(body.get("description", ""), "description")
 
     actor_id = int(current_user.get("sub", 0))
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.utcnow().isoformat()
 
     # If marked as default, unset existing defaults for this company
     is_default = body.get("is_default", False)
@@ -406,7 +406,7 @@ async def update_template(
     template = _verify_template_ownership(template_id, company_id)
     body = await request.json()
 
-    updates: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    updates: dict = {"updated_at": datetime.utcnow().isoformat()}
 
     if "name" in body:
         name = body["name"].strip()
@@ -472,7 +472,7 @@ async def archive_template(
         template_id,
         {
             "is_active": False,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
         },
     )
     logger.info("Onboarding template archived: id=%s", template_id)
@@ -494,7 +494,7 @@ async def duplicate_template(
     body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
 
     actor_id = int(current_user.get("sub", 0))
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.utcnow().isoformat()
 
     new_name = body.get("name", f"{template.get('name', '')} (Copy)").strip()
     _validate_text_length(new_name, "name", MAX_NAME_LENGTH)
@@ -632,7 +632,7 @@ async def import_template(
         )
 
     actor_id = int(current_user.get("sub", 0))
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.utcnow().isoformat()
 
     # Derive template name from file or company profile
     company_profile = parsed.get("company_profile", {})
@@ -833,7 +833,7 @@ async def add_module(
     dataflow_crud.update(
         "OnboardingTemplate",
         template_id,
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.utcnow().isoformat()},
     )
 
     logger.info("Onboarding module added: id=%s, template_id=%s", module.get("id"), template_id)
@@ -889,7 +889,7 @@ async def update_module(
     dataflow_crud.update(
         "OnboardingTemplate",
         module.get("template_id"),
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.utcnow().isoformat()},
     )
 
     logger.info("Onboarding module updated: id=%s", module_id)
@@ -919,7 +919,7 @@ async def delete_module(
     dataflow_crud.update(
         "OnboardingTemplate",
         module.get("template_id"),
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.utcnow().isoformat()},
     )
 
     logger.info(
@@ -969,7 +969,7 @@ async def reorder_modules(
     dataflow_crud.update(
         "OnboardingTemplate",
         template_id,
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.utcnow().isoformat()},
     )
 
     logger.info("Modules reordered for template %s: %s", template_id, module_ids)
@@ -1051,7 +1051,7 @@ async def add_step(
     dataflow_crud.update(
         "OnboardingTemplate",
         module.get("template_id"),
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.utcnow().isoformat()},
     )
 
     logger.info("Onboarding step added: id=%s, module_id=%s", step.get("id"), module_id)
@@ -1126,7 +1126,7 @@ async def update_step(
     dataflow_crud.update(
         "OnboardingTemplate",
         module.get("template_id"),
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.utcnow().isoformat()},
     )
 
     logger.info("Onboarding step updated: id=%s", step_id)
@@ -1156,7 +1156,7 @@ async def delete_step(
     dataflow_crud.update(
         "OnboardingTemplate",
         module.get("template_id"),
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.utcnow().isoformat()},
     )
 
     logger.info("Onboarding step deleted: id=%s", step_id)
@@ -1260,7 +1260,7 @@ async def assign_template(
         )
 
     actor_id = int(current_user.get("sub", 0))
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.utcnow().isoformat()
 
     assignment = dataflow_crud.create(
         "OnboardingAssignment",
@@ -1347,7 +1347,7 @@ async def assign_template_bulk(
         raise HTTPException(status_code=400, detail="Cannot assign an archived template.")
 
     actor_id = int(current_user.get("sub", 0))
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.utcnow().isoformat()
     all_steps = _get_all_steps_for_template(template_id)
 
     results: list[dict] = []
@@ -1689,7 +1689,7 @@ async def complete_step(
     except Exception:
         pass
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.utcnow().isoformat()
     updates = {
         "status": "completed",
         "completed_at": now,
@@ -1797,7 +1797,7 @@ async def upload_step_document(
     document_url = f"/uploads/documents/onboarding/{company_id}/{safe_filename}"
 
     # Update progress record
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.utcnow().isoformat()
     result = dataflow_crud.update(
         "OnboardingStepProgress",
         progress_id,
@@ -1867,7 +1867,7 @@ async def acknowledge_policy_step(
     if progress.get("status") == "completed" and progress.get("acknowledged_at"):
         return {"message": "Policy already acknowledged.", "progress": progress}
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.utcnow().isoformat()
 
     # Create PolicyAcknowledgment record (if not already present for this version)
     policy = dataflow_crud.read("CompanyPolicy", policy_id)
@@ -1980,7 +1980,7 @@ async def approve_step(
     except Exception:
         pass
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.utcnow().isoformat()
     updates = {
         "status": "completed",
         "completed_at": now,
@@ -2079,7 +2079,7 @@ async def update_preboarding_task(
     if body.get("status") == "done" and task.get("status") != "done":
         actor_id = int(current_user.get("sub", 0))
         updates["status"] = "done"
-        updates["completed_at"] = datetime.now(timezone.utc).isoformat()
+        updates["completed_at"] = datetime.utcnow().isoformat()
         updates["completed_by"] = actor_id
 
     if "notes" in body:
