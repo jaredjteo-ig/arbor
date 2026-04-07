@@ -14,7 +14,7 @@ Usage:
     python scripts/seed_demo_data.py --employees 30 --company-name "Acme Pte Ltd"
 
 Environment:
-    ARBOR_API_URL — Base URL for the Arbor API (default: https://central.kailash.ai)
+    ARBOR_API_URL — Base URL for the Arbor API (default: http://localhost:8000)
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ import httpx
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEFAULT_API_URL = "https://central.kailash.ai"
+DEFAULT_API_URL = "http://localhost:8000"
 DEFAULT_EMAIL = "demo@central.kailash.ai"
 DEFAULT_PASSWORD = "CentralDemo2026!"
 DEFAULT_COMPANY = "Central Solutions Pte Ltd"
