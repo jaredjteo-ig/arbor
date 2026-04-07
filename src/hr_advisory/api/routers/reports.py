@@ -28,6 +28,100 @@ from hr_advisory.services import dataflow_crud
 # --------------------------------------------------------------------------
 
 
+@router.get("/turnover")
+async def turnover_report(
+    start_date: str = Query(None),
+    end_date: str = Query(None),
+    department: str | None = Query(None),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Employee turnover report.
+
+    Returns monthly hires, terminations, headcount, and turnover rate.
+    Defaults to the last 12 months if no date range is provided.
+    """
+    from datetime import date as _date, timedelta
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    today = _date.today()
+    if not start_date:
+        start_date = (today.replace(day=1) - timedelta(days=365)).replace(day=1).isoformat()
+    if not end_date:
+        end_date = today.isoformat()
+
+    # Fetch all employees (active and inactive) for the company
+    filters: dict = {"company_id": company_id}
+    if department:
+        filters["department"] = department
+
+    all_active = dataflow_crud.list_records("Employee", {**filters, "is_active": True})
+    all_inactive = dataflow_crud.list_records("Employee", {**filters, "is_active": False})
+    all_employees = all_active + all_inactive
+
+    # Build month buckets between start_date and end_date
+    from datetime import date as _d
+
+    start = _d.fromisoformat(start_date).replace(day=1)
+    end = _d.fromisoformat(end_date)
+    months: list[str] = []
+    cursor = start
+    while cursor <= end:
+        months.append(cursor.strftime("%Y-%m"))
+        # Advance to next month
+        if cursor.month == 12:
+            cursor = cursor.replace(year=cursor.year + 1, month=1)
+        else:
+            cursor = cursor.replace(month=cursor.month + 1)
+
+    # Count hires and terminations per month
+    hires_by_month: dict[str, int] = {m: 0 for m in months}
+    terms_by_month: dict[str, int] = {m: 0 for m in months}
+
+    for emp in all_employees:
+        emp_start = emp.get("start_date", "")
+        emp_end = emp.get("end_date", "")
+        if emp_start and len(emp_start) >= 7:
+            month_key = emp_start[:7]
+            if month_key in hires_by_month:
+                hires_by_month[month_key] += 1
+        if emp_end and len(emp_end) >= 7:
+            month_key = emp_end[:7]
+            if month_key in terms_by_month:
+                terms_by_month[month_key] += 1
+
+    # Build rows with running headcount
+    total_active = len(all_active)
+    # Work backwards to find headcount at start: current active + terms after start - hires after start
+    cumulative_terms_after = sum(terms_by_month.get(m, 0) for m in months)
+    cumulative_hires_after = sum(hires_by_month.get(m, 0) for m in months)
+    headcount = total_active + cumulative_terms_after - cumulative_hires_after
+
+    rows = []
+    for m in months:
+        hires = hires_by_month.get(m, 0)
+        terms = terms_by_month.get(m, 0)
+        headcount = headcount + hires - terms
+        avg_headcount = max(headcount, 1)
+        turnover_rate = round((terms / avg_headcount) * 100, 2)
+        rows.append({
+            "month": m,
+            "hires": hires,
+            "terminations": terms,
+            "headcount": headcount,
+            "turnover_rate": turnover_rate,
+        })
+
+    from datetime import datetime as _dt, timezone as _tz
+
+    return {
+        "rows": rows,
+        "generated_at": _dt.now(_tz.utc).isoformat(),
+    }
+
+
 @router.get("/payroll")
 async def payroll_summary_report(
     period_start: str = Query(None),

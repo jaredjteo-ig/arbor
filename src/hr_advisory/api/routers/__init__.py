@@ -8,6 +8,7 @@ from hr_advisory.api.routers.admin import router as admin_router
 from hr_advisory.api.routers.advisory import router as advisory_router
 from hr_advisory.api.routers.alerts import router as alerts_router
 from hr_advisory.api.routers.appraisals import router as appraisals_router
+from hr_advisory.api.routers.banking import router as banking_router
 from hr_advisory.api.routers.approval_groups import router as approval_groups_router
 from hr_advisory.api.routers.auth import router as auth_router
 from hr_advisory.api.routers.calculator import router as calculator_router
@@ -44,6 +45,7 @@ __all__ = [
     "advisory_router",
     "alerts_router",
     "appraisals_router",
+    "banking_router",
     "approval_groups_router",
     "attendance_router",
     "auth_router",

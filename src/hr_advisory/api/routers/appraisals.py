@@ -70,6 +70,23 @@ async def list_templates(
     return {"templates": templates, "count": len(templates)}
 
 
+@router.get("/templates/{template_id}")
+async def get_template(
+    template_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get a single appraisal template by ID."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    template = dataflow_crud.read("AppraisalTemplate", template_id)
+    if not template or template.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Template not found.")
+
+    return template
+
+
 @router.post("/templates")
 async def create_template(
     request: Request,

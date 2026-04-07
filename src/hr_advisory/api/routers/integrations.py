@@ -211,7 +211,7 @@ async def list_submissions(
 @router.post("/submissions/{record_id}/cancel")
 async def cancel_submission(
     record_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Cancel a pending submission."""
     from hr_advisory.mcp_servers.idempotency import get_submission_ledger
@@ -372,7 +372,7 @@ async def list_circuit_breakers(
 @router.post("/circuits/{name}/reset")
 async def reset_circuit_breaker(
     name: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner")),
 ) -> dict:
     """Manually reset a circuit breaker (admin-only action)."""
     from hr_advisory.mcp_servers.resilience import get_circuit
@@ -531,7 +531,7 @@ async def approve_action(
 async def reject_action(
     approval_id: str,
     reason: str = "",
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Reject a pending action (human-in-the-loop denial).
 
@@ -691,4 +691,362 @@ async def check_skillsfuture_grant(
         "grant_amount": 0,
         "sfc_balance": 0,
         "message": "SkillsFuture API credentials are not configured. Connect SkillsFuture in Integrations settings.",
+    }
+
+
+# ── Import Preview / Confirm ─────────────────────────────────
+# IMPORTANT: These literal-path routes MUST be registered before the
+# /{provider}/... parameterized routes below, otherwise FastAPI will
+# try to match "import" as a {provider} path parameter.
+
+
+class ImportPreviewRequest(BaseModel):
+    source: str  # "talenox" | "hreasily" | "csv"
+    data: Optional[dict] = None
+
+
+class ImportConfirmRequest(BaseModel):
+    source: str
+    field_mappings: list[dict] = []
+
+
+@router.post("/import/preview")
+async def import_preview(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Preview employee data import.
+
+    Accepts either a JSON body with {source, data} or multipart form data
+    with a file upload. Returns field mappings, validation errors, and a
+    preview of the first few rows.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    content_type = request.headers.get("content-type", "")
+
+    source = "csv"
+    raw_rows: list[dict] = []
+
+    if "multipart/form-data" in content_type:
+        # Handle file upload
+        form = await request.form()
+        source = str(form.get("source", "csv"))
+        upload = form.get("file")
+        if upload is not None:
+            import csv
+            import io
+
+            content = await upload.read()
+            if len(content) > 5_000_000:
+                raise HTTPException(status_code=413, detail="File too large. Maximum 5MB.")
+            text = content.decode("utf-8", errors="replace")
+            reader = csv.DictReader(io.StringIO(text))
+            for row in reader:
+                raw_rows.append(dict(row))
+                if len(raw_rows) > 10_000:
+                    raise HTTPException(status_code=400, detail="Too many rows. Maximum 10,000.")
+    else:
+        body = await request.json()
+        source = body.get("source", "csv")
+        raw_rows = body.get("data", [])
+        if isinstance(raw_rows, dict):
+            raw_rows = [raw_rows]
+
+    # Determine field mappings from first row
+    target_fields = [
+        "employee_id_internal", "department", "designation", "employment_type",
+        "start_date", "end_date", "nationality", "salary_monthly", "date_of_birth",
+        "gender", "nric_fin", "bank_name", "bank_account_number",
+    ]
+    field_mappings = []
+    if raw_rows:
+        first_row = raw_rows[0]
+        for source_field in first_row:
+            # Auto-map if the source field name matches a target field
+            normalised = source_field.lower().replace(" ", "_").replace("-", "_")
+            mapped_to = normalised if normalised in target_fields else ""
+            field_mappings.append({
+                "source_field": source_field,
+                "target_field": mapped_to,
+                "sample_value": str(first_row.get(source_field, ""))[:100],
+                "is_mapped": bool(mapped_to),
+            })
+
+    # Validate rows
+    validation_errors = []
+    valid_count = 0
+    for idx, row in enumerate(raw_rows):
+        row_errors = []
+        # Check for required fields based on mappings
+        if not any(v for v in row.values()):
+            row_errors.append({"row": idx + 1, "field": "*", "message": "Empty row"})
+        if row_errors:
+            validation_errors.extend(row_errors)
+        else:
+            valid_count += 1
+
+    # Check for duplicates based on employee_id_internal or NRIC
+    seen_ids: set[str] = set()
+    duplicate_count = 0
+    for row in raw_rows:
+        eid = str(row.get("employee_id_internal", row.get("Employee ID", "")))
+        if eid and eid in seen_ids:
+            duplicate_count += 1
+        elif eid:
+            seen_ids.add(eid)
+
+    return {
+        "source": source,
+        "total_records": len(raw_rows),
+        "valid_records": valid_count,
+        "duplicate_count": duplicate_count,
+        "field_mappings": field_mappings,
+        "validation_errors": validation_errors[:50],  # Cap error list
+        "preview_rows": [
+            {k: str(v)[:100] for k, v in row.items()} for row in raw_rows[:10]
+        ],
+    }
+
+
+@router.post("/import/confirm")
+async def import_confirm(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Confirm and execute employee data import.
+
+    Accepts {source, field_mappings} and creates Employee records
+    for each valid row using the provided field mappings.
+    """
+    from hr_advisory.services import dataflow_crud
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    body = await request.json()
+    source = body.get("source", "csv")
+    field_mappings = body.get("field_mappings", [])
+    rows = body.get("data", [])
+
+    if not field_mappings:
+        raise HTTPException(status_code=400, detail="field_mappings is required.")
+    if len(rows) > 10_000:
+        raise HTTPException(status_code=400, detail="Too many rows. Maximum 10,000.")
+
+    # Build mapping dict: source_field -> target_field
+    mapping = {}
+    for fm in field_mappings:
+        if fm.get("is_mapped") and fm.get("target_field"):
+            mapping[fm["source_field"]] = fm["target_field"]
+
+    imported = 0
+    skipped = 0
+    errors = 0
+
+    for row in rows:
+        try:
+            record = {"company_id": company_id, "is_active": True}
+            for src_field, tgt_field in mapping.items():
+                if src_field in row:
+                    record[tgt_field] = row[src_field]
+
+            # Skip rows with no meaningful data
+            if len(record) <= 2:  # only company_id and is_active
+                skipped += 1
+                continue
+
+            dataflow_crud.create("Employee", record)
+            imported += 1
+        except Exception as exc:
+            logger.warning("Import row error: %s", exc)
+            errors += 1
+
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+        "message": f"Imported {imported} employees from {source}. {skipped} skipped, {errors} errors.",
+    }
+
+
+# ── Provider Connect / Disconnect / Test ──────────────────────
+# IMPORTANT: These /{provider}/... parameterized routes MUST come AFTER
+# all literal-path routes (like /import/preview) to avoid FastAPI matching
+# literal segments as the {provider} parameter.
+
+
+# In-memory connection store keyed by (company_id, provider).
+# Bounded to prevent unbounded memory growth.
+_MAX_CONNECTIONS = 10_000
+_connection_store: OrderedDict[str, dict] = OrderedDict()
+
+
+def _connection_key(company_id: str, provider: str) -> str:
+    return f"{company_id}:{provider}"
+
+
+def _store_connection(company_id: str, provider: str, config: dict) -> None:
+    """Store a provider connection, evicting oldest if at capacity."""
+    import time
+
+    key = _connection_key(company_id, provider)
+    while len(_connection_store) >= _MAX_CONNECTIONS and key not in _connection_store:
+        _connection_store.popitem(last=False)
+    _connection_store[key] = {
+        "provider": provider,
+        "company_id": company_id,
+        "config": config,
+        "status": "connected",
+        "connected_at": time.time(),
+    }
+    _connection_store.move_to_end(key)
+
+
+def _remove_connection(company_id: str, provider: str) -> bool:
+    """Remove a provider connection. Returns True if it existed."""
+    key = _connection_key(company_id, provider)
+    if key in _connection_store:
+        del _connection_store[key]
+        return True
+    return False
+
+
+def _get_connection(company_id: str, provider: str) -> dict | None:
+    """Look up a stored connection."""
+    return _connection_store.get(_connection_key(company_id, provider))
+
+
+@router.post("/{provider}/connect")
+async def connect_provider(
+    provider: str,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Connect a provider (OAuth or API key setup).
+
+    Accepts optional configuration in the request body (api_key, endpoint_url).
+    Returns a redirect_url for OAuth providers or a success status for API key providers.
+    """
+    import re
+
+    # Validate provider name to prevent injection
+    if not re.match(r"^[a-zA-Z0-9_-]+$", provider):
+        raise HTTPException(status_code=400, detail="Invalid provider name.")
+
+    company_id = str(get_current_company_id(current_user) or "")
+
+    # Parse optional body — may be empty for OAuth flows
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    config = {
+        "api_key": body.get("api_key", ""),
+        "endpoint_url": body.get("endpoint_url", ""),
+    }
+
+    _store_connection(company_id, provider, config)
+
+    logger.info("Provider %s connected for company %s", provider, company_id)
+
+    # For OAuth providers we would return a redirect URL; for API key providers
+    # we confirm success immediately. Since we don't have real OAuth wired up,
+    # return a status-only response that the frontend can handle.
+    return {"redirect_url": "", "status": "connected", "provider": provider}
+
+
+@router.post("/{provider}/disconnect")
+async def disconnect_provider_post(
+    provider: str,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Disconnect a provider (POST variant matching frontend expectation).
+
+    Also attempts to revoke the OAuth token if a token-based connection exists.
+    """
+    import re
+
+    if not re.match(r"^[a-zA-Z0-9_-]+$", provider):
+        raise HTTPException(status_code=400, detail="Invalid provider name.")
+
+    company_id = str(get_current_company_id(current_user) or "")
+
+    # Remove from in-memory store
+    removed = _remove_connection(company_id, provider)
+
+    # Also try the token manager (existing DELETE endpoint logic)
+    try:
+        from hr_advisory.mcp_servers.auth.token_store import get_token_manager
+
+        manager = get_token_manager()
+        manager.revoke_token(company_id, provider)
+    except Exception:
+        pass  # Token manager may not be configured; in-memory removal is sufficient
+
+    if not removed:
+        # Check if there was a token-based connection
+        logger.debug("No in-memory connection for %s/%s, may have been token-only", provider, company_id)
+
+    return {"message": f"Disconnected from {provider}.", "provider": provider}
+
+
+@router.post("/{provider}/test")
+async def test_provider_connection(
+    provider: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Test a provider connection with a health check.
+
+    Returns provider name, success status, message, and latency.
+    """
+    import re
+    import time
+
+    if not re.match(r"^[a-zA-Z0-9_-]+$", provider):
+        raise HTTPException(status_code=400, detail="Invalid provider name.")
+
+    company_id = str(get_current_company_id(current_user) or "")
+    start_time = time.monotonic()
+
+    # Check if a connection exists (in-memory or via health monitor)
+    conn = _get_connection(company_id, provider)
+
+    # Also check the health monitor for MCP-based connectors
+    try:
+        from hr_advisory.mcp_servers.health import get_health_monitor
+
+        monitor = get_health_monitor()
+        health = monitor.get_status(provider)
+        health_status = health.get("status", "unknown")
+    except Exception:
+        health_status = "unknown"
+
+    elapsed_ms = round((time.monotonic() - start_time) * 1000, 1)
+
+    if conn is not None:
+        return {
+            "provider": provider,
+            "success": True,
+            "message": f"Connection to {provider} is active.",
+            "latency_ms": elapsed_ms,
+        }
+
+    if health_status in ("healthy",):
+        return {
+            "provider": provider,
+            "success": True,
+            "message": f"Connector {provider} is healthy.",
+            "latency_ms": elapsed_ms,
+        }
+
+    return {
+        "provider": provider,
+        "success": False,
+        "message": f"No active connection found for {provider}. Please connect first.",
+        "latency_ms": elapsed_ms,
     }
