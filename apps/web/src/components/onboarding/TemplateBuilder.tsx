@@ -538,12 +538,12 @@ export function TemplateBuilder({
             Onboarding Templates
           </h3>
           <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-            Upload and manage onboarding templates from your LIA Excel file
+            Upload and manage onboarding templates from your Excel file
           </p>
         </div>
         <a
-          href="/templates/LIA_Onboarding_Template.xlsx"
-          download="LIA_Onboarding_Template.xlsx"
+          href="/templates/Onboarding_Template.xlsx"
+          download="Onboarding_Template.xlsx"
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[8px] text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary-bg)] transition-colors border border-[var(--color-primary)]/20"
         >
           <Download className="h-4 w-4" />
@@ -577,7 +577,7 @@ export function TemplateBuilder({
               Upload Onboarding Template
             </p>
             <p className="text-xs text-[var(--color-gray-500)] mt-1">
-              Upload your completed LIA Onboarding Template (.xlsx)
+              Upload your completed Onboarding Template (.xlsx)
             </p>
             <p className="text-xs text-[var(--color-gray-400)] mt-0.5">
               Drop file here, or click to browse
