@@ -62,6 +62,10 @@ import {
   type ExitSettlement,
 } from "@/services/api/employees";
 import { policiesApi } from "@/services/api/policies";
+import {
+  onboardingApi,
+  type OnboardingMilestone,
+} from "@/services/api/onboarding";
 
 /* ── Constants ──────────────────────────────────────────────── */
 
@@ -3641,7 +3645,195 @@ function OnboardingTab({
           );
         })}
       </div>
+
+      {/* 30/60/90-Day Review Milestones */}
+      <AdminMilestoneReview employeeId={employee.id} />
     </div>
+  );
+}
+
+/* ── Admin Milestone Review ────────────────────────────────── */
+
+const MILESTONE_LABELS: Record<string, string> = {
+  day_30: "30-Day Review",
+  day_60: "60-Day Review",
+  day_90: "90-Day Review",
+};
+
+function AdminMilestoneReview({ employeeId }: { employeeId: number }) {
+  const [milestones, setMilestones] = useState<OnboardingMilestone[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [assignmentId, setAssignmentId] = useState<number | null>(null);
+  const [completingId, setCompletingId] = useState<number | null>(null);
+  const [notesMap, setNotesMap] = useState<Record<number, string>>({});
+
+  const fetchMilestones = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // First find the employee's active assignment
+      const res = await onboardingApi.listAssignments({
+        employee_id: String(employeeId),
+      });
+      const assignments = res.assignments ?? [];
+      const active = assignments.find(
+        (a) =>
+          a.status === "in_progress" ||
+          a.status === "overdue" ||
+          a.status === "completed",
+      );
+      if (!active) {
+        setMilestones([]);
+        setIsLoading(false);
+        return;
+      }
+      setAssignmentId(active.id);
+
+      const mRes = await onboardingApi.getMilestones(active.id);
+      setMilestones(mRes.milestones ?? []);
+    } catch {
+      /* Non-critical */
+    } finally {
+      setIsLoading(false);
+    }
+  }, [employeeId]);
+
+  useEffect(() => {
+    fetchMilestones();
+  }, [fetchMilestones]);
+
+  async function handleComplete(milestoneId: number) {
+    setCompletingId(milestoneId);
+    try {
+      await onboardingApi.completeMilestone(milestoneId, {
+        status: "completed",
+        notes: notesMap[milestoneId] || "",
+      });
+      toast.success("Review marked as completed");
+      fetchMilestones();
+    } catch {
+      toast.error("Failed to complete review. Please try again.");
+    } finally {
+      setCompletingId(null);
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <AppCard variant="standard">
+        <div className="animate-pulse space-y-3">
+          <div className="h-5 w-32 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-16 bg-[var(--color-gray-100)] rounded" />
+        </div>
+      </AppCard>
+    );
+  }
+
+  if (milestones.length === 0) return null;
+
+  return (
+    <AppCard variant="standard">
+      <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
+        Reviews (30/60/90 Day)
+      </h3>
+      <div className="space-y-4">
+        {milestones.map((m) => {
+          const isCompleted = m.status === "completed";
+          const scheduledDate = m.scheduled_date
+            ? new Date(m.scheduled_date).toLocaleDateString("en-SG", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })
+            : "";
+          const isPast =
+            m.scheduled_date &&
+            new Date(m.scheduled_date) < new Date() &&
+            !isCompleted;
+
+          return (
+            <div
+              key={m.id}
+              className={`rounded-[8px] border p-4 ${
+                isCompleted
+                  ? "border-emerald-200 bg-emerald-50"
+                  : isPast
+                    ? "border-amber-200 bg-amber-50"
+                    : "border-[var(--color-gray-200)] bg-white"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  {isCompleted ? (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                  ) : (
+                    <Calendar className="h-5 w-5 text-[var(--color-gray-400)]" />
+                  )}
+                  <span className="text-sm font-medium text-[var(--color-gray-900)]">
+                    {MILESTONE_LABELS[m.milestone_type] ?? m.milestone_type}
+                  </span>
+                </div>
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                    isCompleted
+                      ? "bg-emerald-100 text-emerald-700"
+                      : isPast
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-[var(--color-gray-100)] text-[var(--color-gray-600)]"
+                  }`}
+                >
+                  {isCompleted ? "Completed" : isPast ? "Overdue" : "Upcoming"}
+                </span>
+              </div>
+              <p className="text-xs text-[var(--color-gray-500)] mb-2">
+                Scheduled: {scheduledDate}
+                {isCompleted && m.completed_at && (
+                  <>
+                    {" "}
+                    &middot; Completed{" "}
+                    {new Date(m.completed_at).toLocaleDateString("en-SG", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </>
+                )}
+              </p>
+
+              {isCompleted && m.notes && (
+                <p className="text-xs text-[var(--color-gray-600)] bg-white rounded p-2 border border-[var(--color-gray-100)]">
+                  {m.notes}
+                </p>
+              )}
+
+              {!isCompleted && (
+                <div className="mt-3 space-y-2">
+                  <textarea
+                    placeholder="Add review notes..."
+                    value={notesMap[m.id] ?? ""}
+                    onChange={(e) =>
+                      setNotesMap((prev) => ({
+                        ...prev,
+                        [m.id]: e.target.value,
+                      }))
+                    }
+                    rows={2}
+                    className="w-full text-sm rounded-[8px] border border-[var(--color-gray-200)] bg-white px-3 py-2 text-[var(--color-gray-700)] placeholder:text-[var(--color-gray-400)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent resize-none"
+                  />
+                  <AppButton
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handleComplete(m.id)}
+                    loading={completingId === m.id}
+                  >
+                    Complete Review
+                  </AppButton>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </AppCard>
   );
 }
 

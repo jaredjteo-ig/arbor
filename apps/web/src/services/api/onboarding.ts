@@ -131,6 +131,29 @@ export interface MyOnboardingProgress {
   message?: string;
 }
 
+export interface OnboardingAnalytics {
+  total_assignments: number;
+  completed: number;
+  in_progress: number;
+  overdue: number;
+  completion_rate: number;
+  avg_completion_days: number;
+  by_department: Array<{
+    department: string;
+    total: number;
+    completed: number;
+    rate: number;
+  }>;
+  by_module: Array<{
+    module_name: string;
+    total_steps: number;
+    completed_steps: number;
+    rate: number;
+  }>;
+  avg_survey_score: number | null;
+  flagged_employees: number;
+}
+
 export interface ImportResult {
   template_id: number;
   modules_created: number;
@@ -163,6 +186,43 @@ export interface PreboardingListResponse {
   total: number;
   pending: number;
   done: number;
+}
+
+export interface OnboardingMilestone {
+  id: number;
+  assignment_id: number;
+  company_id: number;
+  employee_id: number;
+  milestone_type: string; // day_30, day_60, day_90
+  scheduled_date: string | null;
+  status: string; // pending, completed
+  completed_at: string | null;
+  notes: string;
+  reviewed_by: number | null;
+}
+
+export interface PulseSurvey {
+  id: number;
+  company_id: number;
+  employee_id: number;
+  assignment_id: number;
+  survey_type: string; // day_30, day_60
+  status: string; // pending, completed
+  sent_at: string | null;
+  completed_at: string | null;
+  average_score: number;
+  flagged: boolean;
+  employee_name?: string;
+  questions?: Array<{ number: number; text: string }>;
+}
+
+export interface PulseSurveyResponse {
+  id: number;
+  survey_id: number;
+  question_number: number;
+  question_text: string;
+  score: number; // 1-5
+  comment: string;
 }
 
 /* ── API Methods ─────────────────────────────────────────── */
@@ -440,6 +500,42 @@ export const onboardingApi = {
     );
   },
 
+  /* ── Milestones (30/60/90 day reviews) ──────────────────── */
+
+  /** Get milestones for an assignment (admin). */
+  getMilestones(
+    assignmentId: number,
+  ): Promise<{ milestones: OnboardingMilestone[]; count: number }> {
+    return apiClient.get<{
+      milestones: OnboardingMilestone[];
+      count: number;
+    }>(`/onboarding/milestones/${assignmentId}`);
+  },
+
+  /** Mark a milestone as completed with notes (admin). */
+  completeMilestone(
+    milestoneId: number,
+    data: { status: string; notes?: string },
+  ): Promise<{ milestone: OnboardingMilestone }> {
+    return apiClient.patch<{ milestone: OnboardingMilestone }>(
+      `/onboarding/milestones/${milestoneId}`,
+      data,
+    );
+  },
+
+  /** Get milestones for the current employee's active assignment. */
+  getMyMilestones(): Promise<{
+    milestones: OnboardingMilestone[];
+    count?: number;
+    message?: string;
+  }> {
+    return apiClient.get<{
+      milestones: OnboardingMilestone[];
+      count?: number;
+      message?: string;
+    }>("/onboarding/my-milestones");
+  },
+
   /* ── Export ─────────────────────────────────────────────── */
 
   /**
@@ -484,5 +580,74 @@ export const onboardingApi = {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(blobUrl);
+  },
+
+  /* ── Analytics ─────────────────────────────────────────── */
+
+  /** Fetch aggregated onboarding analytics (admin only). */
+  getAnalytics(): Promise<OnboardingAnalytics> {
+    return apiClient.get<OnboardingAnalytics>("/onboarding/analytics");
+  },
+
+  /* ── Pulse Surveys ─────────────────────────────────────── */
+
+  /** Trigger a pulse survey for an employee (admin). */
+  triggerSurvey(data: {
+    employee_id: number;
+    assignment_id: number;
+    survey_type: string;
+  }): Promise<{ survey: PulseSurvey }> {
+    return apiClient.post<{ survey: PulseSurvey }>(
+      "/onboarding/surveys/trigger",
+      data,
+    );
+  },
+
+  /** List all pulse surveys for the company (admin). */
+  listSurveys(): Promise<{ surveys: PulseSurvey[]; count: number }> {
+    return apiClient.get<{ surveys: PulseSurvey[]; count: number }>(
+      "/onboarding/surveys",
+    );
+  },
+
+  /** List pending surveys for the current employee. */
+  getMySurveys(): Promise<{ surveys: PulseSurvey[]; count: number }> {
+    return apiClient.get<{ surveys: PulseSurvey[]; count: number }>(
+      "/onboarding/my-surveys",
+    );
+  },
+
+  /** Submit responses for a pulse survey. */
+  respondToSurvey(
+    surveyId: number,
+    responses: Array<{
+      question_number: number;
+      score: number;
+      comment?: string;
+    }>,
+  ): Promise<{
+    message: string;
+    survey_id: number;
+    average_score: number;
+    flagged: boolean;
+    responses: PulseSurveyResponse[];
+  }> {
+    return apiClient.post<{
+      message: string;
+      survey_id: number;
+      average_score: number;
+      flagged: boolean;
+      responses: PulseSurveyResponse[];
+    }>(`/onboarding/surveys/${surveyId}/respond`, { responses });
+  },
+
+  /** Get full results for a survey (admin). */
+  getSurveyResults(
+    surveyId: number,
+  ): Promise<{ survey: PulseSurvey; responses: PulseSurveyResponse[] }> {
+    return apiClient.get<{
+      survey: PulseSurvey;
+      responses: PulseSurveyResponse[];
+    }>(`/onboarding/surveys/${surveyId}/results`);
   },
 };

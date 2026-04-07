@@ -15,7 +15,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import Response
@@ -1987,17 +1987,47 @@ async def assign_template(
     except Exception as exc:
         logger.warning("Failed to create pre-boarding tasks: %s", exc)
 
+    # Auto-create 30/60/90-day review milestones
+    milestones_created = 0
+    try:
+        start_date = employee.get("start_date", "")
+        if start_date:
+            base_date = datetime.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+        else:
+            base_date = datetime.fromisoformat(now) if isinstance(now, str) else now
+        for mtype, days in [("day_30", 30), ("day_60", 60), ("day_90", 90)]:
+            scheduled = (base_date + timedelta(days=days)).isoformat()
+            dataflow_crud.create(
+                "OnboardingMilestone",
+                {
+                    "assignment_id": assignment_id,
+                    "company_id": company_id,
+                    "employee_id": employee_id,
+                    "milestone_type": mtype,
+                    "scheduled_date": scheduled,
+                    "status": "pending",
+                    "completed_at": None,
+                    "notes": "",
+                    "reviewed_by": None,
+                },
+            )
+            milestones_created += 1
+    except Exception as exc:
+        logger.warning("Failed to create onboarding milestones: %s", exc)
+
     logger.info(
-        "Onboarding assigned: assignment_id=%s, employee_id=%s, template_id=%s, steps=%d, preboarding=%d",
+        "Onboarding assigned: assignment_id=%s, employee_id=%s, template_id=%s, steps=%d, preboarding=%d, milestones=%d",
         assignment_id,
         employee_id,
         template_id,
         len(all_steps),
         preboarding_created,
+        milestones_created,
     )
     return {
         "assignment": assignment,
         "steps_created": len(all_steps),
+        "milestones_created": milestones_created,
     }
 
 
@@ -2881,3 +2911,575 @@ async def update_preboarding_task(
     result = dataflow_crud.update("PreboardingTaskInstance", task_id, updates)
     logger.info("Pre-boarding task updated: id=%s, status=%s", task_id, result.get("status"))
     return {"task": result}
+
+
+# ==========================================================================
+# MILESTONES (30/60/90-day reviews)
+# ==========================================================================
+
+
+@router.get("/milestones/{assignment_id}")
+async def list_milestones(
+    assignment_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List 30/60/90-day review milestones for an onboarding assignment."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    # Verify assignment belongs to company
+    assignment = dataflow_crud.read("OnboardingAssignment", assignment_id)
+    if not assignment or assignment.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Assignment not found.")
+
+    milestones = dataflow_crud.list_records(
+        "OnboardingMilestone",
+        {"assignment_id": assignment_id, "company_id": company_id},
+    )
+
+    # Sort by milestone_type order: day_30, day_60, day_90
+    type_order = {"day_30": 0, "day_60": 1, "day_90": 2}
+    milestones.sort(key=lambda m: type_order.get(m.get("milestone_type", ""), 99))
+
+    return {"milestones": milestones, "count": len(milestones)}
+
+
+@router.patch("/milestones/{milestone_id}")
+async def update_milestone(
+    milestone_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Mark a milestone as completed, add notes, or set reviewed_by."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    milestone = dataflow_crud.read("OnboardingMilestone", milestone_id)
+    if not milestone or milestone.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Milestone not found.")
+
+    body = await request.json()
+    updates: dict = {}
+    actor_id = int(current_user.get("sub", 0))
+
+    if body.get("status") == "completed" and milestone.get("status") != "completed":
+        updates["status"] = "completed"
+        updates["completed_at"] = datetime.utcnow().isoformat()
+        updates["reviewed_by"] = actor_id
+
+    if "notes" in body:
+        _validate_text_length(body["notes"], "notes", MAX_NOTES_LENGTH)
+        updates["notes"] = body["notes"]
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update.")
+
+    result = dataflow_crud.update("OnboardingMilestone", milestone_id, updates)
+    logger.info(
+        "Onboarding milestone updated: id=%s, type=%s, status=%s",
+        milestone_id,
+        result.get("milestone_type"),
+        result.get("status"),
+    )
+    return {"milestone": result}
+
+
+@router.get("/my-milestones")
+async def get_my_milestones(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Get milestones for the current employee's active onboarding assignment."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    employee = _get_employee_for_user(user_id, company_id)
+    if not employee:
+        return {"milestones": [], "message": "No employee record found."}
+
+    employee_id = employee.get("id")
+
+    # Find active assignment
+    assignments = dataflow_crud.list_records(
+        "OnboardingAssignment",
+        {"employee_id": employee_id, "company_id": company_id},
+    )
+    active = [a for a in assignments if a.get("status") in ("in_progress", "overdue")]
+    if not active:
+        return {"milestones": [], "message": "No active onboarding."}
+
+    active.sort(key=lambda a: a.get("assigned_at", ""), reverse=True)
+    assignment = active[0]
+
+    milestones = dataflow_crud.list_records(
+        "OnboardingMilestone",
+        {"assignment_id": assignment["id"], "company_id": company_id},
+    )
+
+    type_order = {"day_30": 0, "day_60": 1, "day_90": 2}
+    milestones.sort(key=lambda m: type_order.get(m.get("milestone_type", ""), 99))
+
+    return {"milestones": milestones, "count": len(milestones)}
+
+
+# --------------------------------------------------------------------------
+# Analytics
+# --------------------------------------------------------------------------
+
+
+@router.get("/analytics")
+async def get_onboarding_analytics(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Aggregate onboarding analytics for the company.
+
+    Returns completion rates, average completion time, status counts,
+    breakdowns by department and module, and average survey scores.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    # ------------------------------------------------------------------
+    # 1. Fetch all assignments for the company
+    # ------------------------------------------------------------------
+    assignments = dataflow_crud.list_records(
+        "OnboardingAssignment", {"company_id": company_id}
+    )
+
+    # Refresh overdue status for in-progress assignments
+    now_dt = datetime.utcnow()
+    for a in assignments:
+        if a.get("status") == "in_progress" and a.get("due_date"):
+            try:
+                due_date = datetime.fromisoformat(a["due_date"])
+                if due_date.tzinfo is not None:
+                    due_date = due_date.replace(tzinfo=None)
+                if now_dt > due_date:
+                    a["status"] = "overdue"
+                    dataflow_crud.update(
+                        "OnboardingAssignment", a["id"], {"status": "overdue"}
+                    )
+            except (ValueError, TypeError):
+                pass
+
+    total_assignments = len(assignments)
+    completed_count = sum(1 for a in assignments if a.get("status") == "completed")
+    in_progress_count = sum(1 for a in assignments if a.get("status") == "in_progress")
+    overdue_count = sum(1 for a in assignments if a.get("status") == "overdue")
+    completion_rate = round((completed_count / total_assignments) * 100, 1) if total_assignments > 0 else 0.0
+
+    # ------------------------------------------------------------------
+    # 2. Average completion time (days from assigned_at to completed_at)
+    # ------------------------------------------------------------------
+    completion_days: list[float] = []
+    for a in assignments:
+        if a.get("status") == "completed" and a.get("assigned_at") and a.get("completed_at"):
+            try:
+                assigned = datetime.fromisoformat(a["assigned_at"])
+                completed = datetime.fromisoformat(a["completed_at"])
+                if assigned.tzinfo is not None:
+                    assigned = assigned.replace(tzinfo=None)
+                if completed.tzinfo is not None:
+                    completed = completed.replace(tzinfo=None)
+                delta = (completed - assigned).total_seconds() / 86400
+                if delta >= 0:
+                    completion_days.append(round(delta, 1))
+            except (ValueError, TypeError):
+                pass
+
+    avg_completion_days = round(sum(completion_days) / len(completion_days), 1) if completion_days else 0.0
+
+    # ------------------------------------------------------------------
+    # 3. By department
+    # ------------------------------------------------------------------
+    dept_stats: dict[str, dict] = {}
+    for a in assignments:
+        employee = dataflow_crud.read("Employee", a.get("employee_id"))
+        dept = (employee.get("department") if employee else None) or "Unassigned"
+        if dept not in dept_stats:
+            dept_stats[dept] = {"total": 0, "completed": 0}
+        dept_stats[dept]["total"] += 1
+        if a.get("status") == "completed":
+            dept_stats[dept]["completed"] += 1
+
+    by_department = sorted(
+        [
+            {
+                "department": dept,
+                "total": stats["total"],
+                "completed": stats["completed"],
+                "rate": round((stats["completed"] / stats["total"]) * 100, 1) if stats["total"] > 0 else 0.0,
+            }
+            for dept, stats in dept_stats.items()
+        ],
+        key=lambda d: d["department"],
+    )
+
+    # ------------------------------------------------------------------
+    # 4. By module — steps completed across all assignments
+    # ------------------------------------------------------------------
+    # Gather all template IDs in use
+    template_ids = {a.get("template_id") for a in assignments if a.get("template_id")}
+    module_stats: dict[str, dict] = {}
+    for tid in template_ids:
+        modules = _get_modules_for_template(tid)
+        for mod in modules:
+            mod_name = mod.get("name", f"Module {mod.get('id')}")
+            mod_id = mod.get("id")
+            steps = _get_steps_for_module(mod_id)
+            step_ids = {s.get("id") for s in steps}
+            if not step_ids:
+                continue
+
+            # Count step progress across all assignments for this template
+            for a in assignments:
+                if a.get("template_id") != tid:
+                    continue
+                progress_records = dataflow_crud.list_records(
+                    "OnboardingStepProgress",
+                    {"assignment_id": a.get("id")},
+                )
+                for pr in progress_records:
+                    if pr.get("step_id") in step_ids:
+                        if mod_name not in module_stats:
+                            module_stats[mod_name] = {"total_steps": 0, "completed_steps": 0}
+                        module_stats[mod_name]["total_steps"] += 1
+                        if pr.get("status") == "completed":
+                            module_stats[mod_name]["completed_steps"] += 1
+
+    by_module = sorted(
+        [
+            {
+                "module_name": name,
+                "total_steps": stats["total_steps"],
+                "completed_steps": stats["completed_steps"],
+                "rate": round((stats["completed_steps"] / stats["total_steps"]) * 100, 1) if stats["total_steps"] > 0 else 0.0,
+            }
+            for name, stats in module_stats.items()
+        ],
+        key=lambda m: m["module_name"],
+    )
+
+    # ------------------------------------------------------------------
+    # 5. Pulse survey scores (if model exists)
+    # ------------------------------------------------------------------
+    avg_survey_score: float | None = None
+    flagged_employees = 0
+    try:
+        surveys = dataflow_crud.list_records("PulseSurvey", {"company_id": company_id})
+        if surveys:
+            scores = [s.get("average_score") for s in surveys if s.get("average_score") is not None]
+            avg_survey_score = round(sum(scores) / len(scores), 1) if scores else None
+            flagged_employees = sum(1 for s in surveys if s.get("flagged"))
+    except Exception as exc:
+        logger.warning("Failed to fetch pulse survey data for analytics: %s", exc)
+
+    logger.info(
+        "Onboarding analytics: company_id=%s, total=%d, completed=%d, overdue=%d",
+        company_id, total_assignments, completed_count, overdue_count,
+    )
+
+    return {
+        "total_assignments": total_assignments,
+        "completed": completed_count,
+        "in_progress": in_progress_count,
+        "overdue": overdue_count,
+        "completion_rate": completion_rate,
+        "avg_completion_days": avg_completion_days,
+        "by_department": by_department,
+        "by_module": by_module,
+        "avg_survey_score": avg_survey_score,
+        "flagged_employees": flagged_employees,
+    }
+
+
+# ==========================================================================
+# PULSE SURVEYS
+# ==========================================================================
+
+PULSE_QUESTIONS = [
+    (1, "I understand my role and responsibilities clearly"),
+    (2, "I feel welcomed and included by my team"),
+    (3, "My manager has been supportive during my onboarding"),
+    (4, "I have the tools and resources I need to do my job"),
+    (5, "Overall, how would you rate your onboarding experience?"),
+]
+
+VALID_SURVEY_TYPES = {"day_30", "day_60"}
+FLAG_THRESHOLD = 3.5
+
+
+@router.post("/surveys/trigger")
+async def trigger_pulse_survey(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Create a pulse survey for an onboarding employee.
+
+    Accepts: employee_id, assignment_id, survey_type (day_30 or day_60).
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    body = await request.json()
+    employee_id = body.get("employee_id")
+    assignment_id = body.get("assignment_id")
+    survey_type = body.get("survey_type", "day_30")
+
+    if not employee_id:
+        raise HTTPException(status_code=400, detail="employee_id is required.")
+    if not assignment_id:
+        raise HTTPException(status_code=400, detail="assignment_id is required.")
+    if survey_type not in VALID_SURVEY_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"survey_type must be one of: {', '.join(sorted(VALID_SURVEY_TYPES))}.",
+        )
+
+    # Verify employee belongs to this company
+    employee = dataflow_crud.read("Employee", employee_id)
+    if not employee or employee.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    # Verify assignment belongs to this company
+    assignment = dataflow_crud.read("OnboardingAssignment", assignment_id)
+    if not assignment or assignment.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Onboarding assignment not found.")
+
+    # Check for duplicate — same assignment and survey_type
+    existing = dataflow_crud.list_records(
+        "PulseSurvey",
+        {"assignment_id": assignment_id, "survey_type": survey_type},
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A {survey_type} survey already exists for this assignment.",
+        )
+
+    now = datetime.utcnow().isoformat()
+    survey = dataflow_crud.create(
+        "PulseSurvey",
+        {
+            "company_id": company_id,
+            "employee_id": int(employee_id),
+            "assignment_id": int(assignment_id),
+            "survey_type": survey_type,
+            "status": "pending",
+            "sent_at": now,
+            "average_score": 0.0,
+            "flagged": False,
+        },
+    )
+    logger.info(
+        "Pulse survey triggered: id=%s, employee_id=%s, type=%s",
+        survey.get("id"),
+        employee_id,
+        survey_type,
+    )
+    return {"survey": survey}
+
+
+@router.get("/surveys")
+async def list_pulse_surveys(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List all pulse surveys for the current company.
+
+    Enriches each survey with the employee name.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    surveys = dataflow_crud.list_records(
+        "PulseSurvey",
+        {"company_id": company_id},
+    )
+
+    enriched = []
+    for s in surveys:
+        emp = dataflow_crud.read("Employee", s.get("employee_id"))
+        employee_name = ""
+        if emp:
+            user = dataflow_crud.read("User", emp.get("user_id"))
+            employee_name = user.get("name", "") if user else ""
+        s["employee_name"] = employee_name
+        enriched.append(s)
+
+    return {"surveys": enriched, "count": len(enriched)}
+
+
+@router.get("/my-surveys")
+async def list_my_surveys(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """List pending pulse surveys for the currently logged-in employee."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    employee = _get_employee_for_user(user_id, company_id)
+    if not employee:
+        return {"surveys": [], "count": 0}
+
+    employee_id = employee.get("id")
+    surveys = dataflow_crud.list_records(
+        "PulseSurvey",
+        {"employee_id": employee_id, "status": "pending"},
+    )
+
+    # Enrich with questions
+    for s in surveys:
+        s["questions"] = [
+            {"number": num, "text": text} for num, text in PULSE_QUESTIONS
+        ]
+
+    return {"surveys": surveys, "count": len(surveys)}
+
+
+@router.post("/surveys/{survey_id}/respond")
+async def respond_to_survey(
+    survey_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Submit responses to a pulse survey.
+
+    Accepts an array of {question_number, score, comment}.
+    Calculates average score and flags if below threshold.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    employee = _get_employee_for_user(user_id, company_id)
+    if not employee:
+        raise HTTPException(status_code=400, detail="No employee record found.")
+
+    # Verify survey belongs to this employee
+    survey = dataflow_crud.read("PulseSurvey", survey_id)
+    if not survey or survey.get("employee_id") != employee.get("id"):
+        raise HTTPException(status_code=404, detail="Survey not found.")
+
+    if survey.get("status") == "completed":
+        raise HTTPException(status_code=400, detail="Survey already completed.")
+
+    body = await request.json()
+    responses = body.get("responses", [])
+    if not responses:
+        raise HTTPException(status_code=400, detail="responses array is required.")
+    if len(responses) > len(PULSE_QUESTIONS):
+        raise HTTPException(status_code=400, detail=f"Maximum {len(PULSE_QUESTIONS)} responses allowed.")
+
+    # Validate responses — no duplicate question numbers
+    valid_numbers = {num for num, _ in PULSE_QUESTIONS}
+    question_lookup = {num: text for num, text in PULSE_QUESTIONS}
+    seen_questions: set[int] = set()
+    total_score = 0
+    created_responses = []
+
+    for resp in responses:
+        q_num = resp.get("question_number")
+        score = resp.get("score")
+        comment = resp.get("comment", "")
+
+        if q_num in seen_questions:
+            raise HTTPException(status_code=400, detail=f"Duplicate response for question {q_num}.")
+        seen_questions.add(q_num)
+
+        if q_num not in valid_numbers:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid question_number: {q_num}. Valid: {sorted(valid_numbers)}.",
+            )
+        if not isinstance(score, int) or score < 1 or score > 5:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Score for question {q_num} must be an integer from 1 to 5.",
+            )
+        if comment:
+            _validate_text_length(comment, f"comment for question {q_num}")
+
+        total_score += score
+        response_record = dataflow_crud.create(
+            "PulseSurveyResponse",
+            {
+                "survey_id": survey_id,
+                "question_number": int(q_num),
+                "question_text": question_lookup.get(q_num, ""),
+                "score": score,
+                "comment": comment,
+            },
+        )
+        created_responses.append(response_record)
+
+    # Calculate average and flag
+    avg_score = round(total_score / len(responses), 2) if responses else 0.0
+    flagged = avg_score < FLAG_THRESHOLD
+    now = datetime.utcnow().isoformat()
+
+    dataflow_crud.update(
+        "PulseSurvey",
+        survey_id,
+        {
+            "status": "completed",
+            "completed_at": now,
+            "average_score": avg_score,
+            "flagged": flagged,
+        },
+    )
+
+    logger.info(
+        "Pulse survey completed: id=%s, avg=%.2f, flagged=%s",
+        survey_id,
+        avg_score,
+        flagged,
+    )
+
+    return {
+        "message": "Thank you for your feedback!",
+        "survey_id": survey_id,
+        "average_score": avg_score,
+        "flagged": flagged,
+        "responses": created_responses,
+    }
+
+
+@router.get("/surveys/{survey_id}/results")
+async def get_survey_results(
+    survey_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get a pulse survey with all its responses (admin view)."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    survey = dataflow_crud.read("PulseSurvey", survey_id)
+    if not survey or survey.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Survey not found.")
+
+    # Enrich with employee name
+    emp = dataflow_crud.read("Employee", survey.get("employee_id"))
+    if emp:
+        user = dataflow_crud.read("User", emp.get("user_id"))
+        survey["employee_name"] = user.get("name", "") if user else ""
+    else:
+        survey["employee_name"] = ""
+
+    # Fetch all responses
+    responses = dataflow_crud.list_records(
+        "PulseSurveyResponse",
+        {"survey_id": survey_id},
+    )
+    responses.sort(key=lambda r: r.get("question_number", 0))
+
+    return {"survey": survey, "responses": responses}

@@ -67,6 +67,9 @@ from hr_advisory.models.company_user import (
     OnboardingAssignment,
     OnboardingStepProgress,
     PreboardingTaskInstance,
+    OnboardingMilestone,
+    PulseSurvey,
+    PulseSurveyResponse,
     UserRole,
     ContentUpdateStatus,
     ContentUrgency,
@@ -210,6 +213,10 @@ __all__ = [
     "OnboardingAssignment",
     "OnboardingStepProgress",
     "PreboardingTaskInstance",
+    "OnboardingMilestone",
+    # Pulse surveys
+    "PulseSurvey",
+    "PulseSurveyResponse",
     # QA workflow
     "QASession",
     "QAEvaluation",

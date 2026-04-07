@@ -19,6 +19,7 @@ import {
   FileSpreadsheet,
   Copy,
   Check,
+  CheckCircle,
   RefreshCw,
   Trash2,
   Mail,
@@ -31,6 +32,11 @@ import {
   AlertTriangle,
   Loader2,
   Download,
+  Clock,
+  BarChart3,
+  Star,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import {
   employeesApi,
@@ -40,9 +46,12 @@ import {
 import {
   onboardingApi,
   type OnboardingAssignment,
+  type OnboardingAnalytics,
   type MyOnboardingProgress,
   type PreboardingTask,
   type PreboardingListResponse,
+  type PulseSurvey,
+  type PulseSurveyResponse,
 } from "@/services/api/onboarding";
 import { TemplateBuilder } from "@/components/onboarding/TemplateBuilder";
 import { AssignTemplateModal } from "@/components/onboarding/AssignTemplateModal";
@@ -1296,6 +1305,260 @@ function PreboardingSummary({ employeeId }: { employeeId: number }) {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Pulse Survey Section (admin — inside expanded assignment)
+   ═══════════════════════════════════════════════════════════ */
+
+function ScoreBadge({ score }: { score: number }) {
+  let colorClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (score < 3.5) {
+    colorClass = "bg-red-50 text-red-700 border-red-200";
+  } else if (score < 4) {
+    colorClass = "bg-amber-50 text-amber-700 border-amber-200";
+  }
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${colorClass}`}
+    >
+      <Star className="h-3 w-3 fill-current" />
+      {score.toFixed(1)}
+    </span>
+  );
+}
+
+function PulseSurveySection({
+  assignmentId,
+  employeeId,
+}: {
+  assignmentId: number;
+  employeeId: number;
+}) {
+  const [surveys, setSurveys] = useState<PulseSurvey[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [triggerType, setTriggerType] = useState<string | null>(null);
+  const [expandedSurveyId, setExpandedSurveyId] = useState<number | null>(null);
+  const [surveyResponses, setSurveyResponses] = useState<PulseSurveyResponse[]>(
+    [],
+  );
+  const [isLoadingResponses, setIsLoadingResponses] = useState(false);
+
+  const fetchSurveys = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await onboardingApi.listSurveys();
+      const filtered = (data.surveys ?? []).filter(
+        (s) => s.assignment_id === assignmentId,
+      );
+      setSurveys(filtered);
+    } catch {
+      /* Non-critical */
+    } finally {
+      setIsLoading(false);
+    }
+  }, [assignmentId]);
+
+  useEffect(() => {
+    fetchSurveys();
+  }, [fetchSurveys]);
+
+  async function handleTrigger(surveyType: string) {
+    setTriggerType(surveyType);
+    try {
+      await onboardingApi.triggerSurvey({
+        employee_id: employeeId,
+        assignment_id: assignmentId,
+        survey_type: surveyType,
+      });
+      toast.success(
+        `${surveyType === "day_60" ? "Day 60" : "Day 30"} survey sent.`,
+      );
+      fetchSurveys();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to trigger survey.";
+      toast.error(message);
+    } finally {
+      setTriggerType(null);
+    }
+  }
+
+  async function handleExpandResults(surveyId: number) {
+    if (expandedSurveyId === surveyId) {
+      setExpandedSurveyId(null);
+      setSurveyResponses([]);
+      return;
+    }
+    setExpandedSurveyId(surveyId);
+    setIsLoadingResponses(true);
+    try {
+      const data = await onboardingApi.getSurveyResults(surveyId);
+      setSurveyResponses(data.responses ?? []);
+    } catch {
+      toast.error("Unable to load survey responses.");
+    } finally {
+      setIsLoadingResponses(false);
+    }
+  }
+
+  const hasDay30 = surveys.some((s) => s.survey_type === "day_30");
+  const hasDay60 = surveys.some((s) => s.survey_type === "day_60");
+
+  if (isLoading) {
+    return (
+      <div className="py-2">
+        <div className="animate-pulse h-4 w-32 bg-[var(--color-gray-200)] rounded" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="h-4 w-4 text-[var(--color-gray-500)]" />
+          <h4 className="text-xs font-semibold text-[var(--color-gray-700)] uppercase tracking-wider">
+            Pulse Surveys
+          </h4>
+        </div>
+        <div className="flex items-center gap-2">
+          {!hasDay30 && (
+            <AppButton
+              variant="outlined"
+              size="sm"
+              onClick={() => handleTrigger("day_30")}
+              disabled={triggerType !== null}
+            >
+              {triggerType === "day_30" ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <Send className="h-3 w-3 mr-1" />
+              )}
+              Send Day 30
+            </AppButton>
+          )}
+          {!hasDay60 && (
+            <AppButton
+              variant="outlined"
+              size="sm"
+              onClick={() => handleTrigger("day_60")}
+              disabled={triggerType !== null}
+            >
+              {triggerType === "day_60" ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <Send className="h-3 w-3 mr-1" />
+              )}
+              Send Day 60
+            </AppButton>
+          )}
+        </div>
+      </div>
+
+      {surveys.length === 0 ? (
+        <p className="text-xs text-[var(--color-gray-500)]">
+          No pulse surveys sent yet.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {surveys.map((s) => {
+            const isCompleted = s.status === "completed";
+            const isExpanded = expandedSurveyId === s.id;
+            const typeLabel = s.survey_type === "day_60" ? "Day 60" : "Day 30";
+
+            return (
+              <div
+                key={s.id}
+                className="border border-[var(--color-gray-100)] rounded-lg"
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    isCompleted ? handleExpandResults(s.id) : undefined
+                  }
+                  disabled={!isCompleted}
+                  className={`w-full text-left flex items-center gap-3 px-3 py-2.5 ${
+                    isCompleted
+                      ? "hover:bg-[var(--color-gray-50)] cursor-pointer"
+                      : "cursor-default"
+                  } transition-colors rounded-lg`}
+                >
+                  <span className="text-xs font-medium text-[var(--color-gray-700)] flex-shrink-0">
+                    {typeLabel}
+                  </span>
+
+                  {isCompleted ? (
+                    <>
+                      <ScoreBadge score={s.average_score} />
+                      {s.flagged && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-700 border border-red-200">
+                          <AlertTriangle className="h-3 w-3" />
+                          Disengagement risk
+                        </span>
+                      )}
+                      <span className="flex-1" />
+                      {isExpanded ? (
+                        <ChevronDown className="h-3 w-3 text-[var(--color-gray-400)]" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 text-[var(--color-gray-400)]" />
+                      )}
+                    </>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-500)]">
+                      Pending
+                    </span>
+                  )}
+                </button>
+
+                {isExpanded && isCompleted && (
+                  <div className="px-3 pb-3 border-t border-[var(--color-gray-100)]">
+                    {isLoadingResponses ? (
+                      <div className="py-3 text-center">
+                        <span className="inline-block h-4 w-4 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : (
+                      <div className="space-y-2 mt-2">
+                        {surveyResponses.map((r) => (
+                          <div key={r.id} className="flex items-start gap-3">
+                            <span className="text-xs text-[var(--color-gray-500)] w-5 text-right flex-shrink-0 pt-0.5">
+                              Q{r.question_number}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-[var(--color-gray-700)]">
+                                {r.question_text}
+                              </p>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star
+                                    key={star}
+                                    className={`h-3 w-3 ${
+                                      star <= r.score
+                                        ? "fill-amber-400 text-amber-400"
+                                        : "fill-none text-[var(--color-gray-300)]"
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              {r.comment && (
+                                <p className="text-[11px] text-[var(--color-gray-500)] mt-0.5 italic">
+                                  &ldquo;{r.comment}&rdquo;
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
    Onboarding Tab
    ═══════════════════════════════════════════════════════════ */
 
@@ -1312,12 +1575,27 @@ function OnboardingTab({
   const [expandedDetail, setExpandedDetail] =
     useState<MyOnboardingProgress | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [analytics, setAnalytics] = useState<OnboardingAnalytics | null>(null);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
 
   /* ── Filter state ───────────────────────────────────────── */
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+
+  const fetchAnalytics = useCallback(async () => {
+    setIsLoadingAnalytics(true);
+    try {
+      const data = await onboardingApi.getAnalytics();
+      setAnalytics(data);
+    } catch {
+      // Analytics are supplementary — failing silently is acceptable
+      setAnalytics(null);
+    } finally {
+      setIsLoadingAnalytics(false);
+    }
+  }, []);
 
   const fetchAssignments = useCallback(async () => {
     setIsLoading(true);
@@ -1339,12 +1617,14 @@ function OnboardingTab({
 
   useEffect(() => {
     fetchAssignments();
-  }, [fetchAssignments]);
+    fetchAnalytics();
+  }, [fetchAssignments, fetchAnalytics]);
 
-  /* Re-fetch assignments when parent signals (e.g. after assigning a template) */
+  /* Re-fetch assignments + analytics when parent signals (e.g. after assigning a template) */
   useEffect(() => {
     if (refreshKey !== undefined && refreshKey > 0) {
       fetchAssignments();
+      fetchAnalytics();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
@@ -1443,10 +1723,136 @@ function OnboardingTab({
     searchQuery || statusFilter || departmentFilter,
   );
 
+  /* ── Analytics colour helper ──────────────────────────────── */
+  function rateColor(rate: number): string {
+    if (rate >= 80) return "text-emerald-600";
+    if (rate >= 60) return "text-amber-600";
+    return "text-red-600";
+  }
+
+  function rateBg(rate: number): string {
+    if (rate >= 80) return "bg-emerald-50";
+    if (rate >= 60) return "bg-amber-50";
+    return "bg-red-50";
+  }
+
   return (
     <div className="space-y-6">
       {/* Template Builder (upload + list) */}
       <TemplateBuilder />
+
+      {/* Analytics summary cards */}
+      {isLoadingAnalytics ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((n) => (
+            <AppCard key={n} variant="flat">
+              <div className="animate-pulse py-2">
+                <div className="h-3 w-20 bg-[var(--color-gray-200)] rounded mb-3" />
+                <div className="h-7 w-12 bg-[var(--color-gray-200)] rounded" />
+              </div>
+            </AppCard>
+          ))}
+        </div>
+      ) : analytics && analytics.total_assignments > 0 ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Total Assignments */}
+          <AppCard variant="flat">
+            <div className="flex items-start gap-3 py-1">
+              <div className="rounded-lg bg-blue-50 p-2 flex-shrink-0">
+                <ClipboardList className="h-4 w-4 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-[var(--color-gray-500)]">
+                  Total Assignments
+                </p>
+                <p className="text-xl font-semibold text-[var(--color-gray-900)] mt-0.5">
+                  {analytics.total_assignments}
+                </p>
+                <p className="text-[10px] text-[var(--color-gray-400)] mt-0.5">
+                  {analytics.in_progress} in progress
+                </p>
+              </div>
+            </div>
+          </AppCard>
+
+          {/* Completion Rate */}
+          <AppCard variant="flat">
+            <div className="flex items-start gap-3 py-1">
+              <div
+                className={`rounded-lg p-2 flex-shrink-0 ${rateBg(analytics.completion_rate)}`}
+              >
+                <CheckCircle
+                  className={`h-4 w-4 ${rateColor(analytics.completion_rate)}`}
+                />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-[var(--color-gray-500)]">
+                  Completion Rate
+                </p>
+                <p
+                  className={`text-xl font-semibold mt-0.5 ${rateColor(analytics.completion_rate)}`}
+                >
+                  {analytics.completion_rate}%
+                </p>
+                <p className="text-[10px] text-[var(--color-gray-400)] mt-0.5">
+                  {analytics.completed} of {analytics.total_assignments}{" "}
+                  completed
+                </p>
+              </div>
+            </div>
+          </AppCard>
+
+          {/* Avg Days to Complete */}
+          <AppCard variant="flat">
+            <div className="flex items-start gap-3 py-1">
+              <div className="rounded-lg bg-violet-50 p-2 flex-shrink-0">
+                <Clock className="h-4 w-4 text-violet-600" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-[var(--color-gray-500)]">
+                  Avg Days to Complete
+                </p>
+                <p className="text-xl font-semibold text-[var(--color-gray-900)] mt-0.5">
+                  {analytics.avg_completion_days > 0
+                    ? analytics.avg_completion_days
+                    : "\u2014"}
+                </p>
+                <p className="text-[10px] text-[var(--color-gray-400)] mt-0.5">
+                  {analytics.completed > 0
+                    ? `across ${analytics.completed} completed`
+                    : "no completions yet"}
+                </p>
+              </div>
+            </div>
+          </AppCard>
+
+          {/* Overdue */}
+          <AppCard variant="flat">
+            <div className="flex items-start gap-3 py-1">
+              <div
+                className={`rounded-lg p-2 flex-shrink-0 ${analytics.overdue > 0 ? "bg-red-50" : "bg-emerald-50"}`}
+              >
+                <AlertTriangle
+                  className={`h-4 w-4 ${analytics.overdue > 0 ? "text-red-600" : "text-emerald-600"}`}
+                />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-[var(--color-gray-500)]">
+                  Overdue
+                </p>
+                <p
+                  className={`text-xl font-semibold mt-0.5 ${analytics.overdue > 0 ? "text-red-600" : "text-emerald-600"}`}
+                >
+                  {analytics.overdue}
+                </p>
+                <p className="text-[10px] text-[var(--color-gray-400)] mt-0.5">
+                  {analytics.overdue > 0 ? "need attention" : "all on track"}
+                </p>
+              </div>
+            </div>
+          </AppCard>
+        </div>
+      ) : null}
 
       {/* Divider */}
       <div className="border-t border-[var(--color-gray-200)]" />
@@ -1751,6 +2157,14 @@ function OnboardingTab({
                             </h4>
                           </div>
                           <PreboardingSection
+                            employeeId={assignment.employee_id}
+                          />
+                        </div>
+
+                        {/* Pulse Surveys */}
+                        <div className="pt-3 border-t border-[var(--color-gray-100)]">
+                          <PulseSurveySection
+                            assignmentId={assignment.id}
                             employeeId={assignment.employee_id}
                           />
                         </div>

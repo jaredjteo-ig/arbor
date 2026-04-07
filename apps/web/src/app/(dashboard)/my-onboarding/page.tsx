@@ -22,12 +22,17 @@ import {
   RefreshCw,
   Mail,
   Users,
+  CalendarDays,
+  Star,
+  MessageSquare,
 } from "lucide-react";
 import {
   onboardingApi,
   type MyOnboardingProgress,
   type StepProgressWithStep,
   type AssignmentModuleSummary,
+  type OnboardingMilestone,
+  type PulseSurvey,
 } from "@/services/api/onboarding";
 
 /* ── Phase badge styles ──────────────────────────────────── */
@@ -666,6 +671,371 @@ function CelebrationBanner() {
   );
 }
 
+/* ── Milestone helpers ──────────────────────────────────── */
+
+const MILESTONE_LABELS: Record<string, string> = {
+  day_30: "30-Day Review",
+  day_60: "60-Day Review",
+  day_90: "90-Day Review",
+};
+
+function daysUntil(dateStr: string | null): number | null {
+  if (!dateStr) return null;
+  try {
+    const target = new Date(dateStr);
+    const now = new Date();
+    const diff = target.getTime() - now.getTime();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  } catch {
+    return null;
+  }
+}
+
+function formatCountdown(days: number | null): string {
+  if (days === null) return "";
+  if (days < 0)
+    return `${Math.abs(days)} day${Math.abs(days) !== 1 ? "s" : ""} ago`;
+  if (days === 0) return "Today";
+  return `in ${days} day${days !== 1 ? "s" : ""}`;
+}
+
+/* ── Star Rating Input ───────────────────────────────────── */
+
+function StarRating({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [hover, setHover] = useState(0);
+
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => onChange(star)}
+          onMouseEnter={() => setHover(star)}
+          onMouseLeave={() => setHover(0)}
+          className="p-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] rounded"
+          aria-label={`Rate ${star} out of 5`}
+        >
+          <Star
+            className={`h-5 w-5 transition-colors ${
+              star <= (hover || value)
+                ? "fill-amber-400 text-amber-400"
+                : "fill-none text-[var(--color-gray-300)]"
+            }`}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ── Pulse Check-In (employee view) ─────────────────────── */
+
+function PulseCheckIn() {
+  const [surveys, setSurveys] = useState<PulseSurvey[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [scores, setScores] = useState<Record<number, number>>({});
+  const [comments, setComments] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await onboardingApi.getMySurveys();
+        if (!cancelled) setSurveys(res.surveys ?? []);
+      } catch {
+        /* Non-critical — degrade gracefully */
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (isLoading) return null;
+  if (surveys.length === 0 && !submitted) return null;
+
+  if (submitted) {
+    return (
+      <AppCard variant="flat">
+        <div className="py-6 text-center">
+          <CheckCircle2
+            className="h-10 w-10 text-emerald-500 mx-auto mb-3"
+            aria-hidden="true"
+          />
+          <h3 className="text-base font-semibold text-[var(--color-gray-900)] mb-1">
+            Thank you for your feedback!
+          </h3>
+          <p className="text-sm text-[var(--color-gray-500)]">
+            Your responses help us improve the onboarding experience.
+          </p>
+        </div>
+      </AppCard>
+    );
+  }
+
+  const survey = surveys[0];
+  const questions = survey.questions ?? [];
+  const typeLabel =
+    survey.survey_type === "day_60" ? "Day 60 Check-in" : "Day 30 Check-in";
+
+  const allRated = questions.every(
+    (q) => scores[q.number] !== undefined && scores[q.number] > 0,
+  );
+
+  async function handleSubmit() {
+    if (!allRated) return;
+    setIsSubmitting(true);
+    try {
+      const responses = questions.map((q) => ({
+        question_number: q.number,
+        score: scores[q.number],
+        comment: comments[q.number] ?? "",
+      }));
+      await onboardingApi.respondToSurvey(survey.id, responses);
+      setSubmitted(true);
+      toast.success("Pulse check-in submitted successfully.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to submit your check-in. Please try again.";
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <AppCard variant="flat">
+      <div className="flex items-center gap-2 mb-4">
+        <MessageSquare
+          className="h-5 w-5 text-[var(--color-primary)]"
+          aria-hidden="true"
+        />
+        <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+          {typeLabel}
+        </h2>
+      </div>
+      <p className="text-sm text-[var(--color-gray-500)] mb-5">
+        We&apos;d love to hear how your onboarding is going. Please rate each
+        statement below.
+      </p>
+
+      <div className="space-y-5">
+        {questions.map((q) => (
+          <div key={q.number}>
+            <div className="flex items-start justify-between gap-4 mb-1.5">
+              <label className="text-sm text-[var(--color-gray-700)] flex-1">
+                {q.number}. {q.text}
+              </label>
+              <StarRating
+                value={scores[q.number] ?? 0}
+                onChange={(v) =>
+                  setScores((prev) => ({ ...prev, [q.number]: v }))
+                }
+              />
+            </div>
+            <textarea
+              value={comments[q.number] ?? ""}
+              onChange={(e) =>
+                setComments((prev) => ({
+                  ...prev,
+                  [q.number]: e.target.value,
+                }))
+              }
+              placeholder="Optional comment..."
+              rows={2}
+              className="
+                w-full rounded-[8px] border px-3 py-2 text-sm
+                bg-[var(--color-surface-input)] text-[var(--foreground)]
+                border-[var(--color-surface-input-border)]
+                placeholder:text-[var(--color-gray-400)]
+                transition-colors resize-none
+                focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                focus:border-[var(--color-surface-input-focus)]
+              "
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 flex justify-end">
+        <AppButton
+          variant="primary"
+          size="sm"
+          onClick={handleSubmit}
+          disabled={!allRated || isSubmitting}
+        >
+          {isSubmitting ? "Submitting..." : "Submit Check-in"}
+        </AppButton>
+      </div>
+    </AppCard>
+  );
+}
+
+/* ── Milestone Timeline (employee view) ────────────────── */
+
+function MilestoneTimeline() {
+  const [milestones, setMilestones] = useState<OnboardingMilestone[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await onboardingApi.getMyMilestones();
+        if (!cancelled) setMilestones(res.milestones ?? []);
+      } catch {
+        /* Non-critical — degrade gracefully */
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (isLoading) {
+    return (
+      <AppCard variant="flat">
+        <div className="animate-pulse space-y-3">
+          <div className="h-5 w-40 bg-[var(--color-gray-200)] rounded" />
+          <div className="h-16 bg-[var(--color-gray-100)] rounded" />
+        </div>
+      </AppCard>
+    );
+  }
+
+  if (milestones.length === 0) return null;
+
+  return (
+    <AppCard variant="flat">
+      <div className="flex items-center gap-2 mb-4">
+        <CalendarDays
+          className="h-5 w-5 text-[var(--color-primary)]"
+          aria-hidden="true"
+        />
+        <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+          Upcoming Reviews
+        </h2>
+      </div>
+      <div className="relative">
+        {/* Vertical connector line */}
+        <div className="absolute left-[15px] top-4 bottom-4 w-0.5 bg-[var(--color-gray-200)]" />
+        <div className="space-y-4">
+          {milestones.map((m) => {
+            const days = daysUntil(m.scheduled_date);
+            const isCompleted = m.status === "completed";
+            const isPast = days !== null && days < 0 && !isCompleted;
+
+            return (
+              <div key={m.id} className="flex items-start gap-3 relative">
+                {/* Timeline dot */}
+                <div
+                  className={`w-[30px] h-[30px] rounded-full flex items-center justify-center shrink-0 z-10 ${
+                    isCompleted
+                      ? "bg-emerald-500"
+                      : isPast
+                        ? "bg-amber-400"
+                        : "bg-[var(--color-gray-200)]"
+                  }`}
+                >
+                  {isCompleted ? (
+                    <CheckCircle2 className="h-4 w-4 text-white" />
+                  ) : (
+                    <CalendarDays
+                      className={`h-4 w-4 ${isPast ? "text-white" : "text-[var(--color-gray-500)]"}`}
+                    />
+                  )}
+                </div>
+                {/* Content */}
+                <div className="flex-1 min-w-0 pb-1">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span
+                      className={`text-sm font-medium ${
+                        isCompleted
+                          ? "text-emerald-700"
+                          : "text-[var(--color-gray-900)]"
+                      }`}
+                    >
+                      {MILESTONE_LABELS[m.milestone_type] ?? m.milestone_type}
+                    </span>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        isCompleted
+                          ? "bg-emerald-50 text-emerald-700"
+                          : isPast
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-[var(--color-gray-100)] text-[var(--color-gray-600)]"
+                      }`}
+                    >
+                      {isCompleted
+                        ? "Completed"
+                        : isPast
+                          ? "Overdue"
+                          : "Upcoming"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5 text-xs text-[var(--color-gray-500)]">
+                    {m.scheduled_date && (
+                      <span>
+                        {new Date(m.scheduled_date).toLocaleDateString(
+                          "en-SG",
+                          {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          },
+                        )}
+                      </span>
+                    )}
+                    {days !== null && !isCompleted && (
+                      <span
+                        className={isPast ? "text-amber-600 font-medium" : ""}
+                      >
+                        {formatCountdown(days)}
+                      </span>
+                    )}
+                    {isCompleted && m.completed_at && (
+                      <span className="text-emerald-600">
+                        Completed{" "}
+                        {new Date(m.completed_at).toLocaleDateString("en-SG", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  {m.notes && (
+                    <p className="text-xs text-[var(--color-gray-500)] mt-1 italic">
+                      {m.notes}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </AppCard>
+  );
+}
+
 /* ── Page ────────────────────────────────────────────────── */
 
 export default function MyOnboardingPage() {
@@ -827,6 +1197,14 @@ export default function MyOnboardingPage() {
             />
           ))}
         </div>
+      )}
+
+      {/* Pulse check-in — shown when a pending survey exists */}
+      {!isLoading && !noAssignment && !error && assignment && <PulseCheckIn />}
+
+      {/* Milestone timeline — shown below modules when assignment is active */}
+      {!isLoading && !noAssignment && !error && assignment && (
+        <MilestoneTimeline />
       )}
     </div>
   );

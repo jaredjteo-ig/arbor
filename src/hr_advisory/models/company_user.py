@@ -2633,3 +2633,68 @@ class PreboardingTaskInstance:
             {"name": "idx_preboard_status", "fields": ["status"]},
         ],
     }
+
+
+@db.model
+class OnboardingMilestone:
+    """Tracks 30/60/90-day review milestones for onboarding assignments."""
+
+    assignment_id: int = 0
+    company_id: int = 0
+    employee_id: int = 0
+    milestone_type: str = "day_30"  # day_30, day_60, day_90
+    scheduled_date: Optional[datetime] = None
+    status: str = "pending"  # pending, completed
+    completed_at: Optional[datetime] = None
+    notes: str = ""
+    reviewed_by: Optional[int] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_milestone_assignment", "fields": ["assignment_id"]},
+            {"name": "idx_milestone_company", "fields": ["company_id"]},
+            {"name": "idx_milestone_employee", "fields": ["employee_id"]},
+            {"name": "idx_milestone_status", "fields": ["status"]},
+        ],
+    }
+
+
+@db.model
+class PulseSurvey:
+    """A pulse check-in survey sent to an onboarding employee (day 30 / day 60)."""
+
+    company_id: int = 0
+    employee_id: int = 0
+    assignment_id: int = 0
+    survey_type: str = "day_30"  # day_30 or day_60
+    status: str = "pending"  # pending, completed
+    sent_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    average_score: float = 0.0
+    flagged: bool = False  # True if avg < 3.5
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_pulse_company", "fields": ["company_id"]},
+            {"name": "idx_pulse_employee", "fields": ["employee_id"]},
+            {"name": "idx_pulse_assignment", "fields": ["assignment_id"]},
+            {"name": "idx_pulse_status", "fields": ["status"]},
+        ],
+    }
+
+
+@db.model
+class PulseSurveyResponse:
+    """An individual question response within a pulse survey."""
+
+    survey_id: int = 0
+    question_number: int = 0
+    question_text: str = ""
+    score: int = 0  # 1-5
+    comment: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_pulseresp_survey", "fields": ["survey_id"]},
+        ],
+    }
