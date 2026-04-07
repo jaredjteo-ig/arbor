@@ -4,21 +4,21 @@ Full HRIS operations: payroll, leave, claims, attendance, shifts, employee lifec
 
 ## Module Map
 
-| Module      | Router                           | Models                                                                                                          | Service                                                         | Frontend                                        |
-| ----------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------- |
-| Payroll     | `api/routers/payroll.py`         | PayrollRun, Payslip, PayslipItem, PayslipLineItem, CpfYtdRecord, TaxFiling, PayItem, PayScheme, PayslipSettings | `services/payroll_calculator.py`, `services/statutory_files.py` | `/payroll`, `/payroll/[id]`, `/my-payslips`     |
-| Leave       | `api/routers/leave.py`           | LeaveTypeConfig, LeaveApplication, PublicHoliday, LeavePolicy, LeavePolicyEntitlement, LeaveEncashment          | —                                                               | `/leave`                                        |
-| Claims      | `api/routers/claims.py`          | ClaimCategory, ClaimGroup, Claim, ClaimItem, ClaimAuditEntry                                                    | —                                                               | `/claims`                                       |
-| Attendance  | `api/routers/attendance.py`      | AttendanceSettings, AttendanceRecord, TimesheetApproval                                                         | —                                                               | `/attendance`                                   |
-| Shifts      | `api/routers/shifts.py`          | ShiftTemplate, ShiftAssignment, ShiftPublish                                                                    | —                                                               | `/shifts`                                       |
-| Employee    | `api/routers/employees.py`       | Employee (30+ fields), SalaryComponent, EmergencyContact, EmploymentEvent, EmployeeDocument, PdpaAccessLog      | —                                                               | `/employees`, `/employees/[id]`                 |
-| Appraisals  | `api/routers/appraisals.py`      | AppraisalTemplate, AppraisalPeriod, AppraisalReview                                                             | —                                                               | `/appraisals`, `/my-appraisals`                 |
-| Projects    | `api/routers/projects.py`        | Project, ProjectAssignment, ProjectTimesheet, ProjectAllocation                                                 | —                                                               | `/projects`, `/projects/[id]`, `/my-timesheets` |
-| Inventory   | `api/routers/inventory.py`       | InventoryLocation, InventoryCategory, InventoryItem, InventoryRequest, InventoryMovement                        | —                                                               | `/inventory`, `/inventory/requests`             |
-| Recruitment | `api/routers/recruitment.py`     | JobListing, Candidate, Interview, InterviewFeedback                                                             | —                                                               | `/recruitment`, `/recruitment/[id]`             |
-| Reports     | `api/routers/reports.py`         | — (aggregation queries, no dedicated models)                                                                    | —                                                               | `/reports`                                      |
-| Approvals   | `api/routers/approval_groups.py` | ApprovalGroup, ApprovalGroupMember                                                                              | —                                                               | `/settings/approval-groups`                     |
-| Onboarding  | `api/routers/onboarding.py`      | OnboardingTemplate, OnboardingModule, OnboardingStep, OnboardingAssignment, OnboardingStepProgress, PreboardingTaskInstance | `services/onboarding_parser.py`                    | `/employees` (Onboarding tab), `/my-onboarding` |
+| Module      | Router                           | Models                                                                                                                      | Service                                                         | Frontend                                        |
+| ----------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------- |
+| Payroll     | `api/routers/payroll.py`         | PayrollRun, Payslip, PayslipItem, PayslipLineItem, CpfYtdRecord, TaxFiling, PayItem, PayScheme, PayslipSettings             | `services/payroll_calculator.py`, `services/statutory_files.py` | `/payroll`, `/payroll/[id]`, `/my-payslips`     |
+| Leave       | `api/routers/leave.py`           | LeaveTypeConfig, LeaveApplication, PublicHoliday, LeavePolicy, LeavePolicyEntitlement, LeaveEncashment                      | —                                                               | `/leave`                                        |
+| Claims      | `api/routers/claims.py`          | ClaimCategory, ClaimGroup, Claim, ClaimItem, ClaimAuditEntry                                                                | —                                                               | `/claims`                                       |
+| Attendance  | `api/routers/attendance.py`      | AttendanceSettings, AttendanceRecord, TimesheetApproval                                                                     | —                                                               | `/attendance`                                   |
+| Shifts      | `api/routers/shifts.py`          | ShiftTemplate, ShiftAssignment, ShiftPublish                                                                                | —                                                               | `/shifts`                                       |
+| Employee    | `api/routers/employees.py`       | Employee (30+ fields), SalaryComponent, EmergencyContact, EmploymentEvent, EmployeeDocument, PdpaAccessLog                  | —                                                               | `/employees`, `/employees/[id]`                 |
+| Appraisals  | `api/routers/appraisals.py`      | AppraisalTemplate, AppraisalPeriod, AppraisalReview                                                                         | —                                                               | `/appraisals`, `/my-appraisals`                 |
+| Projects    | `api/routers/projects.py`        | Project, ProjectAssignment, ProjectTimesheet, ProjectAllocation                                                             | —                                                               | `/projects`, `/projects/[id]`, `/my-timesheets` |
+| Inventory   | `api/routers/inventory.py`       | InventoryLocation, InventoryCategory, InventoryItem, InventoryRequest, InventoryMovement                                    | —                                                               | `/inventory`, `/inventory/requests`             |
+| Recruitment | `api/routers/recruitment.py`     | JobListing, Candidate, Interview, InterviewFeedback                                                                         | —                                                               | `/recruitment`, `/recruitment/[id]`             |
+| Reports     | `api/routers/reports.py`         | — (aggregation queries, no dedicated models)                                                                                | —                                                               | `/reports`                                      |
+| Approvals   | `api/routers/approval_groups.py` | ApprovalGroup, ApprovalGroupMember                                                                                          | —                                                               | `/settings/approval-groups`                     |
+| Onboarding  | `api/routers/onboarding.py`      | OnboardingTemplate, OnboardingModule, OnboardingStep, OnboardingAssignment, OnboardingStepProgress, PreboardingTaskInstance | `services/onboarding_parser.py`                                 | `/employees` (Onboarding tab), `/my-onboarding` |
 
 ## CRUD Pattern — dataflow_crud (Mandatory)
 
@@ -490,11 +490,13 @@ Creates EmploymentEvent, sets employee inactive. Frontend: lifecycle tab on empl
 ## Onboarding System (Added 2026-04-07)
 
 ### Architecture
+
 - 6 models: OnboardingTemplate (versioned), OnboardingModule (phase-based, role-filterable), OnboardingStep (6 types), OnboardingAssignment (with completion %), OnboardingStepProgress (per-step tracking), PreboardingTaskInstance (pre-Day-1 tasks)
 - 28 API endpoints in `api/routers/onboarding.py` covering template CRUD, module/step management, assignment (single + bulk), employee self-service, HR approval, pre-boarding
 - Excel parser: `services/onboarding_parser.py` reads 12-sheet LIA template format
 
 ### Step Types
+
 - **content**: body text, "Mark as Read"
 - **checklist**: JSON items, all must be checked
 - **document_upload**: file upload (PDF/JPG/PNG/DOCX, 10MB, UUID filenames, magic-byte validation)
@@ -503,7 +505,9 @@ Creates EmploymentEvent, sets employee inactive. Frontend: lifecycle tab on empl
 - **approval**: HR/manager must approve via `POST /steps/{id}/approve`
 
 ### SG Default Template
+
 Seeded via `company_seeding.py` — "Singapore Standard Onboarding" with 5 modules:
+
 1. Company Orientation (welcome, team, IT checklist)
 2. Employment Documentation (contract ack, NRIC upload, bank details, emergency contact)
 3. Singapore Compliance (CPF info, PDPA consent, WSH awareness)
@@ -511,8 +515,19 @@ Seeded via `company_seeding.py` — "Singapore Standard Onboarding" with 5 modul
 5. Probation & Goals (timeline, 30-60-90 checklist)
 
 ### Frontend
+
 - Admin: Employees page Onboarding tab with template builder (create/edit/duplicate/import), assignment tracking with progress bars, "Onboard" button per employee in Directory
 - Employee: `/my-onboarding` page with module cards, step-by-step completion, progress card on `/my-dashboard`, nav badge
+
+## API Alignment Rules (Learned 2026-04-07)
+
+- **No trailing slashes** — platform has `redirect_slashes=False`, so `/path/` returns 404. Always use `/path`.
+- **Model field names** — use `is_archived` (not `is_active`) for soft-delete. Check the actual model before writing queries.
+- **`dataflow_crud` ID coercion** — `_coerce_id()` converts string IDs to int for PostgreSQL. Always pass through `dataflow_crud`, never raw `express_sync`.
+- **Naive datetimes** — use `datetime.utcnow().isoformat()` for all timestamps stored via `dataflow_crud`. PostgreSQL schema uses `timestamp without time zone`; timezone-aware datetimes cause "can't subtract offset-naive and offset-aware" errors.
+- **Route ordering** — register static routes (`/templates`, `/import/preview`) BEFORE parameterized routes (`/{id}`, `/{provider}/...`) to prevent FastAPI from swallowing them.
+- **No hardcoded URLs** — use `os.environ.get("APP_BASE_URL")` for any URL that appears in responses, notifications, or outbound requests. Never hardcode `central.kailash.ai`.
+- **290/290 alignment** — all frontend API service methods have matching backend endpoints as of 2026-04-07.
 
 ## Related Docs
 
