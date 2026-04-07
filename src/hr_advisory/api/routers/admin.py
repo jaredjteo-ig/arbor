@@ -252,6 +252,41 @@ async def record_provision_review(req: RecordReviewRequest) -> dict:
     }
 
 
+# ── User role management ────────────────────────────────────
+
+
+class RoleUpdateRequest(BaseModel):
+    role: str
+
+
+@router.patch("/users/{user_id}/role", dependencies=[Depends(require_role("owner"))])
+async def update_user_role(user_id: int, req: RoleUpdateRequest) -> dict:
+    """Update a user's role. Only owners can change roles.
+
+    Valid roles: owner, hr_manager, employee.
+    """
+    valid_roles = {"owner", "hr_manager", "employee"}
+    if req.role not in valid_roles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role '{req.role}'. Must be one of: {', '.join(sorted(valid_roles))}.",
+        )
+
+    from hr_advisory.services import dataflow_crud
+
+    user = dataflow_crud.read("User", user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    dataflow_crud.update("User", user_id, {"role": req.role})
+
+    return {
+        "message": f"User {user_id} role updated to '{req.role}'.",
+        "user_id": user_id,
+        "role": req.role,
+    }
+
+
 # ── Platform metrics (T041) ──────────────────────────────────
 
 

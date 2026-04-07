@@ -1572,6 +1572,61 @@ async def revoke_invitation(
 
 
 # --------------------------------------------------------------------------
+# DELETE /employees/invite/{invitation_id}/delete — Hard-delete invitation
+# --------------------------------------------------------------------------
+
+
+@router.delete("/invite/{invitation_id}/delete")
+async def delete_invitation(
+    invitation_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Permanently delete an invitation record.
+
+    Unlike revoke (which sets is_active=False), this removes the record
+    entirely. Only non-accepted invitations can be deleted.
+
+    Status codes:
+        200: Invitation deleted
+        400: No company associated with the user
+        404: Invitation not found or belongs to another company
+        409: Invitation already accepted (cannot delete)
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No company associated with your account.",
+        )
+
+    invitation = _find_invitation_by_id(invitation_id)
+    if invitation is None or invitation.get("company_id") != company_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Invitation not found.",
+        )
+
+    if invitation.get("accepted_at"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete an invitation that has already been accepted.",
+        )
+
+    from hr_advisory.services import dataflow_crud
+
+    dataflow_crud.delete("Invitation", invitation_id)
+
+    logger.info(
+        "Invitation %s deleted by user %s (company %s)",
+        invitation_id,
+        current_user.get("sub"),
+        company_id,
+    )
+
+    return {"message": "Invitation deleted successfully."}
+
+
+# --------------------------------------------------------------------------
 # POST /employees/invite/{invitation_id}/resend — Resend invitation (T283)
 # --------------------------------------------------------------------------
 

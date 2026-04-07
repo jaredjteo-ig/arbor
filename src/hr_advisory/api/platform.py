@@ -118,8 +118,25 @@ def create_platform(settings: Settings | None = None) -> Nexus:
     # --- Register handler-based workflows ---
     _register_handlers(app, session_store)
 
+    # --- Health check endpoint ---
+    _register_health_check(app)
+
     logger.info("HR Advisory platform configured successfully")
     return app
+
+
+def _register_health_check(app: Nexus) -> None:
+    """Register a public /health endpoint for load balancers and monitoring.
+
+    Returns {"status": "ok"} with no authentication required.
+    """
+    fast_api = app._gateway.app
+
+    @fast_api.get("/health", tags=["Health"])
+    async def health_check() -> dict:
+        return {"status": "ok"}
+
+    logger.info("Health check endpoint registered at /health")
 
 
 def _add_security_headers_middleware(app: Nexus) -> None:

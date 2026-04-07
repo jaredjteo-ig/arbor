@@ -38,7 +38,7 @@ DEFAULT_PASSWORD = "CentralDemo2026!"
 DEFAULT_COMPANY = "Central Solutions Pte Ltd"
 DEFAULT_EMPLOYEE_COUNT = 28
 
-REQUEST_TIMEOUT = 30.0
+REQUEST_TIMEOUT = 120.0
 
 # ---------------------------------------------------------------------------
 # Employee profiles — realistic Singapore SME workforce
@@ -931,93 +931,101 @@ def seed_employees(
             skipped += 1
             continue
 
-        # Step 1: Admin sends invitation
-        client._token = admin_token
-        role = profile.get("role", "employee")
-        if role == "owner":
-            role = "employee"  # Can't invite as owner
-        invite_resp = client.post(
-            "/employees/invite",
-            {"email": email, "role": role, "name": name},
-        )
+        # Token safety: wrap all token swaps in try/finally
+        saved_token = client._token
+        try:
+            # Step 1: Admin sends invitation
+            client._token = admin_token
+            role = profile.get("role", "employee")
+            if role == "owner":
+                role = "employee"  # Can't invite as owner
+            invite_resp = client.post(
+                "/employees/invite",
+                {"email": email, "role": role, "name": name},
+            )
 
-        if invite_resp.status_code == 409:
-            # Already invited or exists — check if employee record exists
-            skipped += 1
-            continue
-        elif invite_resp.status_code not in (200, 201):
-            _fail(f"Employee {name}", f"invite failed: {invite_resp.status_code} — {invite_resp.text[:200]}")
-            continue
+            if invite_resp.status_code == 409:
+                # Already invited or exists — check if employee record exists
+                skipped += 1
+                continue
+            elif invite_resp.status_code not in (200, 201):
+                _fail(f"Employee {name}", f"invite failed: {invite_resp.status_code} — {invite_resp.text[:200]}")
+                continue
 
-        invite_data = invite_resp.json()
-        # Token may be in invite_url (e.g. "...?token=abc") or as a direct field
-        invitation_token = invite_data.get("invitation_token") or invite_data.get("token")
-        if not invitation_token:
+            invite_data = invite_resp.json()
+            # Primary: extract token from invite_url (backend returns
+            # {"invite_url": "...?token=abc", "invitation": {...}})
+            invitation_token = None
             invite_url = invite_data.get("invite_url", "")
             if "token=" in invite_url:
                 invitation_token = invite_url.split("token=")[-1].split("&")[0]
+            # Fallback: direct field
+            if not invitation_token:
+                invitation_token = invite_data.get("invitation_token") or invite_data.get("token")
 
-        if not invitation_token:
-            _fail(f"Employee {name}", "no invitation token returned")
-            continue
+            if not invitation_token:
+                _fail(f"Employee {name}", "no invitation token returned")
+                continue
 
-        # Step 2: Accept invitation via /auth/register-employee — creates User + Employee
-        reg_resp = client.post(
-            "/auth/register-employee",
-            {
-                "email": email,
-                "password": "Employee2026!",
-                "name": name,
-                "invitation_token": invitation_token,
-            },
-        )
+            # Step 2: Accept invitation via /auth/register-employee — creates User + Employee
+            reg_resp = client.post(
+                "/auth/register-employee",
+                {
+                    "email": email,
+                    "password": "Employee2026!",
+                    "name": name,
+                    "invitation_token": invitation_token,
+                },
+            )
 
-        if reg_resp.status_code not in (200, 201):
-            _fail(f"Employee {name}", f"registration failed: {reg_resp.status_code} — {reg_resp.text[:200]}")
+            if reg_resp.status_code not in (200, 201):
+                _fail(f"Employee {name}", f"registration failed: {reg_resp.status_code} — {reg_resp.text[:200]}")
+                continue
+
+            # Step 3: Restore admin token and find the new employee record
             client._token = admin_token
-            continue
+            time.sleep(0.1)
+            emp_list_resp = client.get("/employees")
+            if emp_list_resp.status_code != 200:
+                _fail(f"Employee {name}", "could not list employees after creation")
+                continue
 
-        # Step 3: Restore admin token and find the new employee record
-        client._token = admin_token
-        time.sleep(0.1)
-        emp_list_resp = client.get("/employees")
-        if emp_list_resp.status_code != 200:
-            _fail(f"Employee {name}", "could not list employees after creation")
-            continue
+            employee_record = None
+            for e in emp_list_resp.json().get("employees", []):
+                if e.get("email", "").lower() == email.lower():
+                    employee_record = e
+                    break
 
-        employee_record = None
-        for e in emp_list_resp.json().get("employees", []):
-            if e.get("email", "").lower() == email.lower():
-                employee_record = e
-                break
+            if not employee_record:
+                _fail(f"Employee {name}", "employee record not found after invitation acceptance")
+                continue
 
-        if not employee_record:
-            _fail(f"Employee {name}", "employee record not found after invitation acceptance")
-            continue
+            emp_id = employee_record.get("id")
 
-        emp_id = employee_record.get("id")
+            # Step 4: Update employee profile with full details
+            # Include all enrichment fields from EMPLOYEE_PROFILES
+            update_fields: dict[str, Any] = {}
+            for field in [
+                "department", "designation", "employment_type", "start_date",
+                "end_date", "nationality", "pass_type", "salary_monthly",
+                "gender", "race", "immigration_status", "work_pass_expiry",
+                "confirmation_status", "probation_months", "probation_end_date",
+                "date_of_birth", "marital_status", "nric_fin",
+                "bank_name", "bank_account_number", "bank_code",
+                "residential_address", "postal_code", "phone",
+            ]:
+                if field in profile and profile[field]:
+                    update_fields[field] = profile[field]
 
-        # Step 4: Update employee profile with full details
-        update_fields: dict[str, Any] = {}
-        for field in [
-            "department", "designation", "employment_type", "start_date",
-            "end_date", "nationality", "pass_type", "salary_monthly",
-            "gender", "race", "immigration_status", "work_pass_expiry",
-            "confirmation_status", "probation_months", "probation_end_date",
-        ]:
-            if field in profile and profile[field]:
-                update_fields[field] = profile[field]
+            if update_fields:
+                patch_resp = client.patch(f"/employees/{emp_id}", json=update_fields)
+                if patch_resp.status_code not in (200, 201):
+                    _fail(f"Employee {name}", f"profile update failed: {patch_resp.status_code}")
 
-        if update_fields:
-            patch_resp = client.patch(f"/employees/{emp_id}", json=update_fields)
-            if patch_resp.status_code not in (200, 201):
-                _fail(f"Employee {name}", f"profile update failed: {patch_resp.status_code}")
-
-        created_employees.append(employee_record)
-        _ok(f"Employee {name}", f"id={emp_id}, dept={profile['department']}")
-
-    # Restore admin token
-    client._token = admin_token
+            created_employees.append(employee_record)
+            _ok(f"Employee {name}", f"id={emp_id}, dept={profile['department']}")
+        finally:
+            client._token = saved_token
 
     if skipped:
         _skip("Employees", f"{skipped} already existed")
@@ -1188,19 +1196,27 @@ def seed_role_promotions(client: ArborClient, employees: list[dict]) -> None:
     # Grace Koh → HR Manager
     for emp in employees:
         if emp.get("email", "").lower() == "grace.koh@central-solutions.sg":
-            # The PATCH /employees endpoint updates employee fields but not user role.
-            # We need to use a different approach — check if there's an admin endpoint.
+            # Set designation on the employee record
             resp = client.patch(f"/employees/{emp['id']}", json={"designation": "HR Manager"})
             if resp.status_code in (200, 201):
                 _ok("Grace Koh", "designation set to HR Manager")
-            # Role promotion requires admin user update — try /admin/users endpoint
+
+            # Promote user role via PATCH /admin/users/{user_id}/role
             user_id = emp.get("user_id")
+            if not user_id:
+                # If user_id not in employee record, fetch the full employee detail
+                detail_resp = client.get(f"/employees/{emp['id']}")
+                if detail_resp.status_code == 200:
+                    user_id = detail_resp.json().get("employee", {}).get("user_id") or detail_resp.json().get("user_id")
+
             if user_id:
                 role_resp = client.patch(f"/admin/users/{user_id}/role", json={"role": "hr_manager"})
                 if role_resp.status_code in (200, 201):
                     _ok("Grace Koh", "role promoted to hr_manager")
                 else:
-                    _fail("Grace Koh role", f"admin endpoint returned {role_resp.status_code} — may need manual SQL: UPDATE users SET role='hr_manager' WHERE email='grace.koh@central-solutions.sg'")
+                    _fail("Grace Koh role", f"admin endpoint returned {role_resp.status_code}")
+            else:
+                _fail("Grace Koh role", "user_id not found — role promotion skipped")
             break
 
 
@@ -1372,71 +1388,70 @@ def seed_leave_applications(
             _fail(f"Leave for {emp_name}", f"leave type '{leave_type_code}' not found")
             continue
 
-        # We need to act as this employee to apply for leave.
-        # Since we are the admin, we can use the employee's account.
-        # For simplicity, save and restore the admin token.
-        admin_token = client._token
+        # Token safety: wrap all token swaps in try/finally
+        saved_token = client._token
+        try:
+            # Log in as the employee
+            emp_email = emp.get("email", "")
+            login_resp = client.post("/auth/login", {"email": emp_email, "password": "Employee2026!"})
+            if login_resp.status_code != 200:
+                _fail(f"Leave for {emp_name}", f"could not log in as employee: {login_resp.status_code}")
+                continue
 
-        # Log in as the employee
-        emp_email = emp.get("email", "")
-        login_resp = client.post("/auth/login", {"email": emp_email, "password": "Employee2026!"})
-        if login_resp.status_code != 200:
-            _fail(f"Leave for {emp_name}", f"could not log in as employee: {login_resp.status_code}")
-            client._token = admin_token
-            continue
+            emp_token_data = login_resp.json()
+            client._token = emp_token_data.get("access_token")
 
-        emp_token_data = login_resp.json()
-        client._token = emp_token_data.get("access_token")
-
-        # Apply for leave
-        resp = client.post(
-            "/leave/apply",
-            {
-                "leave_type_id": leave_type_id,
-                "start_date": app_tmpl["start_date"],
-                "end_date": app_tmpl["end_date"],
-                "reason": app_tmpl["reason"],
-                "start_half": "full_day",
-                "end_half": "full_day",
-            },
-        )
-
-        # Restore admin token
-        client._token = admin_token
-
-        if resp.status_code == 409:
-            skipped_count += 1
-            continue
-        elif resp.status_code not in (200, 201):
-            _fail(
-                f"Leave for {emp_name}",
-                f"{resp.status_code} — {resp.text[:200]}",
+            # Apply for leave
+            resp = client.post(
+                "/leave/apply",
+                {
+                    "leave_type_id": leave_type_id,
+                    "start_date": app_tmpl["start_date"],
+                    "end_date": app_tmpl["end_date"],
+                    "reason": app_tmpl["reason"],
+                    "start_half": "full_day",
+                    "end_half": "full_day",
+                },
             )
-            continue
 
-        app_data = resp.json()
-        app_id = app_data.get("application", {}).get("id") or app_data.get("id")
-        created_count += 1
+            # Restore admin token for approve/reject actions
+            client._token = saved_token
 
-        # Process the action (approve/reject)
-        action = app_tmpl.get("action", "pending")
-        if action == "approve" and app_id:
-            approve_resp = client.patch(f"/leave/applications/{app_id}/approve", json={})
-            if approve_resp.status_code in (200, 201):
-                _ok(f"Leave {emp_name}", f"applied and approved ({leave_type_code})")
+            if resp.status_code == 409:
+                skipped_count += 1
+                continue
+            elif resp.status_code not in (200, 201):
+                _fail(
+                    f"Leave for {emp_name}",
+                    f"{resp.status_code} — {resp.text[:200]}",
+                )
+                continue
+
+            app_data = resp.json()
+            app_id = app_data.get("application", {}).get("id") or app_data.get("id")
+            created_count += 1
+
+            # Process the action (approve/reject)
+            action = app_tmpl.get("action", "pending")
+            if action == "approve" and app_id:
+                approve_resp = client.patch(f"/leave/applications/{app_id}/approve", json={})
+                if approve_resp.status_code in (200, 201):
+                    _ok(f"Leave {emp_name}", f"applied and approved ({leave_type_code})")
+                else:
+                    _ok(f"Leave {emp_name}", f"applied, approval failed: {approve_resp.status_code}")
+            elif action == "reject" and app_id:
+                reject_resp = client.patch(
+                    f"/leave/applications/{app_id}/reject",
+                    json={"remarks": app_tmpl.get("reject_reason", "Schedule conflict")},
+                )
+                if reject_resp.status_code in (200, 201):
+                    _ok(f"Leave {emp_name}", f"applied and rejected ({leave_type_code})")
+                else:
+                    _ok(f"Leave {emp_name}", f"applied, rejection failed: {reject_resp.status_code}")
             else:
-                _ok(f"Leave {emp_name}", f"applied, approval failed: {approve_resp.status_code}")
-        elif action == "reject" and app_id:
-            reject_resp = client.patch(
-                f"/leave/applications/{app_id}/reject",
-                json={"remarks": app_tmpl.get("reject_reason", "Schedule conflict")},
-            )
-            if reject_resp.status_code in (200, 201):
-                _ok(f"Leave {emp_name}", f"applied and rejected ({leave_type_code})")
-            else:
-                _ok(f"Leave {emp_name}", f"applied, rejection failed: {reject_resp.status_code}")
-        else:
-            _ok(f"Leave {emp_name}", f"applied — pending ({leave_type_code})")
+                _ok(f"Leave {emp_name}", f"applied — pending ({leave_type_code})")
+        finally:
+            client._token = saved_token
 
     if skipped_count:
         _skip("Leave applications", f"{skipped_count} overlapping/duplicate")
@@ -1495,99 +1510,101 @@ def seed_claims(
         emp_name = emp.get("name", f"Employee #{emp_idx}")
         emp_email = emp.get("email", "")
 
-        # Switch to employee context
-        admin_token = client._token
+        # Token safety: wrap all token swaps in try/finally
+        saved_token = client._token
+        try:
+            login_resp = client.post("/auth/login", {"email": emp_email, "password": "Employee2026!"})
+            if login_resp.status_code != 200:
+                _fail(f"Claim for {emp_name}", f"could not log in: {login_resp.status_code}")
+                continue
+            client._token = login_resp.json().get("access_token")
 
-        login_resp = client.post("/auth/login", {"email": emp_email, "password": "Employee2026!"})
-        if login_resp.status_code != 200:
-            _fail(f"Claim for {emp_name}", f"could not log in: {login_resp.status_code}")
-            client._token = admin_token
-            continue
-        client._token = login_resp.json().get("access_token")
-
-        # Create the claim
-        resp = client.post(
-            "/claims",
-            {"claim_month": claim_tmpl["claim_month"]},
-        )
-        if resp.status_code not in (200, 201):
-            _fail(f"Claim for {emp_name}", f"create failed: {resp.status_code} — {resp.text[:200]}")
-            client._token = admin_token
-            continue
-
-        claim_data = resp.json()
-        claim_id = claim_data.get("claim", {}).get("id")
-        if not claim_id:
-            _fail(f"Claim for {emp_name}", "no claim_id in response")
-            client._token = admin_token
-            continue
-
-        # Add items
-        total = 0.0
-        for item in claim_tmpl["items"]:
-            category_name = item["category"]
-            category_id = category_lookup.get(category_name)
-            if not category_id:
-                _fail(f"Claim item for {emp_name}", f"category '{category_name}' not found")
+            # Create the claim
+            resp = client.post(
+                "/claims",
+                {"claim_month": claim_tmpl["claim_month"]},
+            )
+            if resp.status_code not in (200, 201):
+                _fail(f"Claim for {emp_name}", f"create failed: {resp.status_code} — {resp.text[:200]}")
                 continue
 
-            item_resp = client.post(
-                f"/claims/{claim_id}/items",
-                {
-                    "category_id": category_id,
-                    "amount": item["amount"],
-                    "description": item["description"],
-                    "receipt_date": item["receipt_date"],
-                },
-            )
-            if item_resp.status_code in (200, 201):
-                total += item["amount"]
+            claim_data = resp.json()
+            claim_id = claim_data.get("claim", {}).get("id")
+            if not claim_id:
+                _fail(f"Claim for {emp_name}", "no claim_id in response")
+                continue
 
-        # Restore admin token
-        client._token = admin_token
+            # Add items
+            total = 0.0
+            for item in claim_tmpl["items"]:
+                category_name = item["category"]
+                category_id = category_lookup.get(category_name)
+                if not category_id:
+                    _fail(f"Claim item for {emp_name}", f"category '{category_name}' not found")
+                    continue
 
-        action = claim_tmpl.get("action", "draft")
+                item_resp = client.post(
+                    f"/claims/{claim_id}/items",
+                    {
+                        "category_id": category_id,
+                        "amount": item["amount"],
+                        "description": item["description"],
+                        "receipt_date": item["receipt_date"],
+                    },
+                )
+                if item_resp.status_code in (200, 201):
+                    total += item["amount"]
 
-        if action in ("submit", "approve"):
-            # Submit the claim (as employee)
-            login_resp = client.post("/auth/login", {"email": emp_email, "password": "Employee2026!"})
-            if login_resp.status_code == 200:
-                client._token = login_resp.json().get("access_token")
-                submit_resp = client.patch(f"/claims/{claim_id}/submit")
-                client._token = admin_token
+            # Restore admin token for approve/reject
+            client._token = saved_token
 
-                if submit_resp.status_code in (200, 201) and action == "approve":
-                    approve_resp = client.patch(f"/claims/{claim_id}/approve")
-                    if approve_resp.status_code in (200, 201):
-                        _ok(f"Claim {emp_name}", f"${total:.2f} — submitted and approved")
+            action = claim_tmpl.get("action", "draft")
+
+            if action in ("submit", "approve"):
+                # Submit the claim (as employee)
+                login_resp = client.post("/auth/login", {"email": emp_email, "password": "Employee2026!"})
+                if login_resp.status_code == 200:
+                    client._token = login_resp.json().get("access_token")
+                    submit_resp = client.patch(f"/claims/{claim_id}/submit")
+                    client._token = saved_token
+
+                    if submit_resp.status_code in (200, 201) and action == "approve":
+                        approve_resp = client.patch(f"/claims/{claim_id}/approve")
+                        if approve_resp.status_code in (200, 201):
+                            _ok(f"Claim {emp_name}", f"${total:.2f} — submitted and approved")
+                        else:
+                            _ok(f"Claim {emp_name}", f"${total:.2f} — submitted (approval: {approve_resp.status_code})")
+                    elif submit_resp.status_code in (200, 201):
+                        _ok(f"Claim {emp_name}", f"${total:.2f} — submitted, pending approval")
                     else:
-                        _ok(f"Claim {emp_name}", f"${total:.2f} — submitted (approval: {approve_resp.status_code})")
-                elif submit_resp.status_code in (200, 201):
-                    _ok(f"Claim {emp_name}", f"${total:.2f} — submitted, pending approval")
+                        _ok(f"Claim {emp_name}", f"${total:.2f} — draft (submit: {submit_resp.status_code})")
                 else:
-                    _ok(f"Claim {emp_name}", f"${total:.2f} — draft (submit: {submit_resp.status_code})")
+                    _ok(f"Claim {emp_name}", f"${total:.2f} — draft")
             else:
-                client._token = admin_token
                 _ok(f"Claim {emp_name}", f"${total:.2f} — draft")
-        else:
-            _ok(f"Claim {emp_name}", f"${total:.2f} — draft")
 
-        created_count += 1
+            created_count += 1
+        finally:
+            client._token = saved_token
 
     _ok("Claims", f"{created_count} created")
     return created_count
 
 
 def seed_attendance(client: ArborClient, employees: list[dict]) -> int:
-    """Step 8: Create attendance records for current month.
+    """Step 8: Create attendance records for today only.
 
-    Creates records for the first 18 employees for working days
-    this month up to yesterday. 2-3 employees get overtime.
+    Clocks in and out each of the first 18 employees for today.
+    2-3 employees get overtime annotations.
     """
-    _print("\n--- Step 8: Attendance Records ---")
+    _print("\n--- Step 8: Attendance Records (today only) ---")
 
     today = date.today()
-    month_start = today.replace(day=1)
+
+    # Skip on weekends
+    if today.weekday() >= 5:
+        _skip("Attendance", "today is a weekend — skipping clock-in/out")
+        return 0
 
     # Use up to 18 employees for attendance
     attendance_employees = employees[:18]
@@ -1600,57 +1617,22 @@ def seed_attendance(client: ArborClient, employees: list[dict]) -> int:
         emp_email = emp.get("email", "")
         emp_name = emp.get("name", "")
 
-        # Switch to employee context
-        admin_token = client._token
-
-        login_resp = client.post("/auth/login", {"email": emp_email, "password": "Employee2026!"})
-        if login_resp.status_code != 200:
-            client._token = admin_token
-            continue
-        emp_access_token = login_resp.json().get("access_token")
-
-        # Create records for working days from month start up to yesterday
-        current_day = month_start
-        emp_records = 0
-
-        while current_day < today:
-            # Skip weekends
-            if current_day.weekday() >= 5:
-                current_day += timedelta(days=1)
+        # Token safety: wrap all token swaps in try/finally
+        saved_token = client._token
+        try:
+            login_resp = client.post("/auth/login", {"email": emp_email, "password": "Employee2026!"})
+            if login_resp.status_code != 200:
                 continue
+            emp_access_token = login_resp.json().get("access_token")
 
-            # Clock in at ~09:00
-            clock_in_hour = 9
-            clock_in_minute = 0
-            if idx % 5 == 0:
-                clock_in_minute = 10  # Slightly late for variety
-
-            clock_in_dt = datetime(
-                current_day.year, current_day.month, current_day.day,
-                clock_in_hour, clock_in_minute, 0,
-            )
-            clock_in_iso = clock_in_dt.isoformat() + "+08:00"
-
-            # Clock in
-            client._token = emp_access_token
-
-            # We use the admin manual correction approach: first check if record exists
-            client._token = admin_token
-
-            # Create attendance record directly (via clock-in as employee)
+            # Clock in for today only
             client._token = emp_access_token
             clock_resp = client.post("/attendance/clock-in", json={"location": "Office — 1 Raffles Place"})
 
             if clock_resp.status_code == 400 and "already clocked" in clock_resp.text.lower():
                 skipped_count += 1
-                current_day += timedelta(days=1)
                 continue
             elif clock_resp.status_code not in (200, 201):
-                # The clock-in uses server time. For historical records, we'll use
-                # admin PATCH correction after creating the record for today.
-                # Skip historical days that aren't today — the clock-in endpoint
-                # only works for "today" by design.
-                current_day += timedelta(days=1)
                 continue
 
             record_data = clock_resp.json()
@@ -1660,33 +1642,28 @@ def seed_attendance(client: ArborClient, employees: list[dict]) -> int:
             if record_id:
                 clock_out_resp = client.post("/attendance/clock-out", json={})
                 if clock_out_resp.status_code in (200, 201):
-                    emp_records += 1
+                    created_count += 1
+                    has_ot = ""
 
                     # If overtime employee, correct the record via admin
-                    if idx in overtime_indices and record_id:
-                        client._token = admin_token
+                    if idx in overtime_indices:
+                        client._token = saved_token
                         client.patch(
                             f"/attendance/{record_id}",
                             json={"overtime_hours": 2.0, "remarks": "Project deadline"},
                         )
+                        has_ot = " (with OT)"
 
-            current_day += timedelta(days=1)
+                    _ok(f"Attendance {emp_name}", f"clocked in/out{has_ot}")
+        finally:
+            client._token = saved_token
 
-        client._token = admin_token
-
-        if emp_records > 0:
-            created_count += emp_records
-            has_ot = " (with OT)" if idx in overtime_indices else ""
-            _ok(f"Attendance {emp_name}", f"{emp_records} records{has_ot}")
-
-    # The clock-in/clock-out endpoints only work for "today" by design.
-    # For a realistic demo, we'll note that attendance records are for today.
     if created_count == 0:
-        _skip("Attendance", "clock-in/clock-out is date-locked to today; run during work hours for records")
+        _skip("Attendance", "no records created — check if server time allows clock-in")
     else:
-        _ok("Attendance", f"{created_count} records created")
+        _ok("Attendance", f"{created_count} records created for today")
     if skipped_count:
-        _skip("Attendance", f"{skipped_count} already existed")
+        _skip("Attendance", f"{skipped_count} already clocked in today")
 
     return created_count
 
@@ -1791,6 +1768,60 @@ def seed_recruitment(client: ArborClient) -> dict:
             _ok(f"Candidate {candidate['name']}", f"id={cand_id}, stage=applied")
 
     return {"job_id": job_id}
+
+
+def seed_onboarding(client: ArborClient, employees: list[dict]) -> None:
+    """Step 10: Assign onboarding template to the last 5 employees (new hires).
+
+    Looks up the first available onboarding template and assigns it to the
+    most recently hired employees.
+    """
+    _print("\n--- Step 10: Onboarding Assignments ---")
+
+    # Check for existing templates
+    resp = client.get("/onboarding/templates")
+    if resp.status_code != 200:
+        _skip("Onboarding", f"could not list templates: {resp.status_code}")
+        return
+
+    templates = resp.json().get("templates", [])
+    if not templates:
+        _skip("Onboarding", "no templates found — create one first via the UI")
+        return
+
+    template_id = templates[0].get("id")
+    template_name = templates[0].get("name", "Unknown")
+    _ok("Onboarding template", f"using '{template_name}' (id={template_id})")
+
+    # Assign to the last 5 employees (newest hires)
+    new_hires = employees[-5:] if len(employees) >= 5 else employees
+    assigned_count = 0
+
+    for emp in new_hires:
+        emp_id = emp.get("id")
+        emp_name = emp.get("name", "")
+        if not emp_id:
+            continue
+
+        due_date = (date.today() + timedelta(days=30)).isoformat()
+        assign_resp = client.post(
+            "/onboarding/assign",
+            {
+                "employee_id": emp_id,
+                "template_id": template_id,
+                "due_date": due_date,
+            },
+        )
+
+        if assign_resp.status_code in (200, 201):
+            assigned_count += 1
+            _ok(f"Onboarding {emp_name}", f"assigned template '{template_name}'")
+        elif assign_resp.status_code == 400 and "already has an active" in assign_resp.text.lower():
+            _skip(f"Onboarding {emp_name}", "already assigned")
+        else:
+            _fail(f"Onboarding {emp_name}", f"{assign_resp.status_code} — {assign_resp.text[:200]}")
+
+    _ok("Onboarding", f"{assigned_count} assignments created")
 
 
 # ===========================================================================
@@ -1905,8 +1936,12 @@ def main() -> None:
         # Step 4: Salary components
         seed_salary_components(client, employees)
 
-        # Step 5: Payroll
-        seed_payroll(client)
+        # Step 5: Payroll (wrapped in try/except — payroll failures are non-fatal)
+        try:
+            seed_payroll(client)
+        except Exception as payroll_exc:
+            _print(f"  [WARN] Payroll seeding failed: {payroll_exc} — continuing")
+            client.login(args.email, args.password)
 
         # Step 6: Leave applications
         seed_leave_applications(client, employees, leave_types)
@@ -1929,6 +1964,12 @@ def main() -> None:
 
         # Step 9: Recruitment
         seed_recruitment(client)
+
+        # Re-login as admin
+        client.login(args.email, args.password)
+
+        # Step 10: Onboarding assignments
+        seed_onboarding(client, employees)
 
         # Summary
         _print("\n" + "=" * 60)
