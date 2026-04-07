@@ -1897,12 +1897,49 @@ async def assign_template(
             },
         )
 
+    # Copy template-level pre-boarding tasks to per-employee instances
+    preboarding_created = 0
+    try:
+        template_tasks = dataflow_crud.list_records(
+            "PreboardingTaskInstance",
+            {"template_id": template_id, "employee_id": 0},
+        )
+        start_date = employee.get("start_date", "")
+        for task in template_tasks:
+            task_data = {
+                "company_id": company_id,
+                "template_id": template_id,
+                "employee_id": employee_id,
+                "task_name": task.get("task_name", ""),
+                "owner_role": task.get("owner_role", "hr"),
+                "trigger": task.get("trigger", ""),
+                "status": "pending",
+                "notes": task.get("notes", ""),
+            }
+            # Calculate deadline from start_date if we have relative days in notes
+            if start_date and task.get("notes", ""):
+                try:
+                    import re as _re
+                    days_match = _re.search(r"(-?\d+)\s*days?\s*(?:before|relative)", task.get("notes", ""))
+                    if days_match:
+                        from datetime import timedelta
+                        rel_days = int(days_match.group(1))
+                        sd = datetime.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+                        task_data["deadline_date"] = (sd + timedelta(days=rel_days)).isoformat()
+                except (ValueError, TypeError):
+                    pass
+            dataflow_crud.create("PreboardingTaskInstance", task_data)
+            preboarding_created += 1
+    except Exception as exc:
+        logger.warning("Failed to create pre-boarding tasks: %s", exc)
+
     logger.info(
-        "Onboarding assigned: assignment_id=%s, employee_id=%s, template_id=%s, steps=%d",
+        "Onboarding assigned: assignment_id=%s, employee_id=%s, template_id=%s, steps=%d, preboarding=%d",
         assignment_id,
         employee_id,
         template_id,
         len(all_steps),
+        preboarding_created,
     )
     return {
         "assignment": assignment,
