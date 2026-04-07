@@ -188,6 +188,20 @@ export interface PreboardingListResponse {
   done: number;
 }
 
+/** An IT provisioning task (PreboardingTaskInstance with owner_role="it"). */
+export interface ITProvisioningTask extends PreboardingTask {
+  /** Category extracted from notes by the backend. */
+  category: string;
+}
+
+export interface ITProvisioningListResponse {
+  tasks: ITProvisioningTask[];
+  total: number;
+  pending: number;
+  in_progress: number;
+  completed: number;
+}
+
 export interface OnboardingMilestone {
   id: number;
   assignment_id: number;
@@ -497,6 +511,26 @@ export const onboardingApi = {
     return apiClient.patch<{ task: PreboardingTask }>(
       `/onboarding/preboarding/${taskId}`,
       { status: "done" },
+    );
+  },
+
+  /* ── IT Provisioning ─────────────────────────────────────── */
+
+  /** Get IT provisioning tasks for an employee (admin). */
+  getITProvisioning(employeeId: number): Promise<ITProvisioningListResponse> {
+    return apiClient.get<ITProvisioningListResponse>(
+      `/onboarding/it-provisioning/${employeeId}`,
+    );
+  },
+
+  /** Update an IT provisioning task status/notes (admin). */
+  updateITProvisioning(
+    taskId: number,
+    data: { status?: string; notes?: string },
+  ): Promise<{ task: ITProvisioningTask }> {
+    return apiClient.patch<{ task: ITProvisioningTask }>(
+      `/onboarding/it-provisioning/${taskId}`,
+      data,
     );
   },
 

@@ -578,6 +578,30 @@ async def register_employee(
                 "Failed to create leave balances for employee %s: %s", employee_id, leave_exc
             )
 
+    # --- Auto-assign default onboarding template (T226) ---
+    if employee_id and company_id:
+        try:
+            from hr_advisory.api.routers.onboarding import auto_assign_default_onboarding
+
+            onboarding_result = auto_assign_default_onboarding(employee_id, company_id)
+            if onboarding_result:
+                logger.info(
+                    "Auto-assigned onboarding for employee_id=%s, assignment_id=%s",
+                    employee_id,
+                    onboarding_result.get("id"),
+                )
+            else:
+                logger.info(
+                    "No default onboarding template for company_id=%s — skipped auto-assign",
+                    company_id,
+                )
+        except Exception as onboard_exc:
+            logger.warning(
+                "Failed to auto-assign onboarding for employee %s: %s",
+                employee_id,
+                onboard_exc,
+            )
+
     # Invitation was already marked as accepted before user creation
     # (see TOCTOU race condition prevention above)
 

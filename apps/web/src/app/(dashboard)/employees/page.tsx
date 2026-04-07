@@ -37,6 +37,7 @@ import {
   Star,
   MessageSquare,
   Send,
+  Monitor,
 } from "lucide-react";
 import {
   employeesApi,
@@ -50,6 +51,8 @@ import {
   type MyOnboardingProgress,
   type PreboardingTask,
   type PreboardingListResponse,
+  type ITProvisioningTask,
+  type ITProvisioningListResponse,
   type PulseSurvey,
   type PulseSurveyResponse,
 } from "@/services/api/onboarding";
@@ -1305,6 +1308,244 @@ function PreboardingSummary({ employeeId }: { employeeId: number }) {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   IT Provisioning Section (admin — inside expanded assignment)
+   ═══════════════════════════════════════════════════════════ */
+
+const IT_STATUS_OPTIONS = ["pending", "in_progress", "completed"] as const;
+
+const IT_STATUS_STYLES: Record<string, string> = {
+  pending: "bg-amber-50 text-amber-700 border-amber-200",
+  in_progress: "bg-blue-50 text-blue-700 border-blue-200",
+  completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  done: "bg-emerald-50 text-emerald-700 border-emerald-200",
+};
+
+const IT_STATUS_LABELS: Record<string, string> = {
+  pending: "Pending",
+  in_progress: "In Progress",
+  completed: "Completed",
+  done: "Completed",
+};
+
+function ITProvisioningSection({ employeeId }: { employeeId: number }) {
+  const [data, setData] = useState<ITProvisioningListResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
+
+  const fetchTasks = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await onboardingApi.getITProvisioning(employeeId);
+      setData(result);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to load IT provisioning tasks.";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [employeeId]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  async function handleStatusChange(taskId: number, newStatus: string) {
+    setUpdatingId(taskId);
+    try {
+      const result = await onboardingApi.updateITProvisioning(taskId, {
+        status: newStatus,
+      });
+      setData((prev) => {
+        if (!prev) return prev;
+        const updatedTasks = prev.tasks.map((t) =>
+          t.id === taskId ? { ...t, ...result.task } : t,
+        );
+        return {
+          tasks: updatedTasks,
+          total: updatedTasks.length,
+          pending: updatedTasks.filter((t) => t.status === "pending").length,
+          in_progress: updatedTasks.filter((t) => t.status === "in_progress")
+            .length,
+          completed: updatedTasks.filter(
+            (t) => t.status === "completed" || t.status === "done",
+          ).length,
+        };
+      });
+      toast.success(
+        `Task updated to ${IT_STATUS_LABELS[newStatus] || newStatus}.`,
+      );
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to update task. Please try again.";
+      toast.error(message);
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  function formatDeadline(isoDate: string | null): string {
+    if (!isoDate) return "-";
+    try {
+      return new Date(isoDate).toLocaleDateString("en-SG", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return isoDate;
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="py-3 text-center">
+        <span className="inline-block h-4 w-4 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="py-3 text-center">
+        <p className="text-xs text-[var(--color-error)]">{error}</p>
+        <button
+          type="button"
+          onClick={fetchTasks}
+          className="mt-1 text-xs text-[var(--color-primary)] hover:underline"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!data || data.tasks.length === 0) {
+    return (
+      <p className="text-xs text-[var(--color-gray-500)] py-2">
+        No IT provisioning tasks.
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      {/* Summary counts */}
+      <div className="flex items-center gap-3 mb-3">
+        <span className="text-xs text-[var(--color-gray-600)]">
+          {data.completed}/{data.total} completed
+        </span>
+        {data.in_progress > 0 && (
+          <span className="text-xs text-blue-600 font-medium">
+            {data.in_progress} in progress
+          </span>
+        )}
+        {data.pending > 0 && (
+          <span className="text-xs text-amber-600 font-medium">
+            {data.pending} pending
+          </span>
+        )}
+      </div>
+
+      {/* Task list */}
+      <div className="space-y-1.5">
+        {data.tasks.map((task) => {
+          const isDone = task.status === "completed" || task.status === "done";
+          const isOverdue = task.is_overdue && !isDone;
+          const isUpdating = updatingId === task.id;
+
+          return (
+            <div
+              key={task.id}
+              className={`flex items-center gap-3 py-2 px-3 rounded-[8px] border transition-colors ${
+                isDone
+                  ? "bg-emerald-50/50 border-emerald-100"
+                  : isOverdue
+                    ? "bg-red-50/50 border-red-100"
+                    : "bg-[var(--color-gray-50)] border-[var(--color-gray-100)]"
+              }`}
+            >
+              {/* Tool name */}
+              <span
+                className={`flex-1 text-xs ${
+                  isDone
+                    ? "text-[var(--color-gray-500)] line-through"
+                    : "text-[var(--color-gray-800)]"
+                }`}
+              >
+                {task.task_name}
+              </span>
+
+              {/* Category badge */}
+              {task.category && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border bg-[var(--color-gray-50)] text-[var(--color-gray-600)] border-[var(--color-gray-200)]">
+                  {task.category}
+                </span>
+              )}
+
+              {/* SLA / trigger */}
+              {task.trigger && (
+                <span className="text-[10px] text-[var(--color-gray-500)] flex-shrink-0">
+                  SLA: {task.trigger}
+                </span>
+              )}
+
+              {/* Deadline + overdue */}
+              {task.deadline_date && (
+                <span
+                  className={`inline-flex items-center gap-1 text-[10px] font-medium flex-shrink-0 ${
+                    isDone
+                      ? "text-[var(--color-gray-400)]"
+                      : isOverdue
+                        ? "text-red-600"
+                        : "text-[var(--color-gray-500)]"
+                  }`}
+                >
+                  {isOverdue && <AlertTriangle className="h-3 w-3" />}
+                  <Calendar className="h-3 w-3" />
+                  {formatDeadline(task.deadline_date)}
+                </span>
+              )}
+
+              {/* Status dropdown */}
+              {isDone ? (
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${IT_STATUS_STYLES.completed}`}
+                >
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Completed
+                </span>
+              ) : (
+                <select
+                  value={task.status}
+                  disabled={isUpdating}
+                  onChange={(e) => handleStatusChange(task.id, e.target.value)}
+                  className={`text-[10px] font-medium rounded border px-2 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] ${
+                    isUpdating ? "opacity-50 cursor-wait" : ""
+                  } ${IT_STATUS_STYLES[task.status] || "bg-[var(--color-gray-50)] text-[var(--color-gray-600)] border-[var(--color-gray-200)]"}`}
+                >
+                  {IT_STATUS_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {IT_STATUS_LABELS[opt]}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
    Pulse Survey Section (admin — inside expanded assignment)
    ═══════════════════════════════════════════════════════════ */
 
@@ -2157,6 +2398,19 @@ function OnboardingTab({
                             </h4>
                           </div>
                           <PreboardingSection
+                            employeeId={assignment.employee_id}
+                          />
+                        </div>
+
+                        {/* IT Provisioning */}
+                        <div className="pt-3 border-t border-[var(--color-gray-100)]">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Monitor className="h-4 w-4 text-[var(--color-gray-500)]" />
+                            <h4 className="text-xs font-semibold text-[var(--color-gray-700)] uppercase tracking-wider">
+                              IT Provisioning
+                            </h4>
+                          </div>
+                          <ITProvisioningSection
                             employeeId={assignment.employee_id}
                           />
                         </div>

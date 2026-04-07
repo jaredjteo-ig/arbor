@@ -178,9 +178,38 @@ def _get_steps_for_module(module_id: int) -> list[dict]:
     return sorted(steps, key=lambda s: s.get("sort_order", 0))
 
 
-def _get_all_steps_for_template(template_id: int) -> list[dict]:
-    """Fetch all steps across all modules for a template."""
+def _get_all_steps_for_template(
+    template_id: int,
+    employee: dict | None = None,
+) -> list[dict]:
+    """Fetch all steps across all modules for a template.
+
+    When *employee* is provided, modules are filtered by role_filter:
+    - If a module's role_filter is empty/null, it is universal and always included.
+    - If role_filter is a JSON array, the module is included only when the
+      employee's designation or department (case-insensitive) matches an entry.
+    """
     modules = _get_modules_for_template(template_id)
+
+    if employee is not None:
+        emp_designation = (employee.get("designation") or "").strip().lower()
+        emp_department = (employee.get("department") or "").strip().lower()
+        filtered_modules = []
+        for mod in modules:
+            role_filter_str = mod.get("role_filter", "")
+            if role_filter_str:
+                try:
+                    roles = json.loads(role_filter_str)
+                    if isinstance(roles, list) and roles:
+                        roles_lower = [r.strip().lower() for r in roles if r]
+                        if emp_designation not in roles_lower and emp_department not in roles_lower:
+                            continue  # skip module — does not match employee
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning("Malformed role_filter on module %s — skipping", mod.get("id"))
+                    continue  # fail-closed: skip module with bad filter
+            filtered_modules.append(mod)
+        modules = filtered_modules
+
     all_steps = []
     for module in modules:
         steps = _get_steps_for_module(module.get("id"))
@@ -288,6 +317,174 @@ def _enrich_assignment(assignment: dict) -> dict:
             assignment["buddy_department"] = buddy_emp.get("department", "")
             assignment["buddy_designation"] = buddy_emp.get("designation", "")
 
+    return assignment
+
+
+def auto_assign_default_onboarding(
+    employee_id: int,
+    company_id: int,
+    employee: dict | None = None,
+) -> dict | None:
+    """Auto-assign the company's default onboarding template to an employee.
+
+    Called during employee registration to give new hires their onboarding
+    path automatically. Returns the assignment dict on success, or None
+    if no default template exists or the assignment cannot be created.
+
+    This function is intentionally non-raising so that callers can wrap it
+    in a try/except without risking the parent operation.
+    """
+    # Find the company's default template
+    templates = dataflow_crud.list_records(
+        "OnboardingTemplate",
+        {"company_id": company_id, "is_default": True},
+    )
+    active_defaults = [t for t in templates if t.get("is_active", True)]
+    if not active_defaults:
+        return None
+
+    template = active_defaults[0]
+    template_id = template["id"]
+
+    # Load the employee record if not provided
+    if employee is None:
+        employee = dataflow_crud.read("Employee", employee_id)
+    if not employee:
+        logger.warning(
+            "auto_assign_default_onboarding: employee_id=%s not found", employee_id
+        )
+        return None
+    if employee.get("company_id") != company_id:
+        logger.warning(
+            "auto_assign_default_onboarding: employee %s does not belong to company %s",
+            employee_id, company_id,
+        )
+        return None
+
+    # Check for existing active assignment (avoid duplicates)
+    existing = dataflow_crud.list_records(
+        "OnboardingAssignment",
+        {"employee_id": employee_id, "template_id": template_id, "company_id": company_id},
+    )
+    active_existing = [a for a in existing if a.get("status") in ("in_progress", "overdue")]
+    if active_existing:
+        return None
+
+    now = datetime.utcnow().isoformat()
+
+    # Create the assignment
+    assignment = dataflow_crud.create(
+        "OnboardingAssignment",
+        {
+            "employee_id": employee_id,
+            "template_id": template_id,
+            "template_version": template.get("version", 1),
+            "company_id": company_id,
+            "assigned_by": 0,  # system-assigned
+            "assigned_at": now,
+            "due_date": None,
+            "status": "in_progress",
+            "completed_at": None,
+            "completion_percentage": 0.0,
+            "buddy_employee_id": None,
+        },
+    )
+    assignment_id = assignment.get("id")
+
+    # Create role-filtered step progress records
+    all_steps = _get_all_steps_for_template(template_id, employee=employee)
+    for step in all_steps:
+        dataflow_crud.create(
+            "OnboardingStepProgress",
+            {
+                "assignment_id": assignment_id,
+                "step_id": step["id"],
+                "employee_id": employee_id,
+                "status": "pending",
+                "completed_at": None,
+                "completed_by": None,
+                "document_url": "",
+                "form_data": "",
+                "notes": "",
+                "acknowledged_at": None,
+            },
+        )
+
+    # Copy template-level pre-boarding tasks
+    try:
+        template_tasks = dataflow_crud.list_records(
+            "PreboardingTaskInstance",
+            {"template_id": template_id, "employee_id": 0},
+        )
+        start_date = employee.get("start_date", "")
+        for task in template_tasks:
+            task_data = {
+                "company_id": company_id,
+                "template_id": template_id,
+                "employee_id": employee_id,
+                "task_name": task.get("task_name", ""),
+                "owner_role": task.get("owner_role", "hr"),
+                "trigger": task.get("trigger", ""),
+                "status": "pending",
+                "notes": task.get("notes", ""),
+            }
+            if start_date and task.get("notes", ""):
+                try:
+                    days_match = re.search(
+                        r"(-?\d+)\s*days?\s*(?:before|relative)",
+                        task.get("notes", ""),
+                    )
+                    if days_match:
+                        rel_days = int(days_match.group(1))
+                        sd = (
+                            datetime.fromisoformat(start_date)
+                            if isinstance(start_date, str)
+                            else start_date
+                        )
+                        task_data["deadline_date"] = (sd + timedelta(days=rel_days)).isoformat()
+                except (ValueError, TypeError):
+                    pass
+            dataflow_crud.create("PreboardingTaskInstance", task_data)
+    except Exception as exc:
+        logger.warning("auto_assign: failed to create pre-boarding tasks: %s", exc)
+
+    # Auto-create 30/60/90-day review milestones
+    try:
+        start_date = employee.get("start_date", "")
+        if start_date:
+            base_date = (
+                datetime.fromisoformat(start_date)
+                if isinstance(start_date, str)
+                else start_date
+            )
+        else:
+            base_date = datetime.fromisoformat(now) if isinstance(now, str) else now
+        for mtype, days in [("day_30", 30), ("day_60", 60), ("day_90", 90)]:
+            scheduled = (base_date + timedelta(days=days)).isoformat()
+            dataflow_crud.create(
+                "OnboardingMilestone",
+                {
+                    "assignment_id": assignment_id,
+                    "company_id": company_id,
+                    "employee_id": employee_id,
+                    "milestone_type": mtype,
+                    "scheduled_date": scheduled,
+                    "status": "pending",
+                    "completed_at": None,
+                    "notes": "",
+                    "reviewed_by": None,
+                },
+            )
+    except Exception as exc:
+        logger.warning("auto_assign: failed to create milestones: %s", exc)
+
+    logger.info(
+        "Auto-assigned default onboarding: assignment_id=%s, employee_id=%s, template_id=%s, steps=%d",
+        assignment_id,
+        employee_id,
+        template_id,
+        len(all_steps),
+    )
     return assignment
 
 
@@ -1932,8 +2129,8 @@ async def assign_template(
     )
     assignment_id = assignment.get("id")
 
-    # Create step progress records for every step in the template
-    all_steps = _get_all_steps_for_template(template_id)
+    # Create step progress records for role-filtered steps in the template
+    all_steps = _get_all_steps_for_template(template_id, employee=employee)
     for step in all_steps:
         dataflow_crud.create(
             "OnboardingStepProgress",
@@ -2068,7 +2265,6 @@ async def assign_template_bulk(
 
     actor_id = int(current_user.get("sub", 0))
     now = datetime.utcnow().isoformat()
-    all_steps = _get_all_steps_for_template(template_id)
 
     results: list[dict] = []
     errors: list[dict] = []
@@ -2109,7 +2305,10 @@ async def assign_template_bulk(
         )
         assignment_id = assignment.get("id")
 
-        for step in all_steps:
+        # Role-filter steps per employee (different employees may have
+        # different designations/departments)
+        emp_steps = _get_all_steps_for_template(template_id, employee=employee)
+        for step in emp_steps:
             dataflow_crud.create(
                 "OnboardingStepProgress",
                 {
@@ -2910,6 +3109,142 @@ async def update_preboarding_task(
 
     result = dataflow_crud.update("PreboardingTaskInstance", task_id, updates)
     logger.info("Pre-boarding task updated: id=%s, status=%s", task_id, result.get("status"))
+    return {"task": result}
+
+
+# ==========================================================================
+# IT PROVISIONING (admin) — filtered view of PreboardingTaskInstance
+# ==========================================================================
+
+_VALID_IT_STATUSES = {"pending", "in_progress", "completed"}
+
+
+@router.get("/it-provisioning/{employee_id}")
+async def list_it_provisioning(
+    employee_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List IT provisioning tasks for an employee.
+
+    Filters PreboardingTaskInstance records where owner_role='it'.
+    Adds overdue detection for tasks with a deadline.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    # Verify employee belongs to company
+    employee = dataflow_crud.read("Employee", employee_id)
+    if not employee or employee.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Employee not found in this company.")
+
+    all_tasks = dataflow_crud.list_records(
+        "PreboardingTaskInstance",
+        {"employee_id": employee_id, "company_id": company_id},
+    )
+
+    # Filter to IT-owned tasks only
+    it_tasks = [t for t in all_tasks if t.get("owner_role") == "it"]
+
+    # Overdue detection
+    now = datetime.now(timezone.utc)
+    for task in it_tasks:
+        if task.get("status") in ("pending", "in_progress") and task.get("deadline_date"):
+            try:
+                deadline = datetime.fromisoformat(task["deadline_date"])
+                if deadline.tzinfo is None:
+                    deadline = deadline.replace(tzinfo=timezone.utc)
+                task["is_overdue"] = now > deadline
+            except (ValueError, TypeError):
+                task["is_overdue"] = False
+        else:
+            task["is_overdue"] = False
+
+    # Extract category from notes (stored as "Category: <value> | ...")
+    for task in it_tasks:
+        notes = task.get("notes", "")
+        category = ""
+        for part in notes.split(" | "):
+            if part.startswith("Category: "):
+                category = part[len("Category: "):]
+                break
+        task["category"] = category
+
+    pending = [t for t in it_tasks if t.get("status") == "pending"]
+    in_progress = [t for t in it_tasks if t.get("status") == "in_progress"]
+    completed = [t for t in it_tasks if t.get("status") in ("completed", "done")]
+
+    return {
+        "tasks": it_tasks,
+        "total": len(it_tasks),
+        "pending": len(pending),
+        "in_progress": len(in_progress),
+        "completed": len(completed),
+    }
+
+
+@router.patch("/it-provisioning/{task_id}")
+async def update_it_provisioning(
+    task_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Update an IT provisioning task status and optional notes.
+
+    Valid status transitions: pending -> in_progress -> completed.
+    Accepts optional 'notes' field.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    task = dataflow_crud.read("PreboardingTaskInstance", task_id)
+    if not task or task.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="IT provisioning task not found.")
+
+    if task.get("owner_role") != "it":
+        raise HTTPException(status_code=400, detail="This task is not an IT provisioning task.")
+
+    body = await request.json()
+    updates: dict = {}
+
+    new_status = body.get("status")
+    if new_status:
+        if new_status not in _VALID_IT_STATUSES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status. Must be one of: {', '.join(sorted(_VALID_IT_STATUSES))}.",
+            )
+        current_status = task.get("status", "pending")
+        # Allow transitions: pending->in_progress, in_progress->completed, pending->completed
+        valid_transitions = {
+            "pending": {"in_progress", "completed"},
+            "in_progress": {"completed"},
+            "completed": set(),
+            "done": set(),  # legacy status — no further transitions
+        }
+        allowed = valid_transitions.get(current_status, set())
+        if new_status != current_status and new_status not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot transition from '{current_status}' to '{new_status}'.",
+            )
+        if new_status != current_status:
+            updates["status"] = new_status
+            if new_status == "completed":
+                actor_id = int(current_user.get("sub", 0))
+                updates["completed_at"] = datetime.utcnow().isoformat()
+                updates["completed_by"] = actor_id
+
+    if "notes" in body:
+        _validate_text_length(body["notes"], "notes")
+        updates["notes"] = body["notes"]
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update.")
+
+    result = dataflow_crud.update("PreboardingTaskInstance", task_id, updates)
+    logger.info("IT provisioning task updated: id=%s, status=%s", task_id, result.get("status"))
     return {"task": result}
 
 
