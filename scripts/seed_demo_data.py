@@ -826,7 +826,7 @@ def seed_company(client: ArborClient, company_name: str) -> int:
 
     # Create company
     resp = client.post(
-        "/profile/",
+        "/profile",
         {
             "name": company_name,
             "uen": "202100001K",
@@ -1857,7 +1857,7 @@ def main() -> None:
         _print("\nChecking API connectivity...")
         try:
             health_resp = client._client.get(
-                f"{args.api_url}/api/health",
+                f"{args.api_url}/health",
                 timeout=10.0,
             )
             if health_resp.status_code == 200:
