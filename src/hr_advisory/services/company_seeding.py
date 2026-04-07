@@ -773,13 +773,13 @@ SG_ONBOARDING_MODULES = [
     {
         "name": "Company Orientation",
         "phase": "orientation",
-        "order": 0,
+        "sort_order": 0,
         "is_mandatory": False,
         "estimated_duration_minutes": 30,
         "steps": [
             {
                 "title": "Welcome to the Team",
-                "order": 0,
+                "sort_order": 0,
                 "step_type": "content",
                 "body_content": (
                     "Welcome! This onboarding guide will help you get started. "
@@ -788,7 +788,7 @@ SG_ONBOARDING_MODULES = [
             },
             {
                 "title": "Meet Your Team",
-                "order": 1,
+                "sort_order": 1,
                 "step_type": "content",
                 "body_content": (
                     "Your department and team structure. Your manager will "
@@ -797,7 +797,7 @@ SG_ONBOARDING_MODULES = [
             },
             {
                 "title": "Office & IT Setup",
-                "order": 2,
+                "sort_order": 2,
                 "step_type": "checklist",
                 "checklist_items": json.dumps([
                     "Received laptop/workstation",
@@ -812,13 +812,13 @@ SG_ONBOARDING_MODULES = [
     {
         "name": "Employment Documentation",
         "phase": "compliance",
-        "order": 1,
+        "sort_order": 1,
         "is_mandatory": True,
         "estimated_duration_minutes": 20,
         "steps": [
             {
                 "title": "Employment Contract",
-                "order": 0,
+                "sort_order": 0,
                 "step_type": "policy_acknowledgment",
                 "body_content": "",
                 # policy_id is resolved at seed time if a matching policy exists
@@ -826,7 +826,7 @@ SG_ONBOARDING_MODULES = [
             },
             {
                 "title": "NRIC/FIN Copy",
-                "order": 1,
+                "sort_order": 1,
                 "step_type": "document_upload",
                 "body_content": (
                     "Upload a copy of your NRIC (Singapore Citizens/PRs) or "
@@ -835,7 +835,7 @@ SG_ONBOARDING_MODULES = [
             },
             {
                 "title": "Bank Account Details",
-                "order": 2,
+                "sort_order": 2,
                 "step_type": "form",
                 "body_content": (
                     "Provide your bank details for salary payment. Your bank "
@@ -844,7 +844,7 @@ SG_ONBOARDING_MODULES = [
             },
             {
                 "title": "Emergency Contact",
-                "order": 3,
+                "sort_order": 3,
                 "step_type": "form",
                 "body_content": (
                     "Provide at least one emergency contact person."
@@ -855,13 +855,13 @@ SG_ONBOARDING_MODULES = [
     {
         "name": "Singapore Compliance",
         "phase": "compliance",
-        "order": 2,
+        "sort_order": 2,
         "is_mandatory": True,
         "estimated_duration_minutes": 15,
         "steps": [
             {
                 "title": "CPF Contributions",
-                "order": 0,
+                "sort_order": 0,
                 "step_type": "content",
                 "body_content": (
                     "Central Provident Fund (CPF) is mandatory for Singapore "
@@ -872,7 +872,7 @@ SG_ONBOARDING_MODULES = [
             },
             {
                 "title": "PDPA Consent",
-                "order": 1,
+                "sort_order": 1,
                 "step_type": "policy_acknowledgment",
                 "body_content": (
                     "Under the Personal Data Protection Act (PDPA), we collect "
@@ -881,7 +881,7 @@ SG_ONBOARDING_MODULES = [
             },
             {
                 "title": "Workplace Safety",
-                "order": 2,
+                "sort_order": 2,
                 "step_type": "content",
                 "body_content": (
                     "Under the Workplace Safety and Health Act, all employees "
@@ -894,13 +894,13 @@ SG_ONBOARDING_MODULES = [
     {
         "name": "Leave & Benefits",
         "phase": "benefits",
-        "order": 3,
+        "sort_order": 3,
         "is_mandatory": False,
         "estimated_duration_minutes": 10,
         "steps": [
             {
                 "title": "Leave Entitlements",
-                "order": 0,
+                "sort_order": 0,
                 "step_type": "content",
                 "body_content": (
                     "Singapore Employment Act provides minimum annual leave of "
@@ -911,7 +911,7 @@ SG_ONBOARDING_MODULES = [
             },
             {
                 "title": "Benefits Overview",
-                "order": 1,
+                "sort_order": 1,
                 "step_type": "content",
                 "body_content": (
                     "Review your compensation package including CPF "
@@ -924,13 +924,13 @@ SG_ONBOARDING_MODULES = [
     {
         "name": "Probation & Goals",
         "phase": "probation",
-        "order": 4,
+        "sort_order": 4,
         "is_mandatory": False,
         "estimated_duration_minutes": 10,
         "steps": [
             {
                 "title": "Probation Period",
-                "order": 0,
+                "sort_order": 0,
                 "step_type": "content",
                 "body_content": (
                     "Your probation period is [X] months. During this time, "
@@ -940,7 +940,7 @@ SG_ONBOARDING_MODULES = [
             },
             {
                 "title": "30-60-90 Day Goals",
-                "order": 1,
+                "sort_order": 1,
                 "step_type": "checklist",
                 "checklist_items": json.dumps([
                     "Week 1: Complete all onboarding modules",
@@ -1012,7 +1012,7 @@ def _seed_onboarding_template(company_id: int) -> dict:
                 "name": module_def["name"],
                 "description": "",
                 "phase": module_def["phase"],
-                "order": module_def["order"],
+                "sort_order": module_def["sort_order"],
                 "estimated_duration_minutes": module_def.get("estimated_duration_minutes", 0),
                 "is_mandatory": module_def.get("is_mandatory", True),
                 "is_role_specific": False,
@@ -1035,7 +1035,7 @@ def _seed_onboarding_template(company_id: int) -> dict:
                     "module_id": module_id,
                     "title": step_def["title"],
                     "description": "",
-                    "order": step_def["order"],
+                    "sort_order": step_def["sort_order"],
                     "step_type": step_def["step_type"],
                     "body_content": step_def.get("body_content", ""),
                     "checklist_items": step_def.get("checklist_items", ""),

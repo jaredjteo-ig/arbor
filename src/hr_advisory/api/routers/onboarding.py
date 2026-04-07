@@ -162,7 +162,7 @@ def _get_modules_for_template(template_id: int) -> list[dict]:
         "OnboardingModule",
         {"template_id": template_id},
     )
-    return sorted(modules, key=lambda m: m.get("order", 0))
+    return sorted(modules, key=lambda m: m.get("sort_order", 0))
 
 
 def _get_steps_for_module(module_id: int) -> list[dict]:
@@ -171,7 +171,7 @@ def _get_steps_for_module(module_id: int) -> list[dict]:
         "OnboardingStep",
         {"module_id": module_id},
     )
-    return sorted(steps, key=lambda s: s.get("order", 0))
+    return sorted(steps, key=lambda s: s.get("sort_order", 0))
 
 
 def _get_all_steps_for_template(template_id: int) -> list[dict]:
@@ -529,7 +529,7 @@ async def duplicate_template(
                 "name": module.get("name", ""),
                 "description": module.get("description", ""),
                 "phase": module.get("phase", "custom"),
-                "order": module.get("order", 0),
+                "sort_order": module.get("sort_order", 0),
                 "estimated_duration_minutes": module.get("estimated_duration_minutes", 0),
                 "is_mandatory": module.get("is_mandatory", True),
                 "is_role_specific": module.get("is_role_specific", False),
@@ -546,7 +546,7 @@ async def duplicate_template(
                     "module_id": new_module.get("id"),
                     "title": step.get("title", ""),
                     "description": step.get("description", ""),
-                    "order": step.get("order", 0),
+                    "sort_order": step.get("sort_order", 0),
                     "step_type": step.get("step_type", "content"),
                     "body_content": step.get("body_content", ""),
                     "checklist_items": step.get("checklist_items", ""),
@@ -698,7 +698,7 @@ async def import_template(
                 "name": mod_name[:MAX_NAME_LENGTH],
                 "description": str(mod_data.get("description") or "")[:MAX_TEXT_LENGTH],
                 "phase": phase,
-                "order": idx,
+                "sort_order": idx,
                 "estimated_duration_minutes": duration,
                 "is_mandatory": is_mandatory,
                 "is_role_specific": bool(mod_data.get("role_specific")),
@@ -746,7 +746,7 @@ async def import_template(
                 "module_id": parent_module_id,
                 "title": step_title[:MAX_NAME_LENGTH],
                 "description": "",
-                "order": order,
+                "sort_order": order,
                 "step_type": "content",
                 "body_content": body_content[:MAX_BODY_CONTENT_LENGTH],
                 "checklist_items": checklist_str[:MAX_CHECKLIST_LENGTH],
@@ -803,7 +803,7 @@ async def add_module(
 
     # Determine order: append after last module
     existing_modules = _get_modules_for_template(template_id)
-    max_order = max((m.get("order", 0) for m in existing_modules), default=-1)
+    max_order = max((m.get("sort_order", 0) for m in existing_modules), default=-1)
 
     valid_phases = {"orientation", "compliance", "benefits", "probation", "custom"}
     phase = body.get("phase", "custom")
@@ -821,7 +821,7 @@ async def add_module(
             "name": name,
             "description": body.get("description", ""),
             "phase": phase,
-            "order": body.get("order", max_order + 1),
+            "sort_order": body.get("sort_order", max_order + 1),
             "estimated_duration_minutes": body.get("estimated_duration_minutes", 0),
             "is_mandatory": body.get("is_mandatory", True),
             "is_role_specific": body.get("is_role_specific", False),
@@ -876,7 +876,7 @@ async def update_module(
             )
         updates["phase"] = body["phase"]
 
-    for field in ("order", "estimated_duration_minutes", "is_mandatory", "is_role_specific", "role_filter"):
+    for field in ("sort_order", "estimated_duration_minutes", "is_mandatory", "is_role_specific", "role_filter"):
         if field in body:
             updates[field] = body[field]
 
@@ -964,7 +964,7 @@ async def reorder_modules(
 
     # Update order
     for idx, mid in enumerate(module_ids):
-        dataflow_crud.update("OnboardingModule", mid, {"order": idx})
+        dataflow_crud.update("OnboardingModule", mid, {"sort_order": idx})
 
     dataflow_crud.update(
         "OnboardingTemplate",
@@ -1028,7 +1028,7 @@ async def add_step(
 
     # Determine order: append after last step
     existing_steps = _get_steps_for_module(module_id)
-    max_order = max((s.get("order", 0) for s in existing_steps), default=-1)
+    max_order = max((s.get("sort_order", 0) for s in existing_steps), default=-1)
 
     step = dataflow_crud.create(
         "OnboardingStep",
@@ -1036,7 +1036,7 @@ async def add_step(
             "module_id": module_id,
             "title": title,
             "description": body.get("description", ""),
-            "order": body.get("order", max_order + 1),
+            "sort_order": body.get("sort_order", max_order + 1),
             "step_type": step_type,
             "body_content": body.get("body_content", ""),
             "checklist_items": body.get("checklist_items", ""),
@@ -1111,7 +1111,7 @@ async def update_step(
         updates["policy_id"] = body["policy_id"]
 
     for field in (
-        "order", "body_content", "checklist_items", "media_url",
+        "sort_order", "body_content", "checklist_items", "media_url",
         "requires_completion", "requires_previous_completion",
     ):
         if field in body:
@@ -1192,7 +1192,7 @@ async def reorder_steps(
             )
 
     for idx, sid in enumerate(step_ids):
-        dataflow_crud.update("OnboardingStep", sid, {"order": idx})
+        dataflow_crud.update("OnboardingStep", sid, {"sort_order": idx})
 
     logger.info("Steps reordered for module %s: %s", module_id, step_ids)
     return {"message": "Steps reordered.", "step_ids": step_ids}
@@ -1663,10 +1663,10 @@ async def complete_step(
     if step and step.get("requires_previous_completion"):
         module_id = step.get("module_id")
         module_steps = _get_steps_for_module(module_id)
-        current_order = step.get("order", 0)
+        current_order = step.get("sort_order", 0)
         # Find all steps with lower order in this module
         for prev_step in module_steps:
-            if prev_step.get("order", 0) < current_order and prev_step.get("requires_completion", True):
+            if prev_step.get("sort_order", 0) < current_order and prev_step.get("requires_completion", True):
                 # Check if previous step is completed
                 prev_progress = dataflow_crud.list_records(
                     "OnboardingStepProgress",

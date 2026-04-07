@@ -2520,7 +2520,7 @@ class OnboardingModule:
     name: str = ""
     description: str = ""
     phase: str = "custom"  # orientation, compliance, benefits, probation, custom
-    order: int = 0
+    sort_order: int = 0
     estimated_duration_minutes: int = 0
     is_mandatory: bool = True
     is_role_specific: bool = False
@@ -2542,7 +2542,7 @@ class OnboardingStep:
     module_id: int = 0
     title: str = ""
     description: str = ""
-    order: int = 0
+    sort_order: int = 0
     step_type: str = "content"  # content, checklist, document_upload, policy_acknowledgment, form, approval
     body_content: str = ""  # markdown/HTML content for content steps
     checklist_items: str = ""  # JSON array of checklist items
