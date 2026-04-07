@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/shell";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ShadowAgentProvider,
   ShadowWidget,
@@ -25,6 +25,14 @@ import {
  * - ShadowMargin: persistent right-edge insight strip (desktop only, T126)
  */
 export default function DashboardLayout({ children }: { children: ReactNode }) {
+  /* ── Restore text size accessibility preference on mount ── */
+  useEffect(() => {
+    const storedTextSize = localStorage.getItem("textSize");
+    if (storedTextSize) {
+      document.documentElement.setAttribute("data-text-size", storedTextSize);
+    }
+  }, []);
+
   return (
     <ProtectedRoute>
       <AppShell>

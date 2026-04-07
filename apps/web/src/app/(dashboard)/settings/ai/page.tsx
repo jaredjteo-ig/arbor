@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Brain,
   Key,
@@ -159,7 +160,16 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function AIConfigPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const companyId = user?.company_id;
+
+  // Only owners and HR managers may access AI configuration
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
+  useEffect(() => {
+    if (user && !isAdmin) {
+      router.replace("/settings");
+    }
+  }, [user, isAdmin, router]);
 
   const [config, setConfig] = useState<LLMConfig | null>(null);
   const [usage, setUsage] = useState<LLMUsage | null>(null);
@@ -275,6 +285,10 @@ export default function AIConfigPage() {
       toast.error("Failed to remove configuration.");
     }
   };
+
+  if (!isAdmin) {
+    return null;
+  }
 
   if (loading) {
     return (

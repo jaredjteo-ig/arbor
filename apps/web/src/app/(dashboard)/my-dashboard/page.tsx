@@ -77,7 +77,9 @@ function EmploymentSummaryCard({
             </p>
             <p className="text-sm text-[var(--color-gray-600)]">
               <span className="text-[var(--color-gray-500)]">Type:</span>{" "}
-              {employee?.employment_type || "Full-time"}
+              {(employee?.employment_type || "full_time")
+                .replace(/_/g, "-")
+                .replace(/\b\w/g, (c) => c.toUpperCase())}
             </p>
             <p className="text-sm text-[var(--color-gray-600)]">
               <span className="text-[var(--color-gray-500)]">Start Date:</span>{" "}

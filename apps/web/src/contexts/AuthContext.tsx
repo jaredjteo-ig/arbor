@@ -195,7 +195,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: true,
         isLoading: false,
       });
-      router.push("/dashboard");
+      // Route employees to their personal dashboard; admins to the main dashboard
+      const destination =
+        response.user.role === "employee" ? "/my-dashboard" : "/dashboard";
+      router.push(destination);
     },
     [router],
   );

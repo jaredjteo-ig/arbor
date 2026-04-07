@@ -567,7 +567,7 @@ export function ChatContainer({
                 ? "Listening..."
                 : isStreaming
                   ? "Waiting for response..."
-                  : "Ask an HR question..."
+                  : "Type your HR question here..."
             }
             disabled={isStreaming}
             suggestions={isEmpty ? INITIAL_SUGGESTIONS : undefined}

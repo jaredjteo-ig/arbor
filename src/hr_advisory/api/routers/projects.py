@@ -132,67 +132,6 @@ async def create_project(
     return {"project": project}
 
 
-@router.get("/{project_id}")
-async def get_project(
-    project_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
-) -> dict:
-    """Get a single project by ID."""
-    company_id = get_current_company_id(current_user)
-    if company_id is None:
-        raise HTTPException(status_code=400, detail="No company associated.")
-
-    project = _verify_project_ownership(project_id, company_id)
-    return {"project": project}
-
-
-@router.patch("/{project_id}")
-async def update_project(
-    project_id: int,
-    request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
-) -> dict:
-    """Update a project."""
-    company_id = get_current_company_id(current_user)
-    if company_id is None:
-        raise HTTPException(status_code=400, detail="No company associated.")
-
-    _verify_project_ownership(project_id, company_id)
-
-    body = await request.json()
-    allowed = {
-        "name",
-        "description",
-        "start_date",
-        "end_date",
-        "budget_amount",
-        "status",
-        "is_archived",
-    }
-    updates = {k: v for k, v in body.items() if k in allowed}
-    if not updates:
-        raise HTTPException(status_code=400, detail="No valid fields to update.")
-
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = dataflow_crud.update("Project", project_id, updates)
-    return {"project": result}
-
-
-@router.delete("/{project_id}")
-async def archive_project(
-    project_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
-) -> dict:
-    """Soft-delete (archive) a project."""
-    company_id = get_current_company_id(current_user)
-    if company_id is None:
-        raise HTTPException(status_code=400, detail="No company associated.")
-
-    _verify_project_ownership(project_id, company_id)
-    dataflow_crud.update("Project", project_id, {"status": "archived"})
-    return {"detail": "Project archived."}
-
-
 # --------------------------------------------------------------------------
 # Assignments
 # --------------------------------------------------------------------------
@@ -950,7 +889,7 @@ async def project_report(
 
 
 # --------------------------------------------------------------------------
-# Single project detail (placed after all static GET routes to avoid
+# Single project CRUD (placed after all static GET routes to avoid
 # /{project_id} shadowing /roles, /timesheets, /allocations, /report)
 # --------------------------------------------------------------------------
 
@@ -967,3 +906,50 @@ async def get_project(
 
     project = _verify_project_ownership(project_id, company_id)
     return project
+
+
+@router.patch("/{project_id}")
+async def update_project(
+    project_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Update a project."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    _verify_project_ownership(project_id, company_id)
+
+    body = await request.json()
+    allowed = {
+        "name",
+        "description",
+        "start_date",
+        "end_date",
+        "budget_amount",
+        "status",
+        "is_archived",
+    }
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    result = dataflow_crud.update("Project", project_id, updates)
+    return {"project": result}
+
+
+@router.delete("/{project_id}")
+async def archive_project(
+    project_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Soft-delete (archive) a project."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    _verify_project_ownership(project_id, company_id)
+    dataflow_crud.update("Project", project_id, {"status": "archived"})
+    return {"detail": "Project archived."}

@@ -1909,6 +1909,14 @@ async def get_my_leave_balances(
         # Return statutory defaults for non-employee users (admins viewing their own)
         return {"balances": _statutory_defaults()}
 
+    # Ensure leave balance records exist for this employee (auto-create if missing)
+    try:
+        from hr_advisory.services.leave_engine import ensure_leave_balances
+
+        ensure_leave_balances(employee["id"], company_id)
+    except Exception:
+        logger.debug("Leave engine not available, falling back to direct query")
+
     balances = _get_leave_balances(employee["id"], company_id)
     if not balances:
         return {"balances": _statutory_defaults()}

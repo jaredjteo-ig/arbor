@@ -23,6 +23,7 @@ import {
 import { settingsApi } from "@/services/api/settings";
 import { apiClient } from "@/services/api/client";
 import { useObservation } from "@/components/shadow-agent";
+import { useAuth } from "@/contexts/AuthContext";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -335,14 +336,21 @@ function AIMemorySection() {
 /* ── Page ─────────────────────────────────────────────────── */
 
 export default function SettingsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
+
   /* Display state */
   const [display, setDisplay] = useState<DisplaySettings>(() => {
     const storedTheme =
       typeof window !== "undefined"
         ? (localStorage.getItem("theme") as Theme | null)
         : null;
+    const storedTextSize =
+      typeof window !== "undefined"
+        ? (localStorage.getItem("textSize") as TextSize | null)
+        : null;
     return {
-      textSize: "normal",
+      textSize: storedTextSize ?? "normal",
       theme: storedTheme === "dark" ? "dark" : "light",
     };
   });
@@ -362,10 +370,11 @@ export default function SettingsPage() {
   /* Saving feedback */
   const [savingSection, setSavingSection] = useState<string | null>(null);
 
-  /* ── Apply stored theme on mount ────────────────────────── */
+  /* ── Apply stored theme and text size on mount ──────────── */
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", display.theme === "dark");
+    document.documentElement.setAttribute("data-text-size", display.textSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -412,6 +421,14 @@ export default function SettingsPage() {
           "dark",
           patch.theme === "dark",
         );
+      }
+
+      // Apply text size to the DOM so the CSS [data-text-size] selector
+      // updates --text-size-multiplier and the body font-size scales.
+      if (patch.textSize || updated.textSize) {
+        const size = patch.textSize ?? updated.textSize;
+        document.documentElement.setAttribute("data-text-size", size);
+        localStorage.setItem("textSize", size);
       }
 
       try {
@@ -530,30 +547,32 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* AI Configuration */}
-      <a
-        href="/settings/ai"
-        className="block no-underline"
-        style={{ textDecoration: "none", color: "inherit" }}
-      >
-        <AppCard variant="standard">
-          <div className="flex items-center gap-3 py-1">
-            <Brain
-              className="h-5 w-5 text-[var(--color-primary)]"
-              aria-hidden="true"
-            />
-            <div className="flex-1">
-              <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
-                AI Configuration
-              </h2>
-              <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-                Manage your AI provider, API key, and usage budget.
-              </p>
+      {/* AI Configuration — visible to owners and HR managers only */}
+      {isAdmin && (
+        <a
+          href="/settings/ai"
+          className="block no-underline"
+          style={{ textDecoration: "none", color: "inherit" }}
+        >
+          <AppCard variant="standard">
+            <div className="flex items-center gap-3 py-1">
+              <Brain
+                className="h-5 w-5 text-[var(--color-primary)]"
+                aria-hidden="true"
+              />
+              <div className="flex-1">
+                <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+                  AI Configuration
+                </h2>
+                <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                  Manage your AI provider, API key, and usage budget.
+                </p>
+              </div>
+              <span className="text-xs text-[var(--color-gray-400)]">→</span>
             </div>
-            <span className="text-xs text-[var(--color-gray-400)]">→</span>
-          </div>
-        </AppCard>
-      </a>
+          </AppCard>
+        </a>
+      )}
 
       {/* Display Section */}
       <AppCard

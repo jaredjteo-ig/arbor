@@ -168,7 +168,7 @@ function ClockCard({
     try {
       await attendanceApi.clockIn();
       toast.success("Clocked in successfully");
-      onRefresh();
+      await onRefresh();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to clock in";
       toast.error(message);
@@ -182,7 +182,7 @@ function ClockCard({
     try {
       await attendanceApi.clockOut();
       toast.success("Clocked out successfully");
-      onRefresh();
+      await onRefresh();
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to clock out";
