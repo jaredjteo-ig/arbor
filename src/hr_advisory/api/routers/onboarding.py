@@ -213,7 +213,7 @@ def _update_assignment_status(assignment_id: int) -> dict:
         return {}
 
     percentage, completed, total = _calculate_completion(assignment_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).isoformat()
     updates: dict = {"completion_percentage": percentage}
 
     if completed == total and total > 0:
