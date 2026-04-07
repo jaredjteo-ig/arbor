@@ -63,6 +63,7 @@ export interface AdvisoryStreamCompleteEvent {
   risk_tier: string;
   confidence_score: number;
   conversation_id: number;
+  has_active_onboarding?: boolean;
 }
 
 export interface AdvisoryMessage {

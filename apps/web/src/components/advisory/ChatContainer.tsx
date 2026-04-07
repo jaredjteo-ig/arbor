@@ -9,6 +9,7 @@ import { SystemMessage } from "./SystemMessage";
 import { ContextBar } from "./ContextBar";
 import { advisoryApi } from "@/services/api/advisory";
 import { learningApi } from "@/services/api/learning";
+import { onboardingApi } from "@/services/api/onboarding";
 import { humanizeError, BudgetExceededError } from "@/services/api/errors";
 import { useAuth } from "@/contexts/AuthContext";
 import type {
@@ -78,6 +79,14 @@ const INITIAL_SUGGESTIONS = [
   "Am I compliant with the Employment Act?",
   "What are the foreign worker quota limits for my sector?",
   "How do I handle a resignation properly?",
+];
+
+const ONBOARDING_SUGGESTIONS = [
+  "What should I do on my first day?",
+  "What are my leave entitlements?",
+  "Who is my onboarding buddy?",
+  "What documents do I need to submit?",
+  "What are my 30-60-90 day goals?",
 ];
 
 /* ── Phased Thinking Indicator ──────────────────────────────── */
@@ -173,6 +182,7 @@ export function ChatContainer({
     conversationId,
   );
   const [isListening, setIsListening] = useState(false);
+  const [hasActiveOnboarding, setHasActiveOnboarding] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prefillHandled = useRef(false);
@@ -183,6 +193,26 @@ export function ChatContainer({
   const speechSupported =
     typeof window !== "undefined" &&
     ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+
+  // Check if the employee has active onboarding (for suggestion chips)
+  useEffect(() => {
+    let cancelled = false;
+    if (user?.role === "employee") {
+      onboardingApi
+        .getMyProgress()
+        .then((progress) => {
+          if (!cancelled && progress.assignment?.status === "in_progress") {
+            setHasActiveOnboarding(true);
+          }
+        })
+        .catch(() => {
+          // Silently ignore — onboarding check is non-critical
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -287,6 +317,10 @@ export function ChatContainer({
               }
               return updated;
             });
+            // Detect active onboarding from backend response
+            if (data.has_active_onboarding) {
+              setHasActiveOnboarding(true);
+            }
             setIsStreaming(false);
             abortRef.current = null;
           },
@@ -463,13 +497,28 @@ export function ChatContainer({
             <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary-bg)] flex items-center justify-center mb-4">
               <span className="text-2xl">&#x1F4AC;</span>
             </div>
-            <h2 className="text-xl font-bold text-[var(--color-gray-900)] mb-2">
-              Ask Central anything about HR compliance
-            </h2>
-            <p className="text-sm text-[var(--color-gray-500)] mb-6">
-              Get instant, cited guidance about employment law, CPF, foreign
-              worker rules, leave entitlements, and more.
-            </p>
+            {hasActiveOnboarding ? (
+              <>
+                <h2 className="text-xl font-bold text-[var(--color-gray-900)] mb-2">
+                  Welcome! Ask anything about your onboarding
+                </h2>
+                <p className="text-sm text-[var(--color-gray-500)] mb-6">
+                  I have your company&apos;s onboarding programme loaded and can
+                  answer questions about first-day tasks, leave policies, your
+                  buddy, documents to submit, and more.
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-xl font-bold text-[var(--color-gray-900)] mb-2">
+                  Ask Central anything about HR compliance
+                </h2>
+                <p className="text-sm text-[var(--color-gray-500)] mb-6">
+                  Get instant, cited guidance about employment law, CPF, foreign
+                  worker rules, leave entitlements, and more.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
@@ -570,7 +619,13 @@ export function ChatContainer({
                   : "Type your HR question here..."
             }
             disabled={isStreaming}
-            suggestions={isEmpty ? INITIAL_SUGGESTIONS : undefined}
+            suggestions={
+              isEmpty
+                ? hasActiveOnboarding
+                  ? ONBOARDING_SUGGESTIONS
+                  : INITIAL_SUGGESTIONS
+                : undefined
+            }
             onSuggestionClick={sendMessage}
           />
         </div>

@@ -296,6 +296,7 @@ TOOL_DEFINITIONS = [
 def _build_system_prompt(
     company_context: dict | None = None,
     user_context: dict | None = None,
+    onboarding_context: str = "",
 ) -> str:
     """Build the system prompt for the advisory engine."""
     # Load anti-amnesia constraints
@@ -393,6 +394,16 @@ def _build_system_prompt(
         context_section += (
             "\nCOMPANY CONTEXT (use this to personalise your advice):\n"
             f"{json.dumps(company_context, indent=2, default=str)}\n"
+        )
+
+    if onboarding_context:
+        context_section += (
+            "\nONBOARDING CONTEXT (this employee is currently being onboarded — "
+            "use this to answer company-specific onboarding questions like "
+            "first-day instructions, buddy info, policies, benefits, checklists, "
+            "and 30-60-90 day goals. For legal questions, still use search_kb "
+            "for the statutory position):\n"
+            f"{onboarding_context}\n"
         )
 
     return base + context_section + "\n" + anti_amnesia + security_footer
@@ -755,6 +766,7 @@ class AdvisoryEngine:
         company_context: dict | None = None,
         company_id: int | None = None,
         user_context: dict | None = None,
+        onboarding_context: str = "",
     ) -> dict[str, Any]:
         """Run the advisory engine.
 
@@ -764,6 +776,8 @@ class AdvisoryEngine:
             company_context: Company profile dict for personalisation.
             company_id: Company ID for tool calls.
             user_context: User profile dict (role, name) for personalisation.
+            onboarding_context: Formatted onboarding content for employees
+                with active onboarding assignments.
 
         Returns:
             Dict with keys: response_text, risk_tier, confidence, domains,
@@ -776,7 +790,7 @@ class AdvisoryEngine:
         model = self._ctx.model or os.environ.get("DEFAULT_LLM_MODEL", "gemini-2.5-flash")
 
         # Build messages
-        system_prompt = _build_system_prompt(company_context, user_context)
+        system_prompt = _build_system_prompt(company_context, user_context, onboarding_context)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
         ]

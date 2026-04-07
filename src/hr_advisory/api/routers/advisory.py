@@ -390,7 +390,27 @@ async def advisory_query(
         except (TypeError, ValueError):
             logger.debug("Invalid company_id for profile fetch: %s", effective_company_id)
 
-    # ── Step 3d: Resolve LLM context (BYOK / Ollama / server default) ─
+    # ── Step 3d: Fetch onboarding context (if employee has active onboarding) ─
+    onboarding_context = ""
+    if effective_company_id is not None:
+        try:
+            _uid_int = int(user_id) if str(user_id).isdigit() else None
+            if _uid_int is not None:
+                from hr_advisory.services.onboarding_context import get_onboarding_context
+
+                onboarding_context = get_onboarding_context(
+                    user_id=_uid_int,
+                    company_id=int(effective_company_id),
+                )
+                if onboarding_context:
+                    logger.info(
+                        "Onboarding context injected for user_id=%s (%d chars)",
+                        user_id, len(onboarding_context),
+                    )
+        except Exception:
+            logger.debug("Failed to fetch onboarding context", exc_info=True)
+
+    # ── Step 3e: Resolve LLM context (BYOK / Ollama / server default) ─
     llm_context = None
     budget_result = None
     try:
@@ -411,7 +431,7 @@ async def advisory_query(
     except Exception:
         logger.warning("Failed to resolve LLM context — using server defaults", exc_info=True)
 
-    # ── Step 3e: Budget check (server-key users only) ────────────
+    # ── Step 3f: Budget check (server-key users only) ────────────
     budget_result = None
     if (
         llm_context is not None
@@ -468,6 +488,7 @@ async def advisory_query(
             company_context=company_profile,
             company_id=int(effective_company_id) if effective_company_id else None,
             user_context=_user_ctx,
+            onboarding_context=onboarding_context,
         ),
     )
 
@@ -645,6 +666,10 @@ async def advisory_query(
             "is_byok": llm_context.is_byok,
         }
 
+    # Signal to the frontend that this user has active onboarding
+    if onboarding_context:
+        advisory_response["has_active_onboarding"] = True
+
     return advisory_response
 
     # --- Dead code removed (2026-03-24) ---
@@ -775,7 +800,27 @@ async def advisory_stream(
         except (TypeError, ValueError):
             logger.debug("Invalid company_id for profile fetch: %s", effective_company_id)
 
-    # ── Step 3d: Resolve LLM context (BYOK / Ollama / server default) ─
+    # ── Step 3d: Fetch onboarding context (if employee has active onboarding) ─
+    stream_onboarding_context = ""
+    if effective_company_id is not None:
+        try:
+            _uid_int_s = int(user_id) if str(user_id).isdigit() else None
+            if _uid_int_s is not None:
+                from hr_advisory.services.onboarding_context import get_onboarding_context
+
+                stream_onboarding_context = get_onboarding_context(
+                    user_id=_uid_int_s,
+                    company_id=int(effective_company_id),
+                )
+                if stream_onboarding_context:
+                    logger.info(
+                        "Stream: onboarding context injected for user_id=%s (%d chars)",
+                        user_id, len(stream_onboarding_context),
+                    )
+        except Exception:
+            logger.debug("Stream: failed to fetch onboarding context", exc_info=True)
+
+    # ── Step 3e: Resolve LLM context (BYOK / Ollama / server default) ─
     llm_context = None
     budget_result = None
     try:
@@ -798,7 +843,7 @@ async def advisory_stream(
             "Stream: failed to resolve LLM context — using server defaults", exc_info=True
         )
 
-    # ── Step 3e: Budget check (server-key users only) ────────────
+    # ── Step 3f: Budget check (server-key users only) ────────────
     if (
         llm_context is not None
         and not llm_context.is_byok
@@ -840,6 +885,7 @@ async def advisory_stream(
             company_context=company_profile,
             company_id=int(effective_company_id) if effective_company_id else None,
             user_context=_stream_user_ctx,
+            onboarding_context=stream_onboarding_context,
         ),
     )
 
@@ -1047,6 +1093,8 @@ async def advisory_stream(
             complete_event["budget_info"] = _stream_budget_info
         if _stream_llm_info:
             complete_event["llm_info"] = _stream_llm_info
+        if stream_onboarding_context:
+            complete_event["has_active_onboarding"] = True
         yield f"event: complete\ndata: {json.dumps(complete_event)}\n\n"
 
     return StreamingResponse(
