@@ -16,9 +16,7 @@ export const profileApi = {
   },
 
   /** Create a new company profile. */
-  create(
-    data: CompanyProfileCreateRequest,
-  ): Promise<{
+  create(data: CompanyProfileCreateRequest): Promise<{
     id: number | null;
     name: string;
     uen: string | null;
@@ -26,7 +24,7 @@ export const profileApi = {
     created: boolean;
     timestamp: string;
   }> {
-    return apiClient.post("/profile/", data);
+    return apiClient.post("/profile", data);
   },
 
   /** Update an existing company profile. */

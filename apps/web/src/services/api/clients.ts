@@ -7,7 +7,7 @@ import type {
 
 export const clientsApi = {
   list(): Promise<ClientListResponse> {
-    return apiClient.get<ClientListResponse>("/clients/");
+    return apiClient.get<ClientListResponse>("/clients");
   },
 
   get(clientId: number): Promise<ClientCompany> {
@@ -15,7 +15,7 @@ export const clientsApi = {
   },
 
   create(data: ClientCreateRequest): Promise<ClientCompany> {
-    return apiClient.post<ClientCompany>("/clients/", data);
+    return apiClient.post<ClientCompany>("/clients", data);
   },
 
   update(
