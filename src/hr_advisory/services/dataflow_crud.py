@@ -30,13 +30,22 @@ def create(model_name: str, data: dict[str, Any]) -> dict[str, Any]:
     return db.express_sync.create(model_name, data)
 
 
+def _coerce_id(record_id: int | str) -> int | str:
+    """Coerce ID to int if it looks numeric. PostgreSQL requires int for integer PKs."""
+    if isinstance(record_id, int):
+        return record_id
+    if isinstance(record_id, str) and record_id.isdigit():
+        return int(record_id)
+    return record_id
+
+
 def read(model_name: str, record_id: int | str) -> dict[str, Any] | None:
     """Read a single record by ID via db.express_sync.
 
     Returns None if the record is not found or has an error.
     """
     db = _get_db()
-    result = db.express_sync.read(model_name, str(record_id))
+    result = db.express_sync.read(model_name, _coerce_id(record_id))
     if not result or result.get("error") or result.get("failed"):
         return None
     return result
@@ -64,13 +73,13 @@ def update(
 ) -> dict[str, Any]:
     """Update a single record by ID via db.express_sync."""
     db = _get_db()
-    return db.express_sync.update(model_name, str(record_id), updates)
+    return db.express_sync.update(model_name, _coerce_id(record_id), updates)
 
 
 def delete(model_name: str, record_id: int | str) -> dict[str, Any]:
     """Delete a single record by ID via db.express_sync."""
     db = _get_db()
-    return db.express_sync.delete(model_name, str(record_id))
+    return db.express_sync.delete(model_name, _coerce_id(record_id))
 
 
 def count(
