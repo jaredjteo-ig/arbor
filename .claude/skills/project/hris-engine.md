@@ -18,6 +18,7 @@ Full HRIS operations: payroll, leave, claims, attendance, shifts, employee lifec
 | Recruitment | `api/routers/recruitment.py`     | JobListing, Candidate, Interview, InterviewFeedback                                                             | —                                                               | `/recruitment`, `/recruitment/[id]`             |
 | Reports     | `api/routers/reports.py`         | — (aggregation queries, no dedicated models)                                                                    | —                                                               | `/reports`                                      |
 | Approvals   | `api/routers/approval_groups.py` | ApprovalGroup, ApprovalGroupMember                                                                              | —                                                               | `/settings/approval-groups`                     |
+| Onboarding  | `api/routers/onboarding.py`      | OnboardingTemplate, OnboardingModule, OnboardingStep, OnboardingAssignment, OnboardingStepProgress, PreboardingTaskInstance | `services/onboarding_parser.py`                    | `/employees` (Onboarding tab), `/my-onboarding` |
 
 ## CRUD Pattern — dataflow_crud (Mandatory)
 
@@ -485,6 +486,33 @@ Creates EmploymentEvent, sets employee inactive. Frontend: lifecycle tab on empl
 - 200 employees (60% citizen, 20% PR, 10% EP, 10% SP/WP), salaries $2.5k-$15k
 - Timing: <30s total, <150ms per employee
 - Correctness: CPF non-zero for citizens/PRs, zero for foreigners, SDL in $2-$11.25, FWL only for WP/SP
+
+## Onboarding System (Added 2026-04-07)
+
+### Architecture
+- 6 models: OnboardingTemplate (versioned), OnboardingModule (phase-based, role-filterable), OnboardingStep (6 types), OnboardingAssignment (with completion %), OnboardingStepProgress (per-step tracking), PreboardingTaskInstance (pre-Day-1 tasks)
+- 28 API endpoints in `api/routers/onboarding.py` covering template CRUD, module/step management, assignment (single + bulk), employee self-service, HR approval, pre-boarding
+- Excel parser: `services/onboarding_parser.py` reads 12-sheet LIA template format
+
+### Step Types
+- **content**: body text, "Mark as Read"
+- **checklist**: JSON items, all must be checked
+- **document_upload**: file upload (PDF/JPG/PNG/DOCX, 10MB, UUID filenames, magic-byte validation)
+- **policy_acknowledgment**: links to CompanyPolicy, creates PolicyAcknowledgment record
+- **form**: structured data collection (bank details, emergency contacts)
+- **approval**: HR/manager must approve via `POST /steps/{id}/approve`
+
+### SG Default Template
+Seeded via `company_seeding.py` — "Singapore Standard Onboarding" with 5 modules:
+1. Company Orientation (welcome, team, IT checklist)
+2. Employment Documentation (contract ack, NRIC upload, bank details, emergency contact)
+3. Singapore Compliance (CPF info, PDPA consent, WSH awareness)
+4. Leave & Benefits (EA entitlements, package overview)
+5. Probation & Goals (timeline, 30-60-90 checklist)
+
+### Frontend
+- Admin: Employees page Onboarding tab with template builder (create/edit/duplicate/import), assignment tracking with progress bars, "Onboard" button per employee in Directory
+- Employee: `/my-onboarding` page with module cards, step-by-step completion, progress card on `/my-dashboard`, nav badge
 
 ## Related Docs
 

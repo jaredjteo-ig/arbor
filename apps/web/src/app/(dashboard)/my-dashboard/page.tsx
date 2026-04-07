@@ -7,6 +7,10 @@ import { apiClient } from "@/services/api/client";
 import { employeesApi, type LeaveBalance } from "@/services/api/employees";
 import { policiesApi, type PolicyRecord } from "@/services/api/policies";
 import {
+  onboardingApi,
+  type MyOnboardingProgress,
+} from "@/services/api/onboarding";
+import {
   Briefcase,
   CalendarDays,
   FileText,
@@ -16,6 +20,7 @@ import {
   Info,
   AlertCircle,
   CheckCircle2,
+  ClipboardCheck,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -484,6 +489,97 @@ function PendingAcknowledgmentsBanner() {
   );
 }
 
+/* -- Onboarding Progress Card ------------------------------------- */
+
+function OnboardingProgressCard() {
+  const [progress, setProgress] = useState<MyOnboardingProgress | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchOnboarding() {
+      try {
+        const data = await onboardingApi.getMyProgress();
+        if (!cancelled) setProgress(data);
+      } catch {
+        // Silently ignore — card just won't render
+        if (!cancelled) setProgress(null);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    fetchOnboarding();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Don't show anything while loading or if no onboarding is assigned
+  if (isLoading) return null;
+  if (!progress) return null;
+
+  const assignment = progress.assignment;
+
+  // Don't render the card if no active assignment (backend returns null)
+  if (!assignment) return null;
+
+  // Only show for in-progress assignments
+  if (assignment.status !== "in_progress") return null;
+
+  const modules = assignment.modules ?? [];
+  const totalSteps = modules.reduce(
+    (acc, m) => acc + (m.steps ?? []).length,
+    0,
+  );
+  const completedSteps = modules.reduce(
+    (acc, m) =>
+      acc + (m.steps ?? []).filter((s) => s.status === "completed").length,
+    0,
+  );
+  const percent = assignment.completion_percentage ?? 0;
+
+  return (
+    <AppCard variant="flat">
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-lg bg-blue-50 shrink-0">
+          <ClipboardCheck className="h-5 w-5 text-blue-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+            Onboarding Progress
+          </p>
+          <p className="text-sm font-semibold text-[var(--color-gray-900)] mt-0.5">
+            {assignment.template_name ?? "Employee Onboarding"}
+          </p>
+
+          {/* Progress bar */}
+          <div className="mt-3 mb-1">
+            <div className="h-2 rounded-full bg-[var(--color-gray-100)] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-[var(--color-primary)] transition-all"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-[var(--color-gray-500)]">
+            {completedSteps} of {totalSteps} step
+            {totalSteps !== 1 ? "s" : ""} completed
+          </p>
+
+          <Link
+            href="/my-onboarding"
+            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
+          >
+            Continue Onboarding <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+      </div>
+    </AppCard>
+  );
+}
+
 /* -- Page ---------------------------------------------------------- */
 
 export default function MyDashboardPage() {
@@ -538,6 +634,9 @@ export default function MyDashboardPage() {
 
       {/* Pending policy acknowledgments nudge */}
       <PendingAcknowledgmentsBanner />
+
+      {/* Onboarding progress (shown only when in-progress) */}
+      <OnboardingProgressCard />
 
       {/* 3-card responsive grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -8,6 +8,8 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from hr_advisory.services import dataflow_crud
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,6 +64,7 @@ def seed_company_defaults(company_id: int) -> dict:
         ("inventory", _seed_demo_inventory),
         ("appraisal_template", _seed_demo_appraisal_template),
         ("job_listings", _seed_demo_job_listings),
+        ("onboarding_template", _seed_onboarding_template),
     ]:
         try:
             summary[name] = fn(company_id)
@@ -760,3 +763,298 @@ def _seed_demo_job_listings(company_id: int) -> dict:
         )
         count += 1
     return {"created": count}
+
+
+# ---------------------------------------------------------------------------
+# Onboarding template seeding — Singapore Standard Onboarding
+# ---------------------------------------------------------------------------
+
+SG_ONBOARDING_MODULES = [
+    {
+        "name": "Company Orientation",
+        "phase": "orientation",
+        "order": 0,
+        "is_mandatory": False,
+        "estimated_duration_minutes": 30,
+        "steps": [
+            {
+                "title": "Welcome to the Team",
+                "order": 0,
+                "step_type": "content",
+                "body_content": (
+                    "Welcome! This onboarding guide will help you get started. "
+                    "Complete each section at your own pace."
+                ),
+            },
+            {
+                "title": "Meet Your Team",
+                "order": 1,
+                "step_type": "content",
+                "body_content": (
+                    "Your department and team structure. Your manager will "
+                    "introduce you to your colleagues in your first week."
+                ),
+            },
+            {
+                "title": "Office & IT Setup",
+                "order": 2,
+                "step_type": "checklist",
+                "checklist_items": json.dumps([
+                    "Received laptop/workstation",
+                    "Email account set up",
+                    "Slack/Teams access",
+                    "Building access card",
+                    "Parking/transport arranged",
+                ]),
+            },
+        ],
+    },
+    {
+        "name": "Employment Documentation",
+        "phase": "compliance",
+        "order": 1,
+        "is_mandatory": True,
+        "estimated_duration_minutes": 20,
+        "steps": [
+            {
+                "title": "Employment Contract",
+                "order": 0,
+                "step_type": "policy_acknowledgment",
+                "body_content": "",
+                # policy_id is resolved at seed time if a matching policy exists
+                "_link_policy_type": "handbook",
+            },
+            {
+                "title": "NRIC/FIN Copy",
+                "order": 1,
+                "step_type": "document_upload",
+                "body_content": (
+                    "Upload a copy of your NRIC (Singapore Citizens/PRs) or "
+                    "FIN (Foreign employees) for payroll and CPF registration."
+                ),
+            },
+            {
+                "title": "Bank Account Details",
+                "order": 2,
+                "step_type": "form",
+                "body_content": (
+                    "Provide your bank details for salary payment. Your bank "
+                    "account number will be encrypted at rest."
+                ),
+            },
+            {
+                "title": "Emergency Contact",
+                "order": 3,
+                "step_type": "form",
+                "body_content": (
+                    "Provide at least one emergency contact person."
+                ),
+            },
+        ],
+    },
+    {
+        "name": "Singapore Compliance",
+        "phase": "compliance",
+        "order": 2,
+        "is_mandatory": True,
+        "estimated_duration_minutes": 15,
+        "steps": [
+            {
+                "title": "CPF Contributions",
+                "order": 0,
+                "step_type": "content",
+                "body_content": (
+                    "Central Provident Fund (CPF) is mandatory for Singapore "
+                    "Citizens and Permanent Residents. Your employer contributes "
+                    "[employer rate]% and [employee rate]% is deducted from your "
+                    "salary. EP/S Pass/WP holders are exempt."
+                ),
+            },
+            {
+                "title": "PDPA Consent",
+                "order": 1,
+                "step_type": "policy_acknowledgment",
+                "body_content": (
+                    "Under the Personal Data Protection Act (PDPA), we collect "
+                    "and process your personal data for employment purposes."
+                ),
+            },
+            {
+                "title": "Workplace Safety",
+                "order": 2,
+                "step_type": "content",
+                "body_content": (
+                    "Under the Workplace Safety and Health Act, all employees "
+                    "must be aware of workplace safety procedures. Report any "
+                    "hazards to your supervisor immediately."
+                ),
+            },
+        ],
+    },
+    {
+        "name": "Leave & Benefits",
+        "phase": "benefits",
+        "order": 3,
+        "is_mandatory": False,
+        "estimated_duration_minutes": 10,
+        "steps": [
+            {
+                "title": "Leave Entitlements",
+                "order": 0,
+                "step_type": "content",
+                "body_content": (
+                    "Singapore Employment Act provides minimum annual leave of "
+                    "7 days (first year), increasing by 1 day per year up to "
+                    "14 days. Sick leave: 14 days outpatient, 60 days "
+                    "hospitalisation."
+                ),
+            },
+            {
+                "title": "Benefits Overview",
+                "order": 1,
+                "step_type": "content",
+                "body_content": (
+                    "Review your compensation package including CPF "
+                    "contributions, medical benefits, and any additional "
+                    "allowances."
+                ),
+            },
+        ],
+    },
+    {
+        "name": "Probation & Goals",
+        "phase": "probation",
+        "order": 4,
+        "is_mandatory": False,
+        "estimated_duration_minutes": 10,
+        "steps": [
+            {
+                "title": "Probation Period",
+                "order": 0,
+                "step_type": "content",
+                "body_content": (
+                    "Your probation period is [X] months. During this time, "
+                    "your manager will conduct regular check-ins to support "
+                    "your transition."
+                ),
+            },
+            {
+                "title": "30-60-90 Day Goals",
+                "order": 1,
+                "step_type": "checklist",
+                "checklist_items": json.dumps([
+                    "Week 1: Complete all onboarding modules",
+                    "Month 1: Meet all key stakeholders",
+                    "Month 2: Take ownership of first project",
+                    "Month 3: Operate independently in your role",
+                ]),
+            },
+        ],
+    },
+]
+
+
+def _seed_onboarding_template(company_id: int) -> dict:
+    """Seed the Singapore Standard Onboarding template with modules and steps.
+
+    Idempotent — checks for existing onboarding templates before creating.
+    Uses dataflow_crud (express_sync) for all creates.
+    """
+    existing = dataflow_crud.list_records(
+        "OnboardingTemplate",
+        {"company_id": company_id},
+        limit=1,
+    )
+    if existing:
+        return {"skipped": True, "reason": "onboarding templates already exist"}
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Resolve policy IDs for policy_acknowledgment steps (best-effort)
+    policy_id_cache: dict[str, int | None] = {}
+    policies = dataflow_crud.list_records(
+        "CompanyPolicy",
+        {"company_id": company_id},
+    )
+    for policy in policies:
+        ptype = policy.get("policy_type", "")
+        if ptype and ptype not in policy_id_cache:
+            policy_id_cache[ptype] = policy.get("id")
+
+    # 1. Create template
+    template = dataflow_crud.create(
+        "OnboardingTemplate",
+        {
+            "company_id": company_id,
+            "name": "Singapore Standard Onboarding",
+            "description": "Default onboarding template for Singapore-based employees.",
+            "is_default": True,
+            "version": 1,
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now,
+        },
+    )
+    template_id = template["id"]
+
+    # 2. Create modules and steps
+    modules_created = 0
+    steps_created = 0
+
+    for module_def in SG_ONBOARDING_MODULES:
+        step_defs = module_def.pop("steps", [])
+
+        module = dataflow_crud.create(
+            "OnboardingModule",
+            {
+                "template_id": template_id,
+                "company_id": company_id,
+                "name": module_def["name"],
+                "description": "",
+                "phase": module_def["phase"],
+                "order": module_def["order"],
+                "estimated_duration_minutes": module_def.get("estimated_duration_minutes", 0),
+                "is_mandatory": module_def.get("is_mandatory", True),
+                "is_role_specific": False,
+                "role_filter": "",
+            },
+        )
+        module_id = module["id"]
+        modules_created += 1
+
+        for step_def in step_defs:
+            # Resolve policy_id for policy_acknowledgment steps
+            policy_id = None
+            link_policy_type = step_def.pop("_link_policy_type", None)
+            if link_policy_type:
+                policy_id = policy_id_cache.get(link_policy_type)
+
+            dataflow_crud.create(
+                "OnboardingStep",
+                {
+                    "module_id": module_id,
+                    "title": step_def["title"],
+                    "description": "",
+                    "order": step_def["order"],
+                    "step_type": step_def["step_type"],
+                    "body_content": step_def.get("body_content", ""),
+                    "checklist_items": step_def.get("checklist_items", ""),
+                    "media_url": "",
+                    "requires_completion": True,
+                    "policy_id": policy_id,
+                    "requires_previous_completion": False,
+                },
+            )
+            steps_created += 1
+
+        # Restore steps back so the constant is not mutated
+        module_def["steps"] = step_defs
+
+    logger.info(
+        "Seeded onboarding template for company_id=%s: template_id=%s, modules=%s, steps=%s",
+        company_id,
+        template_id,
+        modules_created,
+        steps_created,
+    )
+    return {"created": {"template": 1, "modules": modules_created, "steps": steps_created}}

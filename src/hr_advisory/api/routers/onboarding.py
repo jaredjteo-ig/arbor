@@ -27,6 +27,11 @@ router = APIRouter()
 # Input length limits
 MAX_TEXT_LENGTH = 2000
 MAX_NAME_LENGTH = 200
+MAX_BODY_CONTENT_LENGTH = 50_000
+MAX_CHECKLIST_LENGTH = 10_000
+MAX_MEDIA_URL_LENGTH = 2_000
+MAX_FORM_DATA_LENGTH = 10_000
+MAX_NOTES_LENGTH = 5_000
 
 # Upload directory for onboarding documents
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(os.getcwd(), "uploads", "documents"))
@@ -61,6 +66,60 @@ def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_L
             detail=f"{field_name} exceeds maximum length of {max_len} characters.",
         )
     return value
+
+
+def _validate_step_content_fields(body: dict) -> None:
+    """Validate length limits on step content fields.
+
+    Applies to both admin step creation/update and employee step completion.
+    """
+    if "body_content" in body and body["body_content"]:
+        _validate_text_length(body["body_content"], "body_content", MAX_BODY_CONTENT_LENGTH)
+    if "checklist_items" in body and body["checklist_items"]:
+        _validate_text_length(body["checklist_items"], "checklist_items", MAX_CHECKLIST_LENGTH)
+    if "media_url" in body and body["media_url"]:
+        url = body["media_url"]
+        _validate_text_length(url, "media_url", MAX_MEDIA_URL_LENGTH)
+        if not url.startswith("http://") and not url.startswith("https://"):
+            raise HTTPException(
+                status_code=400,
+                detail="media_url must start with http:// or https://.",
+            )
+    if "form_data" in body and body["form_data"]:
+        _validate_text_length(body["form_data"], "form_data", MAX_FORM_DATA_LENGTH)
+    if "notes" in body and body["notes"]:
+        _validate_text_length(body["notes"], "notes", MAX_NOTES_LENGTH)
+
+
+# Magic byte signatures for file validation
+_MAGIC_BYTES = {
+    ".pdf": b"%PDF",
+    ".jpg": [b"\xff\xd8\xff"],  # JFIF/Exif JPEG
+    ".jpeg": [b"\xff\xd8\xff"],
+    ".png": b"\x89PNG",
+    ".docx": b"PK",  # OOXML ZIP container
+}
+
+
+def _validate_magic_bytes(file_content: bytes, extension: str) -> None:
+    """Validate file content matches the expected magic bytes for its extension."""
+    if not file_content:
+        return
+    expected = _MAGIC_BYTES.get(extension)
+    if expected is None:
+        return
+    if isinstance(expected, list):
+        if not any(file_content.startswith(sig) for sig in expected):
+            raise HTTPException(
+                status_code=400,
+                detail=f"File content does not match expected format for {extension}.",
+            )
+    else:
+        if not file_content.startswith(expected):
+            raise HTTPException(
+                status_code=400,
+                detail=f"File content does not match expected format for {extension}.",
+            )
 
 
 def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
@@ -513,6 +572,209 @@ async def duplicate_template(
     }
 
 
+@router.post("/templates/import")
+async def import_template(
+    file: UploadFile = File(..., description="Onboarding template .xlsx file"),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Import an onboarding template from an Excel (.xlsx) file.
+
+    Parses the uploaded spreadsheet and creates a template with modules
+    and steps based on the parsed content. Only .xlsx files up to 10MB
+    are accepted.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    # Validate file extension
+    original_filename = file.filename or ""
+    _, ext = os.path.splitext(original_filename.lower())
+    if ext != ".xlsx":
+        raise HTTPException(
+            status_code=400,
+            detail="Only .xlsx files are accepted for template import.",
+        )
+
+    # Read and validate file size
+    file_bytes = await file.read()
+    if len(file_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File exceeds maximum size of {MAX_FILE_SIZE // (1024 * 1024)}MB.",
+        )
+    if len(file_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    # Parse the template
+    from hr_advisory.services.onboarding_parser import parse_onboarding_template
+
+    try:
+        parsed = parse_onboarding_template(file_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Server missing required package for parsing .xlsx files.",
+        )
+
+    parse_errors = parsed.get("errors", [])
+    parse_warnings = parsed.get("warnings", [])
+    parsed_modules = parsed.get("modules", [])
+    parsed_steps = parsed.get("steps", [])
+
+    # If there are fatal parse errors and no modules at all, reject
+    if parse_errors and not parsed_modules:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Template parsing failed: {'; '.join(parse_errors)}",
+        )
+
+    actor_id = int(current_user.get("sub", 0))
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Derive template name from file or company profile
+    company_profile = parsed.get("company_profile", {})
+    template_name = company_profile.get("company_name", "")
+    if not template_name:
+        # Use filename without extension
+        template_name = os.path.splitext(original_filename)[0]
+    template_name = f"{template_name} Onboarding".strip()
+    _validate_text_length(template_name, "template name", MAX_NAME_LENGTH)
+
+    # Create the template record
+    template = dataflow_crud.create(
+        "OnboardingTemplate",
+        {
+            "company_id": company_id,
+            "name": template_name,
+            "description": f"Imported from {original_filename}",
+            "is_default": False,
+            "version": 1,
+            "is_active": True,
+            "created_by": actor_id,
+            "created_at": now,
+            "updated_at": now,
+        },
+    )
+    template_id = template.get("id")
+
+    # Phase mapping for parsed modules
+    valid_phases = {"orientation", "compliance", "benefits", "probation", "custom"}
+    modules_created = 0
+    steps_created = 0
+
+    # Build module name -> module_id lookup for linking steps
+    module_id_map: dict[str, int] = {}
+
+    for idx, mod_data in enumerate(parsed_modules):
+        mod_name = str(mod_data.get("module_name") or mod_data.get("name") or f"Module {idx + 1}").strip()
+        phase = str(mod_data.get("phase", "custom")).strip().lower()
+        if phase not in valid_phases:
+            phase = "custom"
+
+        duration = 0
+        raw_duration = mod_data.get("duration")
+        if raw_duration is not None:
+            try:
+                duration = int(raw_duration)
+            except (ValueError, TypeError):
+                pass
+
+        is_mandatory = True
+        raw_required = mod_data.get("required")
+        if raw_required is not None:
+            if isinstance(raw_required, bool):
+                is_mandatory = raw_required
+            elif isinstance(raw_required, str):
+                is_mandatory = raw_required.strip().lower() not in ("no", "false", "optional")
+
+        new_module = dataflow_crud.create(
+            "OnboardingModule",
+            {
+                "template_id": template_id,
+                "company_id": company_id,
+                "name": mod_name[:MAX_NAME_LENGTH],
+                "description": str(mod_data.get("description") or "")[:MAX_TEXT_LENGTH],
+                "phase": phase,
+                "order": idx,
+                "estimated_duration_minutes": duration,
+                "is_mandatory": is_mandatory,
+                "is_role_specific": bool(mod_data.get("role_specific")),
+                "role_filter": "",
+            },
+        )
+        module_id_map[mod_name] = new_module.get("id")
+        modules_created += 1
+
+    # Create steps and link to modules by module_name
+    step_order_by_module: dict[int, int] = {}
+    for step_data in parsed_steps:
+        parent_module_name = str(step_data.get("module_name") or "").strip()
+        parent_module_id = module_id_map.get(parent_module_name)
+        if parent_module_id is None:
+            # Try to find a close match or assign to the first module
+            if module_id_map:
+                parent_module_id = next(iter(module_id_map.values()))
+            else:
+                parse_warnings.append(
+                    f"Step '{step_data.get('step_name', '?')}' has no matching module, skipped."
+                )
+                continue
+
+        order = step_order_by_module.get(parent_module_id, 0)
+        step_order_by_module[parent_module_id] = order + 1
+
+        step_title = str(step_data.get("heading") or step_data.get("step_name") or f"Step {order + 1}").strip()
+
+        # Build body content
+        body_content = str(step_data.get("body_content") or "")
+
+        # Build checklist items (parser may return a list)
+        raw_checklist = step_data.get("checklist_items", "")
+        if isinstance(raw_checklist, list):
+            checklist_str = "\n".join(str(item) for item in raw_checklist if item)
+        else:
+            checklist_str = str(raw_checklist or "")
+
+        media_url = str(step_data.get("media") or "")
+
+        dataflow_crud.create(
+            "OnboardingStep",
+            {
+                "module_id": parent_module_id,
+                "title": step_title[:MAX_NAME_LENGTH],
+                "description": "",
+                "order": order,
+                "step_type": "content",
+                "body_content": body_content[:MAX_BODY_CONTENT_LENGTH],
+                "checklist_items": checklist_str[:MAX_CHECKLIST_LENGTH],
+                "media_url": media_url[:MAX_MEDIA_URL_LENGTH] if media_url.startswith(("http://", "https://")) else "",
+                "requires_completion": True,
+                "policy_id": None,
+                "requires_previous_completion": False,
+            },
+        )
+        steps_created += 1
+
+    logger.info(
+        "Onboarding template imported: template_id=%s, modules=%d, steps=%d, warnings=%d, errors=%d",
+        template_id,
+        modules_created,
+        steps_created,
+        len(parse_warnings),
+        len(parse_errors),
+    )
+    return {
+        "template_id": template_id,
+        "modules_created": modules_created,
+        "steps_created": steps_created,
+        "warnings": parse_warnings,
+        "errors": parse_errors,
+    }
+
+
 # ==========================================================================
 # MODULE MANAGEMENT (admin)
 # ==========================================================================
@@ -739,6 +1001,7 @@ async def add_step(
 
     _validate_text_length(title, "title", MAX_NAME_LENGTH)
     _validate_text_length(body.get("description", ""), "description")
+    _validate_step_content_fields(body)
 
     valid_step_types = {
         "content", "checklist", "document_upload",
@@ -826,6 +1089,8 @@ async def update_step(
     if "description" in body:
         _validate_text_length(body["description"], "description")
         updates["description"] = body["description"]
+
+    _validate_step_content_fields(body)
 
     valid_step_types = {
         "content", "checklist", "document_upload",
@@ -952,6 +1217,13 @@ async def assign_template(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
+    check_rate_limit(
+        f"onboarding_assign:{company_id}",
+        max_requests=20,
+        window_seconds=60,
+        action_name="onboarding assignment",
+    )
+
     body = await request.json()
     employee_id = body.get("employee_id")
     template_id = body.get("template_id")
@@ -999,9 +1271,9 @@ async def assign_template(
             "company_id": company_id,
             "assigned_by": actor_id,
             "assigned_at": now,
-            "due_date": due_date or "",
+            "due_date": due_date or None,
             "status": "in_progress",
-            "completed_at": "",
+            "completed_at": None,
             "completion_percentage": 0.0,
         },
     )
@@ -1017,12 +1289,12 @@ async def assign_template(
                 "step_id": step["id"],
                 "employee_id": employee_id,
                 "status": "pending",
-                "completed_at": "",
+                "completed_at": None,
                 "completed_by": None,
                 "document_url": "",
                 "form_data": "",
                 "notes": "",
-                "acknowledged_at": "",
+                "acknowledged_at": None,
             },
         )
 
@@ -1109,9 +1381,9 @@ async def assign_template_bulk(
                 "company_id": company_id,
                 "assigned_by": actor_id,
                 "assigned_at": now,
-                "due_date": due_date or "",
+                "due_date": due_date or None,
                 "status": "in_progress",
-                "completed_at": "",
+                "completed_at": None,
                 "completion_percentage": 0.0,
             },
         )
@@ -1125,12 +1397,12 @@ async def assign_template_bulk(
                     "step_id": step["id"],
                     "employee_id": emp_id,
                     "status": "pending",
-                    "completed_at": "",
+                    "completed_at": None,
                     "completed_by": None,
                     "document_url": "",
                     "form_data": "",
                     "notes": "",
-                    "acknowledged_at": "",
+                    "acknowledged_at": None,
                 },
             )
 
@@ -1163,7 +1435,7 @@ async def list_assignments(
 
     filters: dict = {"company_id": company_id}
     if status:
-        valid_statuses = {"in_progress", "completed", "overdue"}
+        valid_statuses = {"in_progress", "completed", "overdue", "cancelled"}
         if status not in valid_statuses:
             raise HTTPException(
                 status_code=400,
@@ -1423,8 +1695,8 @@ async def complete_step(
         "completed_at": now,
         "completed_by": user_id,
     }
+    _validate_step_content_fields(body)
     if body.get("notes"):
-        _validate_text_length(body["notes"], "notes")
         updates["notes"] = body["notes"]
     if body.get("form_data"):
         updates["form_data"] = body["form_data"]
@@ -1445,12 +1717,13 @@ async def complete_step(
 @router.post("/steps/{progress_id}/upload")
 async def upload_step_document(
     progress_id: int,
-    request: Request,
+    file: UploadFile = File(..., description="Document file (PDF, JPG, PNG, or DOCX)"),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Upload a document for a document_upload step.
 
-    Validates file type (PDF/JPG/PNG/DOCX), max 10MB, UUID filename.
+    Validates file type (PDF/JPG/PNG/DOCX), max 10MB, UUID filename,
+    and magic-byte content verification.
     """
     company_id = get_current_company_id(current_user)
     if company_id is None:
@@ -1478,14 +1751,8 @@ async def upload_step_document(
     if assignment.get("status") not in ("in_progress", "overdue"):
         raise HTTPException(status_code=400, detail="Assignment is not active.")
 
-    # Read multipart form data
-    form = await request.form()
-    file = form.get("file")
-    if not file:
-        raise HTTPException(status_code=400, detail="No file provided. Use form field 'file'.")
-
     # Validate filename extension
-    original_filename = getattr(file, "filename", "") or ""
+    original_filename = file.filename or ""
     _, ext = os.path.splitext(original_filename.lower())
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -1494,7 +1761,7 @@ async def upload_step_document(
         )
 
     # Validate content type
-    content_type = getattr(file, "content_type", "") or ""
+    content_type = file.content_type or ""
     if content_type and content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=400,
@@ -1511,14 +1778,20 @@ async def upload_step_document(
     if len(file_content) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
+    # Validate magic bytes match the claimed extension
+    _validate_magic_bytes(file_content, ext)
+
     # Save file with UUID filename
+    import stat
+
     safe_filename = _sanitize_filename(ext)
     company_dir = os.path.join(ONBOARDING_UPLOAD_DIR, str(company_id))
-    os.makedirs(company_dir, exist_ok=True)
+    os.makedirs(company_dir, mode=0o700, exist_ok=True)
     file_path = os.path.join(company_dir, safe_filename)
 
     with open(file_path, "wb") as f:
         f.write(file_content)
+    os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
 
     # Construct relative URL
     document_url = f"/uploads/documents/onboarding/{company_id}/{safe_filename}"
@@ -1659,6 +1932,80 @@ async def acknowledge_policy_step(
         policy_id,
     )
     return {"message": "Policy acknowledged.", "progress": result}
+
+
+@router.post("/steps/{progress_id}/approve")
+async def approve_step(
+    progress_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Approve an approval-type onboarding step on behalf of an employee.
+
+    Only HR managers and owners can approve. Verifies the step belongs to the
+    admin's company and that the step_type is "approval".
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    admin_user_id = int(current_user.get("sub", 0))
+
+    # 1. Verify the progress record exists and belongs to this company
+    progress = dataflow_crud.read("OnboardingStepProgress", progress_id)
+    if not progress:
+        raise HTTPException(status_code=404, detail="Step progress not found.")
+
+    assignment = dataflow_crud.read("OnboardingAssignment", progress.get("assignment_id"))
+    if not assignment or assignment.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Step progress not found.")
+
+    # 2. Verify the step type is "approval"
+    step = dataflow_crud.read("OnboardingStep", progress.get("step_id"))
+    if not step or step.get("step_type") != "approval":
+        raise HTTPException(status_code=400, detail="This step is not an approval step.")
+
+    # Already completed?
+    if progress.get("status") == "completed":
+        return {"message": "Step already approved.", "progress": progress}
+
+    # Verify assignment is still active
+    if assignment.get("status") not in ("in_progress", "overdue"):
+        raise HTTPException(status_code=400, detail="Assignment is not active.")
+
+    # Optional notes from body
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    now = datetime.now(timezone.utc).isoformat()
+    updates = {
+        "status": "completed",
+        "completed_at": now,
+        "completed_by": admin_user_id,
+    }
+    if body.get("notes"):
+        _validate_text_length(body["notes"], "notes", MAX_NOTES_LENGTH)
+        updates["notes"] = body["notes"]
+
+    result = dataflow_crud.update("OnboardingStepProgress", progress_id, updates)
+
+    # 5. Update assignment completion percentage
+    updated_assignment = _update_assignment_status(progress.get("assignment_id"))
+
+    logger.info(
+        "Onboarding step approved: progress_id=%s, approved_by=%s, employee_id=%s",
+        progress_id,
+        admin_user_id,
+        progress.get("employee_id"),
+    )
+    return {
+        "message": "Step approved.",
+        "progress": result,
+        "assignment_completion_percentage": updated_assignment.get("completion_percentage", 0),
+    }
 
 
 # ==========================================================================

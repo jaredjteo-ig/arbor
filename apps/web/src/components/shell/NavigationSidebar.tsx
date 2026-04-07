@@ -254,6 +254,12 @@ const employeeCoreNavItems: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
+    labelKey: "nav.my-onboarding",
+    label: "My Onboarding",
+    href: "/my-onboarding",
+    icon: ClipboardCheck,
+  },
+  {
     labelKey: "nav.my-profile",
     label: "My Profile",
     href: "/my-profile",
