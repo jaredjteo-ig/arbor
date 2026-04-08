@@ -11,6 +11,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import { OverviewTab } from "./elements/OverviewTab";
 import { RegulatoryUpdatesTab } from "./elements/RegulatoryUpdatesTab";
 import { KbManagementTab } from "./elements/KbManagementTab";
@@ -65,74 +66,60 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const ActivePanel = TAB_PANELS[activeTab];
 
-  if (user?.role !== "owner" && user?.role !== "hr_manager") {
-    return (
-      <div className="max-w-6xl mx-auto py-12 text-center">
-        <p className="text-[var(--color-gray-500)]">
-          Access Denied. You do not have permission to view this page.
-        </p>
-        <a
-          href="/dashboard"
-          className="inline-block mt-4 text-sm text-[var(--color-primary)] hover:underline"
-        >
-          Return to Dashboard
-        </a>
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-8">
-      {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-          Admin &amp; Operations
-        </h1>
-        <p className="text-sm text-[var(--color-gray-500)] mt-1">
-          Manage regulatory updates, knowledge base, feedback, audit responses,
-          QA review sessions, and quality metrics
-        </p>
-      </div>
+    <AdminGuard>
+      <div className="max-w-6xl mx-auto space-y-6 pb-8">
+        {/* Page header */}
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+            Admin &amp; Operations
+          </h1>
+          <p className="text-sm text-[var(--color-gray-500)] mt-1">
+            Manage regulatory updates, knowledge base, feedback, audit
+            responses, QA review sessions, and quality metrics
+          </p>
+        </div>
 
-      {/* Tab navigation */}
-      <nav
-        role="tablist"
-        aria-label="Admin sections"
-        className="flex gap-1 overflow-x-auto border-b border-[var(--color-gray-200)] -mb-px"
-      >
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              aria-controls={`panel-${tab.id}`}
-              id={`tab-${tab.id}`}
-              onClick={() => setActiveTab(tab.id)}
-              className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] ${
-                isActive
-                  ? "border-[var(--color-primary)] text-[var(--color-primary)]"
-                  : "border-transparent text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)] hover:border-[var(--color-gray-300)]"
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </nav>
+        {/* Tab navigation */}
+        <nav
+          role="tablist"
+          aria-label="Admin sections"
+          className="flex gap-1 overflow-x-auto border-b border-[var(--color-gray-200)] -mb-px"
+        >
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`panel-${tab.id}`}
+                id={`tab-${tab.id}`}
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] ${
+                  isActive
+                    ? "border-[var(--color-primary)] text-[var(--color-primary)]"
+                    : "border-transparent text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)] hover:border-[var(--color-gray-300)]"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
 
-      {/* Tab panel */}
-      <div
-        role="tabpanel"
-        id={`panel-${activeTab}`}
-        aria-labelledby={`tab-${activeTab}`}
-      >
-        <ActivePanel />
+        {/* Tab panel */}
+        <div
+          role="tabpanel"
+          id={`panel-${activeTab}`}
+          aria-labelledby={`tab-${activeTab}`}
+        >
+          <ActivePanel />
+        </div>
       </div>
-    </div>
+    </AdminGuard>
   );
 }

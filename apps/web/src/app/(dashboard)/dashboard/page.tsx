@@ -14,6 +14,7 @@ import {
   useShadowContext,
 } from "@/components/shadow-agent";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import { HRISModuleGrid } from "@/components/management/HRISModuleGrid";
 import { CompanySetupModal } from "@/components/company/CompanySetupModal";
 import { complianceApi } from "@/services/api/compliance";
@@ -694,62 +695,134 @@ export default function DashboardPage() {
   /* ── No company onboarding state ─────────────────────────── */
   if (!user?.company_id) {
     return (
-      <div className="max-w-5xl mx-auto space-y-6 pb-8">
-        {/* Greeting + Company Setup CTA */}
-        <div className="flex items-start justify-between">
+      <AdminGuard>
+        <div className="max-w-5xl mx-auto space-y-6 pb-8">
+          {/* Greeting + Company Setup CTA */}
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-heading text-[var(--color-gray-900)]">
+                {firstName ? `Welcome, ${firstName}` : "Welcome to Central"}
+              </h1>
+              <p className="text-body text-[var(--color-gray-500)] mt-1">
+                Your free HR management platform for Singapore
+              </p>
+            </div>
+            <CompanySetupCTA />
+          </div>
+
+          {/* Getting Started */}
           <div>
-            <h1 className="text-heading text-[var(--color-gray-900)]">
-              {firstName ? `Welcome, ${firstName}` : "Welcome to Central"}
-            </h1>
-            <p className="text-body text-[var(--color-gray-500)] mt-1">
-              Your free HR management platform for Singapore
-            </p>
+            <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
+              Getting Started
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <GettingStartedStep
+                step={1}
+                title="Create your company profile"
+                description="Unlock payroll, leave, claims, attendance, and all HR features"
+                href="/settings"
+                icon={Building2}
+                completed={false}
+              />
+              <GettingStartedStep
+                step={2}
+                title="Explore compliance requirements"
+                description="See which Singapore regulations apply to your company"
+                href="/compliance"
+                icon={Compass}
+                completed={false}
+              />
+              <GettingStartedStep
+                step={3}
+                title="Ask your first question"
+                description="Get instant answers on employment law, CPF, levies, and more"
+                href="/advisory"
+                icon={MessageSquare}
+                completed={false}
+              />
+            </div>
           </div>
-          <CompanySetupCTA />
-        </div>
 
-        {/* Getting Started */}
-        <div>
-          <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
-            Getting Started
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <GettingStartedStep
-              step={1}
-              title="Create your company profile"
-              description="Unlock payroll, leave, claims, attendance, and all HR features"
-              href="/settings"
-              icon={Building2}
-              completed={false}
-            />
-            <GettingStartedStep
-              step={2}
-              title="Explore compliance requirements"
-              description="See which Singapore regulations apply to your company"
-              href="/compliance"
-              icon={Compass}
-              completed={false}
-            />
-            <GettingStartedStep
-              step={3}
-              title="Ask your first question"
-              description="Get instant answers on employment law, CPF, levies, and more"
-              href="/advisory"
-              icon={MessageSquare}
-              completed={false}
-            />
+          {/* HRIS Module Grid — the key addition */}
+          <div>
+            <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
+              Your HR Management Suite
+            </h2>
+            <HRISModuleGrid hasCompany={false} />
+          </div>
+
+          {/* Quick Actions */}
+          <div>
+            <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
+              Quick Actions
+            </h2>
+            <QuickActions />
+          </div>
+
+          {/* Value Preview */}
+          <div>
+            <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
+              AI Advisory & Compliance
+            </h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <CompliancePreviewCard />
+              <AdvisoryPreviewCard />
+            </div>
           </div>
         </div>
+      </AdminGuard>
+    );
+  }
 
-        {/* HRIS Module Grid — the key addition */}
-        <div>
-          <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
-            Your HR Management Suite
-          </h2>
-          <HRISModuleGrid hasCompany={false} />
-        </div>
+  return (
+    <AdminGuard>
+      <div className="max-w-4xl mx-auto space-y-6 pb-8">
+        {/* T124: Living Briefing Card with time-aware greeting */}
+        <DashboardBriefing userName={user?.name} hasCompanyProfile />
 
-        {/* Quick Actions */}
+        {/* Metric cards */}
+        {complianceLoading || metricsLoading ? (
+          <MetricsSkeleton />
+        ) : complianceError && metricsError ? (
+          <ErrorMessage message="Unable to load dashboard data. Please try refreshing the page." />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {metrics.map((metric) => {
+              const Icon = metric.icon;
+              return (
+                <AppCard key={metric.label} variant="flat">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+                        {metric.label}
+                      </p>
+                      <p className="text-2xl font-bold text-[var(--color-gray-900)] mt-1">
+                        {metric.value}
+                      </p>
+                      {metric.subtext && (
+                        <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                          {metric.subtext}
+                        </p>
+                      )}
+                    </div>
+                    <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
+                      <Icon className="h-5 w-5 text-[var(--color-primary)]" />
+                    </div>
+                  </div>
+                </AppCard>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Headcount + Pending Approvals + Deadlines */}
+        <HeadcountAndAlerts
+          employees={employees}
+          pendingLeaveCount={pendingLeaveCount}
+          isLoading={workforceLoading}
+        />
+
+        {/* Quick actions */}
         <div>
           <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
             Quick Actions
@@ -757,195 +830,127 @@ export default function DashboardPage() {
           <QuickActions />
         </div>
 
-        {/* Value Preview */}
+        {/* HRIS Module Navigation */}
         <div>
           <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
-            AI Advisory & Compliance
+            HR Management
           </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CompliancePreviewCard />
-            <AdvisoryPreviewCard />
-          </div>
+          <HRISModuleGrid hasCompany />
         </div>
-      </div>
-    );
-  }
 
-  return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-8">
-      {/* T124: Living Briefing Card with time-aware greeting */}
-      <DashboardBriefing userName={user?.name} hasCompanyProfile />
-
-      {/* Metric cards */}
-      {complianceLoading || metricsLoading ? (
-        <MetricsSkeleton />
-      ) : complianceError && metricsError ? (
-        <ErrorMessage message="Unable to load dashboard data. Please try refreshing the page." />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {metrics.map((metric) => {
-            const Icon = metric.icon;
-            return (
-              <AppCard key={metric.label} variant="flat">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
-                      {metric.label}
-                    </p>
-                    <p className="text-2xl font-bold text-[var(--color-gray-900)] mt-1">
-                      {metric.value}
-                    </p>
-                    {metric.subtext && (
-                      <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-                        {metric.subtext}
-                      </p>
-                    )}
-                  </div>
-                  <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
-                    <Icon className="h-5 w-5 text-[var(--color-primary)]" />
-                  </div>
-                </div>
-              </AppCard>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Headcount + Pending Approvals + Deadlines */}
-      <HeadcountAndAlerts
-        employees={employees}
-        pendingLeaveCount={pendingLeaveCount}
-        isLoading={workforceLoading}
-      />
-
-      {/* Quick actions */}
-      <div>
-        <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
-          Quick Actions
-        </h2>
-        <QuickActions />
-      </div>
-
-      {/* HRIS Module Navigation */}
-      <div>
-        <h2 className="text-subtitle text-[var(--color-gray-900)] mb-3">
-          HR Management
-        </h2>
-        <HRISModuleGrid hasCompany />
-      </div>
-
-      {/* Two-column: Compliance domains + Pending actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Compliance domain status */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-subtitle text-[var(--color-gray-900)]">
-              Compliance by Domain
-            </h2>
-            <button
-              type="button"
-              onClick={() => router.push("/compliance")}
-              className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1"
-            >
-              View details <ArrowRight className="h-3 w-3" />
-            </button>
+        {/* Two-column: Compliance domains + Pending actions */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Compliance domain status */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-subtitle text-[var(--color-gray-900)]">
+                Compliance by Domain
+              </h2>
+              <button
+                type="button"
+                onClick={() => router.push("/compliance")}
+                className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1"
+              >
+                View details <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
+            {complianceLoading ? (
+              <ListSkeleton />
+            ) : complianceError ? (
+              <ErrorMessage message={complianceError} />
+            ) : complianceData ? (
+              <div className="space-y-2">
+                {Object.entries(complianceData.domains).map(
+                  ([domain, domainStatus]) => (
+                    <div
+                      key={domain}
+                      className="flex items-start justify-between gap-2 p-3 rounded-lg bg-[var(--color-surface-card)] border border-[var(--color-gray-200)]"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-[var(--color-gray-900)]">
+                          {DOMAIN_LABELS[domain] ?? domain}
+                        </p>
+                        <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                          {domainStatus.provisions_count} provision
+                          {domainStatus.provisions_count !== 1 ? "s" : ""} found
+                        </p>
+                      </div>
+                      <RiskTierBadge
+                        tier={domainStatusToTier(domainStatus.status)}
+                        className="text-xs shrink-0"
+                      />
+                    </div>
+                  ),
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-[var(--color-gray-500)]">
+                No compliance data available.
+              </p>
+            )}
           </div>
-          {complianceLoading ? (
-            <ListSkeleton />
-          ) : complianceError ? (
-            <ErrorMessage message={complianceError} />
-          ) : complianceData ? (
-            <div className="space-y-2">
-              {Object.entries(complianceData.domains).map(
-                ([domain, domainStatus]) => (
+
+          {/* Pending action items */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-subtitle text-[var(--color-gray-900)]">
+                Pending Actions
+              </h2>
+              <button
+                type="button"
+                onClick={() => router.push("/compliance")}
+                className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1"
+              >
+                View all <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
+            {complianceLoading ? (
+              <ListSkeleton />
+            ) : complianceError ? (
+              <ErrorMessage message={complianceError} />
+            ) : pendingActions.length > 0 ? (
+              <div className="space-y-2">
+                {pendingActions.map((item) => (
                   <div
-                    key={domain}
-                    className="flex items-start justify-between gap-2 p-3 rounded-lg bg-[var(--color-surface-card)] border border-[var(--color-gray-200)]"
+                    key={item.id}
+                    className="flex items-start gap-3 p-3 rounded-lg bg-[var(--color-surface-card)] border border-[var(--color-gray-200)]"
                   >
+                    <RiskTierBadge
+                      tier={item.tier}
+                      className="text-xs shrink-0 mt-0.5"
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-[var(--color-gray-900)]">
-                        {DOMAIN_LABELS[domain] ?? domain}
+                        {item.title}
                       </p>
-                      <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-                        {domainStatus.provisions_count} provision
-                        {domainStatus.provisions_count !== 1 ? "s" : ""} found
-                      </p>
+                      {item.dueDate && (
+                        <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                          Due: {item.dueDate}
+                        </p>
+                      )}
                     </div>
-                    <RiskTierBadge
-                      tier={domainStatusToTier(domainStatus.status)}
-                      className="text-xs shrink-0"
-                    />
                   </div>
-                ),
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-[var(--color-gray-500)]">
-              No compliance data available.
-            </p>
-          )}
-        </div>
-
-        {/* Pending action items */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-subtitle text-[var(--color-gray-900)]">
-              Pending Actions
-            </h2>
-            <button
-              type="button"
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 text-center rounded-lg bg-[var(--color-surface-card)] border border-[var(--color-gray-200)]">
+                <p className="text-sm text-[var(--color-gray-500)]">
+                  No pending actions. All compliance domains are covered.
+                </p>
+              </div>
+            )}
+            <AppButton
+              variant="outlined"
+              size="sm"
               onClick={() => router.push("/compliance")}
-              className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1"
+              className="mt-3 w-full"
             >
-              View all <ArrowRight className="h-3 w-3" />
-            </button>
+              Run Compliance Check
+            </AppButton>
           </div>
-          {complianceLoading ? (
-            <ListSkeleton />
-          ) : complianceError ? (
-            <ErrorMessage message={complianceError} />
-          ) : pendingActions.length > 0 ? (
-            <div className="space-y-2">
-              {pendingActions.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-start gap-3 p-3 rounded-lg bg-[var(--color-surface-card)] border border-[var(--color-gray-200)]"
-                >
-                  <RiskTierBadge
-                    tier={item.tier}
-                    className="text-xs shrink-0 mt-0.5"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-[var(--color-gray-900)]">
-                      {item.title}
-                    </p>
-                    {item.dueDate && (
-                      <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-                        Due: {item.dueDate}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-4 text-center rounded-lg bg-[var(--color-surface-card)] border border-[var(--color-gray-200)]">
-              <p className="text-sm text-[var(--color-gray-500)]">
-                No pending actions. All compliance domains are covered.
-              </p>
-            </div>
-          )}
-          <AppButton
-            variant="outlined"
-            size="sm"
-            onClick={() => router.push("/compliance")}
-            className="mt-3 w-full"
-          >
-            Run Compliance Check
-          </AppButton>
         </div>
       </div>
-    </div>
+    </AdminGuard>
   );
 }
 

@@ -132,6 +132,7 @@ function Field({
   label,
   value,
   onChange,
+  onFocus,
   type = "text",
   options,
   placeholder,
@@ -141,6 +142,7 @@ function Field({
   label: string;
   value: string;
   onChange: (val: string) => void;
+  onFocus?: () => void;
   type?: "text" | "date" | "select" | "tel";
   options?: string[];
   placeholder?: string;
@@ -184,6 +186,7 @@ function Field({
           type={type}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={onFocus}
           readOnly={readOnly}
           placeholder={placeholder}
           className={`${baseClasses} ${readOnlyClasses}`}
@@ -202,6 +205,8 @@ export default function MyProfilePage() {
   const [error, setError] = useState("");
   const [savingSection, setSavingSection] = useState<string | null>(null);
   const [savedSection, setSavedSection] = useState<string | null>(null);
+  const [nricEditing, setNricEditing] = useState(false);
+  const [bankEditing, setBankEditing] = useState(false);
 
   // Track which fields are required for payroll
   const payrollRequired = [
@@ -439,14 +444,39 @@ export default function MyProfilePage() {
       <Section
         icon={Shield}
         title="Identity Document"
-        onSave={() => saveSection("identity", { nric_fin: profile.nric_fin })}
+        onSave={() => {
+          // Only send NRIC if user actually entered a new value (not the mask)
+          const val = profile.nric_fin || "";
+          if (val && !val.includes("*")) {
+            saveSection("identity", { nric_fin: val });
+          } else {
+            setSavedSection("identity");
+            setTimeout(() => setSavedSection(null), 2000);
+          }
+        }}
         saving={savingSection === "identity"}
         saved={savedSection === "identity"}
       >
         <Field
           label="NRIC / FIN"
-          value={profile.nric_fin || ""}
-          onChange={(v) => updateField("nric_fin", v)}
+          value={
+            profile.nric_fin && !nricEditing
+              ? profile.nric_fin_last4
+                ? `****${profile.nric_fin_last4}`
+                : profile.nric_fin
+              : profile.nric_fin || ""
+          }
+          onChange={(v) => {
+            setNricEditing(true);
+            updateField("nric_fin", v);
+          }}
+          onFocus={() => {
+            // Clear masked value on focus so user can type fresh
+            if (profile.nric_fin?.includes("*")) {
+              updateField("nric_fin", "");
+            }
+            setNricEditing(true);
+          }}
           placeholder="S1234567A"
           required
         />
@@ -511,14 +541,19 @@ export default function MyProfilePage() {
       <Section
         icon={Landmark}
         title="Bank Account"
-        onSave={() =>
-          saveSection("banking", {
+        onSave={() => {
+          // Only send bank account if user actually entered a new value
+          const acct = profile.bank_account_number || "";
+          const bankFields: Partial<ProfileData> = {
             bank_name: profile.bank_name,
-            bank_account_number: profile.bank_account_number,
             bank_code: profile.bank_code,
             branch_code: profile.branch_code,
-          })
-        }
+          };
+          if (acct && !acct.includes("*")) {
+            bankFields.bank_account_number = acct;
+          }
+          saveSection("banking", bankFields);
+        }}
         saving={savingSection === "banking"}
         saved={savedSection === "banking"}
       >
@@ -532,8 +567,23 @@ export default function MyProfilePage() {
         />
         <Field
           label="Account Number"
-          value={profile.bank_account_number || ""}
-          onChange={(v) => updateField("bank_account_number", v)}
+          value={
+            profile.bank_account_number && !bankEditing
+              ? profile.bank_account_last4
+                ? `****${profile.bank_account_last4}`
+                : profile.bank_account_number
+              : profile.bank_account_number || ""
+          }
+          onChange={(v) => {
+            setBankEditing(true);
+            updateField("bank_account_number", v);
+          }}
+          onFocus={() => {
+            if (profile.bank_account_number?.includes("*")) {
+              updateField("bank_account_number", "");
+            }
+            setBankEditing(true);
+          }}
           required
         />
         <Field
@@ -558,20 +608,18 @@ export default function MyProfilePage() {
       </Section>
 
       {/* Section 6: Emergency Contact */}
-      <Section
-        icon={Heart}
-        title="Emergency Contact"
-        onSave={() => {
-          /* Emergency contacts use a separate API — handled separately */
-        }}
-        saving={savingSection === "emergency"}
-        saved={savedSection === "emergency"}
-      >
-        <p className="text-sm text-[var(--color-gray-500)] md:col-span-2">
-          Emergency contacts will be managed from the full profile page (coming
-          soon).
+      <AppCard variant="flat">
+        <div className="flex items-center gap-2 mb-3">
+          <Heart className="w-5 h-5 text-[var(--color-gray-400)]" />
+          <h3 className="text-base font-semibold text-[var(--color-gray-900)]">
+            Emergency Contact
+          </h3>
+        </div>
+        <p className="text-sm text-[var(--color-gray-500)]">
+          Your HR administrator manages emergency contacts. Please contact HR to
+          update this information.
         </p>
-      </Section>
+      </AppCard>
 
       {/* Employment info (read-only) */}
       <AppCard variant="flat">

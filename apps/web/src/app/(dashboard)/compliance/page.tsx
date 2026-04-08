@@ -23,6 +23,7 @@ import { AskArborButton } from "@/components/shared/AskArborButton";
 import { InlineAnnotation } from "@/components/shadow-agent";
 import type { AnnotationData } from "@/components/shadow-agent";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import {
   useComplianceStatus,
   useComplianceCheck,
@@ -486,7 +487,85 @@ export default function CompliancePage() {
   /* No company ID: prompt user to set up profile */
   if (!user?.company_id) {
     return (
+      <AdminGuard>
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="flex items-center gap-3">
+            <Shield
+              className="h-7 w-7 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <div>
+              <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+                Compliance Health Check
+              </h1>
+              <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+                Verify your compliance posture across Singapore employment
+                regulations.
+              </p>
+            </div>
+          </div>
+
+          <AlertBanner
+            variant="info"
+            title="Company Profile Required"
+            description="Set up your company profile to run compliance checks against the knowledge base and get personalised compliance status."
+          />
+
+          <AppButton
+            variant="primary"
+            onClick={() => router.push("/profile")}
+            className="w-full sm:w-auto"
+          >
+            Set Up Company Profile
+          </AppButton>
+
+          <div className="pt-2">
+            <p className="text-sm text-[var(--color-gray-500)]">
+              You can still run a quick self-assessment checklist below while
+              you set up your profile.
+            </p>
+          </div>
+
+          {/* Still show the checklist form for users without a company */}
+          <ChecklistForm
+            inputs={inputs}
+            companySize={companySize}
+            hasForeign={hasForeign}
+            onToggle={toggle}
+            onCompanySizeChange={setCompanySize}
+            onHasForeignChange={setHasForeign}
+            onCheck={handleCheck}
+            isChecking={complianceCheckMutation.isPending}
+          />
+
+          {result && (
+            <ResultsView
+              result={result}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              onReset={() => setResult(null)}
+              severityColor={severityColor}
+              severityBg={severityBg}
+            />
+          )}
+        </div>
+      </AdminGuard>
+    );
+  }
+
+  /* Loading backend status */
+  if (statusLoading) {
+    return (
+      <AdminGuard>
+        <ComplianceSkeleton />
+      </AdminGuard>
+    );
+  }
+
+  return (
+    <AdminGuard>
       <div className="max-w-4xl mx-auto space-y-6">
+        {/* Header */}
         <div className="flex items-center gap-3">
           <Shield
             className="h-7 w-7 text-[var(--color-primary)]"
@@ -503,39 +582,34 @@ export default function CompliancePage() {
           </div>
         </div>
 
-        <AlertBanner
-          variant="info"
-          title="Company Profile Required"
-          description="Set up your company profile to run compliance checks against the knowledge base and get personalised compliance status."
-        />
+        {/* Backend compliance status overview */}
+        {backendStatus && <BackendStatusOverview status={backendStatus} />}
 
-        <AppButton
-          variant="primary"
-          onClick={() => router.push("/profile")}
-          className="w-full sm:w-auto"
-        >
-          Set Up Company Profile
-        </AppButton>
+        {statusError && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>
+              Unable to load compliance status from the knowledge base. The
+              self-assessment checklist below is still available.
+            </span>
+          </div>
+        )}
 
-        <div className="pt-2">
-          <p className="text-sm text-[var(--color-gray-500)]">
-            You can still run a quick self-assessment checklist below while you
-            set up your profile.
-          </p>
-        </div>
+        {/* Checklist input form */}
+        {!result && (
+          <ChecklistForm
+            inputs={inputs}
+            companySize={companySize}
+            hasForeign={hasForeign}
+            onToggle={toggle}
+            onCompanySizeChange={setCompanySize}
+            onHasForeignChange={setHasForeign}
+            onCheck={handleCheck}
+            isChecking={complianceCheckMutation.isPending}
+          />
+        )}
 
-        {/* Still show the checklist form for users without a company */}
-        <ChecklistForm
-          inputs={inputs}
-          companySize={companySize}
-          hasForeign={hasForeign}
-          onToggle={toggle}
-          onCompanySizeChange={setCompanySize}
-          onHasForeignChange={setHasForeign}
-          onCheck={handleCheck}
-          isChecking={complianceCheckMutation.isPending}
-        />
-
+        {/* Combined results */}
         {result && (
           <ResultsView
             result={result}
@@ -547,72 +621,7 @@ export default function CompliancePage() {
           />
         )}
       </div>
-    );
-  }
-
-  /* Loading backend status */
-  if (statusLoading) {
-    return <ComplianceSkeleton />;
-  }
-
-  return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Shield
-          className="h-7 w-7 text-[var(--color-primary)]"
-          aria-hidden="true"
-        />
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            Compliance Health Check
-          </h1>
-          <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-            Verify your compliance posture across Singapore employment
-            regulations.
-          </p>
-        </div>
-      </div>
-
-      {/* Backend compliance status overview */}
-      {backendStatus && <BackendStatusOverview status={backendStatus} />}
-
-      {statusError && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>
-            Unable to load compliance status from the knowledge base. The
-            self-assessment checklist below is still available.
-          </span>
-        </div>
-      )}
-
-      {/* Checklist input form */}
-      {!result && (
-        <ChecklistForm
-          inputs={inputs}
-          companySize={companySize}
-          hasForeign={hasForeign}
-          onToggle={toggle}
-          onCompanySizeChange={setCompanySize}
-          onHasForeignChange={setHasForeign}
-          onCheck={handleCheck}
-          isChecking={complianceCheckMutation.isPending}
-        />
-      )}
-
-      {/* Combined results */}
-      {result && (
-        <ResultsView
-          result={result}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          onReset={() => setResult(null)}
-          severityColor={severityColor}
-          severityBg={severityBg}
-        />
-      )}
-    </div>
+    </AdminGuard>
   );
 }
 

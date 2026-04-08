@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import {
   AppCard,
   AppButton,
@@ -2771,127 +2772,129 @@ export default function EmployeesPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-8">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Users
-          className="h-7 w-7 text-[var(--color-primary)]"
-          aria-hidden="true"
-        />
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            Employees
-          </h1>
-          <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-            Manage your team members, onboarding, and employee access
-          </p>
+    <AdminGuard>
+      <div className="max-w-4xl mx-auto space-y-6 pb-8">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <Users
+            className="h-7 w-7 text-[var(--color-primary)]"
+            aria-hidden="true"
+          />
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+              Employees
+            </h1>
+            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+              Manage your team members, onboarding, and employee access
+            </p>
+          </div>
         </div>
+
+        {/* Tab navigation */}
+        <nav
+          role="tablist"
+          aria-label="Employee sections"
+          className="flex gap-1 overflow-x-auto border-b border-[var(--color-gray-200)] -mb-px"
+        >
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            const badgeCount =
+              tab.id === "invitations" ? pendingInvitationCount : 0;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`panel-${tab.id}`}
+                id={`tab-${tab.id}`}
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] ${
+                  isActive
+                    ? "border-[var(--color-primary)] text-[var(--color-primary)]"
+                    : "border-transparent text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)] hover:border-[var(--color-gray-300)]"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+                {badgeCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
+                    {badgeCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Tab panels */}
+        <div
+          role="tabpanel"
+          id={`panel-${activeTab}`}
+          aria-labelledby={`tab-${activeTab}`}
+        >
+          {activeTab === "directory" && (
+            <DirectoryTab
+              employees={employees}
+              isLoading={isLoading}
+              error={error}
+              onRefresh={fetchEmployees}
+              onInvite={() => setShowInviteModal(true)}
+              onImport={() => setShowImportModal(true)}
+              onAssignOnboarding={(emp) =>
+                setAssignTarget({
+                  employeeId: emp.id,
+                  employeeName: emp.name,
+                })
+              }
+            />
+          )}
+          {activeTab === "onboarding" && (
+            <OnboardingTab refreshKey={assignmentRefreshKey} />
+          )}
+          {activeTab === "invitations" && (
+            <InvitationsTab
+              invitations={invitations}
+              isLoading={invitationsLoading}
+              error={invitationsError}
+              onRefresh={fetchInvitations}
+            />
+          )}
+        </div>
+
+        {/* Modals */}
+        <InviteEmployeeModal
+          isOpen={showInviteModal}
+          onClose={() => setShowInviteModal(false)}
+          onSuccess={handleInviteSuccess}
+        />
+        <InviteLinkModal
+          isOpen={inviteLinkData !== null}
+          email={inviteLinkData?.email ?? ""}
+          inviteUrl={inviteLinkData?.inviteUrl ?? ""}
+          onClose={() => setInviteLinkData(null)}
+        />
+        <ImportCsvModal
+          isOpen={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => {
+            fetchEmployees();
+            fetchInvitations();
+          }}
+        />
+        <AssignTemplateModal
+          isOpen={assignTarget !== null}
+          employeeId={assignTarget?.employeeId ?? 0}
+          employeeName={assignTarget?.employeeName ?? ""}
+          onClose={() => setAssignTarget(null)}
+          onAssigned={() => {
+            setAssignTarget(null);
+            fetchEmployees();
+            setAssignmentRefreshKey((k) => k + 1);
+          }}
+        />
       </div>
-
-      {/* Tab navigation */}
-      <nav
-        role="tablist"
-        aria-label="Employee sections"
-        className="flex gap-1 overflow-x-auto border-b border-[var(--color-gray-200)] -mb-px"
-      >
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          const badgeCount =
-            tab.id === "invitations" ? pendingInvitationCount : 0;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              aria-controls={`panel-${tab.id}`}
-              id={`tab-${tab.id}`}
-              onClick={() => setActiveTab(tab.id)}
-              className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] ${
-                isActive
-                  ? "border-[var(--color-primary)] text-[var(--color-primary)]"
-                  : "border-transparent text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)] hover:border-[var(--color-gray-300)]"
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-              {badgeCount > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
-                  {badgeCount}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* Tab panels */}
-      <div
-        role="tabpanel"
-        id={`panel-${activeTab}`}
-        aria-labelledby={`tab-${activeTab}`}
-      >
-        {activeTab === "directory" && (
-          <DirectoryTab
-            employees={employees}
-            isLoading={isLoading}
-            error={error}
-            onRefresh={fetchEmployees}
-            onInvite={() => setShowInviteModal(true)}
-            onImport={() => setShowImportModal(true)}
-            onAssignOnboarding={(emp) =>
-              setAssignTarget({
-                employeeId: emp.id,
-                employeeName: emp.name,
-              })
-            }
-          />
-        )}
-        {activeTab === "onboarding" && (
-          <OnboardingTab refreshKey={assignmentRefreshKey} />
-        )}
-        {activeTab === "invitations" && (
-          <InvitationsTab
-            invitations={invitations}
-            isLoading={invitationsLoading}
-            error={invitationsError}
-            onRefresh={fetchInvitations}
-          />
-        )}
-      </div>
-
-      {/* Modals */}
-      <InviteEmployeeModal
-        isOpen={showInviteModal}
-        onClose={() => setShowInviteModal(false)}
-        onSuccess={handleInviteSuccess}
-      />
-      <InviteLinkModal
-        isOpen={inviteLinkData !== null}
-        email={inviteLinkData?.email ?? ""}
-        inviteUrl={inviteLinkData?.inviteUrl ?? ""}
-        onClose={() => setInviteLinkData(null)}
-      />
-      <ImportCsvModal
-        isOpen={showImportModal}
-        onClose={() => setShowImportModal(false)}
-        onSuccess={() => {
-          fetchEmployees();
-          fetchInvitations();
-        }}
-      />
-      <AssignTemplateModal
-        isOpen={assignTarget !== null}
-        employeeId={assignTarget?.employeeId ?? 0}
-        employeeName={assignTarget?.employeeName ?? ""}
-        onClose={() => setAssignTarget(null)}
-        onAssigned={() => {
-          setAssignTarget(null);
-          fetchEmployees();
-          setAssignmentRefreshKey((k) => k + 1);
-        }}
-      />
-    </div>
+    </AdminGuard>
   );
 }

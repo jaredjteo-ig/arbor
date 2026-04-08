@@ -1,15 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { AppCard } from "@/components/design-system";
+import { useState, useEffect, useCallback } from "react";
+import {
+  AppCard,
+  AppButton,
+  AppInput,
+  DatePicker,
+  EmptyState,
+  toast,
+} from "@/components/design-system";
 import {
   CalendarDays,
   Palmtree,
   Thermometer,
   Hospital,
   Info,
+  Plus,
+  X,
+  Clock,
 } from "lucide-react";
 import { employeesApi, type LeaveBalance } from "@/services/api/employees";
+import {
+  leaveApi,
+  type LeaveApplication,
+  type LeaveType as ApiLeaveType,
+} from "@/services/api/leave";
 
 /* -- Types --------------------------------------------------------- */
 
@@ -223,54 +238,61 @@ export default function MyLeavePage() {
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isStatutoryFallback, setIsStatutoryFallback] = useState(false);
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [apiLeaveTypes, setApiLeaveTypes] = useState<ApiLeaveType[]>([]);
+  const [applications, setApplications] = useState<LeaveApplication[]>([]);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [balancesData, typesData, appsData] = await Promise.all([
+        employeesApi.leaveBalances(),
+        leaveApi.listTypes().catch(() => ({ leave_types: [] })),
+        leaveApi.listApplications().catch(() => ({ applications: [] })),
+      ]);
+
+      if (balancesData.balances && balancesData.balances.length > 0) {
+        setLeaveTypes(balancesData.balances.map(mapBalanceToLeaveType));
+        setIsStatutoryFallback(false);
+      } else {
+        setLeaveTypes(STATUTORY_DEFAULTS);
+        setIsStatutoryFallback(true);
+      }
+      setApiLeaveTypes(typesData.leave_types || []);
+      setApplications(appsData.applications || []);
+    } catch {
+      setLeaveTypes(STATUTORY_DEFAULTS);
+      setIsStatutoryFallback(true);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchLeaveBalances() {
-      try {
-        const data = await employeesApi.leaveBalances();
-        if (!cancelled && data.balances && data.balances.length > 0) {
-          setLeaveTypes(data.balances.map(mapBalanceToLeaveType));
-          setIsStatutoryFallback(false);
-        } else {
-          if (!cancelled) {
-            setLeaveTypes(STATUTORY_DEFAULTS);
-            setIsStatutoryFallback(true);
-          }
-        }
-      } catch {
-        if (!cancelled) {
-          setLeaveTypes(STATUTORY_DEFAULTS);
-          setIsStatutoryFallback(true);
-        }
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-
-    fetchLeaveBalances();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    fetchData();
+  }, [fetchData]);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <CalendarDays
-          className="h-7 w-7 text-[var(--color-primary)]"
-          aria-hidden="true"
-        />
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            My Leave
-          </h1>
-          <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-            View your leave balances and entitlements
-          </p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <CalendarDays
+            className="h-7 w-7 text-[var(--color-primary)]"
+            aria-hidden="true"
+          />
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+              My Leave
+            </h1>
+            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+              View your leave balances and apply for leave
+            </p>
+          </div>
         </div>
+        <AppButton onClick={() => setShowApplyModal(true)}>
+          <Plus className="h-4 w-4" />
+          Apply for Leave
+        </AppButton>
       </div>
 
       {/* Statutory fallback notice */}
@@ -360,6 +382,228 @@ export default function MyLeavePage() {
           </div>
         </AppCard>
       )}
+
+      {/* Application History */}
+      <div>
+        <h2 className="text-lg font-semibold text-[var(--color-gray-900)] mb-3">
+          Application History
+        </h2>
+        {applications.length === 0 ? (
+          <EmptyState
+            icon={<Clock className="h-10 w-10 text-[var(--color-gray-300)]" />}
+            message="No leave applications"
+            description="You have not applied for any leave yet."
+          />
+        ) : (
+          <div className="space-y-2">
+            {applications.map((app) => (
+              <AppCard key={app.id} variant="standard">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-[var(--color-gray-900)]">
+                      {app.leave_type_name || "Leave"}
+                    </p>
+                    <p className="text-sm text-[var(--color-gray-500)]">
+                      {app.start_date} to {app.end_date}
+                      {app.reason && ` — ${app.reason}`}
+                    </p>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      app.status === "approved"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : app.status === "rejected"
+                          ? "bg-red-50 text-red-700"
+                          : app.status === "withdrawn"
+                            ? "bg-gray-100 text-gray-600"
+                            : "bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {app.status.charAt(0).toUpperCase() + app.status.slice(1)}
+                  </span>
+                </div>
+              </AppCard>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Apply Leave Modal */}
+      {showApplyModal && (
+        <ApplyLeaveModal
+          onClose={() => setShowApplyModal(false)}
+          onSuccess={() => {
+            setShowApplyModal(false);
+            fetchData();
+          }}
+          leaveTypes={apiLeaveTypes}
+        />
+      )}
+    </div>
+  );
+}
+
+/* -- Apply Leave Modal --------------------------------------------- */
+
+function ApplyLeaveModal({
+  onClose,
+  onSuccess,
+  leaveTypes,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+  leaveTypes: ApiLeaveType[];
+}) {
+  const [leaveTypeId, setLeaveTypeId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [halfDayStart, setHalfDayStart] = useState(false);
+  const [halfDayEnd, setHalfDayEnd] = useState(false);
+  const [reason, setReason] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!leaveTypeId || !startDate || !endDate) return;
+
+    setIsSubmitting(true);
+    try {
+      await leaveApi.applyLeave({
+        leave_type_id: Number(leaveTypeId),
+        start_date: startDate,
+        end_date: endDate,
+        start_half: halfDayStart ? "am" : "full_day",
+        end_half: halfDayEnd ? "pm" : "full_day",
+        reason,
+      });
+      toast.success("Leave application submitted successfully");
+      onSuccess();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to submit leave application";
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-md mx-4 rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] shadow-[var(--shadow-raised)] p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-5 w-5 text-[var(--color-primary)]" />
+            <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
+              Apply for Leave
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+          >
+            <X className="h-5 w-5 text-[var(--color-gray-500)]" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label
+              htmlFor="leave-type"
+              className="block text-sm font-medium text-[var(--color-gray-700)] mb-1"
+            >
+              Leave Type
+            </label>
+            <select
+              id="leave-type"
+              value={leaveTypeId}
+              onChange={(e) => setLeaveTypeId(e.target.value)}
+              className="w-full rounded-[8px] border px-3 py-2 text-sm min-h-[44px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+              required
+            >
+              <option value="">Select leave type</option>
+              {leaveTypes.map((lt) => (
+                <option key={lt.id} value={lt.id}>
+                  {lt.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <DatePicker
+              label="Start Date"
+              value={startDate}
+              onChange={setStartDate}
+              required
+            />
+            <DatePicker
+              label="End Date"
+              value={endDate}
+              onChange={setEndDate}
+              min={startDate}
+              required
+            />
+          </div>
+
+          <div className="flex gap-6">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-gray-700)] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={halfDayStart}
+                onChange={(e) => setHalfDayStart(e.target.checked)}
+                className="h-4 w-4 rounded border-[var(--color-gray-300)] text-[var(--color-primary)]"
+              />
+              Half-day (start)
+            </label>
+            <label className="flex items-center gap-2 text-sm text-[var(--color-gray-700)] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={halfDayEnd}
+                onChange={(e) => setHalfDayEnd(e.target.checked)}
+                className="h-4 w-4 rounded border-[var(--color-gray-300)] text-[var(--color-primary)]"
+              />
+              Half-day (end)
+            </label>
+          </div>
+
+          <AppInput
+            variant="textarea"
+            label="Reason"
+            value={reason}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+              setReason(e.target.value)
+            }
+            placeholder="Optional reason for leave"
+          />
+
+          <p className="text-xs text-[var(--color-gray-500)]">
+            You can upload supporting documents (e.g. medical certificate) after
+            submitting.
+          </p>
+
+          <div className="flex gap-3 pt-2">
+            <AppButton
+              type="button"
+              variant="secondary"
+              onClick={onClose}
+              className="flex-1"
+            >
+              Cancel
+            </AppButton>
+            <AppButton type="submit" disabled={isSubmitting} className="flex-1">
+              {isSubmitting ? "Submitting..." : "Submit Application"}
+            </AppButton>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

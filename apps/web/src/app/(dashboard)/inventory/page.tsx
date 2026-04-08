@@ -19,6 +19,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import {
   inventoryApi,
   type InventoryLocation,
@@ -441,218 +442,226 @@ export default function InventoryPage() {
 
   if (error && !isLoading) {
     return (
-      <div className="max-w-5xl mx-auto space-y-6 pb-8">
-        <div className="flex items-center gap-3">
-          <Package
-            className="h-7 w-7 text-[var(--color-primary)]"
-            aria-hidden="true"
-          />
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            Inventory
-          </h1>
-        </div>
-        <AppCard variant="standard">
-          <div className="py-8 text-center">
-            <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
-            <AppButton variant="outlined" size="sm" onClick={fetchData}>
-              Try again
-            </AppButton>
+      <AdminGuard>
+        <div className="max-w-5xl mx-auto space-y-6 pb-8">
+          <div className="flex items-center gap-3">
+            <Package
+              className="h-7 w-7 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+              Inventory
+            </h1>
           </div>
-        </AppCard>
-      </div>
+          <AppCard variant="standard">
+            <div className="py-8 text-center">
+              <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
+              <AppButton variant="outlined" size="sm" onClick={fetchData}>
+                Try again
+              </AppButton>
+            </div>
+          </AppCard>
+        </div>
+      </AdminGuard>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-8">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <Package
-            className="h-7 w-7 text-[var(--color-primary)]"
-            aria-hidden="true"
-          />
-          <div>
-            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-              Inventory
-            </h1>
-            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-              Manage company assets, equipment, and supplies
-            </p>
+    <AdminGuard>
+      <div className="max-w-5xl mx-auto space-y-6 pb-8">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <Package
+              className="h-7 w-7 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <div>
+              <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+                Inventory
+              </h1>
+              <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+                Manage company assets, equipment, and supplies
+              </p>
+            </div>
           </div>
+          {isAdmin && (
+            <AppButton
+              variant="primary"
+              size="sm"
+              onClick={() => setShowModal(true)}
+            >
+              <Plus className="h-4 w-4 mr-1" /> Add Item
+            </AppButton>
+          )}
         </div>
-        {isAdmin && (
-          <AppButton
-            variant="primary"
-            size="sm"
-            onClick={() => setShowModal(true)}
-          >
-            <Plus className="h-4 w-4 mr-1" /> Add Item
-          </AppButton>
+
+        {/* Summary cards */}
+        {!isLoading && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <AppCard variant="flat">
+              <div className="flex items-center gap-2 mb-1">
+                <MapPin className="h-4 w-4 text-blue-600" />
+                <p className="text-xs text-[var(--color-gray-500)]">
+                  Locations
+                </p>
+              </div>
+              <p className="text-xl font-bold text-[var(--color-gray-900)]">
+                {locations.length}
+              </p>
+            </AppCard>
+            <AppCard variant="flat">
+              <div className="flex items-center gap-2 mb-1">
+                <Tag className="h-4 w-4 text-violet-600" />
+                <p className="text-xs text-[var(--color-gray-500)]">
+                  Categories
+                </p>
+              </div>
+              <p className="text-xl font-bold text-[var(--color-gray-900)]">
+                {categories.length}
+              </p>
+            </AppCard>
+            <AppCard variant="flat">
+              <p className="text-xs text-[var(--color-gray-500)] mb-1">
+                Total Items
+              </p>
+              <p className="text-xl font-bold text-[var(--color-gray-900)]">
+                {items.length}
+              </p>
+            </AppCard>
+            <AppCard variant="flat">
+              <p className="text-xs text-[var(--color-gray-500)] mb-1">
+                Available
+              </p>
+              <p className="text-xl font-bold text-emerald-600">
+                {items.filter((i) => i.status === "available").length}
+              </p>
+            </AppCard>
+          </div>
         )}
-      </div>
 
-      {/* Summary cards */}
-      {!isLoading && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <AppCard variant="flat">
-            <div className="flex items-center gap-2 mb-1">
-              <MapPin className="h-4 w-4 text-blue-600" />
-              <p className="text-xs text-[var(--color-gray-500)]">Locations</p>
-            </div>
-            <p className="text-xl font-bold text-[var(--color-gray-900)]">
-              {locations.length}
-            </p>
-          </AppCard>
-          <AppCard variant="flat">
-            <div className="flex items-center gap-2 mb-1">
-              <Tag className="h-4 w-4 text-violet-600" />
-              <p className="text-xs text-[var(--color-gray-500)]">Categories</p>
-            </div>
-            <p className="text-xl font-bold text-[var(--color-gray-900)]">
-              {categories.length}
-            </p>
-          </AppCard>
-          <AppCard variant="flat">
-            <p className="text-xs text-[var(--color-gray-500)] mb-1">
-              Total Items
-            </p>
-            <p className="text-xl font-bold text-[var(--color-gray-900)]">
-              {items.length}
-            </p>
-          </AppCard>
-          <AppCard variant="flat">
-            <p className="text-xs text-[var(--color-gray-500)] mb-1">
-              Available
-            </p>
-            <p className="text-xl font-bold text-emerald-600">
-              {items.filter((i) => i.status === "available").length}
-            </p>
-          </AppCard>
+        {/* Filters */}
+        <div className="flex gap-3 flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <AppInput
+              value={search}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setSearch(e.target.value)
+              }
+              placeholder="Search by name or SKU..."
+            />
+          </div>
+          <select
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="rounded-[8px] border px-3 py-2 text-sm min-h-[44px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+          >
+            <option value="">All Categories</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="rounded-[8px] border px-3 py-2 text-sm min-h-[44px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+          >
+            <option value="">All Statuses</option>
+            <option value="available">Available</option>
+            <option value="issued">Issued</option>
+            <option value="reserved">Reserved</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="retired">Retired</option>
+          </select>
         </div>
-      )}
 
-      {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="flex-1 min-w-[200px]">
-          <AppInput
-            value={search}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setSearch(e.target.value)
+        {/* Items grid */}
+        {isLoading ? (
+          <CardsSkeleton />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={<Package className="h-12 w-12" aria-hidden="true" />}
+            message={
+              search || filterCategory || filterStatus
+                ? "No matching items"
+                : "No inventory items"
             }
-            placeholder="Search by name or SKU..."
+            description={
+              search
+                ? "Try a different search."
+                : "Add items to start managing your inventory."
+            }
           />
-        </div>
-        <select
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-          className="rounded-[8px] border px-3 py-2 text-sm min-h-[44px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
-        >
-          <option value="">All Categories</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="rounded-[8px] border px-3 py-2 text-sm min-h-[44px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
-        >
-          <option value="">All Statuses</option>
-          <option value="available">Available</option>
-          <option value="issued">Issued</option>
-          <option value="reserved">Reserved</option>
-          <option value="maintenance">Maintenance</option>
-          <option value="retired">Retired</option>
-        </select>
-      </div>
-
-      {/* Items grid */}
-      {isLoading ? (
-        <CardsSkeleton />
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={<Package className="h-12 w-12" aria-hidden="true" />}
-          message={
-            search || filterCategory || filterStatus
-              ? "No matching items"
-              : "No inventory items"
-          }
-          description={
-            search
-              ? "Try a different search."
-              : "Add items to start managing your inventory."
-          }
-        />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((item) => (
-            <AppCard key={item.id} variant="standard">
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <h3 className="text-sm font-semibold text-[var(--color-gray-900)] truncate">
-                  {item.name}
-                </h3>
-                <StatusBadge status={item.status} />
-              </div>
-              <div className="space-y-1 text-xs text-[var(--color-gray-500)] mb-3">
-                {item.sku && <p>SKU: {item.sku}</p>}
-                {item.category_name && <p>Category: {item.category_name}</p>}
-                {item.location_name && <p>Location: {item.location_name}</p>}
-                {item.assigned_to_name && (
-                  <p>Assigned to: {item.assigned_to_name}</p>
-                )}
-                {item.purchase_cost > 0 && (
-                  <p>Value: {formatCurrency(item.purchase_cost)}</p>
-                )}
-              </div>
-              {isAdmin && (
-                <div className="flex gap-2">
-                  {item.status === "available" && (
-                    <AppButton
-                      variant="primary"
-                      size="sm"
-                      onClick={() =>
-                        setIssueTarget({ id: item.id, name: item.name })
-                      }
-                      className="flex-1"
-                    >
-                      Issue
-                    </AppButton>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((item) => (
+              <AppCard key={item.id} variant="standard">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <h3 className="text-sm font-semibold text-[var(--color-gray-900)] truncate">
+                    {item.name}
+                  </h3>
+                  <StatusBadge status={item.status} />
+                </div>
+                <div className="space-y-1 text-xs text-[var(--color-gray-500)] mb-3">
+                  {item.sku && <p>SKU: {item.sku}</p>}
+                  {item.category_name && <p>Category: {item.category_name}</p>}
+                  {item.location_name && <p>Location: {item.location_name}</p>}
+                  {item.assigned_to_name && (
+                    <p>Assigned to: {item.assigned_to_name}</p>
                   )}
-                  {item.status === "issued" && (
-                    <AppButton
-                      variant="outlined"
-                      size="sm"
-                      onClick={() => handleReturn(item.id)}
-                      className="flex-1"
-                    >
-                      Return
-                    </AppButton>
+                  {item.purchase_cost > 0 && (
+                    <p>Value: {formatCurrency(item.purchase_cost)}</p>
                   )}
                 </div>
-              )}
-            </AppCard>
-          ))}
-        </div>
-      )}
+                {isAdmin && (
+                  <div className="flex gap-2">
+                    {item.status === "available" && (
+                      <AppButton
+                        variant="primary"
+                        size="sm"
+                        onClick={() =>
+                          setIssueTarget({ id: item.id, name: item.name })
+                        }
+                        className="flex-1"
+                      >
+                        Issue
+                      </AppButton>
+                    )}
+                    {item.status === "issued" && (
+                      <AppButton
+                        variant="outlined"
+                        size="sm"
+                        onClick={() => handleReturn(item.id)}
+                        className="flex-1"
+                      >
+                        Return
+                      </AppButton>
+                    )}
+                  </div>
+                )}
+              </AppCard>
+            ))}
+          </div>
+        )}
 
-      <CreateItemModal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        onSuccess={fetchData}
-        categories={categories}
-        locations={locations}
-      />
+        <CreateItemModal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          onSuccess={fetchData}
+          categories={categories}
+          locations={locations}
+        />
 
-      <IssueItemModal
-        isOpen={issueTarget !== null}
-        onClose={() => setIssueTarget(null)}
-        onSuccess={fetchData}
-        itemId={issueTarget?.id ?? 0}
-        itemName={issueTarget?.name ?? ""}
-      />
-    </div>
+        <IssueItemModal
+          isOpen={issueTarget !== null}
+          onClose={() => setIssueTarget(null)}
+          onSuccess={fetchData}
+          itemId={issueTarget?.id ?? 0}
+          itemName={issueTarget?.name ?? ""}
+        />
+      </div>
+    </AdminGuard>
   );
 }

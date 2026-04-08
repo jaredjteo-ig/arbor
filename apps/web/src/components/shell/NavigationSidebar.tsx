@@ -260,13 +260,13 @@ const employeeCoreNavItems: NavItem[] = [
   {
     labelKey: "nav.my-leave",
     label: "My Leave",
-    href: "/leave",
+    href: "/my-leave",
     icon: CalendarDays,
   },
   {
     labelKey: "nav.my-claims",
     label: "My Claims",
-    href: "/claims",
+    href: "/my-claims",
     icon: Receipt,
   },
   {
@@ -278,7 +278,7 @@ const employeeCoreNavItems: NavItem[] = [
   {
     labelKey: "nav.my-attendance",
     label: "My Attendance",
-    href: "/attendance",
+    href: "/my-attendance",
     icon: Clock,
   },
   {
@@ -320,6 +320,7 @@ function isRouteActive(
   pathname: string,
   href: string,
   searchParams?: URLSearchParams | null,
+  exactOnly?: boolean,
 ): boolean {
   if (href === "/") return pathname === "/";
 
@@ -336,6 +337,12 @@ function isRouteActive(
       if (searchParams.get(key) !== value) return false;
     }
     return true;
+  }
+
+  // Exact match mode — used for employee nav items that share routes with
+  // admin items (e.g. /claims, /leave, /attendance) to prevent collisions.
+  if (exactOnly) {
+    return pathname === hrefPath;
   }
 
   // For plain hrefs, match pathname but NOT if a "tab" query param is set
@@ -420,7 +427,12 @@ export function NavigationSidebar({
             <NavLink
               key={item.href}
               item={item}
-              active={isRouteActive(pathname, item.href, searchParams)}
+              active={isRouteActive(
+                pathname,
+                item.href,
+                searchParams,
+                isEmployee,
+              )}
               collapsed={collapsed}
             />
           ))}
@@ -476,7 +488,12 @@ export function NavigationSidebar({
             <NavLink
               key={item.href}
               item={item}
-              active={isRouteActive(pathname, item.href, searchParams)}
+              active={isRouteActive(
+                pathname,
+                item.href,
+                searchParams,
+                isEmployee,
+              )}
               collapsed={collapsed}
             />
           ))}

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { AppCard } from "@/components/design-system";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import { complianceApi } from "@/services/api/compliance";
 import { adminApi } from "@/services/api/admin";
 import { profileApi } from "@/services/api/profile";
@@ -531,563 +532,572 @@ export default function AnalyticsPage() {
     workforceLoading || complianceLoading || metricsLoading || feedbackLoading;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-8">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <BarChart3
-          className="h-7 w-7 text-[var(--color-primary)]"
-          aria-hidden="true"
-        />
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            Analytics
-          </h1>
-          <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-            Workforce composition, compliance trends, and advisory usage at a
-            glance.
-          </p>
+    <AdminGuard>
+      <div className="max-w-5xl mx-auto space-y-6 pb-8">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <BarChart3
+            className="h-7 w-7 text-[var(--color-primary)]"
+            aria-hidden="true"
+          />
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+              Analytics
+            </h1>
+            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+              Workforce composition, compliance trends, and advisory usage at a
+              glance.
+            </p>
+          </div>
         </div>
-      </div>
 
-      {/* Summary metric cards */}
-      {summaryLoading ? (
-        <SummaryCardsSkeleton />
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <SummaryCard
-            label="Total Employees"
-            value={String(totalEmployees)}
-            icon={Users}
-            subtext={
-              workforce
-                ? `${Math.round(workforce.local_ratio * 100)}% local`
-                : "No workforce data"
-            }
-          />
-          <SummaryCard
-            label="Compliance Score"
-            value={compliance ? `${complianceScore}/100` : "N/A"}
-            icon={Shield}
-            subtext={
-              compliance
-                ? compliance.overall_status === "compliant"
-                  ? "All domains covered"
-                  : "Some domains need attention"
-                : "No data"
-            }
-          />
-          <SummaryCard
-            label="Advisory Queries"
-            value={String(totalQueries)}
-            icon={MessageSquare}
-            subtext={
-              feedback && feedback.total_feedback > 0
-                ? `${feedbackRate}% positive`
-                : "No feedback yet"
-            }
-            trend={
-              feedbackRate >= 80 ? "up" : feedbackRate > 0 ? "down" : undefined
-            }
-          />
-          <SummaryCard
-            label="KB Provisions"
-            value={metrics ? String(metrics.kb_provisions) : "N/A"}
-            icon={HelpCircle}
-            subtext={
-              metrics
-                ? `${metrics.kb_domains} domains, ${metrics.kb_acts} acts`
-                : "No data"
-            }
-          />
+        {/* Summary metric cards */}
+        {summaryLoading ? (
+          <SummaryCardsSkeleton />
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <SummaryCard
+              label="Total Employees"
+              value={String(totalEmployees)}
+              icon={Users}
+              subtext={
+                workforce
+                  ? `${Math.round(workforce.local_ratio * 100)}% local`
+                  : "No workforce data"
+              }
+            />
+            <SummaryCard
+              label="Compliance Score"
+              value={compliance ? `${complianceScore}/100` : "N/A"}
+              icon={Shield}
+              subtext={
+                compliance
+                  ? compliance.overall_status === "compliant"
+                    ? "All domains covered"
+                    : "Some domains need attention"
+                  : "No data"
+              }
+            />
+            <SummaryCard
+              label="Advisory Queries"
+              value={String(totalQueries)}
+              icon={MessageSquare}
+              subtext={
+                feedback && feedback.total_feedback > 0
+                  ? `${feedbackRate}% positive`
+                  : "No feedback yet"
+              }
+              trend={
+                feedbackRate >= 80
+                  ? "up"
+                  : feedbackRate > 0
+                    ? "down"
+                    : undefined
+              }
+            />
+            <SummaryCard
+              label="KB Provisions"
+              value={metrics ? String(metrics.kb_provisions) : "N/A"}
+              icon={HelpCircle}
+              subtext={
+                metrics
+                  ? `${metrics.kb_domains} domains, ${metrics.kb_acts} acts`
+                  : "No data"
+              }
+            />
+          </div>
+        )}
+
+        {/* Section tabs */}
+        <div className="flex gap-2 overflow-x-auto">
+          {sections.map((s) => (
+            <button
+              key={s.key}
+              onClick={() => setActiveSection(s.key)}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                activeSection === s.key
+                  ? "bg-[var(--color-primary)] text-white"
+                  : "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] hover:text-[var(--color-gray-800)]"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
         </div>
-      )}
 
-      {/* Section tabs */}
-      <div className="flex gap-2 overflow-x-auto">
-        {sections.map((s) => (
-          <button
-            key={s.key}
-            onClick={() => setActiveSection(s.key)}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-              activeSection === s.key
-                ? "bg-[var(--color-primary)] text-white"
-                : "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] hover:text-[var(--color-gray-800)]"
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ─── Section: Workforce Overview ─────────────────────── */}
-      {activeSection === "overview" && (
-        <div className="space-y-6">
-          {workforceLoading ? (
-            <SectionSkeleton />
-          ) : workforceError ? (
-            <ErrorMessage message={workforceError} />
-          ) : !workforce || totalEmployees === 0 ? (
-            <AppCard variant="standard">
-              <div className="text-center py-8">
-                <Users className="h-10 w-10 text-[var(--color-gray-300)] mx-auto mb-3" />
-                <p className="text-sm text-[var(--color-gray-500)]">
-                  No workforce data available. Update your company profile to
-                  see workforce analytics.
-                </p>
-              </div>
-            </AppCard>
-          ) : (
-            <>
-              {/* Donut charts row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <AppCard variant="standard">
-                  <DonutChart items={workforceBreakdown} label="By Pass Type" />
-                </AppCard>
-                <AppCard variant="standard">
-                  <DonutChart
-                    items={[
-                      {
-                        label: "Local + PR",
-                        value:
-                          workforce.workforce.local + workforce.workforce.pr,
-                        color: "var(--color-primary)",
-                      },
-                      {
-                        label: "Foreign",
-                        value:
-                          workforce.workforce.ep +
-                          workforce.workforce.sp +
-                          workforce.workforce.wp,
-                        color: "var(--color-risk-amber)",
-                      },
-                    ].filter((i) => i.value > 0)}
-                    label="Local vs Foreign"
-                  />
-                </AppCard>
-              </div>
-
-              {/* Workforce composition table */}
+        {/* ─── Section: Workforce Overview ─────────────────────── */}
+        {activeSection === "overview" && (
+          <div className="space-y-6">
+            {workforceLoading ? (
+              <SectionSkeleton />
+            ) : workforceError ? (
+              <ErrorMessage message={workforceError} />
+            ) : !workforce || totalEmployees === 0 ? (
               <AppCard variant="standard">
-                <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
-                  Workforce Composition Summary
-                </h3>
-                <div className="overflow-x-auto -mx-5">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-[var(--color-gray-200)]">
-                        <th className="px-5 py-2 text-left font-medium text-[var(--color-gray-500)]">
-                          Category
-                        </th>
-                        <th className="px-5 py-2 text-left font-medium text-[var(--color-gray-500)]">
-                          Count
-                        </th>
-                        <th className="px-5 py-2 text-left font-medium text-[var(--color-gray-500)]">
-                          Percentage
-                        </th>
-                        <th className="px-5 py-2 text-left font-medium text-[var(--color-gray-500)]">
-                          Distribution
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {workforceBreakdown.map((item) => {
-                        const pct =
-                          totalEmployees > 0
-                            ? ((item.value / totalEmployees) * 100).toFixed(1)
-                            : "0.0";
-                        return (
-                          <tr
-                            key={item.label}
-                            className="border-b border-[var(--color-gray-100)]"
-                          >
-                            <td className="px-5 py-2.5">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                                  style={{ backgroundColor: item.color }}
-                                />
-                                <span className="text-[var(--color-gray-700)]">
-                                  {item.label}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-5 py-2.5 font-medium text-[var(--color-gray-900)]">
-                              {item.value}
-                            </td>
-                            <td className="px-5 py-2.5 text-[var(--color-gray-600)]">
-                              {pct}%
-                            </td>
-                            <td className="px-5 py-2.5">
-                              <div className="h-2 w-full max-w-[120px] rounded-full bg-[var(--color-gray-100)] overflow-hidden">
-                                <div
-                                  className="h-full rounded-full"
-                                  style={{
-                                    width: `${pct}%`,
-                                    backgroundColor: item.color,
-                                  }}
-                                />
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="text-center py-8">
+                  <Users className="h-10 w-10 text-[var(--color-gray-300)] mx-auto mb-3" />
+                  <p className="text-sm text-[var(--color-gray-500)]">
+                    No workforce data available. Update your company profile to
+                    see workforce analytics.
+                  </p>
                 </div>
               </AppCard>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ─── Section: Compliance ─────────────────────────────── */}
-      {activeSection === "compliance" && (
-        <div className="space-y-6">
-          {complianceLoading ? (
-            <SectionSkeleton />
-          ) : complianceError ? (
-            <ErrorMessage message={complianceError} />
-          ) : !compliance ? (
-            <AppCard variant="standard">
-              <div className="text-center py-8">
-                <Shield className="h-10 w-10 text-[var(--color-gray-300)] mx-auto mb-3" />
-                <p className="text-sm text-[var(--color-gray-500)]">
-                  No compliance data available. Set up your company profile and
-                  run a compliance check.
-                </p>
-              </div>
-            </AppCard>
-          ) : (
-            <>
-              {/* Current score card */}
-              <AppCard variant="elevated">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-[var(--color-gray-500)]">
-                      Current Compliance Score
-                    </p>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-4xl font-bold text-[var(--color-gray-900)]">
-                        {complianceScore}
-                      </span>
-                      <span className="text-lg text-[var(--color-gray-400)]">
-                        / 100
-                      </span>
-                    </div>
-                    <p className="text-xs text-[var(--color-gray-500)] mt-1">
-                      Status:{" "}
-                      {(compliance.overall_status || "healthy").replace(
-                        "_",
-                        " ",
-                      )}
-                    </p>
-                  </div>
-                  <div
-                    className="w-20 h-20 rounded-full border-4 flex items-center justify-center"
-                    style={{
-                      borderColor:
-                        complianceScore >= 80
-                          ? "var(--color-risk-green)"
-                          : complianceScore >= 50
-                            ? "var(--color-risk-amber)"
-                            : "var(--color-risk-red)",
-                    }}
-                  >
-                    <span className="text-xl font-bold">
-                      {complianceScore}%
-                    </span>
-                  </div>
+            ) : (
+              <>
+                {/* Donut charts row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <AppCard variant="standard">
+                    <DonutChart
+                      items={workforceBreakdown}
+                      label="By Pass Type"
+                    />
+                  </AppCard>
+                  <AppCard variant="standard">
+                    <DonutChart
+                      items={[
+                        {
+                          label: "Local + PR",
+                          value:
+                            workforce.workforce.local + workforce.workforce.pr,
+                          color: "var(--color-primary)",
+                        },
+                        {
+                          label: "Foreign",
+                          value:
+                            workforce.workforce.ep +
+                            workforce.workforce.sp +
+                            workforce.workforce.wp,
+                          color: "var(--color-risk-amber)",
+                        },
+                      ].filter((i) => i.value > 0)}
+                      label="Local vs Foreign"
+                    />
+                  </AppCard>
                 </div>
-              </AppCard>
 
-              {/* Domain coverage chart */}
-              <AppCard variant="standard">
-                <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
-                  Compliance Coverage by Domain
-                </h3>
-                <ComplianceDomainsChart data={compliance} />
-              </AppCard>
-
-              {/* Domain detail table */}
-              <AppCard variant="standard">
-                <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
-                  Domain Coverage Details
-                </h3>
-                <div className="space-y-2">
-                  {Object.entries(compliance.domains).map(
-                    ([domain, domainStatus]) => {
-                      const statusLabel =
-                        domainStatus.status === "covered"
-                          ? "Covered"
-                          : domainStatus.status === "sparse"
-                            ? "Sparse Coverage"
-                            : "Missing";
-                      const color =
-                        domainStatus.status === "covered"
-                          ? "var(--color-risk-green)"
-                          : domainStatus.status === "sparse"
-                            ? "var(--color-risk-amber)"
-                            : "var(--color-risk-red)";
-
-                      const domainLabels: Record<string, string> = {
-                        employment_act: "Employment Act",
-                        cpf: "CPF",
-                        foreign_manpower: "Foreign Manpower",
-                        tax: "Tax / IRAS",
-                        wsh: "WSH",
-                      };
-
-                      return (
-                        <div
-                          key={domain}
-                          className="flex items-center justify-between py-2 border-b border-[var(--color-gray-100)] last:border-0"
-                        >
-                          <span className="text-sm text-[var(--color-gray-700)]">
-                            {domainLabels[domain] ?? domain}
-                          </span>
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs text-[var(--color-gray-400)]">
-                              {domainStatus.provisions_count} provision
-                              {domainStatus.provisions_count !== 1 ? "s" : ""}
-                            </span>
-                            <span
-                              className="text-sm font-semibold min-w-[80px] text-right"
-                              style={{ color }}
-                            >
-                              {statusLabel}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    },
-                  )}
-                </div>
-              </AppCard>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ─── Section: Advisory Usage ─────────────────────────── */}
-      {activeSection === "advisory" && (
-        <div className="space-y-6">
-          {/* Advisory summary */}
-          {metricsLoading || feedbackLoading ? (
-            <SectionSkeleton />
-          ) : (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <AppCard variant="flat">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-xs text-[var(--color-gray-500)]">
-                        Total Queries
-                      </p>
-                      <p className="text-2xl font-bold text-[var(--color-gray-900)] mt-1">
-                        {totalQueries}
-                      </p>
-                    </div>
-                    <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
-                      <MessageSquare className="h-5 w-5 text-[var(--color-primary)]" />
-                    </div>
-                  </div>
-                </AppCard>
-                <AppCard variant="flat">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-xs text-[var(--color-gray-500)]">
-                        Positive Feedback
-                      </p>
-                      <p className="text-2xl font-bold text-[var(--color-risk-green)] mt-1">
-                        {feedback && feedback.total_feedback > 0
-                          ? `${feedbackRate}%`
-                          : "N/A"}
-                      </p>
-                    </div>
-                    <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
-                      <ThumbsUp className="h-5 w-5 text-[var(--color-primary)]" />
-                    </div>
-                  </div>
-                </AppCard>
-                <AppCard variant="flat">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-xs text-[var(--color-gray-500)]">
-                        Domains Covered
-                      </p>
-                      <p className="text-2xl font-bold text-[var(--color-gray-900)] mt-1">
-                        {domainQueries.length}
-                      </p>
-                    </div>
-                    <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
-                      <HelpCircle className="h-5 w-5 text-[var(--color-primary)]" />
-                    </div>
-                  </div>
-                </AppCard>
-              </div>
-
-              {/* Risk distribution */}
-              {metrics && (
+                {/* Workforce composition table */}
                 <AppCard variant="standard">
                   <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
-                    Query Risk Distribution
+                    Workforce Composition Summary
                   </h3>
-                  <DonutChart
-                    items={[
-                      {
-                        label: "Green",
-                        value: metrics.risk_distribution.green ?? 0,
-                        color: "var(--color-risk-green)",
-                      },
-                      {
-                        label: "Amber",
-                        value: metrics.risk_distribution.amber ?? 0,
-                        color: "var(--color-risk-amber)",
-                      },
-                      {
-                        label: "Red",
-                        value: metrics.risk_distribution.red ?? 0,
-                        color: "var(--color-risk-red)",
-                      },
-                    ].filter((i) => i.value > 0)}
-                    label="Risk Tier Distribution"
-                  />
+                  <div className="overflow-x-auto -mx-5">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[var(--color-gray-200)]">
+                          <th className="px-5 py-2 text-left font-medium text-[var(--color-gray-500)]">
+                            Category
+                          </th>
+                          <th className="px-5 py-2 text-left font-medium text-[var(--color-gray-500)]">
+                            Count
+                          </th>
+                          <th className="px-5 py-2 text-left font-medium text-[var(--color-gray-500)]">
+                            Percentage
+                          </th>
+                          <th className="px-5 py-2 text-left font-medium text-[var(--color-gray-500)]">
+                            Distribution
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {workforceBreakdown.map((item) => {
+                          const pct =
+                            totalEmployees > 0
+                              ? ((item.value / totalEmployees) * 100).toFixed(1)
+                              : "0.0";
+                          return (
+                            <tr
+                              key={item.label}
+                              className="border-b border-[var(--color-gray-100)]"
+                            >
+                              <td className="px-5 py-2.5">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                                    style={{ backgroundColor: item.color }}
+                                  />
+                                  <span className="text-[var(--color-gray-700)]">
+                                    {item.label}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-5 py-2.5 font-medium text-[var(--color-gray-900)]">
+                                {item.value}
+                              </td>
+                              <td className="px-5 py-2.5 text-[var(--color-gray-600)]">
+                                {pct}%
+                              </td>
+                              <td className="px-5 py-2.5">
+                                <div className="h-2 w-full max-w-[120px] rounded-full bg-[var(--color-gray-100)] overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full"
+                                    style={{
+                                      width: `${pct}%`,
+                                      backgroundColor: item.color,
+                                    }}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </AppCard>
-              )}
+              </>
+            )}
+          </div>
+        )}
 
-              {/* Queries by domain */}
-              {patternsLoading ? (
+        {/* ─── Section: Compliance ─────────────────────────────── */}
+        {activeSection === "compliance" && (
+          <div className="space-y-6">
+            {complianceLoading ? (
+              <SectionSkeleton />
+            ) : complianceError ? (
+              <ErrorMessage message={complianceError} />
+            ) : !compliance ? (
+              <AppCard variant="standard">
+                <div className="text-center py-8">
+                  <Shield className="h-10 w-10 text-[var(--color-gray-300)] mx-auto mb-3" />
+                  <p className="text-sm text-[var(--color-gray-500)]">
+                    No compliance data available. Set up your company profile
+                    and run a compliance check.
+                  </p>
+                </div>
+              </AppCard>
+            ) : (
+              <>
+                {/* Current score card */}
+                <AppCard variant="elevated">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-[var(--color-gray-500)]">
+                        Current Compliance Score
+                      </p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-4xl font-bold text-[var(--color-gray-900)]">
+                          {complianceScore}
+                        </span>
+                        <span className="text-lg text-[var(--color-gray-400)]">
+                          / 100
+                        </span>
+                      </div>
+                      <p className="text-xs text-[var(--color-gray-500)] mt-1">
+                        Status:{" "}
+                        {(compliance.overall_status || "healthy").replace(
+                          "_",
+                          " ",
+                        )}
+                      </p>
+                    </div>
+                    <div
+                      className="w-20 h-20 rounded-full border-4 flex items-center justify-center"
+                      style={{
+                        borderColor:
+                          complianceScore >= 80
+                            ? "var(--color-risk-green)"
+                            : complianceScore >= 50
+                              ? "var(--color-risk-amber)"
+                              : "var(--color-risk-red)",
+                      }}
+                    >
+                      <span className="text-xl font-bold">
+                        {complianceScore}%
+                      </span>
+                    </div>
+                  </div>
+                </AppCard>
+
+                {/* Domain coverage chart */}
                 <AppCard variant="standard">
-                  <div className="animate-pulse">
-                    <div className="h-5 w-40 bg-[var(--color-gray-200)] rounded mb-4" />
+                  <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
+                    Compliance Coverage by Domain
+                  </h3>
+                  <ComplianceDomainsChart data={compliance} />
+                </AppCard>
+
+                {/* Domain detail table */}
+                <AppCard variant="standard">
+                  <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
+                    Domain Coverage Details
+                  </h3>
+                  <div className="space-y-2">
+                    {Object.entries(compliance.domains).map(
+                      ([domain, domainStatus]) => {
+                        const statusLabel =
+                          domainStatus.status === "covered"
+                            ? "Covered"
+                            : domainStatus.status === "sparse"
+                              ? "Sparse Coverage"
+                              : "Missing";
+                        const color =
+                          domainStatus.status === "covered"
+                            ? "var(--color-risk-green)"
+                            : domainStatus.status === "sparse"
+                              ? "var(--color-risk-amber)"
+                              : "var(--color-risk-red)";
+
+                        const domainLabels: Record<string, string> = {
+                          employment_act: "Employment Act",
+                          cpf: "CPF",
+                          foreign_manpower: "Foreign Manpower",
+                          tax: "Tax / IRAS",
+                          wsh: "WSH",
+                        };
+
+                        return (
+                          <div
+                            key={domain}
+                            className="flex items-center justify-between py-2 border-b border-[var(--color-gray-100)] last:border-0"
+                          >
+                            <span className="text-sm text-[var(--color-gray-700)]">
+                              {domainLabels[domain] ?? domain}
+                            </span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-[var(--color-gray-400)]">
+                                {domainStatus.provisions_count} provision
+                                {domainStatus.provisions_count !== 1 ? "s" : ""}
+                              </span>
+                              <span
+                                className="text-sm font-semibold min-w-[80px] text-right"
+                                style={{ color }}
+                              >
+                                {statusLabel}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      },
+                    )}
+                  </div>
+                </AppCard>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ─── Section: Advisory Usage ─────────────────────────── */}
+        {activeSection === "advisory" && (
+          <div className="space-y-6">
+            {/* Advisory summary */}
+            {metricsLoading || feedbackLoading ? (
+              <SectionSkeleton />
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <AppCard variant="flat">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-xs text-[var(--color-gray-500)]">
+                          Total Queries
+                        </p>
+                        <p className="text-2xl font-bold text-[var(--color-gray-900)] mt-1">
+                          {totalQueries}
+                        </p>
+                      </div>
+                      <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
+                        <MessageSquare className="h-5 w-5 text-[var(--color-primary)]" />
+                      </div>
+                    </div>
+                  </AppCard>
+                  <AppCard variant="flat">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-xs text-[var(--color-gray-500)]">
+                          Positive Feedback
+                        </p>
+                        <p className="text-2xl font-bold text-[var(--color-risk-green)] mt-1">
+                          {feedback && feedback.total_feedback > 0
+                            ? `${feedbackRate}%`
+                            : "N/A"}
+                        </p>
+                      </div>
+                      <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
+                        <ThumbsUp className="h-5 w-5 text-[var(--color-primary)]" />
+                      </div>
+                    </div>
+                  </AppCard>
+                  <AppCard variant="flat">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-xs text-[var(--color-gray-500)]">
+                          Domains Covered
+                        </p>
+                        <p className="text-2xl font-bold text-[var(--color-gray-900)] mt-1">
+                          {domainQueries.length}
+                        </p>
+                      </div>
+                      <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
+                        <HelpCircle className="h-5 w-5 text-[var(--color-primary)]" />
+                      </div>
+                    </div>
+                  </AppCard>
+                </div>
+
+                {/* Risk distribution */}
+                {metrics && (
+                  <AppCard variant="standard">
+                    <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
+                      Query Risk Distribution
+                    </h3>
+                    <DonutChart
+                      items={[
+                        {
+                          label: "Green",
+                          value: metrics.risk_distribution.green ?? 0,
+                          color: "var(--color-risk-green)",
+                        },
+                        {
+                          label: "Amber",
+                          value: metrics.risk_distribution.amber ?? 0,
+                          color: "var(--color-risk-amber)",
+                        },
+                        {
+                          label: "Red",
+                          value: metrics.risk_distribution.red ?? 0,
+                          color: "var(--color-risk-red)",
+                        },
+                      ].filter((i) => i.value > 0)}
+                      label="Risk Tier Distribution"
+                    />
+                  </AppCard>
+                )}
+
+                {/* Queries by domain */}
+                {patternsLoading ? (
+                  <AppCard variant="standard">
+                    <div className="animate-pulse">
+                      <div className="h-5 w-40 bg-[var(--color-gray-200)] rounded mb-4" />
+                      <div className="space-y-3">
+                        {[...Array(4)].map((_, i) => (
+                          <div key={i}>
+                            <div className="h-3 w-full bg-[var(--color-gray-100)] rounded" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </AppCard>
+                ) : patternsError ? (
+                  <ErrorMessage message={patternsError} />
+                ) : domainQueries.length > 0 ? (
+                  <AppCard variant="standard">
+                    <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
+                      Queries by Domain
+                    </h3>
+                    <HorizontalBarChart items={domainQueries} />
+                  </AppCard>
+                ) : (
+                  <AppCard variant="standard">
+                    <div className="text-center py-6">
+                      <p className="text-sm text-[var(--color-gray-400)]">
+                        No query patterns recorded yet.
+                      </p>
+                    </div>
+                  </AppCard>
+                )}
+
+                {/* Most-asked topics */}
+                {topTopics.length > 0 && (
+                  <AppCard variant="standard">
+                    <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
+                      Most-Asked Topics
+                    </h3>
                     <div className="space-y-3">
-                      {[...Array(4)].map((_, i) => (
-                        <div key={i}>
-                          <div className="h-3 w-full bg-[var(--color-gray-100)] rounded" />
+                      {topTopics.map((topic, idx) => (
+                        <div
+                          key={topic.topic}
+                          className="flex items-center gap-3 py-2 border-b border-[var(--color-gray-100)] last:border-0"
+                        >
+                          <span className="w-6 h-6 rounded-full bg-[var(--color-primary-bg)] text-[var(--color-primary)] text-xs font-bold flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="text-sm text-[var(--color-gray-700)] flex-1">
+                            {topic.topic}
+                          </span>
+                          <span className="text-xs font-medium text-[var(--color-gray-500)] bg-[var(--color-gray-100)] px-2 py-0.5 rounded-full">
+                            {topic.count} queries
+                          </span>
                         </div>
                       ))}
                     </div>
-                  </div>
-                </AppCard>
-              ) : patternsError ? (
-                <ErrorMessage message={patternsError} />
-              ) : domainQueries.length > 0 ? (
-                <AppCard variant="standard">
-                  <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
-                    Queries by Domain
-                  </h3>
-                  <HorizontalBarChart items={domainQueries} />
-                </AppCard>
-              ) : (
-                <AppCard variant="standard">
-                  <div className="text-center py-6">
-                    <p className="text-sm text-[var(--color-gray-400)]">
-                      No query patterns recorded yet.
+                  </AppCard>
+                )}
+
+                {/* Feedback bar */}
+                {feedback && feedback.total_feedback > 0 && (
+                  <AppCard variant="standard">
+                    <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-3">
+                      Advisory Feedback Rate
+                    </h3>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <div className="h-3 rounded-full bg-[var(--color-gray-100)] overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-[var(--color-risk-green)] transition-all duration-500"
+                            style={{ width: `${feedbackRate}%` }}
+                          />
+                        </div>
+                      </div>
+                      <span className="text-sm font-semibold text-[var(--color-risk-green)] min-w-[48px] text-right">
+                        {feedbackRate}%
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--color-gray-400)] mt-2">
+                      Based on {feedback.total_feedback} responses with user
+                      feedback ({feedback.positive_count} positive,{" "}
+                      {feedback.negative_count} negative)
                     </p>
-                  </div>
-                </AppCard>
-              )}
+                  </AppCard>
+                )}
 
-              {/* Most-asked topics */}
-              {topTopics.length > 0 && (
-                <AppCard variant="standard">
-                  <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-4">
-                    Most-Asked Topics
-                  </h3>
-                  <div className="space-y-3">
-                    {topTopics.map((topic, idx) => (
-                      <div
-                        key={topic.topic}
-                        className="flex items-center gap-3 py-2 border-b border-[var(--color-gray-100)] last:border-0"
-                      >
-                        <span className="w-6 h-6 rounded-full bg-[var(--color-primary-bg)] text-[var(--color-primary)] text-xs font-bold flex items-center justify-center shrink-0">
-                          {idx + 1}
-                        </span>
-                        <span className="text-sm text-[var(--color-gray-700)] flex-1">
-                          {topic.topic}
-                        </span>
-                        <span className="text-xs font-medium text-[var(--color-gray-500)] bg-[var(--color-gray-100)] px-2 py-0.5 rounded-full">
-                          {topic.count} queries
-                        </span>
+                {/* Monthly report summary */}
+                {report && (
+                  <AppCard variant="standard">
+                    <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-3">
+                      Latest Monthly Report ({report.period})
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                      <div>
+                        <p className="text-xs text-[var(--color-gray-500)]">
+                          Queries
+                        </p>
+                        <p className="text-lg font-bold text-[var(--color-gray-900)]">
+                          {report.total_queries}
+                        </p>
                       </div>
-                    ))}
-                  </div>
-                </AppCard>
-              )}
-
-              {/* Feedback bar */}
-              {feedback && feedback.total_feedback > 0 && (
-                <AppCard variant="standard">
-                  <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-3">
-                    Advisory Feedback Rate
-                  </h3>
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                      <div className="h-3 rounded-full bg-[var(--color-gray-100)] overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-[var(--color-risk-green)] transition-all duration-500"
-                          style={{ width: `${feedbackRate}%` }}
-                        />
+                      <div>
+                        <p className="text-xs text-[var(--color-gray-500)]">
+                          Feedback
+                        </p>
+                        <p className="text-lg font-bold text-[var(--color-gray-900)]">
+                          {report.total_feedback}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-[var(--color-gray-500)]">
+                          KB Gaps
+                        </p>
+                        <p className="text-lg font-bold text-[var(--color-gray-900)]">
+                          {report.kb_gaps_count}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-[var(--color-gray-500)]">
+                          Recommendations
+                        </p>
+                        <p className="text-lg font-bold text-[var(--color-gray-900)]">
+                          {report.recommendations_count}
+                        </p>
                       </div>
                     </div>
-                    <span className="text-sm font-semibold text-[var(--color-risk-green)] min-w-[48px] text-right">
-                      {feedbackRate}%
-                    </span>
-                  </div>
-                  <p className="text-xs text-[var(--color-gray-400)] mt-2">
-                    Based on {feedback.total_feedback} responses with user
-                    feedback ({feedback.positive_count} positive,{" "}
-                    {feedback.negative_count} negative)
-                  </p>
-                </AppCard>
-              )}
-
-              {/* Monthly report summary */}
-              {report && (
-                <AppCard variant="standard">
-                  <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-3">
-                    Latest Monthly Report ({report.period})
-                  </h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                    <div>
-                      <p className="text-xs text-[var(--color-gray-500)]">
-                        Queries
-                      </p>
-                      <p className="text-lg font-bold text-[var(--color-gray-900)]">
-                        {report.total_queries}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-[var(--color-gray-500)]">
-                        Feedback
-                      </p>
-                      <p className="text-lg font-bold text-[var(--color-gray-900)]">
-                        {report.total_feedback}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-[var(--color-gray-500)]">
-                        KB Gaps
-                      </p>
-                      <p className="text-lg font-bold text-[var(--color-gray-900)]">
-                        {report.kb_gaps_count}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-[var(--color-gray-500)]">
-                        Recommendations
-                      </p>
-                      <p className="text-lg font-bold text-[var(--color-gray-900)]">
-                        {report.recommendations_count}
-                      </p>
-                    </div>
-                  </div>
-                </AppCard>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
+                  </AppCard>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </AdminGuard>
   );
 }

@@ -27,7 +27,7 @@ def _check_auth_rate_limit(request: Request) -> None:
     """Rate limit auth endpoints by client IP to prevent brute-force attacks."""
     client_ip = request.client.host if request.client else "unknown"
     rate_key = f"auth:{client_ip}"
-    if not check_rate_limit(rate_key):
+    if not check_rate_limit(rate_key, max_requests=5, window_seconds=60):
         raise HTTPException(
             status_code=429,
             detail="Too many authentication attempts. Please try again later.",
@@ -355,7 +355,9 @@ async def password_reset(
         200: Password reset successfully
         400: New password too short
         401: Invalid/expired reset token
+        429: Rate limited
     """
+    _check_auth_rate_limit(request)
     body = await request.json()
     token = body.get("token", "")
     new_password = body.get("new_password", "")

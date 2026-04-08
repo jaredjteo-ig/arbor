@@ -20,6 +20,7 @@ import {
   Save,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import {
   appraisalsApi,
   type AppraisalTemplate,
@@ -509,399 +510,424 @@ export default function AppraisalsPage() {
 
   if (error && !isLoading) {
     return (
-      <div className="max-w-4xl mx-auto space-y-6 pb-8">
-        <div className="flex items-center gap-3">
-          <Award
-            className="h-7 w-7 text-[var(--color-primary)]"
-            aria-hidden="true"
-          />
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            Appraisals
-          </h1>
-        </div>
-        <AppCard variant="standard">
-          <div className="py-8 text-center">
-            <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
-            <AppButton variant="outlined" size="sm" onClick={fetchData}>
-              Try again
-            </AppButton>
+      <AdminGuard>
+        <div className="max-w-4xl mx-auto space-y-6 pb-8">
+          <div className="flex items-center gap-3">
+            <Award
+              className="h-7 w-7 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+              Appraisals
+            </h1>
           </div>
-        </AppCard>
-      </div>
+          <AppCard variant="standard">
+            <div className="py-8 text-center">
+              <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
+              <AppButton variant="outlined" size="sm" onClick={fetchData}>
+                Try again
+              </AppButton>
+            </div>
+          </AppCard>
+        </div>
+      </AdminGuard>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-8">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <Award
-            className="h-7 w-7 text-[var(--color-primary)]"
-            aria-hidden="true"
-          />
-          <div>
-            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-              Appraisals
-            </h1>
-            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-              {isAdmin
-                ? "Manage performance review templates and cycles"
-                : "View and complete your performance reviews"}
-            </p>
+    <AdminGuard>
+      <div className="max-w-4xl mx-auto space-y-6 pb-8">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <Award
+              className="h-7 w-7 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <div>
+              <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+                Appraisals
+              </h1>
+              <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+                {isAdmin
+                  ? "Manage performance review templates and cycles"
+                  : "View and complete your performance reviews"}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-lg bg-[var(--color-gray-100)] w-fit">
-        {isAdmin && (
+        {/* Tabs */}
+        <div className="flex gap-1 p-1 rounded-lg bg-[var(--color-gray-100)] w-fit">
+          {isAdmin && (
+            <>
+              <TabButton
+                active={tab === "templates"}
+                label="Templates"
+                onClick={() => setTab("templates")}
+              />
+              <TabButton
+                active={tab === "periods"}
+                label="Periods"
+                onClick={() => setTab("periods")}
+              />
+            </>
+          )}
+          <TabButton
+            active={tab === "my-appraisals"}
+            label="My Appraisals"
+            onClick={() => setTab("my-appraisals")}
+          />
+        </div>
+
+        {/* Templates Tab */}
+        {tab === "templates" && isAdmin && (
           <>
-            <TabButton
-              active={tab === "templates"}
-              label="Templates"
-              onClick={() => setTab("templates")}
-            />
-            <TabButton
-              active={tab === "periods"}
-              label="Periods"
-              onClick={() => setTab("periods")}
-            />
-          </>
-        )}
-        <TabButton
-          active={tab === "my-appraisals"}
-          label="My Appraisals"
-          onClick={() => setTab("my-appraisals")}
-        />
-      </div>
-
-      {/* Templates Tab */}
-      {tab === "templates" && isAdmin && (
-        <>
-          <div className="flex justify-end">
-            <AppButton
-              variant="primary"
-              size="sm"
-              onClick={() => setShowTemplateModal(true)}
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              New Template
-            </AppButton>
-          </div>
-          {isLoading ? (
-            <AppCard variant="standard">
-              <div className="-mx-5 -my-4">
-                <TableSkeleton />
-              </div>
-            </AppCard>
-          ) : templates.length === 0 ? (
-            <EmptyState
-              icon={<Award className="h-12 w-12" aria-hidden="true" />}
-              message="No templates yet"
-              description="Create your first appraisal template to get started."
-            />
-          ) : (
-            <AppCard variant="standard">
-              <div className="overflow-x-auto -mx-5 -my-4">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--color-gray-200)]">
-                      <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                        Name
-                      </th>
-                      <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Weightage
-                      </th>
-                      <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Sign-off
-                      </th>
-                      <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {templates.map((t) => (
-                      <React.Fragment key={t.id}>
-                        <tr
-                          className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors cursor-pointer"
-                          onClick={() =>
-                            setExpandedTemplateId(
-                              expandedTemplateId === t.id ? null : t.id,
-                            )
-                          }
-                        >
-                          <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                            <span className="flex items-center gap-2">
-                              {expandedTemplateId === t.id ? (
-                                <ChevronUp className="h-3.5 w-3.5 text-[var(--color-gray-400)]" />
-                              ) : (
-                                <ChevronDown className="h-3.5 w-3.5 text-[var(--color-gray-400)]" />
-                              )}
-                              {t.name}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
-                            {t.enable_weightage ? "Yes" : "No"}
-                          </td>
-                          <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
-                            {t.require_employee_signoff
-                              ? "Required"
-                              : "Optional"}
-                          </td>
-                          <td className="py-3 px-5 text-center">
-                            <StatusBadge
-                              status={t.is_archived ? "draft" : "active"}
-                            />
-                          </td>
-                        </tr>
-                        {expandedTemplateId === t.id && (
-                          <tr>
-                            <td
-                              colSpan={4}
-                              className="px-5 py-4 bg-[var(--color-gray-50)]"
-                            >
-                              <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="text-sm font-semibold text-[var(--color-gray-900)]">
-                                    Template Details
-                                  </h4>
-                                  <span className="text-xs text-[var(--color-gray-500)]">
-                                    Created{" "}
-                                    {formatDate((t as any).created_at || "")}
-                                  </span>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                  <div>
-                                    <p className="text-xs text-[var(--color-gray-500)] mb-1">
-                                      Weightage
-                                    </p>
-                                    <p className="text-[var(--color-gray-800)]">
-                                      {t.enable_weightage
-                                        ? "Enabled — criteria have percentage weights"
-                                        : "Disabled — equal weight for all criteria"}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs text-[var(--color-gray-500)] mb-1">
-                                      Employee Sign-off
-                                    </p>
-                                    <p className="text-[var(--color-gray-800)]">
-                                      {t.require_employee_signoff
-                                        ? "Required — employee must acknowledge the review"
-                                        : "Optional — review can be completed without employee sign-off"}
-                                    </p>
-                                  </div>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-[var(--color-gray-500)] mb-2">
-                                    Suggested Criteria
-                                  </p>
-                                  <div className="flex flex-wrap gap-2">
-                                    {[
-                                      "Job Knowledge",
-                                      "Quality of Work",
-                                      "Productivity",
-                                      "Communication",
-                                      "Teamwork",
-                                      "Initiative",
-                                      "Reliability",
-                                    ].map((c) => (
-                                      <span
-                                        key={c}
-                                        className="px-2.5 py-1 rounded-full text-xs bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary)]/20"
-                                      >
-                                        {c}
-                                      </span>
-                                    ))}
-                                  </div>
-                                  <p className="text-xs text-[var(--color-gray-400)] mt-2">
-                                    Criteria are assigned per appraisal period.
-                                    These are commonly used suggestions.
-                                  </p>
-                                </div>
-                              </div>
+            <div className="flex justify-end">
+              <AppButton
+                variant="primary"
+                size="sm"
+                onClick={() => setShowTemplateModal(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                New Template
+              </AppButton>
+            </div>
+            {isLoading ? (
+              <AppCard variant="standard">
+                <div className="-mx-5 -my-4">
+                  <TableSkeleton />
+                </div>
+              </AppCard>
+            ) : templates.length === 0 ? (
+              <EmptyState
+                icon={<Award className="h-12 w-12" aria-hidden="true" />}
+                message="No templates yet"
+                description="Create your first appraisal template to get started."
+              />
+            ) : (
+              <AppCard variant="standard">
+                <div className="overflow-x-auto -mx-5 -my-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-[var(--color-gray-200)]">
+                        <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                          Name
+                        </th>
+                        <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Weightage
+                        </th>
+                        <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Sign-off
+                        </th>
+                        <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                          Status
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {templates.map((t) => (
+                        <React.Fragment key={t.id}>
+                          <tr
+                            className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors cursor-pointer"
+                            onClick={() =>
+                              setExpandedTemplateId(
+                                expandedTemplateId === t.id ? null : t.id,
+                              )
+                            }
+                          >
+                            <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
+                              <span className="flex items-center gap-2">
+                                {expandedTemplateId === t.id ? (
+                                  <ChevronUp className="h-3.5 w-3.5 text-[var(--color-gray-400)]" />
+                                ) : (
+                                  <ChevronDown className="h-3.5 w-3.5 text-[var(--color-gray-400)]" />
+                                )}
+                                {t.name}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
+                              {t.enable_weightage ? "Yes" : "No"}
+                            </td>
+                            <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
+                              {t.require_employee_signoff
+                                ? "Required"
+                                : "Optional"}
+                            </td>
+                            <td className="py-3 px-5 text-center">
+                              <StatusBadge
+                                status={t.is_archived ? "draft" : "active"}
+                              />
                             </td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </AppCard>
-          )}
-        </>
-      )}
-
-      {/* Periods Tab */}
-      {tab === "periods" && isAdmin && (
-        <>
-          <div className="flex justify-end">
-            <AppButton
-              variant="primary"
-              size="sm"
-              onClick={() => setShowPeriodModal(true)}
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              New Period
-            </AppButton>
-          </div>
-          {isLoading ? (
-            <AppCard variant="standard">
-              <div className="-mx-5 -my-4">
-                <TableSkeleton />
-              </div>
-            </AppCard>
-          ) : periods.length === 0 ? (
-            <EmptyState
-              icon={<Award className="h-12 w-12" aria-hidden="true" />}
-              message="No review periods"
-              description="Create a review period and link it to a template."
-            />
-          ) : (
-            <AppCard variant="standard">
-              <div className="overflow-x-auto -mx-5 -my-4">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--color-gray-200)]">
-                      <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                        Period
-                      </th>
-                      <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Dates
-                      </th>
-                      <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Status
-                      </th>
-                      <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {periods.map((p) => (
-                      <tr
-                        key={p.id}
-                        className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
-                      >
-                        <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                          {p.name}
-                        </td>
-                        <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                          {formatDate(p.start_date)} - {formatDate(p.end_date)}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <StatusBadge status={p.status} />
-                        </td>
-                        <td className="py-3 px-5 text-center">
-                          {p.status === "draft" && (
-                            <AppButton
-                              variant="primary"
-                              size="sm"
-                              onClick={() => handleLaunch(p.id)}
-                            >
-                              <Play className="h-3.5 w-3.5 mr-1" />
-                              Launch
-                            </AppButton>
+                          {expandedTemplateId === t.id && (
+                            <tr>
+                              <td
+                                colSpan={4}
+                                className="px-5 py-4 bg-[var(--color-gray-50)]"
+                              >
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <h4 className="text-sm font-semibold text-[var(--color-gray-900)]">
+                                      Template Details
+                                    </h4>
+                                    <span className="text-xs text-[var(--color-gray-500)]">
+                                      Created{" "}
+                                      {formatDate((t as any).created_at || "")}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                      <p className="text-xs text-[var(--color-gray-500)] mb-1">
+                                        Weightage
+                                      </p>
+                                      <p className="text-[var(--color-gray-800)]">
+                                        {t.enable_weightage
+                                          ? "Enabled — criteria have percentage weights"
+                                          : "Disabled — equal weight for all criteria"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-[var(--color-gray-500)] mb-1">
+                                        Employee Sign-off
+                                      </p>
+                                      <p className="text-[var(--color-gray-800)]">
+                                        {t.require_employee_signoff
+                                          ? "Required — employee must acknowledge the review"
+                                          : "Optional — review can be completed without employee sign-off"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-[var(--color-gray-500)] mb-2">
+                                      Suggested Criteria
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                      {[
+                                        "Job Knowledge",
+                                        "Quality of Work",
+                                        "Productivity",
+                                        "Communication",
+                                        "Teamwork",
+                                        "Initiative",
+                                        "Reliability",
+                                      ].map((c) => (
+                                        <span
+                                          key={c}
+                                          className="px-2.5 py-1 rounded-full text-xs bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary)]/20"
+                                        >
+                                          {c}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <p className="text-xs text-[var(--color-gray-400)] mt-2">
+                                      Criteria are assigned per appraisal
+                                      period. These are commonly used
+                                      suggestions.
+                                    </p>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
                           )}
-                        </td>
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </AppCard>
+            )}
+          </>
+        )}
+
+        {/* Periods Tab */}
+        {tab === "periods" && isAdmin && (
+          <>
+            <div className="flex justify-end">
+              <AppButton
+                variant="primary"
+                size="sm"
+                onClick={() => setShowPeriodModal(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                New Period
+              </AppButton>
+            </div>
+            {isLoading ? (
+              <AppCard variant="standard">
+                <div className="-mx-5 -my-4">
+                  <TableSkeleton />
+                </div>
+              </AppCard>
+            ) : periods.length === 0 ? (
+              <EmptyState
+                icon={<Award className="h-12 w-12" aria-hidden="true" />}
+                message="No review periods"
+                description="Create a review period and link it to a template."
+              />
+            ) : (
+              <AppCard variant="standard">
+                <div className="overflow-x-auto -mx-5 -my-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-[var(--color-gray-200)]">
+                        <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                          Period
+                        </th>
+                        <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Dates
+                        </th>
+                        <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Status
+                        </th>
+                        <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                          Actions
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </AppCard>
-          )}
-        </>
-      )}
+                    </thead>
+                    <tbody>
+                      {periods.map((p) => (
+                        <tr
+                          key={p.id}
+                          className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
+                        >
+                          <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
+                            {p.name}
+                          </td>
+                          <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                            {formatDate(p.start_date)} -{" "}
+                            {formatDate(p.end_date)}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <StatusBadge status={p.status} />
+                          </td>
+                          <td className="py-3 px-5 text-center">
+                            {p.status === "draft" && (
+                              <AppButton
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleLaunch(p.id)}
+                              >
+                                <Play className="h-3.5 w-3.5 mr-1" />
+                                Launch
+                              </AppButton>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </AppCard>
+            )}
+          </>
+        )}
 
-      {/* My Appraisals Tab */}
-      {tab === "my-appraisals" && (
-        <>
-          {isLoading ? (
-            <AppCard variant="standard">
-              <div className="-mx-5 -my-4">
-                <TableSkeleton />
-              </div>
-            </AppCard>
-          ) : appraisals.length === 0 ? (
-            <EmptyState
-              icon={<Award className="h-12 w-12" aria-hidden="true" />}
-              message="No appraisals assigned"
-              description="You will see your performance reviews here once a review cycle is launched."
-            />
-          ) : (
-            <div className="space-y-3">
-              {appraisals.map((a) => {
-                const isExpanded = expandedId === a.id;
-                const isEditable =
-                  a.status === "draft" ||
-                  a.status === "pending" ||
-                  a.status === "in_progress";
-                return (
-                  <AppCard key={a.id} variant="standard">
-                    <button
-                      type="button"
-                      onClick={() => toggleExpand(a)}
-                      className="w-full text-left"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="text-sm font-medium text-[var(--color-gray-900)]">
-                              {a.employee_name || `Employee #${a.employee_id}`}
-                            </p>
-                            <StatusBadge status={a.status} />
+        {/* My Appraisals Tab */}
+        {tab === "my-appraisals" && (
+          <>
+            {isLoading ? (
+              <AppCard variant="standard">
+                <div className="-mx-5 -my-4">
+                  <TableSkeleton />
+                </div>
+              </AppCard>
+            ) : appraisals.length === 0 ? (
+              <EmptyState
+                icon={<Award className="h-12 w-12" aria-hidden="true" />}
+                message="No appraisals assigned"
+                description="You will see your performance reviews here once a review cycle is launched."
+              />
+            ) : (
+              <div className="space-y-3">
+                {appraisals.map((a) => {
+                  const isExpanded = expandedId === a.id;
+                  const isEditable =
+                    a.status === "draft" ||
+                    a.status === "pending" ||
+                    a.status === "in_progress";
+                  return (
+                    <AppCard key={a.id} variant="standard">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(a)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                                {a.employee_name ||
+                                  `Employee #${a.employee_id}`}
+                              </p>
+                              <StatusBadge status={a.status} />
+                            </div>
+                            {a.overall_score > 0 && (
+                              <p className="text-xs text-[var(--color-gray-500)]">
+                                Score: {a.overall_score.toFixed(1)}/5
+                              </p>
+                            )}
                           </div>
-                          {a.overall_score > 0 && (
-                            <p className="text-xs text-[var(--color-gray-500)]">
-                              Score: {a.overall_score.toFixed(1)}/5
-                            </p>
-                          )}
+                          <div className="shrink-0">
+                            {isExpanded ? (
+                              <ChevronUp className="h-4 w-4 text-[var(--color-gray-400)]" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 text-[var(--color-gray-400)]" />
+                            )}
+                          </div>
                         </div>
-                        <div className="shrink-0">
-                          {isExpanded ? (
-                            <ChevronUp className="h-4 w-4 text-[var(--color-gray-400)]" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 text-[var(--color-gray-400)]" />
-                          )}
-                        </div>
-                      </div>
-                    </button>
+                      </button>
 
-                    {isExpanded && (
-                      <div className="mt-4 pt-4 border-t border-[var(--color-gray-100)] space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-[var(--color-gray-700)] mb-1">
-                            Overall Score (1-5)
-                          </label>
-                          <input
-                            type="number"
-                            min={1}
-                            max={5}
-                            step={0.5}
-                            value={editScores[a.id] ?? ""}
-                            onChange={(e) =>
-                              setEditScores((prev) => ({
-                                ...prev,
-                                [a.id]: e.target.value,
-                              }))
-                            }
-                            disabled={!isEditable}
-                            className="w-24 rounded-[8px] border px-3 py-2 text-sm min-h-[44px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] disabled:opacity-50"
-                          />
-                        </div>
-                        {isAdmin && (
+                      {isExpanded && (
+                        <div className="mt-4 pt-4 border-t border-[var(--color-gray-100)] space-y-4">
                           <div>
                             <label className="block text-sm font-medium text-[var(--color-gray-700)] mb-1">
-                              Reviewer Comments
+                              Overall Score (1-5)
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={5}
+                              step={0.5}
+                              value={editScores[a.id] ?? ""}
+                              onChange={(e) =>
+                                setEditScores((prev) => ({
+                                  ...prev,
+                                  [a.id]: e.target.value,
+                                }))
+                              }
+                              disabled={!isEditable}
+                              className="w-24 rounded-[8px] border px-3 py-2 text-sm min-h-[44px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] disabled:opacity-50"
+                            />
+                          </div>
+                          {isAdmin && (
+                            <div>
+                              <label className="block text-sm font-medium text-[var(--color-gray-700)] mb-1">
+                                Reviewer Comments
+                              </label>
+                              <textarea
+                                value={editReviewerComments[a.id] ?? ""}
+                                onChange={(e) =>
+                                  setEditReviewerComments((prev) => ({
+                                    ...prev,
+                                    [a.id]: e.target.value,
+                                  }))
+                                }
+                                disabled={!isEditable}
+                                rows={3}
+                                className="w-full rounded-[8px] border px-3 py-2 text-sm bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] disabled:opacity-50"
+                                placeholder="Enter reviewer feedback..."
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <label className="block text-sm font-medium text-[var(--color-gray-700)] mb-1">
+                              Employee Comments
                             </label>
                             <textarea
-                              value={editReviewerComments[a.id] ?? ""}
+                              value={editEmployeeComments[a.id] ?? ""}
                               onChange={(e) =>
-                                setEditReviewerComments((prev) => ({
+                                setEditEmployeeComments((prev) => ({
                                   ...prev,
                                   [a.id]: e.target.value,
                                 }))
@@ -909,85 +935,67 @@ export default function AppraisalsPage() {
                               disabled={!isEditable}
                               rows={3}
                               className="w-full rounded-[8px] border px-3 py-2 text-sm bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] disabled:opacity-50"
-                              placeholder="Enter reviewer feedback..."
+                              placeholder="Enter your self-assessment..."
                             />
                           </div>
-                        )}
-                        <div>
-                          <label className="block text-sm font-medium text-[var(--color-gray-700)] mb-1">
-                            Employee Comments
-                          </label>
-                          <textarea
-                            value={editEmployeeComments[a.id] ?? ""}
-                            onChange={(e) =>
-                              setEditEmployeeComments((prev) => ({
-                                ...prev,
-                                [a.id]: e.target.value,
-                              }))
-                            }
-                            disabled={!isEditable}
-                            rows={3}
-                            className="w-full rounded-[8px] border px-3 py-2 text-sm bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] disabled:opacity-50"
-                            placeholder="Enter your self-assessment..."
-                          />
+                          <div className="flex gap-2">
+                            {isEditable && (
+                              <AppButton
+                                variant="outlined"
+                                size="sm"
+                                loading={isSaving}
+                                onClick={() => handleSaveAppraisal(a.id)}
+                              >
+                                <Save className="h-3.5 w-3.5 mr-1" />
+                                Save
+                              </AppButton>
+                            )}
+                            {(a.status === "draft" ||
+                              a.status === "pending" ||
+                              a.status === "in_progress") && (
+                              <AppButton
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleSubmit(a.id)}
+                              >
+                                <Send className="h-3.5 w-3.5 mr-1" />
+                                Submit
+                              </AppButton>
+                            )}
+                            {a.status === "submitted" && (
+                              <AppButton
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleSignOff(a.id)}
+                              >
+                                <FileCheck className="h-3.5 w-3.5 mr-1" />
+                                Sign Off
+                              </AppButton>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex gap-2">
-                          {isEditable && (
-                            <AppButton
-                              variant="outlined"
-                              size="sm"
-                              loading={isSaving}
-                              onClick={() => handleSaveAppraisal(a.id)}
-                            >
-                              <Save className="h-3.5 w-3.5 mr-1" />
-                              Save
-                            </AppButton>
-                          )}
-                          {(a.status === "draft" ||
-                            a.status === "pending" ||
-                            a.status === "in_progress") && (
-                            <AppButton
-                              variant="primary"
-                              size="sm"
-                              onClick={() => handleSubmit(a.id)}
-                            >
-                              <Send className="h-3.5 w-3.5 mr-1" />
-                              Submit
-                            </AppButton>
-                          )}
-                          {a.status === "submitted" && (
-                            <AppButton
-                              variant="primary"
-                              size="sm"
-                              onClick={() => handleSignOff(a.id)}
-                            >
-                              <FileCheck className="h-3.5 w-3.5 mr-1" />
-                              Sign Off
-                            </AppButton>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </AppCard>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
+                      )}
+                    </AppCard>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
 
-      {/* Modals */}
-      <CreateTemplateModal
-        isOpen={showTemplateModal}
-        onClose={() => setShowTemplateModal(false)}
-        onSuccess={fetchData}
-      />
-      <CreatePeriodModal
-        isOpen={showPeriodModal}
-        onClose={() => setShowPeriodModal(false)}
-        onSuccess={fetchData}
-        templates={templates}
-      />
-    </div>
+        {/* Modals */}
+        <CreateTemplateModal
+          isOpen={showTemplateModal}
+          onClose={() => setShowTemplateModal(false)}
+          onSuccess={fetchData}
+        />
+        <CreatePeriodModal
+          isOpen={showPeriodModal}
+          onClose={() => setShowPeriodModal(false)}
+          onSuccess={fetchData}
+          templates={templates}
+        />
+      </div>
+    </AdminGuard>
   );
 }

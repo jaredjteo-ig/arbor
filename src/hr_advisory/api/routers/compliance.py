@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
-from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.auth_middleware import require_role
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
 from hr_advisory.kb.admin import get_kb_stats
 from hr_advisory.kb.admin import search_provisions as _kb_search_provisions
@@ -177,7 +177,7 @@ def _risk_tier_from_status(status: str) -> str:
 
 @router.get("/domains")
 async def list_compliance_domains(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """List all compliance domains with their labels and criticality.
 
@@ -212,7 +212,7 @@ async def list_compliance_domains(
 @router.post("/check")
 async def compliance_check(
     request: Request,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Run a compliance check against applicable regulations.
 
@@ -306,7 +306,7 @@ async def compliance_check(
 @router.get("/status/{company_id}")
 async def compliance_status(
     company_id: int,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Get the latest compliance status for a company.
 
@@ -385,7 +385,7 @@ async def compliance_status(
 @router.post("/gap-analysis")
 async def gap_analysis(
     request: Request,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Run a detailed gap analysis comparing KB coverage to requirements.
 

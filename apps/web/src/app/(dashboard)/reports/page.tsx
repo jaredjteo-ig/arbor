@@ -23,6 +23,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import { reportsApi } from "@/services/api/reports";
 
 /* ── Report definitions ───────────────────────────────────── */
@@ -563,87 +564,91 @@ export default function ReportsPage() {
 
   if (selectedReport) {
     return (
-      <div className="max-w-5xl mx-auto space-y-6 pb-8">
-        <ReportViewer
-          report={selectedReport}
-          onBack={() => setSelectedReport(null)}
-        />
-      </div>
+      <AdminGuard>
+        <div className="max-w-5xl mx-auto space-y-6 pb-8">
+          <ReportViewer
+            report={selectedReport}
+            onBack={() => setSelectedReport(null)}
+          />
+        </div>
+      </AdminGuard>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-8">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <BarChart3
-          className="h-7 w-7 text-[var(--color-primary)]"
-          aria-hidden="true"
-        />
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            Reports
-          </h1>
-          <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-            Workforce insights, financial summaries, and compliance checks
-          </p>
-        </div>
-      </div>
-
-      {/* Dashboard Charts */}
-      <ReportsDashboardCharts />
-
-      {/* Report categories */}
-      {CATEGORIES.map((cat) => {
-        const catReports = REPORTS.filter((r) => r.category === cat.key);
-        if (catReports.length === 0) return null;
-        return (
-          <div key={cat.key}>
-            <h2 className="text-sm font-semibold text-[var(--color-gray-500)] uppercase tracking-wider mb-3">
-              {cat.label}
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {catReports.map((report) => {
-                const Icon = report.icon;
-                return (
-                  <button
-                    key={report.id}
-                    type="button"
-                    onClick={() =>
-                      !report.comingSoon && setSelectedReport(report)
-                    }
-                    disabled={report.comingSoon}
-                    className={`text-left rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] p-5 transition-all group ${
-                      report.comingSoon
-                        ? "opacity-60 cursor-not-allowed"
-                        : "hover:border-[var(--color-primary)] hover:shadow-sm"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 mb-2">
-                      <div
-                        className={`p-2 rounded-lg ${report.bgColor} ${!report.comingSoon ? "group-hover:scale-105" : ""} transition-transform`}
-                      >
-                        <Icon className={`h-5 w-5 ${report.color}`} />
-                      </div>
-                      <h3 className="text-sm font-semibold text-[var(--color-gray-900)]">
-                        {report.title}
-                      </h3>
-                      {report.comingSoon && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-500)] border border-[var(--color-gray-200)]">
-                          Coming Soon
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-[var(--color-gray-500)]">
-                      {report.description}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
+    <AdminGuard>
+      <div className="max-w-5xl mx-auto space-y-6 pb-8">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <BarChart3
+            className="h-7 w-7 text-[var(--color-primary)]"
+            aria-hidden="true"
+          />
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+              Reports
+            </h1>
+            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+              Workforce insights, financial summaries, and compliance checks
+            </p>
           </div>
-        );
-      })}
-    </div>
+        </div>
+
+        {/* Dashboard Charts */}
+        <ReportsDashboardCharts />
+
+        {/* Report categories */}
+        {CATEGORIES.map((cat) => {
+          const catReports = REPORTS.filter((r) => r.category === cat.key);
+          if (catReports.length === 0) return null;
+          return (
+            <div key={cat.key}>
+              <h2 className="text-sm font-semibold text-[var(--color-gray-500)] uppercase tracking-wider mb-3">
+                {cat.label}
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {catReports.map((report) => {
+                  const Icon = report.icon;
+                  return (
+                    <button
+                      key={report.id}
+                      type="button"
+                      onClick={() =>
+                        !report.comingSoon && setSelectedReport(report)
+                      }
+                      disabled={report.comingSoon}
+                      className={`text-left rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] p-5 transition-all group ${
+                        report.comingSoon
+                          ? "opacity-60 cursor-not-allowed"
+                          : "hover:border-[var(--color-primary)] hover:shadow-sm"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <div
+                          className={`p-2 rounded-lg ${report.bgColor} ${!report.comingSoon ? "group-hover:scale-105" : ""} transition-transform`}
+                        >
+                          <Icon className={`h-5 w-5 ${report.color}`} />
+                        </div>
+                        <h3 className="text-sm font-semibold text-[var(--color-gray-900)]">
+                          {report.title}
+                        </h3>
+                        {report.comingSoon && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-500)] border border-[var(--color-gray-200)]">
+                            Coming Soon
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[var(--color-gray-500)]">
+                        {report.description}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </AdminGuard>
   );
 }

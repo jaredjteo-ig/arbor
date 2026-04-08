@@ -31,6 +31,12 @@ interface AuthContextValue extends AuthState {
   logout: () => void;
   /** Re-fetch the current user from /auth/me to pick up server-side changes (e.g. company_id). */
   refreshUser: () => Promise<void>;
+  /** Store pre-obtained tokens (e.g. from employee invite signup) and hydrate auth state. */
+  loginWithTokens: (
+    accessToken: string,
+    refreshToken: string,
+    user: User,
+  ) => void;
 }
 
 /* ── Context ──────────────────────────────────────────────── */
@@ -250,6 +256,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /* Login with pre-obtained tokens (e.g. from employee invite signup) */
+  const loginWithTokens = useCallback(
+    (accessToken: string, refreshToken: string, user: User) => {
+      storeTokens(accessToken, refreshToken);
+      setState({ user, isAuthenticated: true, isLoading: false });
+    },
+    [],
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -258,6 +273,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         logout,
         refreshUser,
+        loginWithTokens,
       }}
     >
       {children}

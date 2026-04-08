@@ -49,6 +49,32 @@ ALLOWED_MIME_TYPES = {
 # Invitation validity period
 _INVITATION_EXPIRY_DAYS = 7
 
+
+def _resolve_frontend_url(request: Request) -> str:
+    """Derive the frontend URL from env var, request Origin, or Referer header.
+
+    Raises HTTPException if the URL cannot be determined — a broken invite link
+    shared to a real employee is worse than a clear error to the admin.
+    """
+    env_url = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    if env_url:
+        return env_url
+    origin = request.headers.get("origin", "").rstrip("/")
+    if origin:
+        return origin
+    referer = request.headers.get("referer", "")
+    if referer:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(referer)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+    raise HTTPException(
+        status_code=500,
+        detail="Could not determine the site URL for the invite link. "
+        "Set the FRONTEND_URL environment variable on the server.",
+    )
+
 # Input length limits
 MAX_TEXT_LENGTH = 2000
 MAX_NAME_LENGTH = 200
@@ -1368,9 +1394,7 @@ async def invite_employee(
 
     # T284: Return token in response — single-use, email-locked, 7-day expiry
     # makes interception low-risk. Admin shares link via WhatsApp/email.
-    import os
-
-    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    frontend_url = _resolve_frontend_url(request)
     invite_url = f"{frontend_url}/signup?token={token}"
 
     return {
@@ -1638,6 +1662,7 @@ async def delete_invitation(
 @router.post("/invite/{invitation_id}/resend")
 async def resend_invitation(
     invitation_id: int,
+    request: Request,
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Resend an invitation with a fresh token and 7-day expiry.
@@ -1690,7 +1715,7 @@ async def resend_invitation(
         expires_at=new_expires_at,
     )
 
-    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    frontend_url = _resolve_frontend_url(request)
     invite_url = f"{frontend_url}/signup?token={new_token}"
 
     logger.info(
@@ -1906,11 +1931,28 @@ async def update_my_profile(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    # Auto-set last4 masks for sensitive fields
+    # Encrypt sensitive PII fields (same pattern as admin PATCH endpoint).
+    # Skip if the value contains '*' — that indicates a masked display value
+    # which must not overwrite the encrypted data.
     if "nric_fin" in updates and updates["nric_fin"]:
-        updates["nric_fin_last4"] = updates["nric_fin"][-4:]
+        if "*" in updates["nric_fin"]:
+            del updates["nric_fin"]
+            updates.pop("nric_fin_last4", None)
+        else:
+            updates["nric_fin_last4"] = updates["nric_fin"][-4:]
+            updates["nric_fin"] = encrypt_field(updates["nric_fin"])
+
     if "bank_account_number" in updates and updates["bank_account_number"]:
-        updates["bank_account_last4"] = updates["bank_account_number"][-4:]
+        if "*" in updates["bank_account_number"]:
+            del updates["bank_account_number"]
+            updates.pop("bank_account_last4", None)
+        else:
+            updates["bank_account_last4"] = updates["bank_account_number"][-4:]
+            updates["bank_account_number"] = encrypt_field(updates["bank_account_number"])
+
+    # After stripping masked values, re-check that there are still fields to update
+    if not updates:
+        return {"updated": True, "fields": [], "note": "No changes (masked values were skipped)."}
 
     from kailash.runtime import LocalRuntime
     from kailash.workflow.builder import WorkflowBuilder
@@ -2978,7 +3020,7 @@ async def import_confirm(
     import_errors = []
     invitations = []
 
-    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    frontend_url = _resolve_frontend_url(request)
 
     for record in records:
         if not record.get("valid", True):

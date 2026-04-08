@@ -19,6 +19,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import {
   recruitmentApi,
   type JobListing,
@@ -808,309 +809,296 @@ export default function RecruitmentPage() {
     }
   }
 
-  /* ── RBAC: only owner / hr_manager / consultant may access recruitment ── */
-  if (!isAdmin) {
-    return (
-      <div className="max-w-6xl mx-auto py-12 text-center">
-        <p className="text-[var(--color-gray-500)]">
-          Access Denied. You do not have permission to view this page.
-        </p>
-        <a
-          href="/dashboard"
-          className="inline-block mt-4 text-sm text-[var(--color-primary)] hover:underline"
-        >
-          Return to Dashboard
-        </a>
-      </div>
-    );
-  }
-
   if (error && !isLoading) {
     return (
-      <div className="max-w-5xl mx-auto space-y-6 pb-8">
-        <div className="flex items-center gap-3">
-          <UserPlus
-            className="h-7 w-7 text-[var(--color-primary)]"
-            aria-hidden="true"
-          />
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            Recruitment
-          </h1>
-        </div>
-        <AppCard variant="standard">
-          <div className="py-8 text-center">
-            <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
-            <AppButton variant="outlined" size="sm" onClick={fetchData}>
-              Try again
-            </AppButton>
+      <AdminGuard>
+        <div className="max-w-5xl mx-auto space-y-6 pb-8">
+          <div className="flex items-center gap-3">
+            <UserPlus
+              className="h-7 w-7 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+              Recruitment
+            </h1>
           </div>
-        </AppCard>
-      </div>
+          <AppCard variant="standard">
+            <div className="py-8 text-center">
+              <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
+              <AppButton variant="outlined" size="sm" onClick={fetchData}>
+                Try again
+              </AppButton>
+            </div>
+          </AppCard>
+        </div>
+      </AdminGuard>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-8">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <UserPlus
-            className="h-7 w-7 text-[var(--color-primary)]"
-            aria-hidden="true"
-          />
-          <div>
-            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-              Recruitment
-            </h1>
-            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-              Manage job listings, candidates, and interviews
-            </p>
-          </div>
-        </div>
-        {isAdmin && (
-          <AppButton
-            variant="primary"
-            size="sm"
-            onClick={() => setShowJobModal(true)}
-          >
-            <Plus className="h-4 w-4 mr-1" /> New Job Listing
-          </AppButton>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-lg bg-[var(--color-gray-100)] w-fit">
-        <TabButton
-          active={tab === "jobs"}
-          label="Job Listings"
-          onClick={() => setTab("jobs")}
-        />
-        <TabButton
-          active={tab === "candidates"}
-          label="Candidates"
-          onClick={() => setTab("candidates")}
-        />
-        <TabButton
-          active={tab === "interviews"}
-          label="Interviews"
-          onClick={() => setTab("interviews")}
-        />
-      </div>
-
-      {/* Jobs Tab */}
-      {tab === "jobs" && (
-        <>
-          {isLoading ? (
-            <AppCard variant="standard">
-              <div className="-mx-5 -my-4">
-                <TableSkeleton />
-              </div>
-            </AppCard>
-          ) : jobs.length === 0 ? (
-            <EmptyState
-              icon={<Briefcase className="h-12 w-12" aria-hidden="true" />}
-              message="No job listings"
-              description="Create your first job listing to start hiring."
+    <AdminGuard>
+      <div className="max-w-5xl mx-auto space-y-6 pb-8">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <UserPlus
+              className="h-7 w-7 text-[var(--color-primary)]"
+              aria-hidden="true"
             />
-          ) : (
-            <AppCard variant="standard">
-              <div className="overflow-x-auto -mx-5 -my-4">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--color-gray-200)]">
-                      <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                        Title
-                      </th>
-                      <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Department
-                      </th>
-                      <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Type
-                      </th>
-                      <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Candidates
-                      </th>
-                      <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Status
-                      </th>
-                      <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {jobs.map((job) => (
-                      <tr
-                        key={job.id}
-                        className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
-                      >
-                        <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                          {job.title || (job as any).position_title || "-"}
-                        </td>
-                        <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                          {job.department || "-"}
-                        </td>
-                        <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                          {(job.employment_type || "full_time").replace(
-                            /_/g,
-                            " ",
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-center text-[var(--color-gray-700)]">
-                          {job.candidate_count ?? 0}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <StatusBadge
-                            status={job.status}
-                            styles={JOB_STATUS_STYLES}
-                          />
-                        </td>
-                        <td className="py-3 px-5 text-center">
-                          {job.status === "draft" && (
-                            <AppButton
-                              variant="primary"
-                              size="sm"
-                              onClick={() => handlePublish(job.id)}
-                            >
-                              Publish
-                            </AppButton>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </AppCard>
-          )}
-        </>
-      )}
-
-      {/* Candidates Tab */}
-      {tab === "candidates" && (
-        <>
-          {isAdmin && (
-            <div className="flex justify-end">
-              <AppButton
-                variant="primary"
-                size="sm"
-                onClick={() => setShowCandidateModal(true)}
-              >
-                <Plus className="h-4 w-4 mr-1" /> Add Candidate
-              </AppButton>
+            <div>
+              <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+                Recruitment
+              </h1>
+              <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+                Manage job listings, candidates, and interviews
+              </p>
             </div>
+          </div>
+          {isAdmin && (
+            <AppButton
+              variant="primary"
+              size="sm"
+              onClick={() => setShowJobModal(true)}
+            >
+              <Plus className="h-4 w-4 mr-1" /> New Job Listing
+            </AppButton>
           )}
-          {isLoading ? (
-            <AppCard variant="standard">
-              <div className="-mx-5 -my-4">
-                <TableSkeleton />
-              </div>
-            </AppCard>
-          ) : (
-            <CandidatePipeline
-              candidates={candidates}
-              onMoveStage={handleMoveStage}
-              onScheduleInterview={(c) =>
-                setInterviewTarget({ id: c.id, name: c.name })
-              }
-              onHire={handleHire}
-            />
-          )}
-        </>
-      )}
+        </div>
 
-      {/* Interviews Tab */}
-      {tab === "interviews" && (
-        <>
-          {isLoading ? (
-            <AppCard variant="standard">
-              <div className="-mx-5 -my-4">
-                <TableSkeleton />
-              </div>
-            </AppCard>
-          ) : interviews.length === 0 ? (
-            <EmptyState
-              icon={<Calendar className="h-12 w-12" aria-hidden="true" />}
-              message="No interviews scheduled"
-              description="Scheduled interviews will appear here."
-            />
-          ) : (
-            <AppCard variant="standard">
-              <div className="overflow-x-auto -mx-5 -my-4">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--color-gray-200)]">
-                      <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                        Candidate
-                      </th>
-                      <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Interviewer
-                      </th>
-                      <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Date
-                      </th>
-                      <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
-                        Type
-                      </th>
-                      <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {interviews.map((iv) => (
-                      <tr
-                        key={iv.id}
-                        className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
-                      >
-                        <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                          {iv.candidate_name || `#${iv.candidate_id}`}
-                        </td>
-                        <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                          {iv.interviewer_name || `#${iv.interviewer_id}`}
-                        </td>
-                        <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                          {formatDate(iv.scheduled_at)}
-                        </td>
-                        <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
-                          {iv.interview_type}
-                        </td>
-                        <td className="py-3 px-5 text-center">
-                          <StatusBadge
-                            status={iv.status}
-                            styles={JOB_STATUS_STYLES}
-                          />
-                        </td>
+        {/* Tabs */}
+        <div className="flex gap-1 p-1 rounded-lg bg-[var(--color-gray-100)] w-fit">
+          <TabButton
+            active={tab === "jobs"}
+            label="Job Listings"
+            onClick={() => setTab("jobs")}
+          />
+          <TabButton
+            active={tab === "candidates"}
+            label="Candidates"
+            onClick={() => setTab("candidates")}
+          />
+          <TabButton
+            active={tab === "interviews"}
+            label="Interviews"
+            onClick={() => setTab("interviews")}
+          />
+        </div>
+
+        {/* Jobs Tab */}
+        {tab === "jobs" && (
+          <>
+            {isLoading ? (
+              <AppCard variant="standard">
+                <div className="-mx-5 -my-4">
+                  <TableSkeleton />
+                </div>
+              </AppCard>
+            ) : jobs.length === 0 ? (
+              <EmptyState
+                icon={<Briefcase className="h-12 w-12" aria-hidden="true" />}
+                message="No job listings"
+                description="Create your first job listing to start hiring."
+              />
+            ) : (
+              <AppCard variant="standard">
+                <div className="overflow-x-auto -mx-5 -my-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-[var(--color-gray-200)]">
+                        <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                          Title
+                        </th>
+                        <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Department
+                        </th>
+                        <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Type
+                        </th>
+                        <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Candidates
+                        </th>
+                        <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Status
+                        </th>
+                        <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                          Actions
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {jobs.map((job) => (
+                        <tr
+                          key={job.id}
+                          className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
+                        >
+                          <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
+                            {job.title || (job as any).position_title || "-"}
+                          </td>
+                          <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                            {job.department || "-"}
+                          </td>
+                          <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                            {(job.employment_type || "full_time").replace(
+                              /_/g,
+                              " ",
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center text-[var(--color-gray-700)]">
+                            {job.candidate_count ?? 0}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <StatusBadge
+                              status={job.status}
+                              styles={JOB_STATUS_STYLES}
+                            />
+                          </td>
+                          <td className="py-3 px-5 text-center">
+                            {job.status === "draft" && (
+                              <AppButton
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handlePublish(job.id)}
+                              >
+                                Publish
+                              </AppButton>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </AppCard>
+            )}
+          </>
+        )}
+
+        {/* Candidates Tab */}
+        {tab === "candidates" && (
+          <>
+            {isAdmin && (
+              <div className="flex justify-end">
+                <AppButton
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setShowCandidateModal(true)}
+                >
+                  <Plus className="h-4 w-4 mr-1" /> Add Candidate
+                </AppButton>
               </div>
-            </AppCard>
-          )}
-        </>
-      )}
+            )}
+            {isLoading ? (
+              <AppCard variant="standard">
+                <div className="-mx-5 -my-4">
+                  <TableSkeleton />
+                </div>
+              </AppCard>
+            ) : (
+              <CandidatePipeline
+                candidates={candidates}
+                onMoveStage={handleMoveStage}
+                onScheduleInterview={(c) =>
+                  setInterviewTarget({ id: c.id, name: c.name })
+                }
+                onHire={handleHire}
+              />
+            )}
+          </>
+        )}
 
-      <CreateJobModal
-        isOpen={showJobModal}
-        onClose={() => setShowJobModal(false)}
-        onSuccess={fetchData}
-      />
+        {/* Interviews Tab */}
+        {tab === "interviews" && (
+          <>
+            {isLoading ? (
+              <AppCard variant="standard">
+                <div className="-mx-5 -my-4">
+                  <TableSkeleton />
+                </div>
+              </AppCard>
+            ) : interviews.length === 0 ? (
+              <EmptyState
+                icon={<Calendar className="h-12 w-12" aria-hidden="true" />}
+                message="No interviews scheduled"
+                description="Scheduled interviews will appear here."
+              />
+            ) : (
+              <AppCard variant="standard">
+                <div className="overflow-x-auto -mx-5 -my-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-[var(--color-gray-200)]">
+                        <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                          Candidate
+                        </th>
+                        <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Interviewer
+                        </th>
+                        <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Date
+                        </th>
+                        <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                          Type
+                        </th>
+                        <th className="text-center py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                          Status
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {interviews.map((iv) => (
+                        <tr
+                          key={iv.id}
+                          className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
+                        >
+                          <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
+                            {iv.candidate_name || `#${iv.candidate_id}`}
+                          </td>
+                          <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                            {iv.interviewer_name || `#${iv.interviewer_id}`}
+                          </td>
+                          <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                            {formatDate(iv.scheduled_at)}
+                          </td>
+                          <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
+                            {iv.interview_type}
+                          </td>
+                          <td className="py-3 px-5 text-center">
+                            <StatusBadge
+                              status={iv.status}
+                              styles={JOB_STATUS_STYLES}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </AppCard>
+            )}
+          </>
+        )}
 
-      <AddCandidateModal
-        isOpen={showCandidateModal}
-        onClose={() => setShowCandidateModal(false)}
-        onSuccess={fetchData}
-        jobs={jobs}
-      />
+        <CreateJobModal
+          isOpen={showJobModal}
+          onClose={() => setShowJobModal(false)}
+          onSuccess={fetchData}
+        />
 
-      <ScheduleInterviewModal
-        isOpen={interviewTarget !== null}
-        onClose={() => setInterviewTarget(null)}
-        onSuccess={fetchData}
-        candidateId={interviewTarget?.id ?? 0}
-        candidateName={interviewTarget?.name ?? ""}
-      />
-    </div>
+        <AddCandidateModal
+          isOpen={showCandidateModal}
+          onClose={() => setShowCandidateModal(false)}
+          onSuccess={fetchData}
+          jobs={jobs}
+        />
+
+        <ScheduleInterviewModal
+          isOpen={interviewTarget !== null}
+          onClose={() => setInterviewTarget(null)}
+          onSuccess={fetchData}
+          candidateId={interviewTarget?.id ?? 0}
+          candidateName={interviewTarget?.name ?? ""}
+        />
+      </div>
+    </AdminGuard>
   );
 }

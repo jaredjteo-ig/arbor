@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 from hr_advisory.services import dataflow_crud
 
@@ -673,6 +674,8 @@ async def apply_leave(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"leave_apply:{user_id}", max_requests=20, window_seconds=60, action_name="leave application")
+
     employee = _get_employee_for_user(user_id, company_id)
     if employee is None:
         raise HTTPException(status_code=400, detail="No employee record found.")

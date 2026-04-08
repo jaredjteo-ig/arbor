@@ -22,6 +22,7 @@ import {
 } from "@/components/design-system";
 import { useSkillsFutureCourses, useGrantCheck } from "@/hooks/api";
 import type { SkillsFutureCourse } from "@/services/api/integrations";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 
 /* ── Search Filters ──────────────────────────────────────── */
 
@@ -405,7 +406,9 @@ function CourseDetailModal({
               </p>
               {grantData.eligible && (
                 <div className="flex gap-4 mt-2 text-sm">
-                  <span>Grant: {formatCurrency(grantData.grant_amount ?? 0)}</span>
+                  <span>
+                    Grant: {formatCurrency(grantData.grant_amount ?? 0)}
+                  </span>
                   <span>
                     SFC Balance: {formatCurrency(grantData.sfc_balance ?? 0)}
                   </span>
@@ -459,70 +462,72 @@ export default function SkillsFutureBrowserPage() {
     useSkillsFutureCourses(debouncedFilters);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <GraduationCap
-          className="h-7 w-7 text-[var(--color-primary)]"
-          aria-hidden="true"
-        />
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            SkillsFuture Courses
-          </h1>
-          <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-            Browse and enroll in government-supported training programmes for
-            your team.
-          </p>
-        </div>
-      </div>
-
-      {/* Search */}
-      <SearchBar filters={filters} onChange={setFilters} />
-
-      {/* Content */}
-      {isPending && <LoadingState variant="card" count={6} />}
-
-      {error && (
-        <ErrorState
-          variant="server"
-          title="Could not load courses"
-          description="We had trouble connecting to the SkillsFuture directory."
-          onRetry={() => refetch()}
-        />
-      )}
-
-      {data && (data.courses?.length ?? 0) === 0 && (
-        <EmptyState
-          message="No courses found"
-          description="Try adjusting your search filters to find relevant courses."
-        />
-      )}
-
-      {data && (data.courses?.length ?? 0) > 0 && (
-        <>
-          <p className="text-sm text-[var(--color-gray-500)]">
-            {data.total ?? 0} course{(data.total ?? 0) !== 1 ? "s" : ""} found
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(data.courses ?? []).map((course) => (
-              <CourseCard
-                key={course.id}
-                course={course}
-                onViewDetail={() => setSelectedCourse(course)}
-              />
-            ))}
+    <AdminGuard>
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <GraduationCap
+            className="h-7 w-7 text-[var(--color-primary)]"
+            aria-hidden="true"
+          />
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+              SkillsFuture Courses
+            </h1>
+            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+              Browse and enroll in government-supported training programmes for
+              your team.
+            </p>
           </div>
-        </>
-      )}
+        </div>
 
-      {/* Detail Modal */}
-      {selectedCourse && (
-        <CourseDetailModal
-          course={selectedCourse}
-          onClose={() => setSelectedCourse(null)}
-        />
-      )}
-    </div>
+        {/* Search */}
+        <SearchBar filters={filters} onChange={setFilters} />
+
+        {/* Content */}
+        {isPending && <LoadingState variant="card" count={6} />}
+
+        {error && (
+          <ErrorState
+            variant="server"
+            title="Could not load courses"
+            description="We had trouble connecting to the SkillsFuture directory."
+            onRetry={() => refetch()}
+          />
+        )}
+
+        {data && (data.courses?.length ?? 0) === 0 && (
+          <EmptyState
+            message="No courses found"
+            description="Try adjusting your search filters to find relevant courses."
+          />
+        )}
+
+        {data && (data.courses?.length ?? 0) > 0 && (
+          <>
+            <p className="text-sm text-[var(--color-gray-500)]">
+              {data.total ?? 0} course{(data.total ?? 0) !== 1 ? "s" : ""} found
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(data.courses ?? []).map((course) => (
+                <CourseCard
+                  key={course.id}
+                  course={course}
+                  onViewDetail={() => setSelectedCourse(course)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Detail Modal */}
+        {selectedCourse && (
+          <CourseDetailModal
+            course={selectedCourse}
+            onClose={() => setSelectedCourse(null)}
+          />
+        )}
+      </div>
+    </AdminGuard>
   );
 }

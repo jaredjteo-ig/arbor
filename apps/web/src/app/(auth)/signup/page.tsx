@@ -17,6 +17,7 @@ import {
   validateInvite,
   type InviteValidation,
 } from "@/services/api/employees";
+import { useAuth } from "@/contexts/AuthContext";
 
 /* ── Validation schemas ────────────────────────────────────── */
 
@@ -191,6 +192,7 @@ function InviteForm({
 }) {
   const { t } = useTranslation();
   const router = useRouter();
+  const { loginWithTokens } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
 
   const {
@@ -216,9 +218,12 @@ function InviteForm({
         invitation_token: token,
       };
       const response = await authApi.registerEmployee(payload);
-      // Store tokens
-      localStorage.setItem("access_token", response.access_token);
-      localStorage.setItem("refresh_token", response.refresh_token);
+      // Store tokens AND update auth context state so sidebar/name render correctly
+      loginWithTokens(
+        response.access_token,
+        response.refresh_token,
+        response.user,
+      );
       // Redirect to employee dashboard
       router.push("/my-dashboard");
     } catch (error) {

@@ -12,11 +12,13 @@ interface ContextBarProps {
 
 export function ContextBar({ className }: ContextBarProps) {
   const { user } = useAuth();
-  const companyId = user?.company_id ?? 0;
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
+  const companyId = isAdmin ? (user?.company_id ?? 0) : 0;
   const { data: profile } = useCompanyProfile(companyId);
   const [expanded, setExpanded] = useState(false);
 
-  if (!profile) return null;
+  // Employees don't need the company profile context bar
+  if (!isAdmin || !profile) return null;
 
   return (
     <div

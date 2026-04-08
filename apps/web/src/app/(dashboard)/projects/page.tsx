@@ -11,6 +11,7 @@ import {
 } from "@/components/design-system";
 import { FolderKanban, Plus, ArrowRight, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import { projectsApi, type Project } from "@/services/api/projects";
 
 /* ── Helpers ──────────────────────────────────────────────── */
@@ -275,152 +276,156 @@ export default function ProjectsPage() {
 
   if (error && !isLoading) {
     return (
-      <div className="max-w-4xl mx-auto space-y-6 pb-8">
-        <div className="flex items-center gap-3">
-          <FolderKanban
-            className="h-7 w-7 text-[var(--color-primary)]"
-            aria-hidden="true"
-          />
-          <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-            Projects
-          </h1>
-        </div>
-        <AppCard variant="standard">
-          <div className="py-8 text-center">
-            <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
-            <AppButton variant="outlined" size="sm" onClick={fetchData}>
-              Try again
-            </AppButton>
+      <AdminGuard>
+        <div className="max-w-4xl mx-auto space-y-6 pb-8">
+          <div className="flex items-center gap-3">
+            <FolderKanban
+              className="h-7 w-7 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+              Projects
+            </h1>
           </div>
-        </AppCard>
-      </div>
+          <AppCard variant="standard">
+            <div className="py-8 text-center">
+              <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
+              <AppButton variant="outlined" size="sm" onClick={fetchData}>
+                Try again
+              </AppButton>
+            </div>
+          </AppCard>
+        </div>
+      </AdminGuard>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-8">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <FolderKanban
-            className="h-7 w-7 text-[var(--color-primary)]"
-            aria-hidden="true"
-          />
-          <div>
-            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-              Projects
-            </h1>
-            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-              Track project timelines, budgets, and team assignments
-            </p>
+    <AdminGuard>
+      <div className="max-w-4xl mx-auto space-y-6 pb-8">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <FolderKanban
+              className="h-7 w-7 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <div>
+              <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+                Projects
+              </h1>
+              <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+                Track project timelines, budgets, and team assignments
+              </p>
+            </div>
           </div>
+          {isAdmin && (
+            <AppButton
+              variant="primary"
+              size="sm"
+              onClick={() => setShowModal(true)}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              New Project
+            </AppButton>
+          )}
         </div>
-        {isAdmin && (
-          <AppButton
-            variant="primary"
-            size="sm"
-            onClick={() => setShowModal(true)}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            New Project
-          </AppButton>
-        )}
-      </div>
 
-      {/* Search */}
-      <AppInput
-        value={search}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-          setSearch(e.target.value)
-        }
-        placeholder="Search projects by name or code..."
-      />
-
-      {/* Project cards */}
-      {isLoading ? (
-        <CardsSkeleton />
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={<FolderKanban className="h-12 w-12" aria-hidden="true" />}
-          message={search ? "No matching projects" : "No projects yet"}
-          description={
-            search
-              ? "Try a different search term."
-              : "Create your first project to get started."
+        {/* Search */}
+        <AppInput
+          value={search}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            setSearch(e.target.value)
           }
+          placeholder="Search projects by name or code..."
         />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filtered.map((project) => (
-            <AppCard key={project.id} variant="standard">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="text-sm font-semibold text-[var(--color-gray-900)] truncate">
-                      {project.name}
-                    </h3>
-                    <StatusBadge status={project.status} />
+
+        {/* Project cards */}
+        {isLoading ? (
+          <CardsSkeleton />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={<FolderKanban className="h-12 w-12" aria-hidden="true" />}
+            message={search ? "No matching projects" : "No projects yet"}
+            description={
+              search
+                ? "Try a different search term."
+                : "Create your first project to get started."
+            }
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filtered.map((project) => (
+              <AppCard key={project.id} variant="standard">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-sm font-semibold text-[var(--color-gray-900)] truncate">
+                        {project.name}
+                      </h3>
+                      <StatusBadge status={project.status} />
+                    </div>
+                    <p className="text-xs text-[var(--color-gray-500)]">
+                      {project.code}
+                    </p>
                   </div>
-                  <p className="text-xs text-[var(--color-gray-500)]">
-                    {project.code}
-                  </p>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
-                {project.client_name && (
-                  <div>
-                    <p className="text-[var(--color-gray-500)]">Client</p>
-                    <p className="font-medium text-[var(--color-gray-700)]">
-                      {project.client_name}
-                    </p>
-                  </div>
-                )}
-                {(project.budget ?? 0) > 0 && (
-                  <div>
-                    <p className="text-[var(--color-gray-500)]">Budget</p>
-                    <p className="font-medium text-[var(--color-gray-700)]">
-                      {formatCurrency(project.budget)}
-                    </p>
-                  </div>
-                )}
-                {project.start_date && (
-                  <div>
-                    <p className="text-[var(--color-gray-500)]">Start</p>
-                    <p className="font-medium text-[var(--color-gray-700)]">
-                      {formatDate(project.start_date)}
-                    </p>
-                  </div>
-                )}
-                {project.assignment_count !== undefined && (
-                  <div>
-                    <p className="text-[var(--color-gray-500)]">Team</p>
-                    <p className="font-medium text-[var(--color-gray-700)]">
-                      {project.assignment_count} members
-                    </p>
-                  </div>
-                )}
-              </div>
+                <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+                  {project.client_name && (
+                    <div>
+                      <p className="text-[var(--color-gray-500)]">Client</p>
+                      <p className="font-medium text-[var(--color-gray-700)]">
+                        {project.client_name}
+                      </p>
+                    </div>
+                  )}
+                  {(project.budget ?? 0) > 0 && (
+                    <div>
+                      <p className="text-[var(--color-gray-500)]">Budget</p>
+                      <p className="font-medium text-[var(--color-gray-700)]">
+                        {formatCurrency(project.budget)}
+                      </p>
+                    </div>
+                  )}
+                  {project.start_date && (
+                    <div>
+                      <p className="text-[var(--color-gray-500)]">Start</p>
+                      <p className="font-medium text-[var(--color-gray-700)]">
+                        {formatDate(project.start_date)}
+                      </p>
+                    </div>
+                  )}
+                  {project.assignment_count !== undefined && (
+                    <div>
+                      <p className="text-[var(--color-gray-500)]">Team</p>
+                      <p className="font-medium text-[var(--color-gray-700)]">
+                        {project.assignment_count} members
+                      </p>
+                    </div>
+                  )}
+                </div>
 
-              <AppButton
-                variant="outlined"
-                size="sm"
-                onClick={() => router.push(`/projects/${project.id}`)}
-                className="w-full"
-              >
-                View Details
-                <ArrowRight className="h-3.5 w-3.5 ml-1" />
-              </AppButton>
-            </AppCard>
-          ))}
-        </div>
-      )}
+                <AppButton
+                  variant="outlined"
+                  size="sm"
+                  onClick={() => router.push(`/projects/${project.id}`)}
+                  className="w-full"
+                >
+                  View Details
+                  <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                </AppButton>
+              </AppCard>
+            ))}
+          </div>
+        )}
 
-      <CreateProjectModal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        onSuccess={fetchData}
-      />
-    </div>
+        <CreateProjectModal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          onSuccess={fetchData}
+        />
+      </div>
+    </AdminGuard>
   );
 }
