@@ -151,10 +151,12 @@ function ClockCard({
   todayRecord,
   isLoading,
   onRefresh,
+  onRecordUpdate,
 }: {
   todayRecord: AttendanceRecord | null;
   isLoading: boolean;
   onRefresh: () => void;
+  onRecordUpdate: (record: AttendanceRecord) => void;
 }) {
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -166,9 +168,11 @@ function ClockCard({
   async function handleClockIn() {
     setActionLoading(true);
     try {
-      await attendanceApi.clockIn();
+      const res = await attendanceApi.clockIn();
       toast.success("Clocked in successfully");
-      await onRefresh();
+      // Update state immediately from the response, then refresh in background
+      if (res.record) onRecordUpdate(res.record);
+      onRefresh();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to clock in";
       toast.error(message);
@@ -180,9 +184,10 @@ function ClockCard({
   async function handleClockOut() {
     setActionLoading(true);
     try {
-      await attendanceApi.clockOut();
+      const res = await attendanceApi.clockOut();
       toast.success("Clocked out successfully");
-      await onRefresh();
+      if (res.record) onRecordUpdate(res.record);
+      onRefresh();
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to clock out";
@@ -568,48 +573,51 @@ export default function AttendancePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const now = new Date();
-      const currentMonth = now.getMonth() + 1;
-      const currentYear = now.getFullYear();
+  const fetchData = useCallback(
+    async (showLoading = false) => {
+      if (showLoading) setIsLoading(true);
+      setError(null);
+      try {
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
 
-      if (isAdmin) {
-        const [overviewRes, recordsRes] = await Promise.all([
-          attendanceApi.getTodayOverview(),
-          attendanceApi.listRecords({
-            month: currentMonth,
-            year: currentYear,
-          }),
-        ]);
-        setTodayOverview(overviewRes.employees ?? []);
-        setRecords(recordsRes.records ?? []);
-      } else {
-        const [todayRes, recordsRes] = await Promise.all([
-          attendanceApi.getToday(),
-          attendanceApi.listRecords({
-            month: currentMonth,
-            year: currentYear,
-          }),
-        ]);
-        setTodayRecord(todayRes.record ?? null);
-        setRecords(recordsRes.records ?? []);
+        if (isAdmin) {
+          const [overviewRes, recordsRes] = await Promise.all([
+            attendanceApi.getTodayOverview(),
+            attendanceApi.listRecords({
+              month: currentMonth,
+              year: currentYear,
+            }),
+          ]);
+          setTodayOverview(overviewRes.employees ?? []);
+          setRecords(recordsRes.records ?? []);
+        } else {
+          const [todayRes, recordsRes] = await Promise.all([
+            attendanceApi.getToday(),
+            attendanceApi.listRecords({
+              month: currentMonth,
+              year: currentYear,
+            }),
+          ]);
+          setTodayRecord(todayRes.record ?? null);
+          setRecords(recordsRes.records ?? []);
+        }
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Unable to load attendance data. Please try again.";
+        setError(message);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Unable to load attendance data. Please try again.";
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isAdmin]);
+    },
+    [isAdmin],
+  );
 
   useEffect(() => {
-    fetchData();
+    fetchData(true);
   }, [fetchData]);
 
   if (error && !isLoading) {
@@ -627,7 +635,11 @@ export default function AttendancePage() {
         <AppCard variant="standard">
           <div className="py-8 text-center">
             <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
-            <AppButton variant="outlined" size="sm" onClick={fetchData}>
+            <AppButton
+              variant="outlined"
+              size="sm"
+              onClick={() => fetchData(true)}
+            >
               Try again
             </AppButton>
           </div>
@@ -663,6 +675,7 @@ export default function AttendancePage() {
             todayRecord={todayRecord}
             isLoading={isLoading}
             onRefresh={fetchData}
+            onRecordUpdate={setTodayRecord}
           />
 
           <MonthlySummary records={records} />

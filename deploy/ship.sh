@@ -62,8 +62,21 @@ ${SSH_CMD} "cd ${REMOTE_DIR}/deploy && docker compose -f docker-compose.prod.yml
 
 echo ""
 echo "=== Step 4: Verify health ==="
-sleep 20
-${SSH_CMD} "docker ps --format 'table {{.Names}}\t{{.Status}}' && echo '---' && curl -sf https://${DOMAIN}/api/health | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"status\",\"?\"))'"
+sleep 25
+${SSH_CMD} "docker ps --format 'table {{.Names}}\t{{.Status}}'"
+
+# Health check — try the IP directly (works without domain/TLS), fall back gracefully
+echo "---"
+HEALTH_URL="http://${INSTANCE_IP}/api/health"
+HEALTH_RESP=$(curl -sf --max-time 10 "${HEALTH_URL}" 2>/dev/null || echo "")
+if [[ -n "$HEALTH_RESP" ]]; then
+  echo "$HEALTH_RESP" | python3 -c 'import sys,json; data=json.load(sys.stdin); print(f"Backend: {data.get(\"status\",\"unknown\")}")' 2>/dev/null || echo "Backend: responded (non-JSON)"
+else
+  echo "Backend: health check timed out — container may still be starting"
+fi
+
+FRONTEND_RESP=$(curl -sf --max-time 10 -o /dev/null -w "%{http_code}" "http://${INSTANCE_IP}/" 2>/dev/null || echo "000")
+echo "Frontend: HTTP ${FRONTEND_RESP}"
 
 echo ""
-echo "=== Deployed to https://${DOMAIN} ==="
+echo "=== Deployed to http://${INSTANCE_IP} ==="

@@ -1912,7 +1912,6 @@ async def update_my_profile(
         "phone",
         "photo_url",
         "nric_fin",
-        "nric_fin_last4",
         "residential_address",
         "postal_code",
         "address_block",
@@ -1922,7 +1921,6 @@ async def update_my_profile(
         "address_postal_code",
         "bank_name",
         "bank_account_number",
-        "bank_account_last4",
         "bank_code",
         "branch_code",
     }

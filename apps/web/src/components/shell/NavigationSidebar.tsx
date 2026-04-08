@@ -488,12 +488,7 @@ export function NavigationSidebar({
             <NavLink
               key={item.href}
               item={item}
-              active={isRouteActive(
-                pathname,
-                item.href,
-                searchParams,
-                isEmployee,
-              )}
+              active={isRouteActive(pathname, item.href, searchParams)}
               collapsed={collapsed}
             />
           ))}
