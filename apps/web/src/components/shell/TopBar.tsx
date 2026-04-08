@@ -3,7 +3,16 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
-import { Menu, Search, Bell, User, Settings, LogOut, X } from "lucide-react";
+import {
+  Menu,
+  Search,
+  Bell,
+  User,
+  Settings,
+  LogOut,
+  X,
+  Building2,
+} from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { SearchResults } from "./SearchResults";
 
@@ -17,6 +26,7 @@ export interface TopBarProps {
 export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
@@ -338,12 +348,22 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
             >
               <DropdownItem
                 icon={User}
-                label="Profile"
+                label="My Profile"
                 onClick={() => {
                   setProfileOpen(false);
-                  router.push("/profile");
+                  router.push("/my-profile");
                 }}
               />
+              {isAdmin && (
+                <DropdownItem
+                  icon={Building2}
+                  label="Company Profile"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    router.push("/profile");
+                  }}
+                />
+              )}
               <DropdownItem
                 icon={Settings}
                 label="Settings"
