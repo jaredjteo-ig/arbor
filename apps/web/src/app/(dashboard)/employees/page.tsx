@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   AppCard,
   AppButton,
@@ -2649,6 +2650,7 @@ function InvitationsTab({
    ═══════════════════════════════════════════════════════════ */
 
 export default function EmployeesPage() {
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as TabId) || "directory";
   const [activeTab, setActiveTab] = useState<TabId>(
@@ -2750,6 +2752,17 @@ export default function EmployeesPage() {
   const pendingInvitationCount = invitations.filter(
     (inv) => inv.status === "pending",
   ).length;
+
+  /* ── RBAC: only owner / hr_manager may manage employees ── */
+  if (user?.role !== "owner" && user?.role !== "hr_manager") {
+    return (
+      <div className="max-w-6xl mx-auto py-12 text-center">
+        <p className="text-[var(--color-gray-500)]">
+          Access Denied. You do not have permission to view this page.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-8">

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
 
 logger = logging.getLogger(__name__)
@@ -204,7 +204,10 @@ def _company_to_response(company: dict) -> dict:
     }
 
 
-@router.get("/{company_id}")
+@router.get(
+    "/{company_id}",
+    dependencies=[Depends(require_role("owner", "hr_manager", "consultant", "platform_admin"))],
+)
 async def get_company_profile(
     company_id: int,
     current_user: dict = Depends(get_current_user),
@@ -332,7 +335,10 @@ async def create_company_profile(
     }
 
 
-@router.put("/{company_id}")
+@router.put(
+    "/{company_id}",
+    dependencies=[Depends(require_role("owner", "hr_manager", "consultant", "platform_admin"))],
+)
 async def update_company_profile(
     company_id: int,
     request: Request,
@@ -405,7 +411,10 @@ async def update_company_profile(
     }
 
 
-@router.get("/{company_id}/workforce")
+@router.get(
+    "/{company_id}/workforce",
+    dependencies=[Depends(require_role("owner", "hr_manager", "consultant", "platform_admin"))],
+)
 async def get_workforce_composition(
     company_id: int,
     current_user: dict = Depends(get_current_user),

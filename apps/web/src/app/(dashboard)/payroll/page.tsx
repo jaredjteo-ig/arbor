@@ -291,6 +291,17 @@ export default function PayrollPage() {
     (_, i) => now.getFullYear() - 2 + i,
   );
 
+  /* ── RBAC: only owner / hr_manager may access payroll ── */
+  if (!isAdmin) {
+    return (
+      <div className="max-w-6xl mx-auto py-12 text-center">
+        <p className="text-[var(--color-gray-500)]">
+          Access Denied. You do not have permission to view this page.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
       {/* Header */}

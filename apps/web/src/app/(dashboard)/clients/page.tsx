@@ -23,6 +23,7 @@ import {
 } from "@/components/design-system";
 import type { RiskTierLevel } from "@/components/design-system";
 import { clientsApi } from "@/services/api/clients";
+import { useAuth } from "@/contexts/AuthContext";
 import type { ClientCompany } from "@/types/api";
 
 /* ── Types ────────────────────────────────────────────────── */
@@ -32,6 +33,7 @@ type SortField = keyof ClientCompany;
 /* ── Page ──────────────────────────────────────────────────── */
 
 export default function ClientsPage() {
+  const { user } = useAuth();
   const [clients, setClients] = useState<ClientCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -151,6 +153,17 @@ export default function ClientsPage() {
   const greenCount = clients.filter((c) => c.risk_tier === "green").length;
   const amberCount = clients.filter((c) => c.risk_tier === "amber").length;
   const redCount = clients.filter((c) => c.risk_tier === "red").length;
+
+  /* ── RBAC: only owner / hr_manager / consultant / platform_admin ── */
+  if (user?.role === "employee") {
+    return (
+      <div className="max-w-6xl mx-auto py-12 text-center">
+        <p className="text-[var(--color-gray-500)]">
+          Access Denied. You do not have permission to view this page.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
