@@ -624,12 +624,22 @@ export default function ProfilePage() {
   }, [editDraft, editingSection, profile, user?.company_id]);
 
   /* ── RBAC: only owner / hr_manager / consultant may view ── */
-  if (user?.role === "employee") {
+  if (
+    user?.role !== "owner" &&
+    user?.role !== "hr_manager" &&
+    user?.role !== "consultant"
+  ) {
     return (
       <div className="max-w-6xl mx-auto py-12 text-center">
         <p className="text-[var(--color-gray-500)]">
           Access Denied. You do not have permission to view this page.
         </p>
+        <a
+          href="/dashboard"
+          className="inline-block mt-4 text-sm text-[var(--color-primary)] hover:underline"
+        >
+          Return to Dashboard
+        </a>
       </div>
     );
   }

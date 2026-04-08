@@ -90,7 +90,7 @@ def require_role(*allowed_roles: str) -> Callable:
             )
             raise HTTPException(
                 status_code=403,
-                detail=f"Insufficient permissions — requires one of: {', '.join(allowed_roles)}",
+                detail="Insufficient permissions to access this resource.",
             )
         return current_user
 

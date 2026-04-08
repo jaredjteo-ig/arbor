@@ -65,7 +65,7 @@ def _company_to_client(company: dict) -> dict:
 
 @router.get("")
 async def list_clients(
-    current_user: dict = Depends(require_role("owner", "hr_manager", "platform_admin")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant", "platform_admin")),
 ) -> dict:
     """List all client companies visible to the current user.
 
@@ -210,7 +210,7 @@ async def create_client(
 @router.get("/{client_id}")
 async def get_client(
     client_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "platform_admin")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant", "platform_admin")),
 ) -> dict:
     """Get a specific client company by ID.
 

@@ -64,7 +64,7 @@ def _verify_candidate_ownership(candidate_id: int, company_id: int) -> dict:
 @router.get("/jobs")
 async def list_jobs(
     status: str | None = Query(None),
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """List all job listings for the current company."""
     company_id = get_current_company_id(current_user)
@@ -82,7 +82,7 @@ async def list_jobs(
 @router.post("/jobs")
 async def create_job(
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Create a new job listing."""
     company_id = get_current_company_id(current_user)
@@ -120,7 +120,7 @@ async def create_job(
 @router.get("/jobs/{job_id}")
 async def get_job(
     job_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Get a single job listing by ID."""
     company_id = get_current_company_id(current_user)
@@ -135,7 +135,7 @@ async def get_job(
 async def update_job(
     job_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Update a job listing."""
     company_id = get_current_company_id(current_user)
@@ -167,7 +167,7 @@ async def update_job(
 @router.post("/jobs/{job_id}/publish")
 async def publish_job(
     job_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Publish a job listing, making it visible to applicants."""
     company_id = get_current_company_id(current_user)
@@ -192,7 +192,7 @@ async def publish_job(
 @router.post("/jobs/{job_id}/close")
 async def close_job(
     job_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Close a job listing."""
     company_id = get_current_company_id(current_user)
@@ -222,7 +222,7 @@ async def close_job(
 @router.get("/candidates")
 async def list_all_candidates(
     stage: str | None = Query(None),
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """List ALL candidates across all job listings for the company."""
     company_id = get_current_company_id(current_user)
@@ -245,7 +245,7 @@ async def list_all_candidates(
 @router.get("/interviews")
 async def list_all_interviews(
     status: str | None = Query(None),
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """List ALL interviews across all candidates for the company."""
     company_id = get_current_company_id(current_user)
@@ -269,7 +269,7 @@ async def list_all_interviews(
 async def list_candidates(
     job_id: int,
     stage: str | None = Query(None),
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """List candidates for a job listing."""
     company_id = get_current_company_id(current_user)
@@ -290,7 +290,7 @@ async def list_candidates(
 async def add_candidate(
     job_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Add a candidate to a job listing (direct or application)."""
     company_id = get_current_company_id(current_user)
@@ -338,7 +338,7 @@ async def add_candidate(
 @router.get("/candidates/{candidate_id}")
 async def get_candidate(
     candidate_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Get a single candidate by ID."""
     company_id = get_current_company_id(current_user)
@@ -353,7 +353,7 @@ async def get_candidate(
 async def update_candidate(
     candidate_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Update candidate details (stage change, notes, etc.)."""
     company_id = get_current_company_id(current_user)
@@ -382,7 +382,7 @@ async def update_candidate(
 async def schedule_interview(
     candidate_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Schedule an interview for a candidate."""
     company_id = get_current_company_id(current_user)
@@ -425,7 +425,7 @@ async def schedule_interview(
 @router.get("/candidates/{candidate_id}/interviews")
 async def list_interviews(
     candidate_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """List all interviews for a candidate."""
     company_id = get_current_company_id(current_user)
@@ -442,7 +442,7 @@ async def list_interviews(
 async def update_interview(
     interview_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Update an interview (reschedule, change status, etc.)."""
     company_id = get_current_company_id(current_user)
@@ -481,7 +481,7 @@ async def update_interview(
 async def add_feedback(
     interview_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Add interviewer feedback for an interview."""
     company_id = get_current_company_id(current_user)
@@ -517,7 +517,7 @@ async def add_feedback(
 @router.get("/candidates/{candidate_id}/feedback")
 async def list_candidate_feedback(
     candidate_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """List all interview feedback for a candidate."""
     company_id = get_current_company_id(current_user)
@@ -539,7 +539,7 @@ async def list_candidate_feedback(
 async def generate_offer(
     candidate_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Generate an offer for a candidate. Changes stage to 'offered'."""
     company_id = get_current_company_id(current_user)
@@ -588,7 +588,7 @@ async def generate_offer(
 async def hire_candidate(
     candidate_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Convert a candidate to an employee.
 

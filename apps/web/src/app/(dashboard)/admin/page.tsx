@@ -71,6 +71,12 @@ export default function AdminPage() {
         <p className="text-[var(--color-gray-500)]">
           Access Denied. You do not have permission to view this page.
         </p>
+        <a
+          href="/dashboard"
+          className="inline-block mt-4 text-sm text-[var(--color-primary)] hover:underline"
+        >
+          Return to Dashboard
+        </a>
       </div>
     );
   }

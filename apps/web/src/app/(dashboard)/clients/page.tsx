@@ -154,13 +154,23 @@ export default function ClientsPage() {
   const amberCount = clients.filter((c) => c.risk_tier === "amber").length;
   const redCount = clients.filter((c) => c.risk_tier === "red").length;
 
-  /* ── RBAC: only owner / hr_manager / consultant / platform_admin ── */
-  if (user?.role === "employee") {
+  /* ── RBAC: only owner / hr_manager / consultant ── */
+  if (
+    user?.role !== "owner" &&
+    user?.role !== "hr_manager" &&
+    user?.role !== "consultant"
+  ) {
     return (
       <div className="max-w-6xl mx-auto py-12 text-center">
         <p className="text-[var(--color-gray-500)]">
           Access Denied. You do not have permission to view this page.
         </p>
+        <a
+          href="/dashboard"
+          className="inline-block mt-4 text-sm text-[var(--color-primary)] hover:underline"
+        >
+          Return to Dashboard
+        </a>
       </div>
     );
   }

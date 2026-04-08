@@ -808,6 +808,23 @@ export default function RecruitmentPage() {
     }
   }
 
+  /* ── RBAC: only owner / hr_manager / consultant may access recruitment ── */
+  if (!isAdmin) {
+    return (
+      <div className="max-w-6xl mx-auto py-12 text-center">
+        <p className="text-[var(--color-gray-500)]">
+          Access Denied. You do not have permission to view this page.
+        </p>
+        <a
+          href="/dashboard"
+          className="inline-block mt-4 text-sm text-[var(--color-primary)] hover:underline"
+        >
+          Return to Dashboard
+        </a>
+      </div>
+    );
+  }
+
   if (error && !isLoading) {
     return (
       <div className="max-w-5xl mx-auto space-y-6 pb-8">
@@ -828,17 +845,6 @@ export default function RecruitmentPage() {
             </AppButton>
           </div>
         </AppCard>
-      </div>
-    );
-  }
-
-  /* ── RBAC: only owner / hr_manager / consultant may access recruitment ── */
-  if (!isAdmin) {
-    return (
-      <div className="max-w-6xl mx-auto py-12 text-center">
-        <p className="text-[var(--color-gray-500)]">
-          Access Denied. You do not have permission to view this page.
-        </p>
       </div>
     );
   }
