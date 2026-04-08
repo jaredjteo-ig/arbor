@@ -178,6 +178,64 @@ dataflow_crud.delete("Employee", record_id)
 - **Response caching**: compliance status cached 5 min (`_compliance_cache` with TTL + LRU eviction). Invalidated on policy changes.
 - **Bounded in-memory stores**: all caches/stores use `OrderedDict` with max size + LRU eviction.
 
+## Production Deployment (Codified 2026-04-08)
+
+### Infrastructure
+
+- **Provider**: GCP (not AWS despite deployment-config.md)
+- **IP**: `136.110.51.61` (bare IP, no domain)
+- **Stack**: Docker Compose (Caddy → Next.js + FastAPI + PostgreSQL + Redis)
+
+### Deploy Command
+
+```bash
+export CENTRAL_INSTANCE_IP=136.110.51.61
+export CENTRAL_SSH_KEY=~/.ssh/google_compute_engine
+export CENTRAL_SSH_USER=jaredteo
+bash deploy/ship.sh
+```
+
+**Critical**: SSH user is `jaredteo` with `google_compute_engine` key. NOT `ubuntu`, NOT `hr-copilot.pem`.
+
+### Deploy Script Flow (`deploy/ship.sh`)
+
+1. Push to GitHub (`git push origin main`)
+2. SSH to server → `git fetch && git reset --hard origin/main`
+3. Rebuild Docker containers (`docker compose up -d --build`)
+4. Health check (`curl /api/health`)
+
+### URL Rule
+
+NEVER hardcode `central.kailash.ai` in `docker-compose.prod.yml`. Use `${FRONTEND_URL}` and `${API_URL}` env vars from `.env.prod`. Every `git reset --hard` overwrites the compose file — hardcoded URLs break the live site silently.
+
+### Key Files
+
+- `deploy/ship.sh` — One-command deploy script
+- `deploy/docker-compose.prod.yml` — Production compose
+- `deploy/.env.prod` — Production env vars (on server only)
+- `deploy/Dockerfile.frontend` — Next.js standalone build
+- `deploy/Dockerfile.backend` — Python FastAPI
+- `deploy/deployment-config.md` — Full deployment config
+
+## Live E2E Testing (Codified 2026-04-08)
+
+### Test Accounts
+
+| Role       | Email                             | Password           |
+| ---------- | --------------------------------- | ------------------ |
+| Owner      | `demo@central.kailash.ai`         | `CentralDemo2026!` |
+| HR Manager | `grace.koh@central-solutions.sg`  | `Employee2026!`    |
+| Employee   | `lily.phang@central-solutions.sg` | `Employee2026!`    |
+
+### Playwright Against Live Site
+
+```bash
+cd apps/web
+npx playwright test --config=playwright.live.config.ts
+```
+
+Config at `apps/web/playwright.live.config.ts` targets `http://136.110.51.61`. Test suites in `apps/web/tests/e2e-live/` cover auth, owner navigation, HR manager, employee self-service, RBAC enforcement, and cross-account session isolation.
+
 ## Related Documentation
 
 - `docs/01-architecture.md` — Full system architecture

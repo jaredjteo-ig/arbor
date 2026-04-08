@@ -165,7 +165,105 @@ Process restart required after rotation (lru_cache on Fernet instance).
 
 **Rate Limiter Bounds**: `OrderedDict` with `MAX_RATE_KEYS = 50,000` and LRU eviction on middleware + webhook rate limiters. `_generated_docs` bounded to 1,000 entries.
 
-**Role Gating**: Standardized `owner || hr_manager` for admin pages (not consultant). Shadow financial tools require `require_role("owner", "hr_manager")`. Google OAuth new users get `role="employee"` (never auto-owner).
+**Role Gating**: See RBAC section below for comprehensive role-page matrix.
+
+## RBAC — Role-Based Access Control (Codified 2026-04-08)
+
+### Four Roles
+
+| Role             | Dashboard       | Sidebar                         | Company-Scoped Data |
+| ---------------- | --------------- | ------------------------------- | ------------------- |
+| `owner`          | `/dashboard`    | Full management nav             | Own company         |
+| `hr_manager`     | `/dashboard`    | Full management nav             | Own company         |
+| `consultant`     | `/dashboard`    | Full management nav             | Multiple companies  |
+| `employee`       | `/my-dashboard` | "My ..." self-service nav only  | Own records only    |
+| `platform_admin` | (backend only)  | N/A — not in frontend User type | Cross-company       |
+
+### Frontend Role Guard Pattern (MANDATORY)
+
+All restricted pages MUST use the **allow-list** pattern (fail-closed). NEVER use deny-list (`=== "employee"`) — new roles would bypass it.
+
+```tsx
+// CORRECT — allow-list (fail-closed)
+if (user?.role !== "owner" && user?.role !== "hr_manager") {
+  return (
+    <div className="max-w-6xl mx-auto py-12 text-center">
+      <p className="text-[var(--color-gray-500)]">
+        Access Denied. You do not have permission to view this page.
+      </p>
+      <a href="/dashboard"
+        className="inline-block mt-4 text-sm text-[var(--color-primary)] hover:underline">
+        Return to Dashboard
+      </a>
+    </div>
+  );
+}
+
+// WRONG — deny-list (fails open for new roles)
+if (user?.role === "employee") { ... }
+```
+
+### Guard Placement Rules
+
+1. Guard MUST be placed **after all React hooks** (useState, useEffect, useCallback) to avoid hooks rule violations
+2. Guard MUST be placed **before any error-state early returns** — otherwise the error path bypasses RBAC
+3. Guard MUST be placed **before the main return** JSX
+
+```
+function Page() {
+  const { user } = useAuth();        // 1. Hooks first
+  const [data, setData] = useState();
+  useEffect(() => { ... }, []);
+
+  // 2. RBAC guard (after hooks, before error/loading returns)
+  if (user?.role !== "owner" && user?.role !== "hr_manager") {
+    return <AccessDenied />;
+  }
+
+  // 3. Error/loading states
+  if (error) return <ErrorState />;
+  if (loading) return <LoadingState />;
+
+  // 4. Main render
+  return <PageContent />;
+}
+```
+
+### Role-Page Matrix (Frontend + Backend)
+
+| Page           | Frontend Guard                            | Backend `require_role`                        |
+| -------------- | ----------------------------------------- | --------------------------------------------- |
+| `/admin`       | owner, hr_manager                         | owner, hr_manager                             |
+| `/employees`   | owner, hr_manager                         | owner, hr_manager                             |
+| `/payroll`     | owner, hr_manager (uses `isAdmin`)        | owner, hr_manager                             |
+| `/recruitment` | owner, hr_manager, consultant (`isAdmin`) | owner, hr_manager, consultant                 |
+| `/profile`     | owner, hr_manager, consultant             | owner, hr_manager, consultant, platform_admin |
+| `/clients`     | owner, hr_manager, consultant             | owner, hr_manager, consultant, platform_admin |
+
+### Backend 403 Response
+
+NEVER leak allowed role names in 403 responses. Use generic message:
+
+```python
+# CORRECT
+raise HTTPException(status_code=403, detail="Insufficient permissions to access this resource.")
+
+# WRONG — leaks role enumeration
+raise HTTPException(status_code=403, detail=f"Requires one of: {', '.join(allowed_roles)}")
+```
+
+Role details are logged server-side via `logger.warning()` for debugging.
+
+### Defense in Depth
+
+Frontend guards are **client-side only** and can be bypassed via DevTools. Every API endpoint MUST independently enforce `require_role()` regardless of frontend guards. Frontend guards exist for UX (clean "Access Denied" instead of page shells with 403 errors).
+
+### Key Files
+
+- `src/hr_advisory/api/middleware/auth_middleware.py` — `require_role()` factory
+- `src/hr_advisory/api/middleware/tenant_isolation.py` — `validate_company_access()`
+- `apps/web/src/contexts/AuthContext.tsx` — `useAuth()` hook
+- `apps/web/src/components/shell/NavigationSidebar.tsx` — role-based sidebar scoping
 
 ## Consult Agent
 
