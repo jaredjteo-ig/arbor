@@ -307,6 +307,16 @@ def _bulk_find_users(user_ids: list[int]) -> dict[int, dict]:
 
 def _serialize_employee_summary(emp: dict, user: dict | None = None) -> dict:
     """Lightweight serializer for list view — no decryption, no sensitive fields."""
+    is_active = emp.get("is_active", True)
+    confirmation = emp.get("confirmation_status", "on_probation")
+    # Derive a status string for the frontend badge
+    if confirmation == "terminated" or not is_active:
+        status = "terminated"
+    elif is_active:
+        status = "active"
+    else:
+        status = "inactive"
+
     return {
         "id": emp.get("id"),
         "user_id": emp.get("user_id"),
@@ -319,8 +329,9 @@ def _serialize_employee_summary(emp: dict, user: dict | None = None) -> dict:
         "employment_type": emp.get("employment_type", ""),
         "start_date": emp.get("start_date", ""),
         "end_date": emp.get("end_date", ""),
-        "is_active": emp.get("is_active", True),
-        "confirmation_status": emp.get("confirmation_status", "on_probation"),
+        "is_active": is_active,
+        "status": status,
+        "confirmation_status": confirmation,
         "nationality": emp.get("nationality", ""),
         "pass_type": emp.get("pass_type", ""),
         "photo_url": emp.get("photo_url", ""),
@@ -3384,6 +3395,15 @@ async def process_employee_exit(
             "confirmation_status": "terminated",
         },
     )
+
+    # --- 6b. Deactivate the User account so the employee cannot log in ---
+    emp_user_id = employee.get("user_id")
+    if emp_user_id:
+        try:
+            dataflow_crud.update("User", emp_user_id, {"is_active": False})
+            logger.info("Deactivated user account %s for terminated employee %s", emp_user_id, employee_id)
+        except Exception as exc:
+            logger.error("Failed to deactivate user %s: %s", emp_user_id, exc)
 
     # --- 7. Create EmploymentEvent ---
     event_type_map = {

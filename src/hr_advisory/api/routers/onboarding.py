@@ -3481,6 +3481,7 @@ async def get_onboarding_analytics(
                 progress_records = dataflow_crud.list_records(
                     "OnboardingStepProgress",
                     {"assignment_id": a.get("id")},
+                    cache_ttl=0,
                 )
                 for pr in progress_records:
                     if pr.get("step_id") in step_ids:
