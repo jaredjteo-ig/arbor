@@ -375,12 +375,40 @@ function ComplianceSkeleton() {
   );
 }
 
+/* -- Provision → Advisory question mapping ---------------------- */
+
+const PROVISION_QUESTIONS: Record<string, string> = {
+  "EA-S95-KETs":
+    "What are the Key Employment Terms (KET) requirements under Employment Act Section 95A? What must be included, what are the deadlines, and what are the penalties for non-compliance?",
+  "EA-KET":
+    "What are the requirements for written employment contracts under the Employment Act? Are they mandatory for all employees?",
+  "EA-S88A-payslip":
+    "What are the itemised payslip requirements under Employment Act Section 88A? What must be included in each payslip?",
+  "EA-PART-X-annual-leave":
+    "What are the leave record-keeping requirements under the Employment Act Part XII? How long must records be maintained?",
+  "EA-PART-IV-hours":
+    "What are the overtime record requirements under Employment Act Part IV? Which employees are covered and what are the pay rates?",
+  "WSHA-S12":
+    "What are the employer obligations under the Workplace Safety and Health Act Section 12? What safety policies are required?",
+  "TGFEP-GRIEVANCE":
+    "What is the Tripartite Guidelines on Fair Employment Practices (TGFEP) requirement for grievance handling? How should a grievance process be structured?",
+  "TGFWAR-request-process":
+    "What are the Flexible Work Arrangement request requirements under the Tripartite Guidelines (TG-FWAR) effective December 2024?",
+};
+
 /* -- Page -------------------------------------------------------- */
 
 export default function CompliancePage() {
   const router = useRouter();
   const { user } = useAuth();
   const companyId = user?.company_id ?? 0;
+
+  const handleProvisionClick = (provisionId: string) => {
+    const question =
+      PROVISION_QUESTIONS[provisionId] ||
+      `Tell me about the compliance requirements for provision ${provisionId}`;
+    router.push(`/advisory?q=${encodeURIComponent(question)}`);
+  };
 
   /* Backend compliance status */
   const {
@@ -565,6 +593,7 @@ export default function CompliancePage() {
               onReset={() => setResult(null)}
               severityColor={severityColor}
               severityBg={severityBg}
+              onProvisionClick={handleProvisionClick}
             />
           )}
         </div>
@@ -868,6 +897,7 @@ function ResultsView({
   onReset,
   severityColor,
   severityBg,
+  onProvisionClick,
 }: {
   result: CombinedResult;
   activeTab: "findings" | "inspection";
@@ -875,6 +905,7 @@ function ResultsView({
   onReset: () => void;
   severityColor: Record<string, string>;
   severityBg: Record<string, string>;
+  onProvisionClick?: (provisionId: string) => void;
 }) {
   return (
     <>
@@ -1039,6 +1070,11 @@ function ResultsView({
                           <SourceCitation
                             label={f.provision_id}
                             authority="statutory"
+                            onClick={
+                              onProvisionClick
+                                ? () => onProvisionClick(f.provision_id)
+                                : undefined
+                            }
                           />
                         </div>
                       </div>

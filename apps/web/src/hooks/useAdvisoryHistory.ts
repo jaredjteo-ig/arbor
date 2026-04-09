@@ -47,10 +47,42 @@ export function useConversationMessages(conversationId: number | null) {
 export function useDeleteConversation() {
   const queryClient = useQueryClient();
 
-  return useMutation<ConversationDeleteResponse, Error, number>({
+  return useMutation<
+    ConversationDeleteResponse,
+    Error,
+    number,
+    { previous: ConversationListResponse | undefined }
+  >({
     mutationFn: (conversationId) =>
       advisoryApi.deleteConversation(conversationId),
-    onSuccess: (_data, conversationId) => {
+    onMutate: async (conversationId) => {
+      // Optimistically remove from cache immediately (don't wait for refetch)
+      await queryClient.cancelQueries({
+        queryKey: conversationKeys.list(),
+      });
+      const previous = queryClient.getQueryData<ConversationListResponse>(
+        conversationKeys.list(),
+      );
+      if (previous) {
+        queryClient.setQueryData<ConversationListResponse>(
+          conversationKeys.list(),
+          {
+            ...previous,
+            conversations: previous.conversations.filter(
+              (c) => c.id !== conversationId,
+            ),
+          },
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _conversationId, context) => {
+      // Rollback on error
+      if (context?.previous) {
+        queryClient.setQueryData(conversationKeys.list(), context.previous);
+      }
+    },
+    onSettled: (_data, _error, conversationId) => {
       queryClient.invalidateQueries({
         queryKey: conversationKeys.list(),
       });
