@@ -40,6 +40,7 @@ import {
   MessageSquare,
   Send,
   Monitor,
+  UserX,
 } from "lucide-react";
 import {
   employeesApi,
@@ -84,6 +85,7 @@ const STATUS_STYLES: Record<string, string> = {
   invited: "bg-amber-50 text-amber-700 border-amber-200",
   inactive:
     "bg-[var(--color-gray-100)] text-[var(--color-gray-500)] border-[var(--color-gray-200)]",
+  terminated: "bg-red-50 text-red-700 border-red-200",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -323,6 +325,16 @@ function InviteLinkModal({
 
 /* ── Invite Employee Modal ────────────────────────────────── */
 
+const DEPARTMENT_OPTIONS = [
+  "Engineering",
+  "Sales",
+  "HR",
+  "Finance",
+  "Operations",
+  "Management",
+  "Marketing",
+] as const;
+
 function InviteEmployeeModal({
   isOpen,
   onClose,
@@ -334,6 +346,8 @@ function InviteEmployeeModal({
 }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("employee");
+  const [department, setDepartment] = useState("");
+  const [designation, setDesignation] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
@@ -344,10 +358,17 @@ function InviteEmployeeModal({
 
     setIsSubmitting(true);
     try {
-      const result = await employeesApi.invite({ email: email.trim(), role });
+      const result = await employeesApi.invite({
+        email: email.trim(),
+        role,
+        department: department.trim() || undefined,
+        designation: designation.trim() || undefined,
+      });
       const submittedEmail = email.trim();
       setEmail("");
       setRole("employee");
+      setDepartment("");
+      setDesignation("");
       onSuccess(submittedEmail, result.invite_url);
     } catch (err: unknown) {
       const message =
@@ -424,6 +445,50 @@ function InviteEmployeeModal({
               <option value="employee">Employee</option>
               <option value="hr_manager">HR Manager</option>
             </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="invite-department"
+              className="block text-sm font-medium text-[var(--color-gray-700)] mb-1"
+            >
+              Department
+            </label>
+            <select
+              id="invite-department"
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              className="
+                w-full rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+                bg-[var(--color-surface-input)] text-[var(--foreground)]
+                border-[var(--color-surface-input-border)]
+                transition-colors
+                focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                focus:border-[var(--color-surface-input-focus)]
+              "
+            >
+              <option value="">Select department (optional)</option>
+              {DEPARTMENT_OPTIONS.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="invite-designation"
+              className="block text-sm font-medium text-[var(--color-gray-700)] mb-1"
+            >
+              Designation
+            </label>
+            <AppInput
+              id="invite-designation"
+              value={designation}
+              onChange={(e) => setDesignation(e.target.value)}
+              placeholder="e.g. Software Engineer, Sales Executive"
+            />
           </div>
 
           <div className="flex gap-3 pt-2">
@@ -737,6 +802,7 @@ function DirectoryTab({
   onInvite,
   onImport,
   onAssignOnboarding,
+  onTerminate,
 }: {
   employees: Employee[];
   isLoading: boolean;
@@ -745,6 +811,7 @@ function DirectoryTab({
   onInvite: () => void;
   onImport: () => void;
   onAssignOnboarding: (employee: Employee) => void;
+  onTerminate: (employee: Employee) => void;
 }) {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
@@ -897,100 +964,123 @@ function DirectoryTab({
         />
       ) : (
         <AppCard variant="standard">
-          <div className="overflow-x-auto -mx-5 -my-4">
-            <table className="w-full text-sm">
+          <div className="-mx-5 -my-4">
+            <table className="w-full table-fixed text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-gray-200)]">
-                  <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                  <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)] w-[14%]">
                     Name
                   </th>
-                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)] w-[18%]">
                     Email
                   </th>
-                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)] w-[12%]">
                     Department
                   </th>
-                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)] w-[14%]">
                     Designation
                   </th>
-                  <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                  <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)] w-[11%]">
                     Confirmation
                   </th>
-                  <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                  <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)] w-[9%]">
                     Profile
                   </th>
-                  <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                  <th className="text-center py-3 px-3 font-medium text-[var(--color-gray-500)] w-[8%]">
                     Status
                   </th>
-                  <th className="text-right py-3 px-5 font-medium text-[var(--color-gray-500)]">
+                  <th className="text-right py-3 px-5 font-medium text-[var(--color-gray-500)] w-[14%]">
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredEmployees.map((emp) => (
-                  <tr
-                    key={emp.id}
-                    className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
-                  >
-                    <td
-                      className="py-3 px-5 font-medium text-[var(--color-gray-900)] cursor-pointer"
-                      onClick={() => router.push(`/employees/${emp.id}`)}
+                {filteredEmployees.map((emp) => {
+                  const isActive = emp.status === "active";
+                  return (
+                    <tr
+                      key={emp.id}
+                      className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
                     >
-                      {emp.name}
-                    </td>
-                    <td
-                      className="py-3 px-3 text-[var(--color-gray-600)] cursor-pointer"
-                      onClick={() => router.push(`/employees/${emp.id}`)}
-                    >
-                      {emp.email}
-                    </td>
-                    <td
-                      className="py-3 px-3 text-[var(--color-gray-600)] cursor-pointer"
-                      onClick={() => router.push(`/employees/${emp.id}`)}
-                    >
-                      {emp.department}
-                    </td>
-                    <td
-                      className="py-3 px-3 text-[var(--color-gray-600)] cursor-pointer"
-                      onClick={() => router.push(`/employees/${emp.id}`)}
-                    >
-                      {emp.designation || "-"}
-                    </td>
-                    <td
-                      className="py-3 px-3 text-center cursor-pointer"
-                      onClick={() => router.push(`/employees/${emp.id}`)}
-                    >
-                      <ConfirmBadge status={emp.confirmation_status} />
-                    </td>
-                    <td
-                      className="py-3 px-3 text-center cursor-pointer"
-                      onClick={() => router.push(`/employees/${emp.id}`)}
-                    >
-                      <ProfileBar employee={emp} />
-                    </td>
-                    <td
-                      className="py-3 px-3 text-center cursor-pointer"
-                      onClick={() => router.push(`/employees/${emp.id}`)}
-                    >
-                      <StatusBadge status={emp.status} />
-                    </td>
-                    <td className="py-3 px-5 text-right">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAssignOnboarding(emp);
-                        }}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary-bg)] transition-colors"
-                        title="Assign onboarding template"
+                      <td
+                        className="py-3 px-5 font-medium text-[var(--color-gray-900)] cursor-pointer truncate"
+                        onClick={() => router.push(`/employees/${emp.id}`)}
+                        title={emp.name}
                       >
-                        <ClipboardCheck className="h-3.5 w-3.5" />
-                        Onboard
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                        {emp.name}
+                      </td>
+                      <td
+                        className="py-3 px-3 text-[var(--color-gray-600)] cursor-pointer truncate"
+                        onClick={() => router.push(`/employees/${emp.id}`)}
+                        title={emp.email}
+                      >
+                        {emp.email}
+                      </td>
+                      <td
+                        className="py-3 px-3 text-[var(--color-gray-600)] cursor-pointer truncate"
+                        onClick={() => router.push(`/employees/${emp.id}`)}
+                        title={emp.department}
+                      >
+                        {emp.department || "-"}
+                      </td>
+                      <td
+                        className="py-3 px-3 text-[var(--color-gray-600)] cursor-pointer truncate"
+                        onClick={() => router.push(`/employees/${emp.id}`)}
+                        title={emp.designation || ""}
+                      >
+                        {emp.designation || "-"}
+                      </td>
+                      <td
+                        className="py-3 px-3 text-center cursor-pointer"
+                        onClick={() => router.push(`/employees/${emp.id}`)}
+                      >
+                        <ConfirmBadge status={emp.confirmation_status} />
+                      </td>
+                      <td
+                        className="py-3 px-3 text-center cursor-pointer"
+                        onClick={() => router.push(`/employees/${emp.id}`)}
+                      >
+                        <ProfileBar employee={emp} />
+                      </td>
+                      <td
+                        className="py-3 px-3 text-center cursor-pointer"
+                        onClick={() => router.push(`/employees/${emp.id}`)}
+                      >
+                        <StatusBadge status={emp.status} />
+                      </td>
+                      <td className="py-3 px-5 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onAssignOnboarding(emp);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary-bg)] transition-colors"
+                            title="Assign onboarding template"
+                          >
+                            <ClipboardCheck className="h-3.5 w-3.5" />
+                            Onboard
+                          </button>
+                          {isActive && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onTerminate(emp);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                              title="Terminate employee"
+                            >
+                              <UserX className="h-3.5 w-3.5" />
+                              Terminate
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {filteredEmployees.length === 0 && employees.length > 0 && (
                   <tr>
                     <td
@@ -2442,6 +2532,243 @@ function OnboardingTab({
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Terminate Employee Modal
+   ═══════════════════════════════════════════════════════════ */
+
+const EXIT_TYPE_OPTIONS = [
+  { value: "termination", label: "Termination" },
+  { value: "resignation", label: "Resignation" },
+  { value: "retrenchment", label: "Retrenchment" },
+  { value: "contract_end", label: "Contract End" },
+] as const;
+
+function TerminateEmployeeModal({
+  isOpen,
+  employee,
+  onClose,
+  onSuccess,
+}: {
+  isOpen: boolean;
+  employee: Employee | null;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [exitType, setExitType] = useState("termination");
+  const [lastWorkingDay, setLastWorkingDay] = useState("");
+  const [reason, setReason] = useState("");
+  const [noticeServed, setNoticeServed] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+
+  if (!isOpen || !employee) return null;
+
+  const canSubmit =
+    exitType && lastWorkingDay && confirmText.toLowerCase() === "terminate";
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!employee || !canSubmit) return;
+
+    setIsSubmitting(true);
+    try {
+      await employeesApi.processExit(employee.id, {
+        exit_type: exitType,
+        last_working_day: lastWorkingDay,
+        reason: reason.trim() || undefined,
+        notice_served: noticeServed,
+      });
+      toast.success(`Exit processed for ${employee.name}.`);
+      setExitType("termination");
+      setLastWorkingDay("");
+      setReason("");
+      setNoticeServed(false);
+      setConfirmText("");
+      onSuccess();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to process employee exit";
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleClose() {
+    setExitType("termination");
+    setLastWorkingDay("");
+    setReason("");
+    setNoticeServed(false);
+    setConfirmText("");
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={handleClose}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-md mx-4 rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] shadow-[var(--shadow-raised)] p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <UserX className="h-5 w-5 text-red-600" />
+            <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
+              Terminate Employee
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="p-1 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+          >
+            <X className="h-5 w-5 text-[var(--color-gray-500)]" />
+          </button>
+        </div>
+
+        <div className="mb-4 p-3 rounded-[8px] bg-red-50 border border-red-200">
+          <p className="text-sm text-red-700">
+            You are about to terminate <strong>{employee.name}</strong>. This
+            will deactivate their account and calculate the final settlement.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label
+              htmlFor="exit-type"
+              className="block text-sm font-medium text-[var(--color-gray-700)] mb-1"
+            >
+              Exit Type
+            </label>
+            <select
+              id="exit-type"
+              value={exitType}
+              onChange={(e) => setExitType(e.target.value)}
+              className="
+                w-full rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+                bg-[var(--color-surface-input)] text-[var(--foreground)]
+                border-[var(--color-surface-input-border)]
+                transition-colors
+                focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                focus:border-[var(--color-surface-input-focus)]
+              "
+            >
+              {EXIT_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="last-working-day"
+              className="block text-sm font-medium text-[var(--color-gray-700)] mb-1"
+            >
+              Last Working Day
+            </label>
+            <input
+              id="last-working-day"
+              type="date"
+              value={lastWorkingDay}
+              onChange={(e) => setLastWorkingDay(e.target.value)}
+              className="
+                w-full rounded-[8px] border px-3 py-2 text-sm min-h-[44px]
+                bg-[var(--color-surface-input)] text-[var(--foreground)]
+                border-[var(--color-surface-input-border)]
+                transition-colors
+                focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                focus:border-[var(--color-surface-input-focus)]
+              "
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="exit-reason"
+              className="block text-sm font-medium text-[var(--color-gray-700)] mb-1"
+            >
+              Reason (optional)
+            </label>
+            <textarea
+              id="exit-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              placeholder="Reason for exit..."
+              className="
+                w-full rounded-[8px] border px-3 py-2 text-sm
+                bg-[var(--color-surface-input)] text-[var(--foreground)]
+                border-[var(--color-surface-input-border)]
+                placeholder:text-[var(--color-gray-400)]
+                transition-colors resize-none
+                focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]
+                focus:border-[var(--color-surface-input-focus)]
+              "
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="notice-served"
+              type="checkbox"
+              checked={noticeServed}
+              onChange={(e) => setNoticeServed(e.target.checked)}
+              className="h-4 w-4 rounded border-[var(--color-gray-300)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+            />
+            <label
+              htmlFor="notice-served"
+              className="text-sm text-[var(--color-gray-700)]"
+            >
+              Notice period has been served
+            </label>
+          </div>
+
+          <div>
+            <label
+              htmlFor="confirm-terminate"
+              className="block text-sm font-medium text-[var(--color-gray-700)] mb-1"
+            >
+              Type <strong>terminate</strong> to confirm
+            </label>
+            <AppInput
+              id="confirm-terminate"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="terminate"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <AppButton
+              type="button"
+              variant="outlined"
+              size="sm"
+              onClick={handleClose}
+              className="flex-1"
+            >
+              Cancel
+            </AppButton>
+            <AppButton
+              type="submit"
+              variant="primary"
+              size="sm"
+              loading={isSubmitting}
+              disabled={!canSubmit}
+              className="flex-1 !bg-red-600 hover:!bg-red-700 !border-red-600 disabled:!bg-red-300 disabled:!border-red-300"
+            >
+              Process Exit
+            </AppButton>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
    Invitations Tab
    ═══════════════════════════════════════════════════════════ */
 
@@ -2680,6 +3007,9 @@ export default function EmployeesPage() {
   /* Key to signal OnboardingTab to re-fetch assignments */
   const [assignmentRefreshKey, setAssignmentRefreshKey] = useState(0);
 
+  /* Terminate employee modal state */
+  const [terminateTarget, setTerminateTarget] = useState<Employee | null>(null);
+
   /* Sync tab with URL search param when it changes (e.g. sidebar click) */
   useEffect(() => {
     const tabParam = searchParams.get("tab") as TabId | null;
@@ -2773,7 +3103,7 @@ export default function EmployeesPage() {
 
   return (
     <AdminGuard>
-      <div className="max-w-4xl mx-auto space-y-6 pb-8">
+      <div className="max-w-7xl mx-auto space-y-6 pb-8">
         {/* Header */}
         <div className="flex items-center gap-3">
           <Users
@@ -2848,6 +3178,7 @@ export default function EmployeesPage() {
                   employeeName: emp.name,
                 })
               }
+              onTerminate={(emp) => setTerminateTarget(emp)}
             />
           )}
           {activeTab === "onboarding" && (
@@ -2892,6 +3223,15 @@ export default function EmployeesPage() {
             setAssignTarget(null);
             fetchEmployees();
             setAssignmentRefreshKey((k) => k + 1);
+          }}
+        />
+        <TerminateEmployeeModal
+          isOpen={terminateTarget !== null}
+          employee={terminateTarget}
+          onClose={() => setTerminateTarget(null)}
+          onSuccess={() => {
+            setTerminateTarget(null);
+            fetchEmployees();
           }}
         />
       </div>

@@ -1117,6 +1117,8 @@ class Invitation:
     expires_at: str = ""
     accepted_at: str = ""
     is_active: bool = True
+    department: str = ""
+    designation: str = ""
 
     __dataflow__ = {
         "indexes": [

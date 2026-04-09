@@ -106,6 +106,8 @@ def _create_invitation(
     role: str,
     token: str,
     expires_at: str,
+    department: str = "",
+    designation: str = "",
 ) -> dict:
     """Create an Invitation record via DataFlow."""
     from kailash.runtime import LocalRuntime
@@ -125,6 +127,8 @@ def _create_invitation(
             "token": token,
             "expires_at": expires_at,
             "is_active": True,
+            "department": department,
+            "designation": designation,
         },
     )
     runtime = LocalRuntime()
@@ -1319,6 +1323,8 @@ async def invite_employee(
     body = await request.json()
     email = body.get("email", "").strip().lower()
     role = body.get("role", "employee")
+    department = body.get("department", "").strip()
+    designation = body.get("designation", "").strip()
 
     if not email:
         raise HTTPException(status_code=400, detail="Email is required.")
@@ -1382,6 +1388,8 @@ async def invite_employee(
         role=role,
         token=token,
         expires_at=expires_at,
+        department=department,
+        designation=designation,
     )
 
     logger.info(

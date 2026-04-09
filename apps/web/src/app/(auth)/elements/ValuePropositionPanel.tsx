@@ -3,9 +3,9 @@ import { Wallet, Sparkles, LayoutGrid } from "lucide-react";
 const features = [
   {
     icon: Wallet,
-    title: "Free Payroll & CPF",
+    title: "Payroll & CPF",
     description:
-      "Run payroll, generate CPF files, create payslips \u2014 all free",
+      "Run payroll, generate CPF files, create payslips \u2014 all built in",
   },
   {
     icon: Sparkles,

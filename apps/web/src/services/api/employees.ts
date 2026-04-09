@@ -149,6 +149,8 @@ export interface CompanyPolicy {
 export interface InviteEmployeeData {
   email: string;
   role: string;
+  department?: string;
+  designation?: string;
 }
 
 export interface InviteResponse {

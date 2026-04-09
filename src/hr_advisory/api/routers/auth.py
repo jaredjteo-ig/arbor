@@ -522,18 +522,23 @@ async def register_employee(
 
     import hr_advisory.models  # noqa: F401
 
+    # Pull department/designation from invitation if set
+    inv_department = invitation.get("department", "")
+    inv_designation = invitation.get("designation", "")
+
     wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeCreateNode",
-        "create_emp",
-        {
-            "user_id": user_id,
-            "company_id": company_id,
-            "employment_type": "full_time",
-            "start_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            "is_active": True,
-        },
-    )
+    emp_fields = {
+        "user_id": user_id,
+        "company_id": company_id,
+        "employment_type": "full_time",
+        "start_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "is_active": True,
+    }
+    if inv_department:
+        emp_fields["department"] = inv_department
+    if inv_designation:
+        emp_fields["designation"] = inv_designation
+    wf.add_node("EmployeeCreateNode", "create_emp", emp_fields)
     runtime = LocalRuntime()
     results, _ = runtime.execute(wf.build())
     employee_result = results["create_emp"]
