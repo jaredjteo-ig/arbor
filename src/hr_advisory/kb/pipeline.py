@@ -179,6 +179,18 @@ class KBContentPipeline:
         """
         data = dict(provision_data)
 
+        # Idempotency: check if provision already exists by section
+        section = data.get("section")
+        if section:
+            existing = self._find_provision_by_section(section)
+            if existing:
+                logger.info(
+                    "Provision '%s' already exists (id=%s), returning existing",
+                    section,
+                    existing.get("id"),
+                )
+                return existing
+
         # Resolve act
         act_short_name = data.pop("act_short_name", None)
         if act_short_name:
@@ -216,7 +228,10 @@ class KBContentPipeline:
             data["effective_date"] = datetime.fromisoformat(data["effective_date"])
 
         logger.info("Creating provision: %s - %s", data.get("section"), data.get("title"))
-        return self._execute("ProvisionCreateNode", "create_provision", data)
+        result = self._execute("ProvisionCreateNode", "create_provision", data)
+        if isinstance(result, dict):
+            result["_newly_created"] = True
+        return result
 
     def load_applicability_rule(self, provision_id: int, rule_data: dict) -> dict:
         """Add an applicability rule to a provision.
@@ -375,15 +390,19 @@ class KBContentPipeline:
             provision = self.load_provision(prov_copy)
             summary["provisions"].append(provision)
 
-            # Load nested applicability rules
-            for rule_data in nested_rules:
-                rule = self.load_applicability_rule(provision["id"], rule_data)
-                summary["applicability_rules"].append(rule)
+            # Only load nested rules/examples if the provision was newly created
+            # (existing provisions already have their rules/examples)
+            is_new = provision.get("_newly_created", False)
+            if is_new:
+                # Load nested applicability rules
+                for rule_data in nested_rules:
+                    rule = self.load_applicability_rule(provision["id"], rule_data)
+                    summary["applicability_rules"].append(rule)
 
-            # Load nested practical examples
-            for example_data in nested_examples:
-                example = self.load_practical_example(provision["id"], example_data)
-                summary["practical_examples"].append(example)
+                # Load nested practical examples
+                for example_data in nested_examples:
+                    example = self.load_practical_example(provision["id"], example_data)
+                    summary["practical_examples"].append(example)
 
         # 4. Cross-references (resolve by section)
         for xref_data in content_bundle.get("cross_references", []):
