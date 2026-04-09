@@ -203,8 +203,9 @@ const FEATURE_MODULES: FeatureModule[] = [
 const VALUE_PROPS = [
   {
     icon: Zap,
-    title: "100% Free",
-    description: "Full HRIS suite at zero cost. Built for Singapore SMEs.",
+    title: "Quick Setup",
+    description:
+      "Get started in under a minute. No complex configuration required.",
   },
   {
     icon: Sparkles,
