@@ -61,14 +61,59 @@ async def admin_action(current_user: dict = Depends(get_current_user)):
 Register/Login → access_token + refresh_token
     |
     ├── Access token (60 min default, configurable)
-    │   └── Contains: sub, email, role, company_id, jti, exp
+    │   └── Contains: sub, email, role, company_id, tv (token_version), jti, exp
     │
     ├── Refresh token (7 days)
-    │   └── Contains: sub, type="refresh", jti, exp
+    │   └── Contains: sub, type="refresh", tv, jti, exp
     │
-    └── Logout → both JTIs added to blocklist
-        └── Blocklist: InMemoryBlocklist (dev) / RedisBlocklist (prod)
+    ├── Logout → both JTIs added to blocklist
+    │   └── Blocklist: InMemoryBlocklist (dev) / RedisBlocklist (prod)
+    │
+    └── Token Versioning (instant session termination)
+        ├── User.token_version field (default 1)
+        ├── tv claim in all JWTs, checked by auth middleware on every request
+        ├── TokenVersionCache: in-memory with 30s TTL (src/hr_advisory/api/middleware/token_version_cache.py)
+        └── Incremented on: termination, password change, password reset
 ```
+
+## Employee Termination Flow
+
+```
+POST /employees/{id}/exit
+  1. Calculate settlement (prorated salary, leave encashment, notice, retrenchment)
+  2. Employee: is_active=False, confirmation_status="terminated", end_date
+  3. User: is_active=False, token_version incremented
+  4. TokenVersionCache: invalidated for instant effect
+  5. EmploymentEvent audit trail created
+  6. If User deactivation fails → HTTP 500 (fail-loud)
+```
+
+All access paths blocked: login (is_active check), Google OAuth (is_active check), refresh (is_active + tv check), existing tokens (tv check in middleware).
+
+## Invite → Registration Flow
+
+```
+POST /employees/invite {email, role, department, designation}
+  → Creates Invitation record with department + designation
+  → Returns invite_url (derived from request Origin header)
+
+GET /signup?token=xxx
+  → Validates token (exists, active, not expired, not used)
+  → Shows pre-filled form with company name and email
+
+POST /auth/register-employee {name, email, password, invitation_token}
+  → Creates User + Employee (with dept/designation from invitation)
+  → Auto-assigns onboarding template
+  → Auto-creates leave balances (statutory minimums)
+  → Returns JWT tokens with tv claim
+  → Frontend uses AuthContext.loginWithTokens() for immediate state update
+```
+
+## Rate Limiting
+
+ALL auth endpoints: 5/min per IP. ALL write endpoints across 13 routers: 30/min per user (60/min for alert read/dismiss, 10/min for push subscribe).
+
+File: `src/hr_advisory/api/middleware/rate_limit.py`
 
 ## DataFlow Usage
 
