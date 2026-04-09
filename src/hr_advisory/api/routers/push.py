@@ -13,6 +13,9 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
+from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 from pydantic import BaseModel, field_validator
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
@@ -123,7 +126,14 @@ async def subscribe_push(
     from hr_advisory.notifications.web_push import store_subscription
 
     user_id = int(user.get("sub", 0))
-    company_id = int(user.get("company_id", 0) or 0)
+    company_id = get_current_company_id(user) or 0
+
+    check_rate_limit(
+        f"push_subscribe:{user_id}",
+        max_requests=10,
+        window_seconds=60,
+        action_name="push subscribe",
+    )
 
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid user identity")
@@ -160,6 +170,14 @@ async def unsubscribe_push(
     subscription is revoked.
     """
     from hr_advisory.notifications.web_push import remove_subscription
+
+    user_id = int(user.get("sub", 0))
+    check_rate_limit(
+        f"push_unsubscribe:{user_id}",
+        max_requests=10,
+        window_seconds=60,
+        action_name="push unsubscribe",
+    )
 
     user_id = int(user.get("sub", 0))
     if not user_id:
