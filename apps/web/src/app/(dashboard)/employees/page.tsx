@@ -996,7 +996,8 @@ function DirectoryTab({
               </thead>
               <tbody>
                 {filteredEmployees.map((emp) => {
-                  const isActive = emp.status === "active";
+                  const isActive =
+                    emp.is_active !== false && emp.status !== "terminated";
                   return (
                     <tr
                       key={emp.id}

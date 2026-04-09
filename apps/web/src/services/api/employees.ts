@@ -11,7 +11,8 @@ export interface Employee {
   department: string;
   designation?: string;
   job_title?: string;
-  status: "active" | "invited" | "inactive";
+  status: "active" | "invited" | "inactive" | "terminated";
+  is_active?: boolean;
   start_date?: string;
   employment_type?: string;
   confirmation_status?: string;
