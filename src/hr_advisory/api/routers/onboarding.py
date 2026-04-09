@@ -2608,10 +2608,11 @@ async def get_my_progress(
     assignment = active[0]
     assignment = _enrich_assignment(assignment)
 
-    # Fetch step progress with step details
+    # Fetch step progress with step details (bypass cache for fresh status)
     progress_records = dataflow_crud.list_records(
         "OnboardingStepProgress",
         {"assignment_id": assignment["id"]},
+        cache_ttl=0,
     )
 
     enriched_progress = []
@@ -2695,6 +2696,7 @@ async def complete_step(
                         "step_id": prev_step["id"],
                     },
                     limit=1,
+                    cache_ttl=0,
                 )
                 if prev_progress and prev_progress[0].get("status") != "completed":
                     raise HTTPException(
