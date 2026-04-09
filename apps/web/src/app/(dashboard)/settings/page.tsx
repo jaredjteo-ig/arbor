@@ -25,6 +25,7 @@ import { settingsApi } from "@/services/api/settings";
 import { apiClient } from "@/services/api/client";
 import { useObservation } from "@/components/shadow-agent";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -356,6 +357,9 @@ export default function SettingsPage() {
     };
   });
 
+  /* Web Push subscription management */
+  const pushNotifs = usePushNotifications();
+
   /* Notification state */
   const [notifications, setNotifications] = useState<NotificationSettings>({
     emailAlerts: true,
@@ -446,17 +450,47 @@ export default function SettingsPage() {
     [display],
   );
 
+  /* Sync push subscription state into notification settings on mount */
+  useEffect(() => {
+    if (pushNotifs.isSubscribed) {
+      setNotifications((prev) => ({ ...prev, pushNotifications: true }));
+    }
+  }, [pushNotifs.isSubscribed]);
+
   const updateNotification = useCallback(
     async (
       field: keyof NotificationSettings,
       value: boolean | AlertFrequency,
     ) => {
       setSavingSection("notifications");
+
+      // When toggling push notifications, trigger the actual browser subscription
+      if (field === "pushNotifications" && typeof value === "boolean") {
+        if (value) {
+          const ok = await pushNotifs.subscribe();
+          if (!ok) {
+            // Subscription failed -- revert toggle and show error
+            toast.error(
+              pushNotifs.error ||
+                "Could not enable push notifications. Check your browser permissions.",
+            );
+            setSavingSection(null);
+            return;
+          }
+          toast.success("Push notifications enabled");
+        } else {
+          await pushNotifs.unsubscribe();
+          toast.success("Push notifications disabled");
+        }
+      }
+
       const updated = { ...notifications, [field]: value };
       setNotifications(updated);
       try {
         await settingsApi.update({ notifications: updated });
-        toast.success("Notification preference saved");
+        if (field !== "pushNotifications") {
+          toast.success("Notification preference saved");
+        }
       } catch {
         toast.error(
           "Failed to save notification preference. Please try again.",
@@ -465,7 +499,7 @@ export default function SettingsPage() {
         setSavingSection(null);
       }
     },
-    [notifications],
+    [notifications, pushNotifs],
   );
 
   const handleExportData = useCallback(async () => {
@@ -753,10 +787,20 @@ export default function SettingsPage() {
             description="Receive compliance updates and advisory notifications via email"
           />
           <ToggleSwitch
-            checked={notifications.pushNotifications}
+            checked={pushNotifs.isSubscribed || notifications.pushNotifications}
             onChange={(v) => updateNotification("pushNotifications", v)}
-            label="Push notifications"
-            description="Get browser push notifications for urgent compliance alerts"
+            label={
+              pushNotifs.loading
+                ? "Push notifications (updating...)"
+                : "Push notifications"
+            }
+            description={
+              !pushNotifs.isSupported
+                ? "Push notifications are not supported in this browser"
+                : pushNotifs.permission === "denied"
+                  ? "Notifications are blocked in your browser settings. Please allow notifications for this site."
+                  : "Get browser push notifications for urgent compliance alerts"
+            }
           />
           <ToggleSwitch
             checked={notifications.inAppNotifications}

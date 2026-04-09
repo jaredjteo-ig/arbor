@@ -94,15 +94,31 @@ export default function DocumentGeneratePage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownload = () => {
-    if (!result?.document?.content) return;
-    const blob = new Blob([result.document.content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${result.document.title.replace(/\s+/g, "_")}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleDownload = async () => {
+    if (!result?.document_id) return;
+    try {
+      const token = localStorage.getItem("access_token");
+      const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const resp = await fetch(
+        `${base}/document/download/${result.document_id}?format=pdf`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        },
+      );
+      if (!resp.ok) {
+        setError("Failed to download document.");
+        return;
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${result.document.title.replace(/\s+/g, "_")}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Failed to download document.");
+    }
   };
 
   if (loading) {
@@ -252,7 +268,7 @@ export default function DocumentGeneratePage() {
                   )}
                 </AppButton>
                 <AppButton variant="text" size="sm" onClick={handleDownload}>
-                  <Download className="h-4 w-4 mr-1" /> Download
+                  <Download className="h-4 w-4 mr-1" /> Download PDF
                 </AppButton>
               </div>
             </div>

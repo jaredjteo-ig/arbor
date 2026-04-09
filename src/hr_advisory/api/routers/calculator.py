@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.workflows.calculators.cost_to_company_calculator import (
     CostToCompanyInput,
     calculate_cost_to_company,
@@ -36,6 +37,9 @@ async def calculate_cpf(
     Accepts salary details and employee profile to compute
     employer and employee CPF contribution amounts.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"calculate_cpf:{user_id}", max_requests=30, window_seconds=60, action_name="calculate CPF")
+
     body = await request.json()
 
     # --- Validate required fields upfront instead of silently defaulting to zero ---
@@ -141,6 +145,9 @@ async def calculate_leave(
     Computes annual leave, sick leave, maternity/paternity leave
     based on tenure, employment type, and applicable legislation.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"calculate_leave:{user_id}", max_requests=30, window_seconds=60, action_name="calculate leave")
+
     body = await request.json()
     years_of_service = body.get("years_of_service", 1)
     employment_type = body.get("employment_type", "full_time")
@@ -182,6 +189,9 @@ async def calculate_salary(
     Uses real CPF calculator and cost-to-company calculator for accurate
     computation based on age, citizenship, and pass type.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"calculate_salary:{user_id}", max_requests=30, window_seconds=60, action_name="calculate salary")
+
     body = await request.json()
     gross_salary = body.get("gross_salary", 0)
     age = body.get("employee_age", 30)

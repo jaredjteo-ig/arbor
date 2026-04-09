@@ -292,7 +292,7 @@ function TimesheetApprovalsTab() {
       )}
 
       {/* Batch actions */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
         <p className="text-sm text-[var(--color-gray-500)]">
           {entries.length} pending submission{entries.length !== 1 ? "s" : ""}
           {selected.size > 0 && (
@@ -529,7 +529,7 @@ function InventoryRequestsTab() {
         />
       )}
 
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
         <p className="text-sm text-[var(--color-gray-500)]">
           {requests.length} pending request{requests.length !== 1 ? "s" : ""}
         </p>

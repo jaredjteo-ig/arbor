@@ -6,12 +6,16 @@ and operational monitoring. All endpoints require owner or hr_manager role.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
+
 from hr_advisory.api.middleware.auth_middleware import require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.workflows.regulatory_updates import (
     AffectedProvision,
     RegulatoryUpdate,
@@ -109,8 +113,10 @@ def _to_response(update: RegulatoryUpdate) -> UpdateResponse:
 
 
 @router.post("/updates", response_model=UpdateResponse, dependencies=[_admin_dep])
-async def create_regulatory_update(req: CreateUpdateRequest) -> UpdateResponse:
+async def create_regulatory_update(req: CreateUpdateRequest, current_user: dict = Depends(require_role("owner", "hr_manager"))) -> UpdateResponse:
     """Create a new regulatory update in draft status."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_update:{user_id}", max_requests=30, window_seconds=60, action_name="create regulatory update")
     provisions = [
         AffectedProvision(
             provision_id=p.provision_id,
@@ -161,12 +167,17 @@ async def get_regulatory_update(update_id: str) -> UpdateResponse:
 @router.post(
     "/updates/{update_id}/submit", response_model=UpdateResponse, dependencies=[_admin_dep]
 )
-async def submit_update_for_review(update_id: str) -> UpdateResponse:
+async def submit_update_for_review(update_id: str, current_user: dict = Depends(require_role("owner", "hr_manager"))) -> UpdateResponse:
     """Submit a draft update for review."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"submit_update:{user_id}", max_requests=30, window_seconds=60, action_name="submit update for review")
     try:
         update = submit_for_review(update_id)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        logger.error("Failed to submit update %s for review: %s", update_id, e)
+        raise HTTPException(
+            status_code=400, detail="Unable to submit this update for review."
+        ) from e
     return _to_response(update)
 
 
@@ -176,12 +187,18 @@ async def submit_update_for_review(update_id: str) -> UpdateResponse:
 async def approve_regulatory_update(
     update_id: str,
     req: ReviewRequest,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> UpdateResponse:
     """Approve a reviewed update (human-in-the-loop gate)."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"approve_update:{user_id}", max_requests=30, window_seconds=60, action_name="approve regulatory update")
     try:
         update = approve_update(update_id, req.reviewer, req.notes)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        logger.error("Failed to approve update %s: %s", update_id, e)
+        raise HTTPException(
+            status_code=400, detail="Unable to approve this update."
+        ) from e
     return _to_response(update)
 
 
@@ -191,24 +208,70 @@ async def approve_regulatory_update(
 async def reject_regulatory_update(
     update_id: str,
     req: ReviewRequest,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> UpdateResponse:
     """Reject a reviewed update."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"reject_update:{user_id}", max_requests=30, window_seconds=60, action_name="reject regulatory update")
     try:
         update = reject_update(update_id, req.reviewer, req.notes)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        logger.error("Failed to reject update %s: %s", update_id, e)
+        raise HTTPException(
+            status_code=400, detail="Unable to reject this update."
+        ) from e
     return _to_response(update)
 
 
 @router.post(
     "/updates/{update_id}/publish", response_model=UpdateResponse, dependencies=[_admin_dep]
 )
-async def publish_regulatory_update(update_id: str) -> UpdateResponse:
-    """Publish an approved update — updates KB and generates alerts."""
+async def publish_regulatory_update(update_id: str, current_user: dict = Depends(require_role("owner", "hr_manager"))) -> UpdateResponse:
+    """Publish an approved update — updates KB, generates alerts, and sends email notifications."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"publish_update:{user_id}", max_requests=30, window_seconds=60, action_name="publish regulatory update")
     try:
         update = publish_update(update_id)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        logger.error("Failed to publish update %s: %s", update_id, e)
+        raise HTTPException(
+            status_code=400, detail="Unable to publish this update."
+        ) from e
+
+    # Send email notifications to subscribed users (non-blocking)
+    try:
+        from hr_advisory.api.routers.alerts import notify_users_of_alert
+
+        await notify_users_of_alert(
+            alert_title=update.title,
+            alert_description=update.description,
+            source=update.source,
+            effective_date=update.effective_date.isoformat() if update.effective_date else "",
+            domains=", ".join(update.domains_affected) if update.domains_affected else "",
+        )
+    except Exception as exc:
+        logger.warning("Alert email notification failed (non-blocking): %s", exc)
+
+    # Send Web Push notifications to subscribed browsers (non-blocking)
+    try:
+        from hr_advisory.notifications.web_push import send_push_to_all_companies
+
+        domains_text = (
+            ", ".join(update.domains_affected) if update.domains_affected else ""
+        )
+        push_body = update.description
+        if domains_text:
+            push_body = f"[{domains_text}] {push_body}"
+
+        send_push_to_all_companies(
+            title=f"Regulatory Update: {update.title}",
+            body=push_body[:200],  # Truncate for notification display
+            url="/alerts",
+            data={"update_id": update.id},
+        )
+    except Exception as exc:
+        logger.warning("Web Push notification failed (non-blocking): %s", exc)
+
     return _to_response(update)
 
 
@@ -237,8 +300,10 @@ async def stale_provisions() -> list[dict]:
 
 
 @router.post("/staleness/review", dependencies=[_admin_dep])
-async def record_provision_review(req: RecordReviewRequest) -> dict:
+async def record_provision_review(req: RecordReviewRequest, current_user: dict = Depends(require_role("owner", "hr_manager"))) -> dict:
     """Record that a provision has been reviewed."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"record_review:{user_id}", max_requests=30, window_seconds=60, action_name="record provision review")
     record = record_review(
         provision_id=req.provision_id,
         reviewer=req.reviewer,
@@ -260,11 +325,13 @@ class RoleUpdateRequest(BaseModel):
 
 
 @router.patch("/users/{user_id}/role", dependencies=[Depends(require_role("owner"))])
-async def update_user_role(user_id: int, req: RoleUpdateRequest) -> dict:
+async def update_user_role(user_id: int, req: RoleUpdateRequest, current_user: dict = Depends(require_role("owner"))) -> dict:
     """Update a user's role. Only owners can change roles.
 
     Valid roles: owner, hr_manager, employee.
     """
+    rl_user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"update_user_role:{rl_user_id}", max_requests=30, window_seconds=60, action_name="update user role")
     valid_roles = {"owner", "hr_manager", "employee"}
     if req.role not in valid_roles:
         raise HTTPException(

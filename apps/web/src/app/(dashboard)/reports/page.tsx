@@ -24,7 +24,10 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { AdminGuard } from "@/components/auth/AdminGuard";
-import { reportsApi } from "@/services/api/reports";
+import {
+  reportsApi,
+  type TurnoverReportResponse,
+} from "@/services/api/reports";
 
 /* ── Report definitions ───────────────────────────────────── */
 
@@ -57,7 +60,6 @@ const REPORTS: ReportDef[] = [
     color: "text-violet-600",
     bgColor: "bg-violet-50",
     category: "workforce",
-    comingSoon: true,
   },
   {
     id: "payroll",
@@ -172,8 +174,11 @@ function ReportsDashboardCharts() {
       .then((data) => {
         if (!cancelled) setEmployees(data.employees || []);
       })
-      .catch(() => {
-        /* Graceful -- charts will show empty state */
+      .catch((err) => {
+        console.warn(
+          "[Reports] Failed to load employee data for charts:",
+          err?.message || err,
+        );
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -255,11 +260,13 @@ function ReportsDashboardCharts() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <AppCard variant="flat">
-            <BarChart
-              title="Headcount by Department"
-              data={deptChartData}
-              height={160}
-            />
+            <div className="overflow-hidden">
+              <BarChart
+                title="Headcount by Department"
+                data={deptChartData}
+                height={160}
+              />
+            </div>
           </AppCard>
           <AppCard variant="flat">
             <DonutChart
@@ -324,7 +331,12 @@ function ReportViewer({
         }
         setEmployeeMap(map);
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn(
+          "[Reports] Failed to load employee name lookup:",
+          err?.message || err,
+        );
+      });
   }, []);
 
   async function handleGenerate() {
@@ -555,6 +567,355 @@ function ReportViewer({
   );
 }
 
+/* ── Turnover Report Viewer ───────────────────────────────── */
+
+const EXIT_TYPE_LABELS: Record<string, string> = {
+  resignation: "Resignation",
+  termination: "Termination",
+  retrenchment: "Retrenchment",
+  contract_end: "Contract End",
+  unknown: "Unspecified",
+};
+
+function TurnoverReportViewer({
+  report,
+  onBack,
+}: {
+  report: ReportDef;
+  onBack: () => void;
+}) {
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [department, setDepartment] = useState("");
+  const [data, setData] = useState<TurnoverReportResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const Icon = report.icon;
+
+  async function handleGenerate() {
+    setIsLoading(true);
+    try {
+      const params: Record<string, string> = {};
+      if (startDate) params.start_date = startDate;
+      if (endDate) params.end_date = endDate;
+      if (department) params.department = department;
+      const result = await reportsApi.turnover(params);
+      setData(result);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to generate report";
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <AppButton variant="outlined" size="sm" onClick={onBack}>
+        <ArrowLeft className="h-4 w-4 mr-1" /> Back to Reports
+      </AppButton>
+
+      <div className="flex items-center gap-3">
+        <div className={`p-2 rounded-lg ${report.bgColor}`}>
+          <Icon className={`h-6 w-6 ${report.color}`} />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-[var(--color-gray-900)]">
+            {report.title}
+          </h2>
+          <p className="text-sm text-[var(--color-gray-500)]">
+            {report.description}
+          </p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <AppCard variant="flat">
+        <div className="flex gap-3 flex-wrap items-end">
+          <div className="flex-1 min-w-[150px]">
+            <DatePicker
+              label="Start Date"
+              value={startDate}
+              onChange={setStartDate}
+            />
+          </div>
+          <div className="flex-1 min-w-[150px]">
+            <DatePicker
+              label="End Date"
+              value={endDate}
+              onChange={setEndDate}
+              min={startDate}
+            />
+          </div>
+          <div className="flex-1 min-w-[150px]">
+            <AppInput
+              label="Department"
+              value={department}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setDepartment(e.target.value)
+              }
+              placeholder="Filter by department"
+            />
+          </div>
+          <AppButton
+            variant="primary"
+            size="sm"
+            onClick={handleGenerate}
+            loading={isLoading}
+          >
+            Generate
+          </AppButton>
+        </div>
+      </AppCard>
+
+      {/* Results */}
+      {isLoading ? (
+        <AppCard variant="standard">
+          <div className="-mx-5 -my-4">
+            <TableSkeleton />
+          </div>
+        </AppCard>
+      ) : data === null ? (
+        <AppCard variant="standard">
+          <div className="py-12 text-center">
+            <Icon className="h-10 w-10 text-[var(--color-gray-300)] mx-auto mb-3" />
+            <p className="text-sm text-[var(--color-gray-500)]">
+              Set your filters and click Generate to view the report.
+            </p>
+          </div>
+        </AppCard>
+      ) : (
+        <>
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <AppCard variant="flat">
+              <div className="text-center py-2">
+                <p className="text-xs font-medium text-[var(--color-gray-500)] mb-1">
+                  Active Employees
+                </p>
+                <p className="text-2xl font-bold text-[var(--color-gray-900)]">
+                  {data.summary.total_active.toLocaleString("en-SG")}
+                </p>
+              </div>
+            </AppCard>
+            <AppCard variant="flat">
+              <div className="text-center py-2">
+                <p className="text-xs font-medium text-[var(--color-gray-500)] mb-1">
+                  Exits (Period)
+                </p>
+                <p className="text-2xl font-bold text-[var(--color-error,#ef4444)]">
+                  {data.summary.total_exits.toLocaleString("en-SG")}
+                </p>
+              </div>
+            </AppCard>
+            <AppCard variant="flat">
+              <div className="text-center py-2">
+                <p className="text-xs font-medium text-[var(--color-gray-500)] mb-1">
+                  Turnover Rate
+                </p>
+                <p className="text-2xl font-bold text-[var(--color-gray-900)]">
+                  {data.summary.overall_turnover_rate.toLocaleString("en-SG", {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                  })}
+                  %
+                </p>
+              </div>
+            </AppCard>
+            <AppCard variant="flat">
+              <div className="text-center py-2">
+                <p className="text-xs font-medium text-[var(--color-gray-500)] mb-1">
+                  Avg Tenure (Exited)
+                </p>
+                <p className="text-2xl font-bold text-[var(--color-gray-900)]">
+                  {data.summary.avg_tenure_months > 0
+                    ? `${data.summary.avg_tenure_months.toLocaleString("en-SG", { maximumFractionDigits: 1 })} mo`
+                    : "-"}
+                </p>
+              </div>
+            </AppCard>
+          </div>
+
+          {/* Turnover by department */}
+          {data.by_department.length > 0 && (
+            <AppCard variant="standard">
+              <h3 className="text-sm font-semibold text-[var(--color-gray-700)] mb-3">
+                Turnover by Department
+              </h3>
+              <div className="overflow-x-auto -mx-5 -mb-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--color-gray-200)]">
+                      <th className="text-left py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Department
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Active
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Exits
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Turnover Rate
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.by_department.map((row) => (
+                      <tr
+                        key={row.department}
+                        className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
+                      >
+                        <td className="py-3 px-4 text-[var(--color-gray-700)]">
+                          {row.department}
+                        </td>
+                        <td className="py-3 px-4 text-right text-[var(--color-gray-700)]">
+                          {row.active.toLocaleString("en-SG")}
+                        </td>
+                        <td className="py-3 px-4 text-right text-[var(--color-gray-700)]">
+                          {row.exits.toLocaleString("en-SG")}
+                        </td>
+                        <td className="py-3 px-4 text-right text-[var(--color-gray-700)]">
+                          {row.turnover_rate.toLocaleString("en-SG", {
+                            minimumFractionDigits: 1,
+                            maximumFractionDigits: 1,
+                          })}
+                          %
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </AppCard>
+          )}
+
+          {/* Exit type breakdown */}
+          {data.by_exit_type.length > 0 && (
+            <AppCard variant="standard">
+              <h3 className="text-sm font-semibold text-[var(--color-gray-700)] mb-3">
+                Breakdown by Exit Type
+              </h3>
+              <div className="overflow-x-auto -mx-5 -mb-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--color-gray-200)]">
+                      <th className="text-left py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Exit Type
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Count
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        % of Exits
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.by_exit_type.map((row) => (
+                      <tr
+                        key={row.exit_type}
+                        className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
+                      >
+                        <td className="py-3 px-4 text-[var(--color-gray-700)]">
+                          {EXIT_TYPE_LABELS[row.exit_type] ??
+                            row.exit_type
+                              .replace(/_/g, " ")
+                              .replace(/\b\w/g, (c) => c.toUpperCase())}
+                        </td>
+                        <td className="py-3 px-4 text-right text-[var(--color-gray-700)]">
+                          {row.count.toLocaleString("en-SG")}
+                        </td>
+                        <td className="py-3 px-4 text-right text-[var(--color-gray-700)]">
+                          {data.summary.total_exits > 0
+                            ? (
+                                (row.count / data.summary.total_exits) *
+                                100
+                              ).toLocaleString("en-SG", {
+                                minimumFractionDigits: 1,
+                                maximumFractionDigits: 1,
+                              })
+                            : "0.0"}
+                          %
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </AppCard>
+          )}
+
+          {/* Monthly trend table */}
+          {data.rows.length > 0 && (
+            <AppCard variant="standard">
+              <h3 className="text-sm font-semibold text-[var(--color-gray-700)] mb-3">
+                Monthly Trend
+              </h3>
+              <div className="overflow-x-auto -mx-5 -mb-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--color-gray-200)]">
+                      <th className="text-left py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Month
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Hires
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Exits
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Headcount
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-[var(--color-gray-500)]">
+                        Turnover Rate
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.rows.map((row) => (
+                      <tr
+                        key={row.month}
+                        className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
+                      >
+                        <td className="py-3 px-4 text-[var(--color-gray-700)]">
+                          {row.month}
+                        </td>
+                        <td className="py-3 px-4 text-right text-[var(--color-gray-700)]">
+                          {row.hires.toLocaleString("en-SG")}
+                        </td>
+                        <td className="py-3 px-4 text-right text-[var(--color-gray-700)]">
+                          {row.terminations.toLocaleString("en-SG")}
+                        </td>
+                        <td className="py-3 px-4 text-right text-[var(--color-gray-700)]">
+                          {row.headcount.toLocaleString("en-SG")}
+                        </td>
+                        <td className="py-3 px-4 text-right text-[var(--color-gray-700)]">
+                          {row.turnover_rate.toLocaleString("en-SG", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                          %
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </AppCard>
+          )}
+
+          {/* Generated timestamp */}
+          <p className="text-xs text-[var(--color-gray-400)] text-right">
+            Generated {new Date(data.generated_at).toLocaleString("en-SG")}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ── Page ─────────────────────────────────────────────────── */
 
 export default function ReportsPage() {
@@ -563,10 +924,12 @@ export default function ReportsPage() {
   const [selectedReport, setSelectedReport] = useState<ReportDef | null>(null);
 
   if (selectedReport) {
+    const Viewer =
+      selectedReport.id === "turnover" ? TurnoverReportViewer : ReportViewer;
     return (
       <AdminGuard>
         <div className="max-w-5xl mx-auto space-y-6 pb-8">
-          <ReportViewer
+          <Viewer
             report={selectedReport}
             onBack={() => setSelectedReport(null)}
           />

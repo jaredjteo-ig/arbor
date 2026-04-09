@@ -779,12 +779,15 @@ async def apply_leave(
 @router.get("/applications")
 async def list_applications(
     status: str = Query(default="", description="Filter by status"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """List leave applications.
 
     Employees see their own applications only.
     Owners and HR managers see all applications for the company.
+    Supports pagination via page and page_size query parameters.
     """
     company_id = get_current_company_id(current_user)
     if company_id is None:
@@ -798,7 +801,7 @@ async def list_applications(
     else:
         employee = _get_employee_for_user(user_id, company_id)
         if employee is None:
-            return {"applications": [], "count": 0}
+            return {"applications": [], "count": 0, "page": page, "page_size": page_size, "total": 0, "pages": 0}
         filter_dict = {"employee_id": employee.get("id")}
 
     if status:
@@ -810,7 +813,20 @@ async def list_applications(
     _enrich_leave_applications(apps, company_id)
 
     apps.sort(key=lambda a: a.get("applied_at", ""), reverse=True)
-    return {"applications": apps, "count": len(apps)}
+
+    # Pagination
+    total_count = len(apps)
+    offset = (page - 1) * page_size
+    page_apps = apps[offset : offset + page_size]
+
+    return {
+        "applications": page_apps,
+        "count": len(page_apps),
+        "page": page,
+        "page_size": page_size,
+        "total": total_count,
+        "pages": math.ceil(total_count / page_size) if total_count > 0 else 0,
+    }
 
 
 # --------------------------------------------------------------------------

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,8 @@ async def create_template(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_appraisal_template:{user_id}", max_requests=30, window_seconds=60, action_name="create appraisal template")
 
     body = await request.json()
     name = body.get("name", "").strip()
@@ -193,6 +196,8 @@ async def create_period(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_appraisal_period:{user_id}", max_requests=30, window_seconds=60, action_name="create appraisal period")
 
     body = await request.json()
     name = body.get("name", "").strip()
@@ -257,6 +262,8 @@ async def launch_period(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"launch_appraisal_period:{user_id}", max_requests=30, window_seconds=60, action_name="launch appraisal period")
 
     period = dataflow_crud.read("AppraisalPeriod", period_id)
     if not period or period.get("company_id") != company_id:
@@ -422,6 +429,8 @@ async def submit_appraisal(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"submit_appraisal:{user_id}", max_requests=30, window_seconds=60, action_name="submit appraisal")
 
     appraisal = dataflow_crud.read("Appraisal", appraisal_id)
     if not appraisal or appraisal.get("company_id") != company_id:
@@ -462,6 +471,8 @@ async def sign_off_appraisal(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"sign_off_appraisal:{user_id}", max_requests=30, window_seconds=60, action_name="sign off appraisal")
 
     appraisal = dataflow_crud.read("Appraisal", appraisal_id)
     if not appraisal or appraisal.get("company_id") != company_id:

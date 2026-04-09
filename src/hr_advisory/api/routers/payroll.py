@@ -8,6 +8,7 @@ Includes parallel run support for comparing Arbor calculations against external 
 import csv
 import io
 import logging
+import math
 import re
 import uuid
 from collections import OrderedDict
@@ -369,13 +370,31 @@ async def calculate_payroll(
 
 @router.get("/runs")
 async def list_payroll_runs(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
-    """List all payroll runs for the current company."""
+    """List all payroll runs for the current company.
+
+    Supports pagination via page and page_size query parameters.
+    """
     company_id = get_current_company_id(current_user)
     runs = dataflow_crud.list_records("PayrollRun", {"company_id": company_id})
     runs.sort(key=lambda r: r.get("period_start", ""), reverse=True)
-    return {"runs": runs, "count": len(runs)}
+
+    # Pagination
+    total_count = len(runs)
+    offset = (page - 1) * page_size
+    page_runs = runs[offset : offset + page_size]
+
+    return {
+        "runs": page_runs,
+        "count": len(page_runs),
+        "page": page,
+        "page_size": page_size,
+        "total": total_count,
+        "pages": math.ceil(total_count / page_size) if total_count > 0 else 0,
+    }
 
 
 # --------------------------------------------------------------------------

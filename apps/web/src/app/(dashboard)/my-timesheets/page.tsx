@@ -179,7 +179,7 @@ function AddEntryModal({
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <AppInput
               label="Date"
               variant="date"
@@ -346,7 +346,7 @@ export default function MyTimesheetsPage() {
         <h2 className="text-sm font-semibold text-[var(--color-gray-900)] mb-3">
           This Week
         </h2>
-        <div className="grid grid-cols-7 gap-2 text-center">
+        <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 text-center">
           {DAY_LABELS.map((day, i) => (
             <div key={day}>
               <p className="text-[10px] font-medium text-[var(--color-gray-500)] uppercase mb-1">

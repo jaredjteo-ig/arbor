@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,9 @@ async def generate_paynow_qr(
     QR payload. Returns the QR data as a text payload string that the
     frontend can render using a QR code library.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"generate_paynow_qr:{user_id}", max_requests=30, window_seconds=60, action_name="generate PayNow QR")
+
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")

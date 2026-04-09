@@ -27,6 +27,33 @@ export interface TurnoverRow {
   turnover_rate: number;
 }
 
+export interface TurnoverSummary {
+  total_active: number;
+  total_exits: number;
+  overall_turnover_rate: number;
+  avg_tenure_months: number;
+}
+
+export interface TurnoverByDepartment {
+  department: string;
+  active: number;
+  exits: number;
+  turnover_rate: number;
+}
+
+export interface TurnoverByExitType {
+  exit_type: string;
+  count: number;
+}
+
+export interface TurnoverReportResponse {
+  rows: TurnoverRow[];
+  summary: TurnoverSummary;
+  by_department: TurnoverByDepartment[];
+  by_exit_type: TurnoverByExitType[];
+  generated_at: string;
+}
+
 export interface PayrollSummaryRow {
   period: string;
   total_gross: number;
@@ -121,12 +148,9 @@ export const reportsApi = {
   employees: (params?: Record<string, string>) =>
     apiClient.get<EmployeesReportResponse>("/reports/employees", params),
 
-  /* Turnover -- no backend endpoint yet, kept for future use */
+  /* Turnover -- GET /reports/turnover */
   turnover: (params?: Record<string, string>) =>
-    apiClient.get<{ rows: TurnoverRow[]; generated_at: string }>(
-      "/reports/turnover",
-      params,
-    ),
+    apiClient.get<TurnoverReportResponse>("/reports/turnover", params),
 
   /* Payroll -- GET /reports/payroll */
   payrollSummary: (params?: Record<string, string>) =>

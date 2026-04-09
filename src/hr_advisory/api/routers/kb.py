@@ -10,6 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.security.validation import sanitise_input, validate_query_length
 
 logger = logging.getLogger(__name__)
@@ -311,6 +312,9 @@ async def query_provisions(
     for in-memory text matching across title, section, formal_text,
     and plain_summary fields.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"query_provisions:{user_id}", max_requests=30, window_seconds=60, action_name="query provisions")
+
     body = await request.json()
     domain_id = body.get("domain_id")
     act_id = body.get("act_id")

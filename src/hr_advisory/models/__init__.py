@@ -70,6 +70,7 @@ from hr_advisory.models.company_user import (
     OnboardingMilestone,
     PulseSurvey,
     PulseSurveyResponse,
+    PushSubscription,
     UserRole,
     ContentUpdateStatus,
     ContentUrgency,
@@ -217,6 +218,8 @@ __all__ = [
     # Pulse surveys
     "PulseSurvey",
     "PulseSurveyResponse",
+    # Web Push
+    "PushSubscription",
     # QA workflow
     "QASession",
     "QAEvaluation",

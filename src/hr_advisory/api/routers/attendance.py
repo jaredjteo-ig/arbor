@@ -8,7 +8,7 @@ import logging
 import math
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
@@ -305,11 +305,14 @@ async def get_today_record(
 @router.get("/records")
 async def list_attendance_records(
     request: Request,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """List attendance records. Supports ?employee_id=, ?month=, ?year= filters.
 
     Admins can query any employee; employees only see their own.
+    Supports pagination via page and page_size query parameters.
     """
     company_id = get_current_company_id(current_user)
     if company_id is None:
@@ -327,7 +330,7 @@ async def list_attendance_records(
         user_id = int(current_user.get("sub", 0))
         emp = _find_employee_for_user(user_id, company_id)
         if emp is None:
-            return {"records": [], "count": 0}
+            return {"records": [], "count": 0, "page": page, "page_size": page_size, "total": 0, "pages": 0}
         filter_dict["employee_id"] = emp["id"]
     elif employee_id_param:
         filter_dict["employee_id"] = int(employee_id_param)
@@ -342,7 +345,20 @@ async def list_attendance_records(
         records = [r for r in records if r.get("date", "").startswith(year_param)]
 
     records.sort(key=lambda r: r.get("date", ""), reverse=True)
-    return {"records": records, "count": len(records)}
+
+    # Pagination
+    total_count = len(records)
+    offset = (page - 1) * page_size
+    page_records = records[offset : offset + page_size]
+
+    return {
+        "records": page_records,
+        "count": len(page_records),
+        "page": page,
+        "page_size": page_size,
+        "total": total_count,
+        "pages": math.ceil(total_count / page_size) if total_count > 0 else 0,
+    }
 
 
 # --------------------------------------------------------------------------

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,9 @@ async def create_client(
 
     Requires owner or platform_admin role.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_client:{user_id}", max_requests=30, window_seconds=60, action_name="create client")
+
     body = await request.json()
 
     # Accept both "name" and "company_name" for compatibility
@@ -243,6 +247,9 @@ async def update_client(
 
     Requires owner or platform_admin role.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"update_client:{user_id}", max_requests=30, window_seconds=60, action_name="update client")
+
     validate_company_access(current_user, requested_company_id=client_id)
     body = await request.json()
 

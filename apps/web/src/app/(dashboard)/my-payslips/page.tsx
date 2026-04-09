@@ -111,7 +111,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
       <button
         type="button"
         onClick={handleToggle}
-        className="w-full text-left flex items-center justify-between gap-4 min-h-[44px]"
+        className="w-full text-left flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 min-h-[44px]"
       >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -120,7 +120,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
             </span>
             <StatusBadge status={payslip.status} />
           </div>
-          <div className="flex items-center gap-4 mt-1 text-sm text-[var(--color-gray-500)]">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1 text-sm text-[var(--color-gray-500)]">
             <span>Gross: {formatCurrency(payslip.gross_salary)}</span>
             <span>Net: {formatCurrency(payslip.net_salary)}</span>
           </div>

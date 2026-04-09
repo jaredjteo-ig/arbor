@@ -37,9 +37,12 @@ async def turnover_report(
 ) -> dict:
     """Employee turnover report.
 
-    Returns monthly hires, terminations, headcount, and turnover rate.
+    Returns monthly hires, terminations, headcount, turnover rate,
+    plus summary aggregates: department breakdown, exit-type breakdown,
+    and average tenure of exited employees.
     Defaults to the last 12 months if no date range is provided.
     """
+    import json as _json
     from datetime import date as _date, timedelta
 
     company_id = get_current_company_id(current_user)
@@ -117,10 +120,128 @@ async def turnover_report(
             "turnover_rate": turnover_rate,
         })
 
+    # --- Summary aggregates ---
+
+    # Identify employees who exited within the date range
+    exited_employees = [
+        emp for emp in all_inactive
+        if emp.get("end_date", "") >= start_date and emp.get("end_date", "") <= end_date
+    ]
+    total_exits = len(exited_employees)
+
+    # Overall turnover rate: total exits / average headcount over period * 100
+    if rows:
+        avg_headcount_period = sum(r["headcount"] for r in rows) / len(rows)
+    else:
+        avg_headcount_period = max(total_active, 1)
+    overall_turnover_rate = round(
+        (total_exits / max(avg_headcount_period, 1)) * 100, 2
+    )
+
+    # Turnover by department
+    dept_exits: dict[str, int] = {}
+    dept_headcount: dict[str, int] = {}
+    for emp in all_active:
+        dept = emp.get("department") or "Unassigned"
+        dept_headcount[dept] = dept_headcount.get(dept, 0) + 1
+    for emp in exited_employees:
+        dept = emp.get("department") or "Unassigned"
+        dept_exits[dept] = dept_exits.get(dept, 0) + 1
+        # Include in headcount so rate denominator covers the department
+        if dept not in dept_headcount:
+            dept_headcount[dept] = 0
+
+    all_depts = sorted(set(list(dept_exits.keys()) + list(dept_headcount.keys())))
+    by_department = []
+    for dept in all_depts:
+        exits = dept_exits.get(dept, 0)
+        active = dept_headcount.get(dept, 0)
+        denom = max(active + exits, 1)
+        by_department.append({
+            "department": dept,
+            "active": active,
+            "exits": exits,
+            "turnover_rate": round((exits / denom) * 100, 2),
+        })
+
+    # Turnover by exit type — look up EmploymentEvent records for exited employees
+    exit_type_counts: dict[str, int] = {
+        "resignation": 0,
+        "termination": 0,
+        "retrenchment": 0,
+        "contract_end": 0,
+        "unknown": 0,
+    }
+    exited_ids = {emp.get("id") for emp in exited_employees if emp.get("id")}
+    if exited_ids:
+        # Fetch exit-related employment events for the company
+        exit_event_types = {"resigned", "terminated", "retrenched"}
+        events = dataflow_crud.list_records(
+            "EmploymentEvent",
+            {"company_id": company_id},
+        )
+        # Map employee_id -> exit_type from event new_value
+        emp_exit_type_map: dict[int, str] = {}
+        for evt in events:
+            if evt.get("event_type") not in exit_event_types:
+                continue
+            emp_id = evt.get("employee_id")
+            if emp_id not in exited_ids:
+                continue
+            new_val = evt.get("new_value")
+            if isinstance(new_val, str):
+                try:
+                    new_val = _json.loads(new_val)
+                except (ValueError, TypeError):
+                    new_val = {}
+            if isinstance(new_val, dict):
+                et = new_val.get("exit_type", "")
+                if et in exit_type_counts:
+                    emp_exit_type_map[emp_id] = et
+
+        for emp in exited_employees:
+            emp_id = emp.get("id")
+            et = emp_exit_type_map.get(emp_id, "unknown")
+            exit_type_counts[et] = exit_type_counts.get(et, 0) + 1
+
+    by_exit_type = [
+        {"exit_type": et, "count": count}
+        for et, count in exit_type_counts.items()
+        if count > 0
+    ]
+
+    # Average tenure of exited employees (in months)
+    tenure_months_list: list[float] = []
+    for emp in exited_employees:
+        emp_start = emp.get("start_date", "")
+        emp_end = emp.get("end_date", "")
+        if emp_start and emp_end:
+            try:
+                sd = _d.fromisoformat(emp_start)
+                ed = _d.fromisoformat(emp_end)
+                months_tenure = (ed.year - sd.year) * 12 + (ed.month - sd.month)
+                if months_tenure >= 0:
+                    tenure_months_list.append(months_tenure)
+            except (ValueError, TypeError):
+                pass
+    avg_tenure_months = (
+        round(sum(tenure_months_list) / len(tenure_months_list), 1)
+        if tenure_months_list
+        else 0
+    )
+
     from datetime import datetime as _dt, timezone as _tz
 
     return {
         "rows": rows,
+        "summary": {
+            "total_active": total_active,
+            "total_exits": total_exits,
+            "overall_turnover_rate": overall_turnover_rate,
+            "avg_tenure_months": avg_tenure_months,
+        },
+        "by_department": by_department,
+        "by_exit_type": by_exit_type,
         "generated_at": _dt.now(_tz.utc).isoformat(),
     }
 

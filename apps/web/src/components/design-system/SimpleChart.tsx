@@ -24,7 +24,7 @@ export function BarChart({
       <h4 className="text-sm font-semibold text-[var(--color-gray-900)]">
         {title}
       </h4>
-      <div className="flex items-end gap-2" style={{ height }}>
+      <div className="flex items-end gap-1 overflow-hidden" style={{ height }}>
         {data.map((item, i) => (
           <div key={i} className="flex-1 flex flex-col items-center gap-1">
             <div className="w-full relative" style={{ height }}>

@@ -43,6 +43,7 @@ from hr_advisory.api.routers import (
     policies_router,
     profile_router,
     projects_router,
+    push_router,
     qa_router,
     recruitment_router,
     reports_router,
@@ -196,6 +197,7 @@ def _register_routers(app: Nexus) -> None:
     api.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])
     api.include_router(onboarding_router, prefix="/onboarding", tags=["Onboarding"])
     api.include_router(projects_router, prefix="/projects", tags=["Projects"])
+    api.include_router(push_router, prefix="/push", tags=["Web Push"])
     api.include_router(recruitment_router, prefix="/recruitment", tags=["Recruitment"])
     api.include_router(reports_router, prefix="/reports", tags=["Reports"])
     api.include_router(admin_router)  # Admin router has its own /admin prefix

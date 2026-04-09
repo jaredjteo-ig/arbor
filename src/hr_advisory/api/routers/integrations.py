@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,9 @@ async def call_tool(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Invoke an MCP tool. Used by the shadow agent for integration operations."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"call_tool:{user_id}", max_requests=30, window_seconds=60, action_name="call integration tool")
+
     from hr_advisory.mcp_servers.registry import call_tool as mcp_call_tool
 
     company_id = str(get_current_company_id(current_user) or "")
@@ -214,6 +218,9 @@ async def cancel_submission(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Cancel a pending submission."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"cancel_submission:{user_id}", max_requests=30, window_seconds=60, action_name="cancel submission")
+
     from hr_advisory.mcp_servers.idempotency import get_submission_ledger
 
     company_id = str(get_current_company_id(current_user) or "")
@@ -228,7 +235,10 @@ async def cancel_submission(
         ledger.cancel(record_id)
         return {"status": "cancelled", "id": record_id}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("Failed to cancel submission %s: %s", record_id, e)
+        raise HTTPException(
+            status_code=400, detail="Unable to cancel this submission."
+        ) from e
 
 
 # ── Saga Status ──────────────────────────────────────────────
@@ -269,7 +279,7 @@ async def get_saga_detail(
         raise HTTPException(status_code=404, detail="Saga not found")
 
     company_id = get_current_company_id(current_user)
-    if saga.tenant_id != company_id:
+    if str(saga.tenant_id) != str(company_id):
         raise HTTPException(status_code=404, detail="Saga not found")
 
     return saga.to_dict()
@@ -281,6 +291,9 @@ async def resume_saga(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Resume a failed saga from its last successful step."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"resume_saga:{user_id}", max_requests=30, window_seconds=60, action_name="resume saga")
+
     from hr_advisory.mcp_servers.saga import get_saga_orchestrator
 
     company_id = str(get_current_company_id(current_user) or "")
@@ -295,7 +308,10 @@ async def resume_saga(
         saga = orchestrator.resume_saga(saga_id)
         return saga.to_dict()
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("Failed to resume saga %s: %s", saga_id, e)
+        raise HTTPException(
+            status_code=400, detail="Unable to resume this operation."
+        ) from e
 
 
 # ── Audit Log ────────────────────────────────────────────────
@@ -344,6 +360,9 @@ async def disconnect_provider(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Disconnect an integration provider (revoke OAuth token)."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"disconnect_provider:{user_id}", max_requests=30, window_seconds=60, action_name="disconnect provider")
+
     from hr_advisory.mcp_servers.auth.token_store import get_token_manager
 
     company_id = str(get_current_company_id(current_user) or "")
@@ -375,6 +394,9 @@ async def reset_circuit_breaker(
     current_user: dict = Depends(require_role("owner")),
 ) -> dict:
     """Manually reset a circuit breaker (admin-only action)."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"reset_circuit:{user_id}", max_requests=30, window_seconds=60, action_name="reset circuit breaker")
+
     from hr_advisory.mcp_servers.resilience import get_circuit
 
     # Only owners and platform admins can reset circuit breakers
@@ -507,6 +529,9 @@ async def approve_action(
     Called by the UI when a user clicks Approve on the confirmation modal.
     Only pending approvals belonging to the current company can be approved.
     """
+    rl_user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"approve_action:{rl_user_id}", max_requests=30, window_seconds=60, action_name="approve action")
+
     from hr_advisory.mcp_servers.confirm_action import get_approval_store
 
     company_id = str(get_current_company_id(current_user) or "")
@@ -538,6 +563,9 @@ async def reject_action(
     Called by the UI when a user clicks Reject on the confirmation modal.
     Only pending approvals belonging to the current company can be rejected.
     """
+    rl_user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"reject_action:{rl_user_id}", max_requests=30, window_seconds=60, action_name="reject action")
+
     from hr_advisory.mcp_servers.confirm_action import get_approval_store
 
     company_id = str(get_current_company_id(current_user) or "")
@@ -599,6 +627,9 @@ async def trigger_accounting_sync(
     Initiates a journal entry push to the configured accounting provider.
     Returns an error if no accounting provider is configured.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"accounting_sync:{user_id}", max_requests=30, window_seconds=60, action_name="trigger accounting sync")
+
     company_id = str(get_current_company_id(current_user) or "")
 
     try:
@@ -721,6 +752,9 @@ async def import_preview(
     with a file upload. Returns field mappings, validation errors, and a
     preview of the first few rows.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"import_preview:{user_id}", max_requests=30, window_seconds=60, action_name="preview import")
+
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
@@ -821,6 +855,9 @@ async def import_confirm(
     Accepts {source, field_mappings} and creates Employee records
     for each valid row using the provided field mappings.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"import_confirm:{user_id}", max_requests=30, window_seconds=60, action_name="confirm import")
+
     from hr_advisory.services import dataflow_crud
 
     company_id = get_current_company_id(current_user)
@@ -933,6 +970,9 @@ async def connect_provider(
     """
     import re
 
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"connect_provider:{user_id}", max_requests=30, window_seconds=60, action_name="connect provider")
+
     # Validate provider name to prevent injection
     if not re.match(r"^[a-zA-Z0-9_-]+$", provider):
         raise HTTPException(status_code=400, detail="Invalid provider name.")
@@ -971,6 +1011,9 @@ async def disconnect_provider_post(
     """
     import re
 
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"disconnect_provider_post:{user_id}", max_requests=30, window_seconds=60, action_name="disconnect provider")
+
     if not re.match(r"^[a-zA-Z0-9_-]+$", provider):
         raise HTTPException(status_code=400, detail="Invalid provider name.")
 
@@ -1006,6 +1049,9 @@ async def test_provider_connection(
     """
     import re
     import time
+
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"test_provider:{user_id}", max_requests=30, window_seconds=60, action_name="test provider connection")
 
     if not re.match(r"^[a-zA-Z0-9_-]+$", provider):
         raise HTTPException(status_code=400, detail="Invalid provider name.")

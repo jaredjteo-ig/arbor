@@ -177,25 +177,66 @@ def _seed_default_policies(company_id: int) -> None:
 
 
 def _company_to_response(company: dict) -> dict:
-    """Convert a DataFlow company record to the API response format."""
-    total = (
-        company.get("headcount_local", 0)
-        + company.get("headcount_pr", 0)
-        + company.get("headcount_ep", 0)
-        + company.get("headcount_sp", 0)
-        + company.get("headcount_wp", 0)
-    )
+    """Convert a DataFlow company record to the API response format.
+
+    Total headcount and pass-type breakdown are computed from actual active
+    employee records. Manual headcount fields are kept as fallbacks for the
+    workforce composition section (used when employees lack pass_type).
+    """
+    from hr_advisory.services import dataflow_crud
+
+    company_id = company.get("id")
+    # Compute live headcount from active employees
+    employees = []
+    if company_id:
+        try:
+            employees = dataflow_crud.list_records(
+                "Employee",
+                {"company_id": company_id, "is_active": True},
+                cache_ttl=0,
+            )
+        except Exception:
+            employees = []
+
+    live_total = len(employees)
+
+    # Count by pass_type from actual employee records
+    pass_counts: dict[str, int] = {}
+    for emp in employees:
+        pt = (emp.get("pass_type") or "").lower()
+        if pt:
+            pass_counts[pt] = pass_counts.get(pt, 0) + 1
+
+    # Use live counts when available, fall back to manual profile fields
+    headcount_local = pass_counts.get("citizen", 0) + pass_counts.get("local", 0)
+    headcount_pr = pass_counts.get("pr", 0) + pass_counts.get("permanent_resident", 0)
+    headcount_ep = pass_counts.get("ep", 0) + pass_counts.get("employment_pass", 0)
+    headcount_sp = pass_counts.get("sp", 0) + pass_counts.get("s_pass", 0)
+    headcount_wp = pass_counts.get("wp", 0) + pass_counts.get("work_permit", 0)
+
+    # If no employees have pass_type set, fall back to manual fields
+    has_pass_data = sum(pass_counts.values()) > 0
+    if not has_pass_data:
+        headcount_local = company.get("headcount_local", 0)
+        headcount_pr = company.get("headcount_pr", 0)
+        headcount_ep = company.get("headcount_ep", 0)
+        headcount_sp = company.get("headcount_sp", 0)
+        headcount_wp = company.get("headcount_wp", 0)
+
     return {
         "id": company["id"],
         "name": company.get("name", ""),
         "uen": company.get("uen"),
         "sector": company.get("sector"),
-        "headcount_local": company.get("headcount_local", 0),
-        "headcount_pr": company.get("headcount_pr", 0),
-        "headcount_ep": company.get("headcount_ep", 0),
-        "headcount_sp": company.get("headcount_sp", 0),
-        "headcount_wp": company.get("headcount_wp", 0),
-        "total_headcount": total,
+        "headcount_local": headcount_local,
+        "headcount_pr": headcount_pr,
+        "headcount_ep": headcount_ep,
+        "headcount_sp": headcount_sp,
+        "headcount_wp": headcount_wp,
+        "total_headcount": live_total if live_total > 0 else (
+            headcount_local + headcount_pr + headcount_ep + headcount_sp + headcount_wp
+        ),
+        "has_foreign_workers": (headcount_ep + headcount_sp + headcount_wp) > 0,
         "profile_completeness_score": company.get(
             "profile_completeness_score",
             _compute_completeness(company),

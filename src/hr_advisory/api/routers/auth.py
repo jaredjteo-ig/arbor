@@ -663,6 +663,8 @@ async def google_exchange(request: Request):
     Called by the frontend callback page after Google redirects with a code.
     Returns Arbor JWT tokens and user info as JSON.
     """
+    _check_auth_rate_limit(request)
+
     import urllib.parse
 
     import requests as http_requests

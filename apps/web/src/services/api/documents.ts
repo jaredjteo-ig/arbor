@@ -41,8 +41,8 @@ export const documentsApi = {
   },
 
   /** Download a previously generated document by ID. Returns the URL for download. */
-  downloadUrl(documentId: string): string {
+  downloadUrl(documentId: string, format: "pdf" | "txt" = "pdf"): string {
     const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    return `${base}/document/download/${documentId}`;
+    return `${base}/document/download/${documentId}?format=${format}`;
   },
 };

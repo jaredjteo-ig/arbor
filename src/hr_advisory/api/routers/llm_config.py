@@ -295,7 +295,10 @@ async def save_company_llm_config(
             updated_by=user_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.error("LLM config validation failed for company_id=%s: %s", company_id, exc)
+        raise HTTPException(
+            status_code=400, detail="Invalid LLM configuration. Please check your inputs."
+        ) from exc
     except Exception as exc:
         logger.error("Failed to save LLM config for company_id=%s: %s", company_id, exc)
         raise HTTPException(

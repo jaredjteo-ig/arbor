@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 from hr_advisory.services import dataflow_crud
 
@@ -104,6 +105,8 @@ async def create_project(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_project:{user_id}", max_requests=30, window_seconds=60, action_name="create project")
 
     body = await request.json()
     name = body.get("name", "").strip()
@@ -168,6 +171,8 @@ async def assign_employees(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"assign_project:{user_id}", max_requests=30, window_seconds=60, action_name="assign employees to project")
 
     _verify_project_ownership(project_id, company_id)
 
@@ -250,6 +255,8 @@ async def create_project_role(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_project_role:{user_id}", max_requests=30, window_seconds=60, action_name="create project role")
 
     body = await request.json()
     name = body.get("name", "").strip()
@@ -323,6 +330,8 @@ async def add_overhead(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"add_project_overhead:{user_id}", max_requests=30, window_seconds=60, action_name="add project overhead")
 
     _verify_project_ownership(project_id, company_id)
 
@@ -412,6 +421,8 @@ async def create_timesheet_entry(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id_rl = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_timesheet:{user_id_rl}", max_requests=30, window_seconds=60, action_name="create timesheet entry")
 
     body = await request.json()
     project_id = body.get("project_id")
@@ -574,6 +585,8 @@ async def submit_timesheet_entry(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"submit_timesheet:{user_id}", max_requests=30, window_seconds=60, action_name="submit timesheet entry")
 
     existing = dataflow_crud.read("TimesheetEntry", entry_id)
     if not existing:
@@ -719,6 +732,8 @@ async def create_allocation(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_allocation:{user_id}", max_requests=30, window_seconds=60, action_name="create resource allocation")
 
     body = await request.json()
     project_id = body.get("project_id")
@@ -807,6 +822,8 @@ async def calculate_project_costs(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"calculate_project_costs:{user_id}", max_requests=30, window_seconds=60, action_name="calculate project costs")
 
     body = await request.json()
     project_id = body.get("project_id")

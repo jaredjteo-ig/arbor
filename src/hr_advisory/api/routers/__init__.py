@@ -29,6 +29,7 @@ from hr_advisory.api.routers.payroll import router as payroll_router
 from hr_advisory.api.routers.policies import router as policies_router
 from hr_advisory.api.routers.profile import router as profile_router
 from hr_advisory.api.routers.projects import router as projects_router
+from hr_advisory.api.routers.push import router as push_router
 from hr_advisory.api.routers.qa import router as qa_router
 from hr_advisory.api.routers.recruitment import router as recruitment_router
 from hr_advisory.api.routers.reports import router as reports_router
@@ -68,6 +69,7 @@ __all__ = [
     "policies_router",
     "profile_router",
     "projects_router",
+    "push_router",
     "qa_router",
     "recruitment_router",
     "reports_router",

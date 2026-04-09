@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.workflows.regulatory_updates import (
     RegulatoryUpdate,
     UpdateStatus,
@@ -395,6 +396,7 @@ async def mark_alert_read(
 ) -> dict:
     """Mark a specific alert as read for the current user."""
     user_id = _user_id_from_payload(current_user)
+    check_rate_limit(f"mark_alert_read:{user_id}", max_requests=60, window_seconds=60, action_name="mark alert read")
     key = (user_id, alert_id)
     if key not in _alert_status:
         while len(_alert_status) >= _MAX_ALERT_STATUS_ENTRIES:
@@ -411,6 +413,7 @@ async def dismiss_alert(
 ) -> dict:
     """Dismiss a specific alert for the current user."""
     user_id = _user_id_from_payload(current_user)
+    check_rate_limit(f"dismiss_alert:{user_id}", max_requests=60, window_seconds=60, action_name="dismiss alert")
     key = (user_id, alert_id)
     if key not in _alert_status:
         while len(_alert_status) >= _MAX_ALERT_STATUS_ENTRIES:
@@ -434,3 +437,83 @@ async def unread_count(
         if _alert_status_for_user(user_id, a["id"]) == "unread"
     )
     return UnreadCountResponse(unread_count=count)
+
+
+# ── Email delivery for published alerts ─────────────────────
+
+
+async def notify_users_of_alert(
+    alert_title: str,
+    alert_description: str,
+    source: str = "",
+    effective_date: str = "",
+    domains: str = "",
+) -> int:
+    """Send email notifications about a published regulatory alert.
+
+    Attempts to send via the Resend adapter to all users with email
+    alerts enabled. Returns the count of emails sent. Fails silently
+    (logs errors) to avoid blocking the publish operation.
+    """
+    import os
+
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    if not api_key:
+        logger.info("RESEND_API_KEY not configured — skipping alert email delivery")
+        return 0
+
+    try:
+        from hr_advisory.mcp_servers.adapters.resend_email import ResendAdapter, TEMPLATES
+        from hr_advisory.services import dataflow_crud
+
+        adapter = ResendAdapter()
+
+        # Get all active users with email alerts enabled
+        users = dataflow_crud.list_records("User", {"is_active": True})
+        sent = 0
+
+        for user in users:
+            email = user.get("email", "")
+            if not email:
+                continue
+
+            # Check if user has email alerts enabled (default: True)
+            user_id = user.get("id")
+            prefs = _notification_prefs.get(user_id, {})
+            if not prefs.get("emailAlerts", True):
+                continue
+
+            company_name = "your company"
+            try:
+                if user.get("company_id"):
+                    company = dataflow_crud.read("Company", user["company_id"])
+                    if company:
+                        company_name = company.get("name", company_name)
+            except Exception:
+                pass
+
+            html = TEMPLATES.get("regulatory_update", "").format(
+                update_title=alert_title,
+                update_summary=alert_description,
+                source=source or "Government Gazette",
+                effective_date=effective_date or "See details",
+                domains=domains or "Multiple",
+                company_name=company_name,
+            )
+
+            try:
+                await adapter.send_email(
+                    to=email,
+                    subject=f"Regulatory Alert: {alert_title}",
+                    html_body=html,
+                )
+                sent += 1
+            except Exception as exc:
+                logger.warning("Failed to send alert email to %s: %s", email, exc)
+
+        logger.info("Alert email delivery: sent=%d, total_users=%d", sent, len(users))
+        return sent
+
+    except Exception as exc:
+        logger.error("Alert email delivery failed: %s", exc)
+        return 0

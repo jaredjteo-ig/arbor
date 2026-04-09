@@ -676,7 +676,7 @@ export default function AppraisalsPage() {
                                       {formatDate((t as any).created_at || "")}
                                     </span>
                                   </div>
-                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                                     <div>
                                       <p className="text-xs text-[var(--color-gray-500)] mb-1">
                                         Weightage

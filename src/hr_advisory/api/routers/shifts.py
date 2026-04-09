@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,8 @@ async def create_shift_template(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_shift_template:{user_id}", max_requests=30, window_seconds=60, action_name="create shift template")
 
     body = await request.json()
     name = body.get("name", "").strip()
@@ -115,6 +118,8 @@ async def update_shift_template(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Update an existing shift template."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"update_shift_template:{user_id}", max_requests=30, window_seconds=60, action_name="update shift template")
     company_id = get_current_company_id(current_user)
     existing = dataflow_crud.read("ShiftTemplate", template_id)
     if existing is None or existing.get("company_id") != company_id:
@@ -226,6 +231,8 @@ async def create_shift_assignment(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_shift_assignment:{user_id}", max_requests=30, window_seconds=60, action_name="create shift assignment")
 
     body = await request.json()
     employee_id = body.get("employee_id")
@@ -271,6 +278,8 @@ async def update_shift_assignment(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Update a shift assignment (e.g. change template, actual times, status)."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"update_shift_assignment:{user_id}", max_requests=30, window_seconds=60, action_name="update shift assignment")
     company_id = get_current_company_id(current_user)
     existing = dataflow_crud.read("ShiftAssignment", assignment_id)
     if existing is None or existing.get("company_id") != company_id:
@@ -300,6 +309,8 @@ async def cancel_shift_assignment(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Cancel a shift assignment (soft-cancel by setting status to cancelled)."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"cancel_shift_assignment:{user_id}", max_requests=30, window_seconds=60, action_name="cancel shift assignment")
     company_id = get_current_company_id(current_user)
     existing = dataflow_crud.read("ShiftAssignment", assignment_id)
     if existing is None or existing.get("company_id") != company_id:
@@ -323,6 +334,8 @@ async def publish_schedule(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"publish_schedule:{user_id}", max_requests=30, window_seconds=60, action_name="publish schedule")
 
     body = await request.json()
     week_start = body.get("week_start", "")
@@ -589,6 +602,8 @@ async def create_hourly_rate(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_hourly_rate:{user_id}", max_requests=30, window_seconds=60, action_name="create hourly rate")
 
     body = await request.json()
     name = body.get("name", "").strip()
@@ -623,6 +638,8 @@ async def update_hourly_rate(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Update a shift hourly rate."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"update_hourly_rate:{user_id}", max_requests=30, window_seconds=60, action_name="update hourly rate")
     company_id = get_current_company_id(current_user)
     existing = dataflow_crud.read("ShiftHourlyRate", rate_id)
     if existing is None or existing.get("company_id") != company_id:
@@ -670,6 +687,8 @@ async def create_multiplier(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_multiplier:{user_id}", max_requests=30, window_seconds=60, action_name="create multiplier")
 
     body = await request.json()
     name = body.get("name", "").strip()
@@ -716,6 +735,8 @@ async def publish_single_shift(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Publish a single shift assignment (makes it visible to the employee)."""
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"publish_single_shift:{user_id}", max_requests=30, window_seconds=60, action_name="publish shift")
     company_id = get_current_company_id(current_user)
     existing = dataflow_crud.read("ShiftAssignment", shift_id)
     if existing is None or existing.get("company_id") != company_id:

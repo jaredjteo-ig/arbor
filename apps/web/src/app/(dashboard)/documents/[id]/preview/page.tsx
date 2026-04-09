@@ -182,9 +182,86 @@ export default function TemplatePreviewPage() {
               Fields shown as {"{{field_name}}"} placeholders
             </span>
           </div>
-          <pre className="text-xs text-[var(--color-gray-700)] whitespace-pre-wrap font-mono bg-[var(--color-gray-50)] p-4 rounded-lg border border-[var(--color-gray-200)] max-h-96 overflow-y-auto leading-relaxed">
-            {template.content}
-          </pre>
+          <div className="bg-white p-6 rounded-lg border border-[var(--color-gray-200)] max-h-[600px] overflow-y-auto">
+            {template.content.split("\n").map((line, i) => {
+              const trimmed = line.trim();
+              // Divider lines
+              if (trimmed && /^[-=]{5,}$/.test(trimmed)) {
+                return (
+                  <hr
+                    key={i}
+                    className="my-3 border-t border-[var(--color-gray-200)]"
+                  />
+                );
+              }
+              // Blank lines
+              if (!trimmed) return <div key={i} className="h-2" />;
+              // Section headings: all-caps lines or numbered headings
+              const isHeading =
+                (trimmed === trimmed.toUpperCase() &&
+                  trimmed.length > 5 &&
+                  /[A-Z]{3,}/.test(trimmed)) ||
+                /^\d+\.\s+[A-Z]/.test(trimmed) ||
+                /^SECTION\s+[A-Z]:/.test(trimmed);
+              if (isHeading) {
+                return (
+                  <p
+                    key={i}
+                    className="text-sm font-semibold text-[var(--color-gray-900)] mt-4 mb-1"
+                  >
+                    {trimmed}
+                  </p>
+                );
+              }
+              // Signature / underscore lines
+              if (/___/.test(trimmed)) {
+                return (
+                  <p
+                    key={i}
+                    className="text-sm text-[var(--color-gray-500)] mt-3 mb-1 font-mono"
+                  >
+                    {trimmed}
+                  </p>
+                );
+              }
+              // Sub-items
+              if (
+                trimmed.startsWith("- ") ||
+                trimmed.startsWith("[ ]") ||
+                /^\d+\.\d+\s/.test(trimmed)
+              ) {
+                return (
+                  <p
+                    key={i}
+                    className="text-sm text-[var(--color-gray-700)] pl-4 my-0.5"
+                  >
+                    {trimmed}
+                  </p>
+                );
+              }
+              // Highlight placeholders
+              const parts = trimmed.split(/(\{\{[^}]+\}\})/g);
+              return (
+                <p
+                  key={i}
+                  className="text-sm text-[var(--color-gray-700)] my-0.5"
+                >
+                  {parts.map((part, j) =>
+                    /^\{\{[^}]+\}\}$/.test(part) ? (
+                      <span
+                        key={j}
+                        className="bg-[var(--color-primary-bg)] text-[var(--color-primary)] px-1 rounded text-xs font-medium"
+                      >
+                        {part}
+                      </span>
+                    ) : (
+                      <span key={j}>{part}</span>
+                    ),
+                  )}
+                </p>
+              );
+            })}
+          </div>
         </AppCard>
       )}
     </div>

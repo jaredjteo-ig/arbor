@@ -16,7 +16,7 @@ import os
 import uuid
 from datetime import date as date_type, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
@@ -30,6 +30,7 @@ from hr_advisory.security.encryption import (
     mask_nric,
     mask_bank_account,
 )
+from hr_advisory.api.routers._helpers import _validate_text_length
 from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
@@ -82,16 +83,6 @@ MAX_ADDRESS_LENGTH = 500
 
 # CSV import row limit
 MAX_IMPORT_ROWS = 500
-
-
-def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_LENGTH) -> str:
-    """Validate and truncate text input to maximum length."""
-    if value and len(value) > max_len:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{field_name} exceeds maximum length of {max_len} characters.",
-        )
-    return value
 
 
 # --------------------------------------------------------------------------
@@ -292,17 +283,20 @@ def _find_user_by_id(user_id: int) -> dict | None:
     return dataflow_crud.read("User", user_id)
 
 
-def _bulk_find_users(user_ids: list[int]) -> dict[int, dict]:
-    """Bulk-fetch users by IDs. Returns {user_id: user_dict}."""
+def _bulk_find_users(user_ids: list[int], company_id: int | None = None) -> dict[int, dict]:
+    """Bulk-fetch users by IDs. Returns {user_id: user_dict}.
+
+    Uses a single query to fetch all users for the company instead of
+    one query per user ID (N+1 elimination).
+    """
     if not user_ids:
         return {}
-    # Fetch only the users we need, not all users across all tenants
-    result = {}
-    for uid in user_ids:
-        user = dataflow_crud.read("User", uid)
-        if user:
-            result[user["id"]] = user
-    return result
+    filter_dict: dict = {}
+    if company_id is not None:
+        filter_dict["company_id"] = company_id
+    all_users = dataflow_crud.list_records("User", filter_dict)
+    id_set = set(user_ids)
+    return {u["id"]: u for u in all_users if u.get("id") in id_set}
 
 
 def _serialize_employee_summary(emp: dict, user: dict | None = None) -> dict:
@@ -1762,11 +1756,14 @@ async def resend_invitation(
 
 @router.get("")
 async def list_employees(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """List all employees for the current user's company.
 
     Returns employee records enriched with user email and name.
+    Supports pagination via page and page_size query parameters.
 
     Status codes:
         200: Success
@@ -1781,13 +1778,18 @@ async def list_employees(
 
     employees = _list_employees_for_company(company_id)
 
+    # Pagination: slice the full list
+    total_count = len(employees)
+    offset = (page - 1) * page_size
+    page_employees = employees[offset : offset + page_size]
+
     # Bulk-fetch user details (1 query instead of N)
-    user_ids = [emp.get("user_id") for emp in employees if emp.get("user_id")]
-    users_map = _bulk_find_users(user_ids)
+    user_ids = [emp.get("user_id") for emp in page_employees if emp.get("user_id")]
+    users_map = _bulk_find_users(user_ids, company_id=company_id)
 
     # Lightweight serialization (no decryption for list view)
     enriched = []
-    for emp in employees:
+    for emp in page_employees:
         user = users_map.get(emp.get("user_id"))
         enriched.append(_serialize_employee_summary(emp, user))
 
@@ -1795,6 +1797,10 @@ async def list_employees(
         "employees": enriched,
         "count": len(enriched),
         "company_id": company_id,
+        "page": page,
+        "page_size": page_size,
+        "total": total_count,
+        "pages": math.ceil(total_count / page_size) if total_count > 0 else 0,
     }
 
 

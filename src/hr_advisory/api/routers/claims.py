@@ -10,9 +10,10 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 from hr_advisory.services import dataflow_crud
 
@@ -96,6 +97,8 @@ async def create_claim_category(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_claim_category:{user_id}", max_requests=30, window_seconds=60, action_name="create claim category")
 
     body = await request.json()
     name = body.get("name", "").strip()
@@ -171,6 +174,7 @@ async def create_claim(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_claim:{user_id}", max_requests=30, window_seconds=60, action_name="create claim")
     emp = _find_employee_for_user(user_id, company_id)
     if emp is None:
         raise HTTPException(status_code=400, detail="Employee record not found.")
@@ -202,9 +206,14 @@ async def create_claim(
 @router.get("")
 async def list_claims(
     request: Request,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """List claims. Employees see their own; admins see all. Supports ?status= filter."""
+    """List claims. Employees see their own; admins see all.
+
+    Supports ?status= filter and pagination via page and page_size query parameters.
+    """
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
@@ -218,7 +227,7 @@ async def list_claims(
         user_id = int(current_user.get("sub", 0))
         emp = _find_employee_for_user(user_id, company_id)
         if emp is None:
-            return {"claims": [], "count": 0}
+            return {"claims": [], "count": 0, "page": page, "page_size": page_size, "total": 0, "pages": 0}
         filter_dict["employee_id"] = emp["id"]
 
     if status_filter:
@@ -226,7 +235,20 @@ async def list_claims(
 
     claims = dataflow_crud.list_records("Claim", filter_dict)
     claims.sort(key=lambda c: c.get("created_at", ""), reverse=True)
-    return {"claims": claims, "count": len(claims)}
+
+    # Pagination
+    total_count = len(claims)
+    offset = (page - 1) * page_size
+    page_claims = claims[offset : offset + page_size]
+
+    return {
+        "claims": page_claims,
+        "count": len(page_claims),
+        "page": page,
+        "page_size": page_size,
+        "total": total_count,
+        "pages": math.ceil(total_count / page_size) if total_count > 0 else 0,
+    }
 
 
 @router.get("/pending-for-payroll")
@@ -396,6 +418,8 @@ async def add_claim_item(
 ) -> dict:
     """Add an item to a draft claim. Validates category limits."""
     company_id = get_current_company_id(current_user)
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"add_claim_item:{user_id}", max_requests=30, window_seconds=60, action_name="add claim item")
     claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
@@ -615,6 +639,7 @@ async def create_claim_group(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"create_claim_group:{user_id}", max_requests=30, window_seconds=60, action_name="create claim group")
     emp = _find_employee_for_user(user_id, company_id)
     if emp is None:
         raise HTTPException(status_code=400, detail="Employee record not found.")
@@ -713,6 +738,8 @@ async def submit_claim_group(
 ) -> dict:
     """Submit a claim group for approval. Submits all linked claims."""
     company_id = get_current_company_id(current_user)
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"submit_claim_group:{user_id}", max_requests=30, window_seconds=60, action_name="submit claim group")
     group = dataflow_crud.read("ClaimGroup", group_id)
     if group is None or group.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim group not found.")

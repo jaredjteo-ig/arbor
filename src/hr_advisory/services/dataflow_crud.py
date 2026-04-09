@@ -94,9 +94,10 @@ def count(
     model_name: str,
     filter_dict: dict[str, Any] | None = None,
 ) -> int:
-    """Count records matching a filter."""
-    records = list_records(model_name, filter_dict, limit=1)
-    # express_sync doesn't have a native count, so we use list with limit
-    # For accurate counts, use list_records with a high limit
+    """Count records matching a filter.
+
+    express_sync doesn't have a native count, so we fetch all matching
+    records and return len(). Single query — no double-fetch.
+    """
     all_records = list_records(model_name, filter_dict)
     return len(all_records)

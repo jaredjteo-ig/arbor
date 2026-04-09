@@ -309,6 +309,222 @@ export function QuotaLevyCalculator() {
           />
         </ResultPanel>
       )}
+
+      {/* What-if scenario */}
+      {result && (
+        <WhatIfScenario
+          currentResult={result}
+          sector={sector}
+          localCount={parseInt(localCount) || 0}
+          prCount={parseInt(prCount) || 0}
+          epCount={parseInt(epCount) || 0}
+          spCount={parseInt(spCount) || 0}
+          wpCount={parseInt(wpCount) || 0}
+        />
+      )}
     </div>
+  );
+}
+
+/* ── What-If Scenario ──────────────────────────────────── */
+
+function WhatIfScenario({
+  currentResult,
+  sector,
+  localCount,
+  prCount,
+  epCount,
+  spCount,
+  wpCount,
+}: {
+  currentResult: QuotaResult;
+  sector: string;
+  localCount: number;
+  prCount: number;
+  epCount: number;
+  spCount: number;
+  wpCount: number;
+}) {
+  const [hireType, setHireType] = useState("sp");
+  const [hireCount, setHireCount] = useState("1");
+  const [scenario, setScenario] = useState<QuotaResult | null>(null);
+
+  const hireOptions = [
+    { value: "local", label: "Local (SC)" },
+    { value: "pr", label: "Permanent Resident" },
+    { value: "ep", label: "Employment Pass" },
+    { value: "sp", label: "S Pass" },
+    { value: "wp", label: "Work Permit" },
+  ];
+
+  function runScenario() {
+    const count = parseInt(hireCount) || 0;
+    if (count <= 0) return;
+
+    const config = SECTORS[sector];
+    const newLocal = localCount + (hireType === "local" ? count : 0);
+    const newPr = prCount + (hireType === "pr" ? count : 0);
+    const newEp = epCount + (hireType === "ep" ? count : 0);
+    const newSp = spCount + (hireType === "sp" ? count : 0);
+    const newWp = wpCount + (hireType === "wp" ? count : 0);
+
+    const localCore = newLocal + newPr;
+    const foreignWorkers = newSp + newWp;
+    const totalWorkers = localCore + newEp + foreignWorkers;
+    const currentRatio =
+      localCore > 0
+        ? foreignWorkers / localCore
+        : foreignWorkers > 0
+          ? Infinity
+          : 0;
+
+    const maxForeign = Math.floor(
+      localCore * (config.drcLimit / (1 - config.drcLimit)),
+    );
+    const withinLimit = foreignWorkers <= maxForeign;
+
+    const maxSPass = Math.floor(
+      localCore * (config.sPassSubDrc / (1 - config.sPassSubDrc)),
+    );
+    const sPassRatio =
+      localCore > 0 ? newSp / (localCore + newSp) : newSp > 0 ? 1 : 0;
+    const sPassWithinLimit = newSp <= maxSPass;
+
+    let levyEstimate = 0;
+    const tier1Max = Math.floor(localCore * config.levyTier1Threshold);
+    const wpInTier1 = Math.min(newWp, tier1Max);
+    const wpInTier2 = Math.max(0, newWp - tier1Max);
+    levyEstimate += wpInTier1 * config.levyTier1;
+    levyEstimate += wpInTier2 * config.levyTier2;
+    levyEstimate += newSp * 450;
+
+    const notes: string[] = [];
+    if (!withinLimit) {
+      notes.push("This scenario would exceed the DRC limit.");
+    }
+    if (!sPassWithinLimit) {
+      notes.push("This scenario would exceed the S Pass sub-quota.");
+    }
+    if (withinLimit && sPassWithinLimit) {
+      notes.push("This scenario is within all quota limits.");
+    }
+
+    setScenario({
+      totalWorkers,
+      localCore,
+      foreignWorkers,
+      currentRatio: isFinite(currentRatio) ? currentRatio : 0,
+      drcLimit: config.drcLimit,
+      withinLimit,
+      wpAllowed: maxForeign,
+      sPassRatio: isFinite(sPassRatio) ? sPassRatio : 0,
+      sPassSubDrcLimit: config.sPassSubDrc,
+      sPassWithinLimit,
+      maxSPass,
+      levyEstimate,
+      notes,
+    });
+  }
+
+  const levyDiff = scenario
+    ? scenario.levyEstimate - currentResult.levyEstimate
+    : 0;
+
+  return (
+    <AppCard
+      variant="standard"
+      header={
+        <h3 className="text-base font-semibold text-[var(--color-gray-900)]">
+          What if I hire...
+        </h3>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <AppInput
+            label="Pass Type"
+            variant="select"
+            value={hireType}
+            onChange={(e) => setHireType((e.target as HTMLSelectElement).value)}
+            options={hireOptions}
+          />
+          <AppInput
+            label="How Many"
+            variant="number"
+            placeholder="1"
+            value={hireCount}
+            onChange={(e) => setHireCount((e.target as HTMLInputElement).value)}
+            min="1"
+          />
+          <div className="flex items-end">
+            <AppButton onClick={runScenario} className="w-full">
+              Compare
+            </AppButton>
+          </div>
+        </div>
+
+        {scenario && (
+          <div className="mt-4 rounded-[8px] border border-[var(--color-gray-200)] bg-[var(--color-gray-50)] p-4 space-y-2">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase">
+                  Current
+                </p>
+                <p className="font-semibold text-[var(--color-gray-900)]">
+                  {currentResult.foreignWorkers} foreign /{" "}
+                  {currentResult.localCore} local
+                </p>
+                <p
+                  className={
+                    currentResult.withinLimit
+                      ? "text-emerald-600"
+                      : "text-red-600"
+                  }
+                >
+                  {currentResult.withinLimit ? "Within quota" : "Over quota"}
+                </p>
+                <p className="text-[var(--color-gray-700)]">
+                  Levy: {fmt(currentResult.levyEstimate)}/mo
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase">
+                  After Hiring
+                </p>
+                <p className="font-semibold text-[var(--color-gray-900)]">
+                  {scenario.foreignWorkers} foreign / {scenario.localCore} local
+                </p>
+                <p
+                  className={
+                    scenario.withinLimit ? "text-emerald-600" : "text-red-600"
+                  }
+                >
+                  {scenario.withinLimit ? "Within quota" : "Over quota"}
+                </p>
+                <p className="text-[var(--color-gray-700)]">
+                  Levy: {fmt(scenario.levyEstimate)}/mo
+                  {levyDiff !== 0 && (
+                    <span
+                      className={
+                        levyDiff > 0 ? " text-red-600" : " text-emerald-600"
+                      }
+                    >
+                      {" "}
+                      ({levyDiff > 0 ? "+" : ""}
+                      {fmt(levyDiff)})
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            {scenario.notes.map((note, i) => (
+              <p key={i} className="text-xs text-[var(--color-gray-600)] mt-2">
+                {note}
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
+    </AppCard>
   );
 }

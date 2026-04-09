@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 
 from hr_advisory.api.middleware.auth_middleware import require_role
+from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
 from hr_advisory.kb.admin import get_kb_stats
 from hr_advisory.kb.admin import search_provisions as _kb_search_provisions
@@ -219,6 +220,8 @@ async def compliance_check(
     Queries the knowledge base for provisions in each requested
     domain, counts coverage, and classifies overall compliance.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"compliance_check:{user_id}", max_requests=30, window_seconds=60, action_name="compliance check")
     body = await request.json()
     company_id = body.get("company_id")
     validate_company_access(current_user, requested_company_id=company_id)
@@ -392,6 +395,8 @@ async def gap_analysis(
     Returns specific domains with missing or sparse provision coverage,
     along with severity classification and remediation recommendations.
     """
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(f"gap_analysis:{user_id}", max_requests=30, window_seconds=60, action_name="gap analysis")
     body = await request.json()
     company_id = body.get("company_id")
     validate_company_access(current_user, requested_company_id=company_id)

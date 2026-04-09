@@ -2706,3 +2706,33 @@ class PulseSurveyResponse:
             {"name": "idx_pulseresp_survey", "fields": ["survey_id"]},
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Web Push Subscription (browser push notifications via VAPID)
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class PushSubscription:
+    """A browser Web Push subscription for a user.
+
+    Stores the push endpoint URL and encryption keys returned by the
+    browser PushManager.subscribe() call. Used to deliver push
+    notifications via the Web Push protocol with VAPID authentication.
+    """
+
+    user_id: int
+    company_id: int = 0
+    endpoint: str = ""  # Push service URL (e.g. https://fcm.googleapis.com/fcm/send/...)
+    p256dh: str = ""  # Client public key (base64url)
+    auth: str = ""  # Auth secret (base64url)
+    is_active: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_pushsub_user", "fields": ["user_id"]},
+            {"name": "idx_pushsub_company", "fields": ["company_id"]},
+            {"name": "idx_pushsub_active", "fields": ["is_active"]},
+        ],
+    }

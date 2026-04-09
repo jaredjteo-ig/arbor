@@ -172,7 +172,7 @@ export default function ShiftsPage() {
       <AdminGuard>
         <div className="p-6 space-y-4">
           <div className="h-8 w-48 rounded bg-gray-200 animate-pulse" />
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
             {Array.from({ length: 7 }).map((_, i) => (
               <div
                 key={i}
@@ -255,7 +255,7 @@ export default function ShiftsPage() {
         </div>
 
         {/* Weekly Grid */}
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
           {DAY_LABELS.map((label, i) => {
             const dateStr = addDays(weekStart, i);
             const dayAssignments = assignmentsByDate[dateStr] || [];
@@ -341,64 +341,66 @@ export default function ShiftsPage() {
             >
               Weekly Hours
             </h2>
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-                  <th
-                    className="text-left py-2 font-medium"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    Employee
-                  </th>
-                  <th
-                    className="text-right py-2 font-medium"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    Hours
-                  </th>
-                  <th
-                    className="text-right py-2 font-medium"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {hours.map((h) => (
-                  <tr
-                    key={h.employee_id}
-                    style={{ borderBottom: "1px solid var(--color-border)" }}
-                  >
-                    <td className="py-2">{h.name}</td>
-                    <td className="py-2 text-right">{h.total_hours}h</td>
-                    <td className="py-2 text-right">
-                      {h.exceeds_limit ? (
-                        <span
-                          className="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
-                          style={{
-                            background: "var(--color-risk-red-bg)",
-                            color: "var(--color-risk-red)",
-                          }}
-                        >
-                          Exceeds 44h limit
-                        </span>
-                      ) : (
-                        <span
-                          className="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
-                          style={{
-                            background: "var(--color-risk-green-bg)",
-                            color: "var(--color-risk-green)",
-                          }}
-                        >
-                          OK
-                        </span>
-                      )}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[400px]">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+                    <th
+                      className="text-left py-2 font-medium"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      Employee
+                    </th>
+                    <th
+                      className="text-right py-2 font-medium"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      Hours
+                    </th>
+                    <th
+                      className="text-right py-2 font-medium"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      Status
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {hours.map((h) => (
+                    <tr
+                      key={h.employee_id}
+                      style={{ borderBottom: "1px solid var(--color-border)" }}
+                    >
+                      <td className="py-2">{h.name}</td>
+                      <td className="py-2 text-right">{h.total_hours}h</td>
+                      <td className="py-2 text-right">
+                        {h.exceeds_limit ? (
+                          <span
+                            className="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
+                            style={{
+                              background: "var(--color-risk-red-bg)",
+                              color: "var(--color-risk-red)",
+                            }}
+                          >
+                            Exceeds 44h limit
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
+                            style={{
+                              background: "var(--color-risk-green-bg)",
+                              color: "var(--color-risk-green)",
+                            }}
+                          >
+                            OK
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </AppCard>
         )}
 

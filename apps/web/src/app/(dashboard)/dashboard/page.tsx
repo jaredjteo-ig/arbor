@@ -606,8 +606,11 @@ export default function DashboardPage() {
     employeesApi
       .list()
       .then((data) => setEmployees(data.employees || []))
-      .catch(() => {
-        /* graceful */
+      .catch((err) => {
+        console.warn(
+          "[Dashboard] Failed to load employee data:",
+          err?.message || err,
+        );
       })
       .finally(() => setWorkforceLoading(false));
 
@@ -617,8 +620,11 @@ export default function DashboardPage() {
       .then((data) =>
         setPendingLeaveCount(data.count || data.applications?.length || 0),
       )
-      .catch(() => {
-        /* graceful */
+      .catch((err) => {
+        console.warn(
+          "[Dashboard] Failed to load pending leave count:",
+          err?.message || err,
+        );
       });
   }, [user?.company_id]);
 
