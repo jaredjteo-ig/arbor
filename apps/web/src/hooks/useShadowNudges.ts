@@ -52,8 +52,18 @@ export function useShadowNudges(): UseShadowNudgesReturn {
   const page = pageNameFromPath(pathname);
   const queryClient = useQueryClient();
 
-  // Track IDs of nudges the user has seen or dismissed this session
-  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+  // Track IDs of nudges the user has seen or dismissed — persisted in localStorage
+  const [seenIds, setSeenIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set<string>();
+    try {
+      const stored = localStorage.getItem("shadow-nudges-seen");
+      return stored
+        ? new Set(JSON.parse(stored) as string[])
+        : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  });
 
   const { data, isLoading } = useQuery<NudgesResponse, Error>({
     queryKey: nudgeKeys.byPage(page),
@@ -70,12 +80,23 @@ export function useShadowNudges(): UseShadowNudgesReturn {
   const nudges = data?.nudges ?? [];
   const unseenCount = nudges.filter((n) => !seenIds.has(n.id)).length;
 
+  const persistSeen = (ids: Set<string>) => {
+    try {
+      // Keep only the last 500 IDs to avoid localStorage bloat
+      const arr = [...ids].slice(-500);
+      localStorage.setItem("shadow-nudges-seen", JSON.stringify(arr));
+    } catch {
+      // localStorage full or unavailable — ignore
+    }
+  };
+
   const markAllSeen = () => {
     setSeenIds((prev) => {
       const next = new Set(prev);
       for (const nudge of nudges) {
         next.add(nudge.id);
       }
+      persistSeen(next);
       return next;
     });
   };
@@ -84,6 +105,7 @@ export function useShadowNudges(): UseShadowNudgesReturn {
     setSeenIds((prev) => {
       const next = new Set(prev);
       next.add(nudgeId);
+      persistSeen(next);
       return next;
     });
   };
