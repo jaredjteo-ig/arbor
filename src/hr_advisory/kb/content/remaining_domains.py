@@ -274,7 +274,7 @@ def _family_leave_provisions() -> list[dict]:
                 {
                     "rule_type": "worker_type",
                     "criteria_type": "inclusion",
-                    "criteria_value": ["female_employees"],
+                    "criteria_value": {"values": ["female_employees"]},
                 }
             ],
             "practical_examples": [

@@ -103,7 +103,7 @@ def _provisions() -> list[dict]:
                 {
                     "rule_type": "worker_type",
                     "criteria_type": "inclusion",
-                    "criteria_value": ["unionised employees"],
+                    "criteria_value": {"values": ["unionised employees"]},
                 }
             ],
             "practical_examples": [
