@@ -55,10 +55,18 @@ def list_records(
     model_name: str,
     filter_dict: dict[str, Any] | None = None,
     limit: int = 10000,
+    cache_ttl: int | None = None,
 ) -> list[dict[str, Any]]:
-    """List records with optional filter via db.express_sync."""
+    """List records with optional filter via db.express_sync.
+
+    Args:
+        cache_ttl: Cache TTL in seconds. Pass 0 to bypass cache entirely.
+    """
     db = _get_db()
-    result = db.express_sync.list(model_name, filter_dict or {}, limit=limit)
+    kwargs: dict[str, Any] = {"limit": limit}
+    if cache_ttl is not None:
+        kwargs["cache_ttl"] = cache_ttl
+    result = db.express_sync.list(model_name, filter_dict or {}, **kwargs)
     if isinstance(result, list):
         return result
     if isinstance(result, dict) and "records" in result:

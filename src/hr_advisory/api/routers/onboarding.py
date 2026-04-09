@@ -226,6 +226,7 @@ def _calculate_completion(assignment_id: int) -> tuple[float, int, int]:
     progress_records = dataflow_crud.list_records(
         "OnboardingStepProgress",
         {"assignment_id": assignment_id},
+        cache_ttl=0,
     )
     total = len(progress_records)
     if total == 0:
@@ -2488,6 +2489,7 @@ async def get_assignment(
     progress_records = dataflow_crud.list_records(
         "OnboardingStepProgress",
         {"assignment_id": assignment_id},
+        cache_ttl=0,
     )
 
     # Enrich progress with step metadata
