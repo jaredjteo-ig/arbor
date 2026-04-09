@@ -3397,7 +3397,7 @@ async def process_employee_exit(
     )
 
     # --- 6b. Deactivate the User account so the employee cannot log in ---
-    emp_user_id = employee.get("user_id")
+    emp_user_id = emp.get("user_id")
     if emp_user_id:
         try:
             dataflow_crud.update("User", emp_user_id, {"is_active": False})
