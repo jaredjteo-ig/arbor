@@ -486,6 +486,7 @@ export interface CompanyProfile {
   headcount_sp: number;
   headcount_wp: number;
   total_headcount: number;
+  has_foreign_workers?: boolean;
   profile_completeness_score: number;
   is_active: boolean;
 }

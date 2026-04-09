@@ -543,6 +543,27 @@ function PendingClaims({
                   {(claim.items ?? []).length} item
                   {(claim.items ?? []).length !== 1 ? "s" : ""}
                 </p>
+                {(claim.items ?? []).length > 0 && (
+                  <div className="mt-1.5 space-y-0.5">
+                    {(claim.items ?? []).slice(0, 3).map((item, idx) => (
+                      <p
+                        key={idx}
+                        className="text-xs text-[var(--color-gray-600)] flex items-center gap-1"
+                      >
+                        <span className="inline-block w-1 h-1 rounded-full bg-[var(--color-gray-400)] shrink-0" />
+                        {item.description || "Item"}{" "}
+                        <span className="text-[var(--color-gray-400)]">
+                          ({formatCurrency(item.amount)})
+                        </span>
+                      </p>
+                    ))}
+                    {(claim.items ?? []).length > 3 && (
+                      <p className="text-xs text-[var(--color-gray-400)]">
+                        +{(claim.items ?? []).length - 3} more
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-sm font-semibold text-[var(--color-gray-900)]">
@@ -927,8 +948,12 @@ export default function ClaimsPage() {
         </select>
       </div>
 
-      {/* Claims Table */}
-      <ClaimsList claims={claims} isLoading={isLoading} isAdmin={isAdmin} />
+      {/* Claims Table — admins don't see draft claims (employee's work-in-progress) */}
+      <ClaimsList
+        claims={isAdmin ? claims.filter((c) => c.status !== "draft") : claims}
+        isLoading={isLoading}
+        isAdmin={isAdmin}
+      />
 
       {/* New Claim Modal */}
       <NewClaimModal

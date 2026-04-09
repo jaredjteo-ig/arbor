@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Shield,
@@ -396,8 +396,27 @@ export default function CompliancePage() {
   const [inputs, setInputs] = useState<Record<string, boolean>>(
     Object.fromEntries(CHECKS.map((c) => [c.key, false])),
   );
-  const [companySize, setCompanySize] = useState("10");
+  const [companySize, setCompanySize] = useState("");
   const [hasForeign, setHasForeign] = useState(false);
+
+  // Auto-populate from company profile
+  useEffect(() => {
+    if (companyId > 0) {
+      import("@/services/api/profile").then(({ profileApi }) => {
+        profileApi
+          .get(companyId)
+          .then((profile) => {
+            if (profile.total_headcount > 0) {
+              setCompanySize(String(profile.total_headcount));
+            }
+            if (profile.has_foreign_workers) {
+              setHasForeign(true);
+            }
+          })
+          .catch(() => {});
+      });
+    }
+  }, [companyId]);
   const [result, setResult] = useState<CombinedResult | null>(null);
   const [activeTab, setActiveTab] = useState<"findings" | "inspection">(
     "findings",
