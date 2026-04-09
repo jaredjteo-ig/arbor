@@ -80,6 +80,7 @@ class AuthService:
         email: str,
         role: str,
         company_id: int | None = None,
+        token_version: int = 1,
     ) -> str:
         """Create an access JWT containing user identity.
 
@@ -88,6 +89,7 @@ class AuthService:
             email: user email
             role: user role
             company_id: (optional) the user's company for tenant isolation
+            tv: token version (for instant invalidation on termination/password change)
             exp: expiry timestamp (settings.jwt_expiry_minutes from now)
 
         Note: sub is stored as a string per JWT spec. decode_token converts
@@ -99,6 +101,7 @@ class AuthService:
             "email": email,
             "role": role,
             "jti": str(uuid.uuid4()),
+            "tv": token_version,
             "iat": now,
             "exp": now + (self._settings.jwt_expiry_minutes * 60),
         }
@@ -110,18 +113,20 @@ class AuthService:
             algorithm=self._settings.jwt_algorithm,
         )
 
-    def create_refresh_token(self, user_id: int) -> str:
+    def create_refresh_token(self, user_id: int, token_version: int = 1) -> str:
         """Create a refresh JWT (7-day expiry).
 
         Token payload:
             sub: str(user_id)
             type: "refresh"
+            tv: token version (for instant invalidation on termination/password change)
             exp: 7 days from now
         """
         now = int(time.time())
         payload = {
             "sub": str(user_id),
             "type": "refresh",
+            "tv": token_version,
             "jti": str(uuid.uuid4()),
             "iat": now,
             "exp": now + (_REFRESH_TOKEN_EXPIRY_MINUTES * 60),
@@ -379,8 +384,12 @@ class AuthService:
             email=user["email"],
             role=user["role"],
             company_id=user.get("company_id"),
+            token_version=user.get("token_version", 1),
         )
-        refresh_token = self.create_refresh_token(user_id=user["id"])
+        refresh_token = self.create_refresh_token(
+            user_id=user["id"],
+            token_version=user.get("token_version", 1),
+        )
 
         logger.info("User registered: email=%s, id=%s", email, user["id"])
 
@@ -441,8 +450,12 @@ class AuthService:
             email=user["email"],
             role=user["role"],
             company_id=user.get("company_id"),
+            token_version=user.get("token_version", 1),
         )
-        refresh_token = self.create_refresh_token(user_id=user["id"])
+        refresh_token = self.create_refresh_token(
+            user_id=user["id"],
+            token_version=user.get("token_version", 1),
+        )
 
         logger.info("User authenticated: email=%s, id=%s", email, user["id"])
 
@@ -497,11 +510,25 @@ class AuthService:
             logger.warning("Refresh attempt for deactivated account: id=%s", user_id)
             raise ValueError("Account is deactivated")
 
+        # Check token version — reject refresh if token_version was bumped
+        # (e.g. after termination or password reset)
+        refresh_tv = payload.get("tv")
+        current_tv = user.get("token_version", 1)
+        if refresh_tv is not None and refresh_tv != current_tv:
+            logger.warning(
+                "Refresh token version mismatch: token tv=%s, user tv=%s, user_id=%s",
+                refresh_tv,
+                current_tv,
+                user_id,
+            )
+            raise ValueError("Token has been invalidated")
+
         access_token = self.create_access_token(
             user_id=user["id"],
             email=user["email"],
             role=user["role"],
             company_id=user.get("company_id"),
+            token_version=current_tv,
         )
 
         return {
@@ -554,7 +581,22 @@ class AuthService:
             raise ValueError("User not found")
 
         new_hash = self.hash_password(new_password)
-        self._update_user(user["id"], {"password_hash": new_hash})
+
+        # Increment token_version to invalidate all existing sessions
+        current_tv = user.get("token_version", 1)
+        new_tv = current_tv + 1
+        self._update_user(user["id"], {"password_hash": new_hash, "token_version": new_tv})
+
+        # Invalidate the token version cache so the middleware picks up the change
+        from hr_advisory.api.middleware.token_version_cache import get_token_version_cache
+
+        get_token_version_cache().invalidate(user["id"])
+        logger.info(
+            "Password reset: incremented token_version %s->%s for user %s",
+            current_tv,
+            new_tv,
+            user["id"],
+        )
 
         # Invalidate the reset token so it cannot be reused
         if jti:

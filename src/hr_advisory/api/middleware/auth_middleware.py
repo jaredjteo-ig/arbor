@@ -63,6 +63,28 @@ async def get_current_user(
             )
             raise HTTPException(status_code=401, detail="Token has been revoked")
 
+    # Check token version — instant invalidation on termination/password change
+    tv = payload.get("tv")
+    user_id_str = payload.get("sub")
+    if tv is not None and user_id_str is not None:
+        try:
+            uid = int(user_id_str) if isinstance(user_id_str, str) else user_id_str
+            from hr_advisory.api.middleware.token_version_cache import get_token_version_cache
+
+            cache = get_token_version_cache()
+            current_tv = cache.get_or_fetch(uid)
+            if tv != current_tv:
+                logger.warning(
+                    "Token version mismatch: token tv=%s, current tv=%s, user=%s, path=%s",
+                    tv,
+                    current_tv,
+                    uid,
+                    request.url.path,
+                )
+                raise HTTPException(status_code=401, detail="Token has been invalidated")
+        except (ValueError, TypeError):
+            pass  # Non-integer user_id, skip version check
+
     return payload
 
 

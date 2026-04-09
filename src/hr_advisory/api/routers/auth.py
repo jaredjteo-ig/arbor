@@ -618,8 +618,12 @@ async def register_employee(
         email=user["email"],
         role=user["role"],
         company_id=company_id,
+        token_version=user.get("token_version", 1),
     )
-    refresh_token = auth_service.create_refresh_token(user_id=user_id)
+    refresh_token = auth_service.create_refresh_token(
+        user_id=user_id,
+        token_version=user.get("token_version", 1),
+    )
 
     logger.info(
         "Employee registered via invitation: email=%s, user_id=%s, company_id=%s",
@@ -740,8 +744,12 @@ async def google_exchange(request: Request):
         email=user["email"],
         role=user["role"],
         company_id=user.get("company_id"),
+        token_version=user.get("token_version", 1),
     )
-    refresh_token = auth_service.create_refresh_token(user_id=user["id"])
+    refresh_token = auth_service.create_refresh_token(
+        user_id=user["id"],
+        token_version=user.get("token_version", 1),
+    )
 
     return {
         "user": {

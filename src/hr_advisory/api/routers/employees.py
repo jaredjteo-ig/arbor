@@ -3394,17 +3394,30 @@ async def process_employee_exit(
         },
     )
 
-    # --- 6b. Deactivate the User account so the employee cannot log in ---
+    # --- 6b. Deactivate the User account and bump token_version for instant logout ---
     emp_user_id = emp.get("user_id")
     if emp_user_id:
         try:
-            dataflow_crud.update("User", emp_user_id, {"is_active": False})
-            logger.info("Deactivated user account %s for terminated employee %s", emp_user_id, employee_id)
+            user_record = dataflow_crud.read("User", emp_user_id)
+            current_tv = (user_record or {}).get("token_version", 1)
+            dataflow_crud.update("User", emp_user_id, {
+                "is_active": False,
+                "token_version": current_tv + 1,
+            })
+            from hr_advisory.api.middleware.token_version_cache import get_token_version_cache
+
+            get_token_version_cache().invalidate(emp_user_id)
+            logger.info(
+                "Deactivated user %s, token_version=%s->%s",
+                emp_user_id,
+                current_tv,
+                current_tv + 1,
+            )
         except Exception as exc:
             logger.error("CRITICAL: Failed to deactivate user %s: %s", emp_user_id, exc)
             raise HTTPException(
                 status_code=500,
-                detail="Employee exit processed but account deactivation failed. Contact administrator.",
+                detail="Employee exit processed but account deactivation failed.",
             )
 
     # --- 7. Create EmploymentEvent ---
