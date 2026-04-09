@@ -312,10 +312,8 @@ def _serialize_employee_summary(emp: dict, user: dict | None = None) -> dict:
     # Derive a status string for the frontend badge
     if confirmation == "terminated" or not is_active:
         status = "terminated"
-    elif is_active:
-        status = "active"
     else:
-        status = "inactive"
+        status = "active"
 
     return {
         "id": emp.get("id"),
@@ -3403,7 +3401,11 @@ async def process_employee_exit(
             dataflow_crud.update("User", emp_user_id, {"is_active": False})
             logger.info("Deactivated user account %s for terminated employee %s", emp_user_id, employee_id)
         except Exception as exc:
-            logger.error("Failed to deactivate user %s: %s", emp_user_id, exc)
+            logger.error("CRITICAL: Failed to deactivate user %s: %s", emp_user_id, exc)
+            raise HTTPException(
+                status_code=500,
+                detail="Employee exit processed but account deactivation failed. Contact administrator.",
+            )
 
     # --- 7. Create EmploymentEvent ---
     event_type_map = {

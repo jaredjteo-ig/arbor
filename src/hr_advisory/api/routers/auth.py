@@ -729,6 +729,9 @@ async def google_exchange(request: Request):
         )
         logger.info("Google SSO: created new user email=%s, id=%s", email, user.get("id"))
     else:
+        # Block deactivated users (e.g. terminated employees)
+        if not user.get("is_active", True):
+            raise HTTPException(status_code=403, detail="Account is deactivated.")
         logger.info("Google SSO: existing user email=%s, id=%s", email, user.get("id"))
 
     # Generate Arbor JWTs

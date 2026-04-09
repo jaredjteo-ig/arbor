@@ -2615,7 +2615,7 @@ function TerminateEmployeeModal({
           <div className="flex items-center gap-2">
             <UserX className="h-5 w-5 text-red-600" />
             <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
-              Terminate Employee
+              Process Employee Exit
             </h2>
           </div>
           <button
@@ -2629,8 +2629,9 @@ function TerminateEmployeeModal({
 
         <div className="mb-4 p-3 rounded-[8px] bg-red-50 border border-red-200">
           <p className="text-sm text-red-700">
-            You are about to terminate <strong>{employee.name}</strong>. This
-            will deactivate their account and calculate the final settlement.
+            You are about to process the exit for{" "}
+            <strong>{employee.name}</strong>. This will deactivate their account
+            and calculate the final settlement.
           </p>
         </div>
 
