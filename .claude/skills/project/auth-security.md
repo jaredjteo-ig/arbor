@@ -11,9 +11,30 @@ description: "Authentication and security patterns for Arbor. Use when working o
 
 | Type           | Expiry                | Key Claims                              | Created By                      |
 | -------------- | --------------------- | --------------------------------------- | ------------------------------- |
-| Access         | 60 min (configurable) | sub, email, role, company_id, jti       | `create_access_token()`         |
-| Refresh        | 7 days                | sub, type="refresh", jti                | `create_refresh_token()`        |
+| Access         | 60 min (configurable) | sub, email, role, company_id, tv, jti   | `create_access_token()`         |
+| Refresh        | 7 days                | sub, type="refresh", tv, jti            | `create_refresh_token()`        |
 | Password Reset | 1 hour                | sub (email), type="password_reset", jti | `create_password_reset_token()` |
+
+### Token Versioning (Instant Session Termination)
+
+User model has `token_version: int = 1`. All JWTs include a `tv` (token version) claim. The auth middleware checks `tv` against the user's current `token_version` on every request via an in-memory cache (30s TTL).
+
+When `token_version` is incremented, ALL existing tokens for that user are instantly invalidated — no need to enumerate or blocklist individual JTIs.
+
+**Version is incremented on:**
+- Employee termination (exit endpoint)
+- Password change (settings endpoint)
+- Password reset (auth_service)
+
+**Files:**
+- `src/hr_advisory/api/middleware/token_version_cache.py` — Thread-safe singleton cache
+- `src/hr_advisory/api/middleware/auth_middleware.py` — Version check after blocklist check
+
+**Cache behavior:**
+- Cache hit: ~0.1ms (dict lookup)
+- Cache miss: ~5ms (one DataFlow read)
+- TTL: 30 seconds (configurable)
+- Explicit invalidation on termination/password change for instant effect
 
 ### Token Blocklist
 
@@ -29,6 +50,39 @@ Tokens are blocklisted on:
 - Refresh token revocation
 
 File: `src/hr_advisory/api/middleware/token_blocklist.py`
+
+### Rate Limiting
+
+ALL auth endpoints limited to 5 requests/minute per IP. ALL write endpoints (POST/PATCH/DELETE) across 13 routers have `check_rate_limit()` at 30/minute per user (60/minute for alert read/dismiss).
+
+File: `src/hr_advisory/api/middleware/rate_limit.py`
+
+### RBAC
+
+- Backend: `require_role("owner", "hr_manager")` on admin endpoints
+- Frontend: `AdminGuard` component on 15 admin pages blocks employees
+- Employee nav uses dedicated `/my-*` routes with exact path matching
+
+### PII Encryption
+
+- `PUT /employees/me` encrypts NRIC/bank via `encrypt_field()`, skips masked values (containing `*`)
+- `nric_fin_last4` and `bank_account_last4` removed from `SELF_SERVICE_FIELDS` to prevent direct write bypass
+- Frontend masks NRIC/bank display using last4 fields, clears on focus for editing
+
+### Employee Termination Security
+
+Exit endpoint (`POST /employees/{id}/exit`) performs 3 deactivation steps:
+1. Employee record: `is_active=False`, `confirmation_status="terminated"`
+2. User account: `is_active=False`, `token_version` incremented
+3. Token version cache invalidated for instant session termination
+
+If User deactivation fails, raises HTTP 500 (fail-loud, not silent success).
+
+**All access paths blocked for terminated users:**
+- Email/password login: `is_active` check in authenticate()
+- Google OAuth: `is_active` check before token issuance
+- Token refresh: `is_active` + `token_version` mismatch check
+- Existing access token: `tv` check in auth middleware
 
 ### Password Handling
 
