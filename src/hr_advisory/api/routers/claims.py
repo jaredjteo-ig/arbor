@@ -241,6 +241,25 @@ async def list_claims(
     offset = (page - 1) * page_size
     page_claims = claims[offset : offset + page_size]
 
+    # Enrich with employee names and claim items
+    emp_cache: dict = {}
+    for claim in page_claims:
+        # Resolve employee name
+        eid = claim.get("employee_id")
+        if eid and eid not in emp_cache:
+            emp = dataflow_crud.read("Employee", eid)
+            if emp:
+                uid = emp.get("user_id")
+                user = dataflow_crud.read("User", uid) if uid else None
+                emp_cache[eid] = user.get("name", "") if user else ""
+            else:
+                emp_cache[eid] = ""
+        claim["employee_name"] = emp_cache.get(eid, "")
+
+        # Attach claim items
+        items = dataflow_crud.list_records("ClaimItem", {"claim_id": claim["id"]})
+        claim["items"] = items
+
     return {
         "claims": page_claims,
         "count": len(page_claims),

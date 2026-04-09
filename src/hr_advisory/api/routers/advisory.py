@@ -1384,14 +1384,12 @@ async def delete_conversation(
     if owner and owner != user_id:
         raise HTTPException(status_code=404, detail="Conversation not found.")
 
-    removed = conv_key in _conversation_memory
     _conversation_memory.pop(conv_key, None)
     _conversation_titles.pop(conv_key, None)
     _conversation_owners.pop(conv_key, None)
 
-    if not removed:
-        raise HTTPException(status_code=404, detail="Conversation not found.")
-
+    # Always return success — the conversation may have been lost on server
+    # restart (in-memory store) but the user still wants to clear it from their UI
     return {
         "conversation_id": conversation_id,
         "deleted": True,
