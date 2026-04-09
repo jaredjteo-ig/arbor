@@ -1259,13 +1259,19 @@ async def create_pay_item(
             detail="item_type must be one of: allowance, deduction, contribution.",
         )
 
+    import math
+
+    amount = float(body.get("amount", 0.0))
+    if not math.isfinite(amount) or amount < 0:
+        raise HTTPException(status_code=400, detail="Invalid amount: must be a finite non-negative number.")
+
     pay_item = dataflow_crud.create(
         "PayItem",
         {
             "company_id": company_id,
             "name": name,
             "item_type": item_type,
-            "amount": float(body.get("amount", 0.0)),
+            "amount": amount,
             "is_taxable": body.get("is_taxable", True),
             "is_cpf_applicable": body.get("is_cpf_applicable", True),
             "is_recurring": body.get("is_recurring", False),

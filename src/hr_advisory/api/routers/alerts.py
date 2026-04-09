@@ -6,6 +6,7 @@ Tracks per-user read/dismissed status separately from the admin update workflow.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -25,8 +26,9 @@ router = APIRouter(tags=["alerts"])
 
 # ── Per-user alert status tracking ────────────────────────────
 # Maps (user_id, alert_id) -> status. In production this would be a database.
+_MAX_ALERT_STATUS_ENTRIES = 10000
 
-_alert_status: dict[tuple[str, str], str] = {}
+_alert_status: OrderedDict[tuple[str, str], str] = OrderedDict()
 
 # ── Dynamic alerts store ────────────────────────────────────
 # Escalation alerts and other dynamic alerts are pushed here at runtime.
@@ -238,8 +240,12 @@ _SEED_ALERTS: list[dict] = [
 ]
 
 
-def _get_seed_alerts() -> list[dict]:
-    """Return seed alerts combined with any published regulatory updates."""
+def _get_seed_alerts(company_id: int | None = None) -> list[dict]:
+    """Return seed alerts combined with any published regulatory updates.
+
+    Seed alerts and published regulatory updates are system-wide (visible to all).
+    Dynamic alerts (escalations) are filtered by company_id to prevent cross-tenant leaks.
+    """
     alerts = list(_SEED_ALERTS)
 
     # Also include any dynamically published regulatory updates
@@ -260,10 +266,14 @@ def _get_seed_alerts() -> list[dict]:
                 "actions": [],
             })
 
-    # Include dynamic alerts (escalations, etc.)
+    # Include dynamic alerts (escalations, etc.) — filtered by company_id
     existing_ids = {a["id"] for a in alerts}
     for alert in _alerts_store:
         if alert["id"] not in existing_ids:
+            # Only include alerts belonging to the requesting company
+            alert_company = alert.get("company_id")
+            if company_id is not None and alert_company is not None and alert_company != company_id:
+                continue
             alerts.append(alert)
 
     # Evict oldest dynamic alerts if over limit
@@ -351,7 +361,8 @@ async def list_alerts(
     and status (unread, read, dismissed).
     """
     user_id = _user_id_from_payload(current_user)
-    raw_alerts = _get_seed_alerts()
+    company_id = current_user.get("company_id")
+    raw_alerts = _get_seed_alerts(company_id)
 
     responses = [_to_alert_response(a, user_id) for a in raw_alerts]
 
@@ -366,7 +377,7 @@ async def list_alerts(
 
     unread_count = sum(
         1
-        for a in _get_seed_alerts()
+        for a in _get_seed_alerts(company_id)
         if _alert_status_for_user(user_id, a["id"]) == "unread"
     )
 
@@ -384,7 +395,12 @@ async def mark_alert_read(
 ) -> dict:
     """Mark a specific alert as read for the current user."""
     user_id = _user_id_from_payload(current_user)
-    _alert_status[(user_id, alert_id)] = "read"
+    key = (user_id, alert_id)
+    if key not in _alert_status:
+        while len(_alert_status) >= _MAX_ALERT_STATUS_ENTRIES:
+            _alert_status.popitem(last=False)
+    _alert_status[key] = "read"
+    _alert_status.move_to_end(key)
     return {"alert_id": alert_id, "status": "read"}
 
 
@@ -395,7 +411,12 @@ async def dismiss_alert(
 ) -> dict:
     """Dismiss a specific alert for the current user."""
     user_id = _user_id_from_payload(current_user)
-    _alert_status[(user_id, alert_id)] = "dismissed"
+    key = (user_id, alert_id)
+    if key not in _alert_status:
+        while len(_alert_status) >= _MAX_ALERT_STATUS_ENTRIES:
+            _alert_status.popitem(last=False)
+    _alert_status[key] = "dismissed"
+    _alert_status.move_to_end(key)
     return {"alert_id": alert_id, "status": "dismissed"}
 
 
@@ -405,7 +426,8 @@ async def unread_count(
 ) -> UnreadCountResponse:
     """Get the number of unread alerts for the current user."""
     user_id = _user_id_from_payload(current_user)
-    raw_alerts = _get_seed_alerts()
+    company_id = current_user.get("company_id")
+    raw_alerts = _get_seed_alerts(company_id)
     count = sum(
         1
         for a in raw_alerts

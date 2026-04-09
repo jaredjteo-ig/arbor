@@ -98,6 +98,19 @@ async def create_job(
     _validate_text_length(body.get("description", ""), "description")
     _validate_text_length(body.get("notes", ""), "notes")
 
+    salary_min = body.get("salary_range_min")
+    salary_max = body.get("salary_range_max")
+    if salary_min is not None:
+        salary_min = float(salary_min)
+        if not math.isfinite(salary_min) or salary_min < 0:
+            raise HTTPException(status_code=400, detail="Invalid salary_range_min: must be a finite non-negative number.")
+    if salary_max is not None:
+        salary_max = float(salary_max)
+        if not math.isfinite(salary_max) or salary_max < 0:
+            raise HTTPException(status_code=400, detail="Invalid salary_range_max: must be a finite non-negative number.")
+    if salary_min is not None and salary_max is not None and salary_min > salary_max:
+        raise HTTPException(status_code=400, detail="salary_range_min cannot exceed salary_range_max.")
+
     job = dataflow_crud.create(
         "JobListing",
         {
@@ -107,8 +120,8 @@ async def create_job(
             "department": body.get("department", ""),
             "location": body.get("location", ""),
             "employment_type": body.get("employment_type", "full_time"),
-            "salary_range_min": body.get("salary_range_min"),
-            "salary_range_max": body.get("salary_range_max"),
+            "salary_range_min": salary_min,
+            "salary_range_max": salary_max,
             "requirements": body.get("requirements", []),
             "status": "draft",
             "created_by": int(current_user.get("sub", 0)),

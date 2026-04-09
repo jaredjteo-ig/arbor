@@ -188,6 +188,12 @@ const adminManagementNavItems: NavItem[] = [
     icon: UserPlus,
   },
   {
+    labelKey: "nav.clients",
+    label: "Clients",
+    href: "/clients",
+    icon: Building2,
+  },
+  {
     labelKey: "nav.approvals",
     label: "Approvals",
     href: "/approvals",
@@ -220,6 +226,12 @@ const adminBottomNavItems: NavItem[] = [
     label: "Training",
     href: "/training/skillsfuture",
     icon: GraduationCap,
+  },
+  {
+    labelKey: "nav.admin",
+    label: "Admin",
+    href: "/admin",
+    icon: Shield,
   },
   {
     labelKey: "nav.integrations",

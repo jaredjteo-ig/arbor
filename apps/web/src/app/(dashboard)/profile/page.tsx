@@ -1001,10 +1001,9 @@ export default function ProfilePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <AppInput
               label="UEN"
-              value={editDraft.uen ?? ""}
-              onChange={(e) =>
-                handleDraftChange("uen", (e.target as HTMLInputElement).value)
-              }
+              value={profile.uen ?? ""}
+              disabled
+              helperText="UEN cannot be changed after registration"
             />
           </div>
         ) : (

@@ -15,6 +15,7 @@ export interface Employee {
   is_active?: boolean;
   start_date?: string;
   employment_type?: string;
+  pass_type?: string;
   confirmation_status?: string;
 }
 

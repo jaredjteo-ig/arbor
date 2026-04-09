@@ -374,7 +374,7 @@ function HeadcountAndAlerts({
   /* Breakdown by pass type */
   const passBreakdown: Record<string, number> = {};
   for (const e of activeEmployees) {
-    const pt = (e.employment_type || "unknown").toLowerCase();
+    const pt = (e.pass_type || "unknown").toLowerCase();
     passBreakdown[pt] = (passBreakdown[pt] || 0) + 1;
   }
 

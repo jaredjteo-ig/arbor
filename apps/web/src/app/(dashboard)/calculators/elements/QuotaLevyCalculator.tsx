@@ -74,6 +74,10 @@ interface QuotaResult {
   drcLimit: number;
   withinLimit: boolean;
   wpAllowed: number;
+  sPassRatio: number;
+  sPassSubDrcLimit: number;
+  sPassWithinLimit: boolean;
+  maxSPass: number;
   levyEstimate: number;
   notes: string[];
 }
@@ -111,6 +115,14 @@ export function QuotaLevyCalculator() {
     const maxForeign = Math.floor(localCore * (drcLimit / (1 - drcLimit)));
     const withinLimit = foreignWorkers <= maxForeign;
 
+    // S Pass sub-quota
+    const sPassSubDrcLimit = config.sPassSubDrc;
+    const maxSPass = Math.floor(
+      localCore * (sPassSubDrcLimit / (1 - sPassSubDrcLimit)),
+    );
+    const sPassRatio = localCore > 0 ? sp / (localCore + sp) : sp > 0 ? 1 : 0;
+    const sPassWithinLimit = sp <= maxSPass;
+
     // Levy estimation (simplified)
     let levyEstimate = 0;
     const tier1Max = Math.floor(localCore * config.levyTier1Threshold);
@@ -130,6 +142,19 @@ export function QuotaLevyCalculator() {
         "Your current foreign worker count exceeds the DRC limit. You may need to reduce foreign headcount or hire more local workers.",
       );
     }
+    // S Pass sub-quota warning
+    if (sp > 0) {
+      const sPassUsage = maxSPass > 0 ? (sp / maxSPass) * 100 : 100;
+      if (!sPassWithinLimit) {
+        notes.push(
+          `S Pass sub-quota exceeded. You have ${sp} S Pass holders but the maximum for your local core is ${maxSPass}.`,
+        );
+      } else if (sPassUsage >= 80) {
+        notes.push(
+          `Approaching S Pass sub-quota: ${sp} of ${maxSPass} slots used (${sPassUsage.toFixed(0)}%). The next S Pass hire may bring you to the ceiling.`,
+        );
+      }
+    }
     notes.push(
       "Levy estimates are approximate. Actual levy rates depend on worker qualifications and MOM assessment.",
     );
@@ -142,6 +167,10 @@ export function QuotaLevyCalculator() {
       drcLimit,
       withinLimit,
       wpAllowed: maxForeign,
+      sPassRatio: isFinite(sPassRatio) ? sPassRatio : 0,
+      sPassSubDrcLimit,
+      sPassWithinLimit,
+      maxSPass,
       levyEstimate,
       notes,
     });
@@ -250,10 +279,24 @@ export function QuotaLevyCalculator() {
             value={`${(result.drcLimit * 100).toFixed(1)}%`}
           />
           <ResultRow
-            label="Within Quota"
+            label="Within Overall Quota"
             value={result.withinLimit ? "Yes" : "No -- over limit"}
             bold
             highlight
+          />
+          <ResultRow
+            label="S Pass Sub-Quota Ratio"
+            value={`${(result.sPassRatio * 100).toFixed(1)}% of ${(result.sPassSubDrcLimit * 100).toFixed(1)}% limit`}
+          />
+          <ResultRow
+            label="S Pass Within Sub-Quota"
+            value={result.sPassWithinLimit ? "Yes" : "No -- over S Pass limit"}
+            bold
+            highlight
+          />
+          <ResultRow
+            label="Max S Pass Allowed"
+            value={result.maxSPass.toString()}
           />
           <ResultRow
             label="Max Foreign Workers Allowed"

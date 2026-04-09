@@ -13,6 +13,7 @@ import {
   Sun,
   Brain,
   Eye,
+  Upload,
 } from "lucide-react";
 import {
   AppCard,
@@ -573,6 +574,60 @@ export default function SettingsPage() {
           </AppCard>
         </a>
       )}
+
+      {/* Import Data */}
+      {isAdmin && (
+        <a
+          href="/settings/import"
+          className="block no-underline"
+          style={{ textDecoration: "none", color: "inherit" }}
+        >
+          <AppCard variant="standard">
+            <div className="flex items-center gap-3 py-1">
+              <Upload
+                className="h-5 w-5 text-[var(--color-primary)]"
+                aria-hidden="true"
+              />
+              <div className="flex-1">
+                <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+                  Import Data
+                </h2>
+                <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                  Import employees, payroll data, and other records from CSV or
+                  Excel files.
+                </p>
+              </div>
+              <span className="text-xs text-[var(--color-gray-400)]">→</span>
+            </div>
+          </AppCard>
+        </a>
+      )}
+
+      {/* Notification Settings */}
+      <a
+        href="/settings/notifications"
+        className="block no-underline"
+        style={{ textDecoration: "none", color: "inherit" }}
+      >
+        <AppCard variant="standard">
+          <div className="flex items-center gap-3 py-1">
+            <Bell
+              className="h-5 w-5 text-[var(--color-primary)]"
+              aria-hidden="true"
+            />
+            <div className="flex-1">
+              <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+                Notification Settings
+              </h2>
+              <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                Configure notification channels, alert preferences, and digest
+                schedules.
+              </p>
+            </div>
+            <span className="text-xs text-[var(--color-gray-400)]">→</span>
+          </div>
+        </AppCard>
+      </a>
 
       {/* Display Section */}
       <AppCard

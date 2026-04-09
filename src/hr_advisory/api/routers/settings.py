@@ -9,6 +9,7 @@ delegates to AuthService for hash verification and update.
 """
 
 import logging
+from collections import OrderedDict
 from copy import deepcopy
 from threading import Lock
 
@@ -24,8 +25,10 @@ router = APIRouter()
 
 # ── In-memory settings store (keyed by user ID) ────────────────
 
+_MAX_STORE_ENTRIES = 10000
+
 _settings_lock = Lock()
-_user_settings: dict[int, dict] = {}
+_user_settings: OrderedDict[int, dict] = OrderedDict()
 
 _DEFAULT_SETTINGS: dict = {
     "notifications": {
@@ -45,14 +48,24 @@ def _get_settings_for_user(user_id: int) -> dict:
     """Return a copy of the user's settings, initialising defaults if needed."""
     with _settings_lock:
         if user_id not in _user_settings:
+            # Evict oldest entries if at capacity
+            while len(_user_settings) >= _MAX_STORE_ENTRIES:
+                _user_settings.popitem(last=False)
             _user_settings[user_id] = deepcopy(_DEFAULT_SETTINGS)
+        else:
+            # Move to end (most recently used)
+            _user_settings.move_to_end(user_id)
         return deepcopy(_user_settings[user_id])
 
 
 def _save_settings_for_user(user_id: int, settings: dict) -> dict:
     """Persist updated settings and return a copy."""
     with _settings_lock:
+        if user_id not in _user_settings:
+            while len(_user_settings) >= _MAX_STORE_ENTRIES:
+                _user_settings.popitem(last=False)
         _user_settings[user_id] = deepcopy(settings)
+        _user_settings.move_to_end(user_id)
         return deepcopy(_user_settings[user_id])
 
 
@@ -204,11 +217,22 @@ async def change_password(
             detail="New password must be different from current password",
         )
 
-    # Update the password
+    # Update the password and increment token_version to invalidate all existing sessions
     new_hash = auth_service.hash_password(new_password)
-    auth_service._update_user(user_id, {"password_hash": new_hash})
+    current_tv = user.get("token_version", 1)
+    new_tv = current_tv + 1
+    auth_service._update_user(user_id, {"password_hash": new_hash, "token_version": new_tv})
 
-    logger.info("Password changed for user_id=%s", user_id)
+    # Invalidate the token version cache so the middleware picks up the change
+    from hr_advisory.api.middleware.token_version_cache import get_token_version_cache
+
+    get_token_version_cache().invalidate(user_id)
+    logger.info(
+        "Password changed for user_id=%s, token_version %s->%s",
+        user_id,
+        current_tv,
+        new_tv,
+    )
     return {"message": "Password changed successfully"}
 
 
@@ -250,17 +274,21 @@ _DEFAULT_NOTIFICATION_PREFERENCES: list[dict] = [
 ]
 
 _notification_prefs_lock = Lock()
-_notification_prefs: dict[int, dict] = {}
+_notification_prefs: OrderedDict[int, dict] = OrderedDict()
 
 
 def _get_notification_prefs(user_id: int) -> dict:
     """Return notification preferences for a user, with defaults."""
     with _notification_prefs_lock:
         if user_id not in _notification_prefs:
+            while len(_notification_prefs) >= _MAX_STORE_ENTRIES:
+                _notification_prefs.popitem(last=False)
             _notification_prefs[user_id] = {
                 "preferences": deepcopy(_DEFAULT_NOTIFICATION_PREFERENCES),
                 "phone_number": None,
             }
+        else:
+            _notification_prefs.move_to_end(user_id)
         return deepcopy(_notification_prefs[user_id])
 
 

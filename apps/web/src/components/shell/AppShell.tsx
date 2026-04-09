@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import clsx from "clsx";
 import { NavigationSidebar } from "./NavigationSidebar";
 import { TopBar } from "./TopBar";
+import { alertsApi } from "@/services/api/alerts";
 
 const STORAGE_KEY = "arbor-sidebar-collapsed";
 
@@ -15,6 +16,7 @@ export function AppShell({ children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   /* Hydration-safe: read localStorage and set initial state after mount */
   useEffect(() => {
@@ -27,6 +29,14 @@ export function AppShell({ children }: AppShellProps) {
       setCollapsed(isTablet);
     }
     setMounted(true);
+  }, []);
+
+  /* Fetch unread notification count */
+  useEffect(() => {
+    alertsApi
+      .unreadCount()
+      .then((data) => setNotificationCount(data.unread_count))
+      .catch(() => {}); // Graceful fallback to 0
   }, []);
 
   /* Respond to resize: auto-collapse on tablet, expand on desktop */
@@ -120,7 +130,10 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar onMenuToggle={handleMobileToggle} notificationCount={0} />
+        <TopBar
+          onMenuToggle={handleMobileToggle}
+          notificationCount={notificationCount}
+        />
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:pr-[calc(var(--shadow-margin-collapsed)+1.5rem)]">
           {children}
