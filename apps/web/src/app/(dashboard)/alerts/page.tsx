@@ -19,6 +19,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { AppCard, AppButton } from "@/components/design-system";
+import { AdminGuard } from "@/components/auth/AdminGuard";
 import {
   useAlerts,
   useMarkAlertRead,
@@ -246,204 +247,213 @@ export default function AlertsPage() {
 
   /* ── Loading / Error states ────────────────────────────── */
 
-  if (isPending) return <AlertsSkeleton />;
+  if (isPending)
+    return (
+      <AdminGuard>
+        <AlertsSkeleton />
+      </AdminGuard>
+    );
 
   if (error) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <AppCard variant="standard">
-          <div className="text-center py-8">
-            <AlertCircle className="h-10 w-10 text-red-400 mx-auto mb-3" />
-            <p className="text-[var(--color-gray-700)] font-medium">
-              Unable to load alerts
-            </p>
-            <p className="text-sm text-[var(--color-gray-500)] mt-1">
-              {error.message}
-            </p>
-          </div>
-        </AppCard>
-      </div>
+      <AdminGuard>
+        <div className="max-w-4xl mx-auto">
+          <AppCard variant="standard">
+            <div className="text-center py-8">
+              <AlertCircle className="h-10 w-10 text-red-400 mx-auto mb-3" />
+              <p className="text-[var(--color-gray-700)] font-medium">
+                Unable to load alerts
+              </p>
+              <p className="text-sm text-[var(--color-gray-500)] mt-1">
+                {error.message}
+              </p>
+            </div>
+          </AppCard>
+        </div>
+      </AdminGuard>
     );
   }
 
   /* ── Render ────────────────────────────────────────────── */
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Bell
-              className="h-7 w-7 text-[var(--color-primary)]"
-              aria-hidden="true"
-            />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-                {unreadCount}
-              </span>
-            )}
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-              Regulatory Alerts
-            </h1>
-            <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-              Stay updated on regulatory changes affecting your company.
-            </p>
-          </div>
-        </div>
-
-        {/* View toggle */}
-        <div className="flex items-center gap-1 bg-[var(--color-gray-100)] rounded-lg p-1">
-          <button
-            onClick={() => setViewMode("list")}
-            className={`p-2 rounded-md transition-colors ${
-              viewMode === "list"
-                ? "bg-white text-[var(--color-gray-900)] shadow-sm"
-                : "text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)]"
-            }`}
-            aria-label="List view"
-          >
-            <List className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => setViewMode("calendar")}
-            className={`p-2 rounded-md transition-colors ${
-              viewMode === "calendar"
-                ? "bg-white text-[var(--color-gray-900)] shadow-sm"
-                : "text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)]"
-            }`}
-            aria-label="Calendar view"
-          >
-            <Calendar className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Summary pills */}
-      <div className="flex flex-wrap gap-2">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-blue-50 text-blue-700 border border-blue-200">
-          <span className="h-2 w-2 rounded-full bg-blue-500" />
-          {unreadCount} unread
-        </span>
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-red-50 text-red-700 border border-red-200">
-          <span className="h-2 w-2 rounded-full bg-red-500" />
-          {criticalCount} critical
-        </span>
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-700)] border border-[var(--color-gray-200)]">
-          <Calendar className="h-3.5 w-3.5" />
-          {thisMonthCount} this month
-        </span>
-      </div>
-
-      {/* Filter bar */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Tabs */}
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {(
-            [
-              { key: "all", label: "All" },
-              { key: "affecting", label: "Affecting Your Company" },
-              { key: "upcoming", label: "Upcoming Changes" },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                activeTab === tab.key
-                  ? "bg-[var(--color-primary)] text-white"
-                  : "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] hover:bg-[var(--color-gray-200)]"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Severity + status filters */}
-        <div className="flex gap-2 sm:ml-auto">
-          <select
-            value={severityFilter}
-            onChange={(e) =>
-              setSeverityFilter(e.target.value as AlertSeverity | "all")
-            }
-            className="px-3 py-1.5 text-sm rounded-lg border border-[var(--color-gray-200)] bg-white text-[var(--color-gray-700)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-          >
-            <option value="all">All Severity</option>
-            <option value="critical">Critical</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) =>
-              setStatusFilter(e.target.value as AlertStatus | "all")
-            }
-            className="px-3 py-1.5 text-sm rounded-lg border border-[var(--color-gray-200)] bg-white text-[var(--color-gray-700)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-          >
-            <option value="all">All Status</option>
-            <option value="unread">Unread</option>
-            <option value="read">Read</option>
-          </select>
-        </div>
-      </div>
-
-      {/* List view */}
-      {viewMode === "list" && (
-        <>
-          {filtered.length === 0 ? (
-            <AppCard variant="standard">
-              <div className="text-center py-8">
-                <Bell className="h-10 w-10 text-[var(--color-gray-300)] mx-auto mb-3" />
-                <p className="text-[var(--color-gray-500)]">
-                  No alerts match your current filters. Try adjusting your
-                  selection.
-                </p>
-              </div>
-            </AppCard>
-          ) : (
-            <div className="space-y-3">
-              {filtered.map((alert) => (
-                <AlertListItem
-                  key={alert.id}
-                  alert={alert}
-                  isExpanded={expandedId === alert.id}
-                  onToggle={() => toggleExpand(alert.id)}
-                  onMarkRead={() => markAsRead(alert.id)}
-                  onDismiss={() => dismissAlert(alert.id)}
-                />
-              ))}
+    <AdminGuard>
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Bell
+                className="h-7 w-7 text-[var(--color-primary)]"
+                aria-hidden="true"
+              />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {unreadCount}
+                </span>
+              )}
             </div>
-          )}
+            <div>
+              <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
+                Regulatory Alerts
+              </h1>
+              <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
+                Stay updated on regulatory changes affecting your company.
+              </p>
+            </div>
+          </div>
 
-          <p className="text-xs text-[var(--color-gray-400)] text-center">
-            Showing {filtered.length} of {alerts.length} alerts
-          </p>
-        </>
-      )}
+          {/* View toggle */}
+          <div className="flex items-center gap-1 bg-[var(--color-gray-100)] rounded-lg p-1">
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === "list"
+                  ? "bg-white text-[var(--color-gray-900)] shadow-sm"
+                  : "text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)]"
+              }`}
+              aria-label="List view"
+            >
+              <List className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode("calendar")}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === "calendar"
+                  ? "bg-white text-[var(--color-gray-900)] shadow-sm"
+                  : "text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)]"
+              }`}
+              aria-label="Calendar view"
+            >
+              <Calendar className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
 
-      {/* Calendar view */}
-      {viewMode === "calendar" && (
-        <CalendarView
-          year={calendarYear}
-          month={calendarMonth}
-          alertsByDay={calendarAlerts}
-          onPrevMonth={prevMonth}
-          onNextMonth={nextMonth}
-          onSelectAlert={(id) => {
-            setViewMode("list");
-            setExpandedId(id);
-            const alert = alerts.find((a) => a.id === id);
-            if (alert && alert.status === "unread") {
-              markAsRead(id);
-            }
-          }}
-        />
-      )}
-    </div>
+        {/* Summary pills */}
+        <div className="flex flex-wrap gap-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="h-2 w-2 rounded-full bg-blue-500" />
+            {unreadCount} unread
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-red-50 text-red-700 border border-red-200">
+            <span className="h-2 w-2 rounded-full bg-red-500" />
+            {criticalCount} critical
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-700)] border border-[var(--color-gray-200)]">
+            <Calendar className="h-3.5 w-3.5" />
+            {thisMonthCount} this month
+          </span>
+        </div>
+
+        {/* Filter bar */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Tabs */}
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {(
+              [
+                { key: "all", label: "All" },
+                { key: "affecting", label: "Affecting Your Company" },
+                { key: "upcoming", label: "Upcoming Changes" },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                  activeTab === tab.key
+                    ? "bg-[var(--color-primary)] text-white"
+                    : "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] hover:bg-[var(--color-gray-200)]"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Severity + status filters */}
+          <div className="flex gap-2 sm:ml-auto">
+            <select
+              value={severityFilter}
+              onChange={(e) =>
+                setSeverityFilter(e.target.value as AlertSeverity | "all")
+              }
+              className="px-3 py-1.5 text-sm rounded-lg border border-[var(--color-gray-200)] bg-white text-[var(--color-gray-700)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+            >
+              <option value="all">All Severity</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) =>
+                setStatusFilter(e.target.value as AlertStatus | "all")
+              }
+              className="px-3 py-1.5 text-sm rounded-lg border border-[var(--color-gray-200)] bg-white text-[var(--color-gray-700)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+            >
+              <option value="all">All Status</option>
+              <option value="unread">Unread</option>
+              <option value="read">Read</option>
+            </select>
+          </div>
+        </div>
+
+        {/* List view */}
+        {viewMode === "list" && (
+          <>
+            {filtered.length === 0 ? (
+              <AppCard variant="standard">
+                <div className="text-center py-8">
+                  <Bell className="h-10 w-10 text-[var(--color-gray-300)] mx-auto mb-3" />
+                  <p className="text-[var(--color-gray-500)]">
+                    No alerts match your current filters. Try adjusting your
+                    selection.
+                  </p>
+                </div>
+              </AppCard>
+            ) : (
+              <div className="space-y-3">
+                {filtered.map((alert) => (
+                  <AlertListItem
+                    key={alert.id}
+                    alert={alert}
+                    isExpanded={expandedId === alert.id}
+                    onToggle={() => toggleExpand(alert.id)}
+                    onMarkRead={() => markAsRead(alert.id)}
+                    onDismiss={() => dismissAlert(alert.id)}
+                  />
+                ))}
+              </div>
+            )}
+
+            <p className="text-xs text-[var(--color-gray-400)] text-center">
+              Showing {filtered.length} of {alerts.length} alerts
+            </p>
+          </>
+        )}
+
+        {/* Calendar view */}
+        {viewMode === "calendar" && (
+          <CalendarView
+            year={calendarYear}
+            month={calendarMonth}
+            alertsByDay={calendarAlerts}
+            onPrevMonth={prevMonth}
+            onNextMonth={nextMonth}
+            onSelectAlert={(id) => {
+              setViewMode("list");
+              setExpandedId(id);
+              const alert = alerts.find((a) => a.id === id);
+              if (alert && alert.status === "unread") {
+                markAsRead(id);
+              }
+            }}
+          />
+        )}
+      </div>
+    </AdminGuard>
   );
 }
 

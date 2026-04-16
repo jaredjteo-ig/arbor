@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 
-from hr_advisory.api.middleware.auth_middleware import get_current_user
+from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.workflows.regulatory_updates import (
     RegulatoryUpdate,
@@ -354,7 +354,7 @@ def _to_alert_response(alert_data: dict, user_id: str) -> AlertResponse:
 async def list_alerts(
     severity: str | None = None,
     status: str | None = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> AlertListResponse:
     """List regulatory alerts for the current user.
 
@@ -392,7 +392,7 @@ async def list_alerts(
 @router.post("/{alert_id}/read")
 async def mark_alert_read(
     alert_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Mark a specific alert as read for the current user."""
     user_id = _user_id_from_payload(current_user)
@@ -409,7 +409,7 @@ async def mark_alert_read(
 @router.post("/{alert_id}/dismiss")
 async def dismiss_alert(
     alert_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> dict:
     """Dismiss a specific alert for the current user."""
     user_id = _user_id_from_payload(current_user)
@@ -425,7 +425,7 @@ async def dismiss_alert(
 
 @router.get("/unread-count", response_model=UnreadCountResponse)
 async def unread_count(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
 ) -> UnreadCountResponse:
     """Get the number of unread alerts for the current user."""
     user_id = _user_id_from_payload(current_user)

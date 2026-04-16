@@ -247,13 +247,12 @@ def _update_assignment_status(assignment_id: int) -> dict:
         return {}
 
     percentage, completed, total = _calculate_completion(assignment_id)
-    now_dt = datetime.now(timezone.utc)
-    now = now_dt.isoformat()
+    now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
     updates: dict = {"completion_percentage": percentage}
 
     if completed == total and total > 0:
         updates["status"] = "completed"
-        updates["completed_at"] = now
+        updates["completed_at"] = now_dt
     elif assignment.get("due_date"):
         due_str = assignment["due_date"]
         try:
@@ -2711,7 +2710,7 @@ async def complete_step(
     except Exception:
         pass
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     updates = {
         "status": "completed",
         "completed_at": now,
@@ -3101,7 +3100,7 @@ async def update_preboarding_task(
     if body.get("status") == "done" and task.get("status") != "done":
         actor_id = int(current_user.get("sub", 0))
         updates["status"] = "done"
-        updates["completed_at"] = datetime.now(timezone.utc).isoformat()
+        updates["completed_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
         updates["completed_by"] = actor_id
 
     if "notes" in body:
@@ -3237,7 +3236,7 @@ async def update_it_provisioning(
             updates["status"] = new_status
             if new_status == "completed":
                 actor_id = int(current_user.get("sub", 0))
-                updates["completed_at"] = datetime.now(timezone.utc).isoformat()
+                updates["completed_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
                 updates["completed_by"] = actor_id
 
     if "notes" in body:
@@ -3305,7 +3304,7 @@ async def update_milestone(
 
     if body.get("status") == "completed" and milestone.get("status") != "completed":
         updates["status"] = "completed"
-        updates["completed_at"] = datetime.now(timezone.utc).isoformat()
+        updates["completed_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
         updates["reviewed_by"] = actor_id
 
     if "notes" in body:
