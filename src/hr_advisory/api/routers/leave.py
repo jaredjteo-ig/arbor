@@ -73,22 +73,30 @@ def _enrich_leave_applications(apps: list, company_id: int) -> list:
     employee_ids = {a.get("employee_id") for a in apps if a.get("employee_id")}
     leave_type_ids = {a.get("leave_type_id") for a in apps if a.get("leave_type_id")}
 
-    # Build employee_id -> name lookup
+    # Build employee_id -> name lookup (name lives on the User record, not Employee)
     emp_name_map: dict[int, str] = {}
     if employee_ids:
         employees = dataflow_crud.list_records(
             "Employee",
             {"company_id": company_id},
         )
+        # Collect user_ids for bulk lookup
+        uid_to_eid: dict[int, list[int]] = {}
         for emp in employees:
             eid = emp.get("id")
             if eid in employee_ids:
-                name = emp.get("name", "")
-                if not name:
-                    first = emp.get("first_name", "")
-                    last = emp.get("last_name", "")
-                    name = f"{first} {last}".strip()
-                emp_name_map[eid] = name
+                uid = emp.get("user_id")
+                if uid:
+                    uid_to_eid.setdefault(uid, []).append(eid)
+        # Fetch user names
+        if uid_to_eid:
+            users = dataflow_crud.list_records("User", {"company_id": company_id})
+            for user in users:
+                uid = user.get("id")
+                if uid in uid_to_eid:
+                    name = user.get("name", "")
+                    for eid in uid_to_eid[uid]:
+                        emp_name_map[eid] = name
 
     # Build leave_type_id -> name lookup
     lt_name_map: dict[int, str] = {}

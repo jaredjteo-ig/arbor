@@ -47,6 +47,10 @@ def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
 def _verify_project_ownership(project_id: int, company_id: int) -> dict:
     """Load a project and verify tenant ownership. Raises 404 on failure."""
     project = dataflow_crud.read("Project", project_id)
+    if not project:
+        # Fallback: try list_records if express read fails
+        matches = dataflow_crud.list_records("Project", {"id": project_id})
+        project = matches[0] if matches else None
     if not project or project.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Project not found.")
     return project
