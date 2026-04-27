@@ -28,9 +28,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Input length limits
-MAX_TEXT_LENGTH = 2000
-MAX_NAME_LENGTH = 200
+# B19: shared MAX_TEXT_LENGTH, MAX_NAME_LENGTH, _validate_text_length come
+# from _helpers.py. Onboarding-specific limits stay local below.
+from hr_advisory.api.routers._helpers import (  # noqa: E402
+    MAX_TEXT_LENGTH,
+    MAX_NAME_LENGTH,
+    _validate_text_length,
+)
+
+# Input length limits (onboarding-specific)
 MAX_BODY_CONTENT_LENGTH = 50_000
 MAX_CHECKLIST_LENGTH = 10_000
 MAX_MEDIA_URL_LENGTH = 2_000
@@ -58,18 +64,8 @@ from hr_advisory.services import dataflow_crud
 
 
 # --------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers (text-length helper imported from _helpers.py — B19)
 # --------------------------------------------------------------------------
-
-
-def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_LENGTH) -> str:
-    """Validate text input to maximum length."""
-    if value and len(value) > max_len:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{field_name} exceeds maximum length of {max_len} characters.",
-        )
-    return value
 
 
 def _validate_step_content_fields(body: dict) -> None:

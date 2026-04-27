@@ -1,12 +1,9 @@
-"use client";
-
 import { redirect } from "next/navigation";
 
 /**
- * /recruitment/interviews — interview calendar view.
- * Currently redirects to the main recruitment page.
- * Will become the dedicated calendar view for all scheduled interviews.
+ * /recruitment/interviews — focused interview view (calendar/list toggle).
+ * Server-side redirect to the recruitment page with interviews tab selected.
  */
 export default function InterviewsPage() {
-  redirect("/recruitment");
+  redirect("/recruitment?tab=interviews");
 }

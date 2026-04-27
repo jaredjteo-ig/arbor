@@ -1033,7 +1033,9 @@ def _seed_demo_recruitment_data(company_id: int) -> dict:
                 dataflow_crud.create("InterviewFeedback", feedback_record)
                 feedback_created += 1
 
-        # Create offer if defined
+        # Create offer if defined.
+        # NOTE: The Offer model's field IS named ``position_title`` (the offered
+        # role title, distinct from JobListing.title). T-R001 alignment kept.
         if offer_def:
             offer_record = {
                 "candidate_id": candidate_id,

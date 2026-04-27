@@ -97,6 +97,17 @@ def _nudges_dashboard(company_id: int, user_role: str) -> list[dict[str, Any]]:
     except Exception:
         logger.debug("Failed to compute CPF deadline nudge", exc_info=True)
 
+    # T-R061 / T205: surface recruitment + onboarding nudges on the dashboard
+    # so admins don't have to navigate to those pages to see them.
+    try:
+        nudges.extend(_nudges_recruitment(company_id, user_role))
+    except Exception:
+        logger.debug("Failed to merge recruitment nudges", exc_info=True)
+    try:
+        nudges.extend(_nudges_onboarding(company_id, user_role))
+    except Exception:
+        logger.debug("Failed to merge onboarding nudges", exc_info=True)
+
     # Pending leave requests nudge (for admin roles)
     if user_role in ("admin", "hr", "hr_admin", "owner", "manager"):
         try:
@@ -276,6 +287,199 @@ def _nudges_leave(company_id: int, user_role: str) -> list[dict[str, Any]]:
                 )
         except Exception:
             logger.debug("Failed to query pending leave requests for nudge", exc_info=True)
+
+    return nudges
+
+
+def _nudges_recruitment(company_id: int, user_role: str) -> list[dict[str, Any]]:
+    """Nudges for the recruitment / hiring pipeline (T-R061).
+
+    Surfaces three classes of stalled work that hiring managers
+    routinely miss:
+      1. Candidates parked in "interview" for >7 days.
+      2. Completed interviews with no feedback yet.
+      3. Pending offers expiring in <72 hours.
+    """
+    nudges: list[dict[str, Any]] = []
+    if user_role not in ("admin", "hr", "hr_admin", "owner", "manager", "hr_manager"):
+        return nudges
+
+    today = date.today()
+
+    # 1. Stalled "interview" candidates -------------------------------
+    try:
+        candidates = _dataflow_list(
+            "CandidateListNode",
+            {"company_id": company_id, "stage": "interview"},
+            limit=500,
+        )
+        stalled = 0
+        for cand in candidates:
+            updated = (
+                cand.get("updated_at", "")
+                or cand.get("created_at", "")
+            )
+            if not updated:
+                continue
+            try:
+                upd_date = date.fromisoformat(str(updated)[:10])
+            except (ValueError, TypeError):
+                continue
+            if (today - upd_date).days > 7:
+                stalled += 1
+        if stalled > 0:
+            nudges.append({
+                "id": "nudge-recruitment-interview-stalled",
+                "type": "completion",
+                "message": (
+                    f"{stalled} candidate{'s have' if stalled != 1 else ' has'} "
+                    f"been at stage 'interview' for more than 7 days — schedule "
+                    f"the next step or move them forward."
+                ),
+                "action_type": "navigate",
+                "route": "/recruitment",
+                "dismissible": True,
+                "priority": 2,
+            })
+    except Exception:
+        logger.debug("Failed to compute interview-stalled nudge", exc_info=True)
+
+    # 2. Completed interviews missing feedback ------------------------
+    try:
+        completed = _dataflow_list(
+            "InterviewScheduleListNode",
+            {"company_id": company_id, "status": "completed"},
+            limit=500,
+        )
+        missing_count = 0
+        for interview in completed:
+            iid = interview.get("id")
+            if iid is None:
+                continue
+            feedback = _dataflow_list(
+                "InterviewFeedbackListNode",
+                {"interview_id": iid, "company_id": company_id},
+                limit=1,
+            )
+            if not feedback:
+                missing_count += 1
+        if missing_count > 0:
+            nudges.append({
+                "id": "nudge-recruitment-feedback-missing",
+                "type": "completion",
+                "message": (
+                    f"{missing_count} interview{'s' if missing_count != 1 else ''} "
+                    f"completed but no feedback submitted yet."
+                ),
+                "action_type": "navigate",
+                "route": "/recruitment",
+                "dismissible": True,
+                "priority": 1,
+            })
+    except Exception:
+        logger.debug("Failed to compute missing-feedback nudge", exc_info=True)
+
+    # 3. Offers expiring in <72h --------------------------------------
+    try:
+        offers = _dataflow_list(
+            "OfferListNode",
+            {"company_id": company_id},
+            limit=500,
+        )
+        soon = 0
+        active_statuses = {"draft", "pending_approval", "approved", "sent"}
+        for offer in offers:
+            if offer.get("status") not in active_statuses:
+                continue
+            expiry = offer.get("expiry_date", "")
+            if not expiry:
+                continue
+            try:
+                exp_date = date.fromisoformat(str(expiry)[:10])
+            except (ValueError, TypeError):
+                continue
+            days_left = (exp_date - today).days
+            if 0 <= days_left <= 3:
+                soon += 1
+        if soon > 0:
+            nudges.append({
+                "id": "nudge-recruitment-offer-expiring",
+                "type": "deadline",
+                "message": (
+                    f"{soon} offer{'s' if soon != 1 else ''} expiring in less than "
+                    f"72 hours — follow up with candidates."
+                ),
+                "action_type": "navigate",
+                "route": "/recruitment",
+                "dismissible": True,
+                "priority": 1,
+            })
+    except Exception:
+        logger.debug("Failed to compute offer-expiring nudge", exc_info=True)
+
+    return nudges
+
+
+def _nudges_onboarding(company_id: int, user_role: str) -> list[dict[str, Any]]:
+    """Nudges for the onboarding page (T205).
+
+    Surfaces new hires whose onboarding steps are overdue by >3 days, so HR
+    can intervene before the gap becomes a probation/compliance issue.
+    """
+    nudges: list[dict[str, Any]] = []
+    if user_role not in ("admin", "hr", "hr_admin", "owner", "manager", "hr_manager"):
+        return nudges
+
+    today = date.today()
+    try:
+        progress = _dataflow_list(
+            "OnboardingStepProgressListNode",
+            {"status": "pending"},
+            limit=2000,
+        )
+        affected_employee_ids: set = set()
+        for row in progress:
+            # Only count rows for this company's employees. Progress rows
+            # don't carry company_id directly — fetch the assignment.
+            assignment_id = row.get("assignment_id")
+            if assignment_id is None:
+                continue
+            assignments = _dataflow_list(
+                "OnboardingAssignmentListNode",
+                {"id": assignment_id, "company_id": company_id},
+                limit=1,
+            )
+            if not assignments:
+                continue
+            assignment = assignments[0]
+            due = assignment.get("due_date", "") or row.get("due_date", "")
+            if not due:
+                continue
+            try:
+                due_date = date.fromisoformat(str(due)[:10])
+            except (ValueError, TypeError):
+                continue
+            if (today - due_date).days > 3:
+                emp_id = assignment.get("employee_id")
+                if emp_id is not None:
+                    affected_employee_ids.add(emp_id)
+
+        n = len(affected_employee_ids)
+        if n > 0:
+            nudges.append({
+                "id": "nudge-onboarding-overdue",
+                "type": "completion",
+                "message": (
+                    f"{n} new hire{'s have' if n != 1 else ' has'} onboarding "
+                    f"steps overdue by more than 3 days — review status."
+                ),
+                "action_type": "navigate",
+                "route": "/onboarding",
+                "dismissible": True,
+                "priority": 1,
+            })
+    except Exception:
+        logger.debug("Failed to compute onboarding-overdue nudge", exc_info=True)
 
     return nudges
 
@@ -524,6 +728,10 @@ _PAGE_NUDGE_GENERATORS: dict[str, Any] = {
     "payroll": lambda cid, uid, role: _nudges_payroll(cid),
     "leave": lambda cid, uid, role: _nudges_leave(cid, role),
     "claims": lambda cid, uid, role: _nudges_claims(cid, role),
+    # T-R061
+    "recruitment": lambda cid, uid, role: _nudges_recruitment(cid, role),
+    # T205
+    "onboarding": lambda cid, uid, role: _nudges_onboarding(cid, role),
 }
 
 

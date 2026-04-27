@@ -468,6 +468,63 @@ class TestReapplyCandidate:
         )
         assert resp.status_code == 403
 
+    # -- T-RX02: PDPA consent reset on re-apply -----------------------------
+
+    @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
+    def test_reapply_resets_pdpa_consent_to_false(self, mock_crud, owner_client):
+        """T-RX02: New candidate must start with pdpa_consent=False/empty date.
+
+        Even if the original candidate had pdpa_consent=True, a fresh consent
+        is required for the new application.
+        """
+        original = _candidate(
+            candidate_id=5,
+            name="Alice Wong",
+            email="alice@example.com",
+            pdpa_consent=True,
+            pdpa_consent_date="2024-01-01T00:00:00Z",
+        )
+        mock_crud.read.side_effect = lambda model, record_id: {
+            ("Candidate", 5): original,
+            ("JobListing", 200): _job(job_id=200, company_id=1),
+        }.get((model, record_id))
+        mock_crud.create.return_value = {**original, "id": 99, "job_listing_id": 200}
+
+        resp = owner_client.post(
+            "/recruitment/candidates/5/reapply",
+            json={"job_listing_id": 200},
+        )
+        assert resp.status_code == 200
+
+        create_data = mock_crud.create.call_args[0][1]
+        assert create_data["pdpa_consent"] is False, (
+            "T-RX02: re-apply must reset pdpa_consent to False"
+        )
+        assert create_data["pdpa_consent_date"] == "", (
+            "T-RX02: re-apply must clear pdpa_consent_date"
+        )
+        # Notes carry the audit-trail explanation
+        assert "PDPA consent must be re-confirmed" in create_data["notes"]
+
+    @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
+    def test_reapply_response_contains_note_field(self, mock_crud, owner_client):
+        """T-RX02: response must include a top-level ``note`` field warning HR."""
+        original = _candidate(candidate_id=5, pdpa_consent=True)
+        mock_crud.read.side_effect = lambda model, record_id: {
+            ("Candidate", 5): original,
+            ("JobListing", 200): _job(job_id=200, company_id=1),
+        }.get((model, record_id))
+        mock_crud.create.return_value = {**original, "id": 99}
+
+        resp = owner_client.post(
+            "/recruitment/candidates/5/reapply",
+            json={"job_listing_id": 200},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "note" in body, "T-RX02: response missing 'note' field"
+        assert "PDPA" in body["note"]
+
 
 # ===========================================================================
 # T-R051: Employee Referrals — POST /referrals

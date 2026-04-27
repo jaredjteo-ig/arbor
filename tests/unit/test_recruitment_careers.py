@@ -169,7 +169,7 @@ class TestPublicListJobs:
 
         mock_crud.list_records.side_effect = _list_records
 
-        resp = public_client.get("/recruitment/careers/jobs?company_slug=Acme Pte Ltd")
+        resp = public_client.get("/recruitment/careers/acme-pte-ltd/jobs")
         assert resp.status_code == 200
         data = resp.json()
         assert data["count"] == 1
@@ -191,7 +191,7 @@ class TestPublicListJobs:
 
         mock_crud.list_records.side_effect = _list_records
 
-        resp = public_client.get("/recruitment/careers/jobs?company_slug=Acme Pte Ltd")
+        resp = public_client.get("/recruitment/careers/acme-pte-ltd/jobs")
         assert resp.status_code == 200
         pub_job = resp.json()["jobs"][0]
         # Salary fields must NOT appear in public response
@@ -208,7 +208,7 @@ class TestPublicListJobs:
         """404 when company slug matches nothing."""
         mock_crud.list_records.return_value = []
 
-        resp = public_client.get("/recruitment/careers/jobs?company_slug=nonexistent")
+        resp = public_client.get("/recruitment/careers/nonexistent/jobs")
         assert resp.status_code == 404
 
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
@@ -225,7 +225,7 @@ class TestPublicListJobs:
 
         mock_crud.list_records.side_effect = _list_records
 
-        resp = public_client.get("/recruitment/careers/jobs?company_slug=Acme Pte Ltd")
+        resp = public_client.get("/recruitment/careers/acme-pte-ltd/jobs")
         assert resp.status_code == 200
         assert resp.json()["count"] == 0
         assert resp.json()["jobs"] == []
@@ -250,7 +250,7 @@ class TestPublicListJobs:
 
         mock_crud.list_records.side_effect = _list_records
 
-        resp = public_client.get("/recruitment/careers/jobs?company_slug=Acme Pte Ltd")
+        resp = public_client.get("/recruitment/careers/acme-pte-ltd/jobs")
         # Name fallback was removed (T-RX04) to prevent company enumeration
         assert resp.status_code == 404
 
@@ -278,17 +278,22 @@ class TestPublicGetJob:
                 return company
             return None
 
-        def _list_records(model, filters):
+        def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                return [company]
             if model == "ScreeningQuestion":
                 return [q1, q2]
             if model == "JobListing":
-                return [job] if filters.get("id") == 5 else []
+                # New endpoint queries by unique_slug first, then falls back to read by id
+                if filters.get("unique_slug") in ("5", job.get("unique_slug", "")):
+                    return [job]
+                return []
             return []
 
         mock_crud.read.side_effect = _read
         mock_crud.list_records.side_effect = _list_records
 
-        resp = public_client.get("/recruitment/careers/jobs/5")
+        resp = public_client.get("/recruitment/careers/acme-pte-ltd/jobs/5")
         assert resp.status_code == 200
         data = resp.json()
         assert data["job"]["title"] == "Software Engineer"
@@ -302,19 +307,33 @@ class TestPublicGetJob:
     def test_non_open_job_returns_404(self, mock_crud, public_client):
         """Draft or closed jobs are not visible publicly."""
         job = _job_record(job_id=5, status="draft")
+        company = _company_record()
+
+        def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                return [company]
+            return []
 
         mock_crud.read.return_value = job
+        mock_crud.list_records.side_effect = _list_records
 
-        resp = public_client.get("/recruitment/careers/jobs/5")
+        resp = public_client.get("/recruitment/careers/acme-pte-ltd/jobs/5")
         assert resp.status_code == 404
 
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_missing_job_returns_404(self, mock_crud, public_client):
         """Non-existent job ID returns 404."""
-        mock_crud.read.return_value = None
-        mock_crud.list_records.return_value = []
+        company = _company_record()
 
-        resp = public_client.get("/recruitment/careers/jobs/999")
+        def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                return [company]
+            return []
+
+        mock_crud.read.return_value = None
+        mock_crud.list_records.side_effect = _list_records
+
+        resp = public_client.get("/recruitment/careers/acme-pte-ltd/jobs/999")
         assert resp.status_code == 404
 
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
@@ -326,9 +345,15 @@ class TestPublicGetJob:
         mock_crud.read.side_effect = lambda model, rid: (
             job if model == "JobListing" else company
         )
-        mock_crud.list_records.return_value = []
 
-        resp = public_client.get("/recruitment/careers/jobs/5")
+        def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                return [company]
+            return []
+
+        mock_crud.list_records.side_effect = _list_records
+
+        resp = public_client.get("/recruitment/careers/acme-pte-ltd/jobs/5")
         assert resp.status_code == 200
         pub_job = resp.json()["job"]
         assert "salary_range_min" not in pub_job
@@ -361,11 +386,20 @@ class TestPublicApply:
                 return company
             return None
 
-        def _list_records(model, filters):
+        def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                # Slug-only lookup returns the seeded company
+                return [company]
             if model == "Candidate":
                 return existing_candidates
             if model == "JobListing":
-                return [job] if filters.get("id") == job.get("id") else []
+                # Match either by id or unique_slug; tests pass numeric slug
+                target_id = job.get("id")
+                if filters.get("id") == target_id:
+                    return [job]
+                if filters.get("unique_slug") in (str(target_id), job.get("unique_slug", "")):
+                    return [job]
+                return []
             if model == "ScreeningQuestion":
                 # Return valid questions for the job (question ids 1 and 2)
                 return [
@@ -389,7 +423,7 @@ class TestPublicApply:
         mock_email.return_value = True
 
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={
                 "name": "Bob Lee",
                 "email": "bob@example.com",
@@ -424,7 +458,7 @@ class TestPublicApply:
 
         # Missing name
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"email": "bob@example.com", "pdpa_consent": True},
         )
         assert resp.status_code == 400
@@ -432,7 +466,7 @@ class TestPublicApply:
 
         # Missing email
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": "Bob", "pdpa_consent": True},
         )
         assert resp.status_code == 400
@@ -445,7 +479,7 @@ class TestPublicApply:
         self._setup_mocks(mock_crud, mock_rate)
 
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": "Bob", "email": "bob@example.com", "pdpa_consent": False},
         )
         assert resp.status_code == 400
@@ -453,17 +487,19 @@ class TestPublicApply:
 
     @patch("hr_advisory.api.routers.recruitment.check_rate_limit")
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
-    def test_duplicate_application_returns_409(self, mock_crud, mock_rate, public_client):
-        """Applying twice to the same job returns 409."""
-        existing = _candidate_record(email="bob@example.com")
+    def test_duplicate_application_returns_generic_received(self, mock_crud, mock_rate, public_client):
+        """Re-applying returns the same generic 'received' shape — no enumeration oracle."""
+        existing = _candidate_record(candidate_id=99, email="bob@example.com")
         self._setup_mocks(mock_crud, mock_rate, existing_candidates=[existing])
 
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": "Bob", "email": "bob@example.com", "pdpa_consent": True},
         )
-        assert resp.status_code == 409
-        assert "already applied" in resp.json()["detail"]
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["application_id"] == 99
+        assert body["reference_number"].startswith("APP-")
 
     @patch("hr_advisory.api.routers.recruitment._send_recruitment_email", new_callable=AsyncMock)
     @patch("hr_advisory.api.routers.recruitment.check_rate_limit")
@@ -474,7 +510,7 @@ class TestPublicApply:
         mock_email.return_value = True
 
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={
                 "name": "Bob Lee",
                 "email": "bob@example.com",
@@ -500,7 +536,7 @@ class TestPublicApply:
         mock_email.return_value = True
 
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={
                 "name": "Bob Lee",
                 "email": "bob@example.com",
@@ -530,7 +566,7 @@ class TestPublicApply:
         self._setup_mocks(mock_crud, mock_rate, job=closed_job)
 
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": "Bob", "email": "bob@example.com", "pdpa_consent": True},
         )
         assert resp.status_code == 404
@@ -544,7 +580,7 @@ class TestPublicApply:
 
         long_name = "A" * 201  # MAX_NAME_LENGTH is 200
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": long_name, "email": "bob@example.com", "pdpa_consent": True},
         )
         assert resp.status_code == 400
@@ -557,7 +593,11 @@ class TestPublicApply:
 
 
 class TestPublicApplicationStatus:
-    """Verify GET /careers/application-status returns friendly stage labels."""
+    """Verify GET /careers/{slug}/application-status returns friendly stage labels.
+
+    The endpoint is tenant-scoped and returns the same generic shape whether
+    or not the application exists, so it can't be used as an enumeration oracle.
+    """
 
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_returns_correct_stage_labels(self, mock_crud, public_client):
@@ -573,11 +613,21 @@ class TestPublicApplicationStatus:
         }
         for internal_stage, expected_label in stage_map.items():
             candidate = _candidate_record(stage=internal_stage)
-            mock_crud.list_records.return_value = [candidate]
+
+            def _list_records(model, filters, **kwargs):
+                if model == "Company":
+                    return [_company_record()]
+                if model == "JobListing":
+                    return [_job_record()]
+                if model == "Candidate":
+                    return [candidate]
+                return []
+
+            mock_crud.list_records.side_effect = _list_records
 
             resp = public_client.get(
-                "/recruitment/careers/application-status",
-                params={"email": "alice@example.com", "job_id": 1},
+                "/recruitment/careers/acme-pte-ltd/application-status",
+                params={"email": "alice@example.com", "job_slug": "1"},
             )
             assert resp.status_code == 200, f"Failed for stage={internal_stage}"
             assert resp.json()["status"] == expected_label, (
@@ -586,40 +636,84 @@ class TestPublicApplicationStatus:
             )
 
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
-    def test_unknown_email_returns_404(self, mock_crud, public_client):
-        """No matching application returns 404."""
+    def test_unknown_email_returns_generic_response(self, mock_crud, public_client):
+        """No matching application returns a generic 200 (no enumeration oracle)."""
+        def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                return [_company_record()]
+            if model == "JobListing":
+                return [_job_record()]
+            if model == "Candidate":
+                return []
+            return []
+
+        mock_crud.list_records.side_effect = _list_records
+
+        resp = public_client.get(
+            "/recruitment/careers/acme-pte-ltd/application-status",
+            params={"email": "nobody@example.com", "job_slug": "999"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "Under Review"
+        assert body["applied_month"] == ""
+
+    @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
+    def test_unknown_company_returns_generic_response(self, mock_crud, public_client):
+        """Unknown company slug returns the same generic shape (no enumeration)."""
         mock_crud.list_records.return_value = []
 
         resp = public_client.get(
-            "/recruitment/careers/application-status",
-            params={"email": "nobody@example.com", "job_id": 999},
-        )
-        assert resp.status_code == 404
-        assert "No application found" in resp.json()["detail"]
-
-    @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
-    def test_returns_applied_date(self, mock_crud, public_client):
-        """Response includes the application date."""
-        candidate = _candidate_record(stage="new")
-        candidate["created_at"] = "2026-01-20T10:00:00"
-        mock_crud.list_records.return_value = [candidate]
-
-        resp = public_client.get(
-            "/recruitment/careers/application-status",
-            params={"email": "alice@example.com", "job_id": 1},
+            "/recruitment/careers/nonexistent/application-status",
+            params={"email": "anyone@example.com", "job_slug": "1"},
         )
         assert resp.status_code == 200
-        assert resp.json()["applied_date"] == "2026-01-20T10:00:00"
+        assert resp.json()["status"] == "Under Review"
+
+    @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
+    def test_returns_applied_month_coarsened(self, mock_crud, public_client):
+        """Response coarsens applied date to YYYY-MM (not full timestamp)."""
+        candidate = _candidate_record(stage="new")
+        candidate["created_at"] = "2026-01-20T10:00:00"
+
+        def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                return [_company_record()]
+            if model == "JobListing":
+                return [_job_record()]
+            if model == "Candidate":
+                return [candidate]
+            return []
+
+        mock_crud.list_records.side_effect = _list_records
+
+        resp = public_client.get(
+            "/recruitment/careers/acme-pte-ltd/application-status",
+            params={"email": "alice@example.com", "job_slug": "1"},
+        )
+        assert resp.status_code == 200
+        # Coarsened to month only — no day/time leakage
+        assert resp.json()["applied_month"] == "2026-01"
 
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_unknown_stage_defaults_to_under_review(self, mock_crud, public_client):
         """An unknown internal stage shows 'Under Review' to the candidate."""
         candidate = _candidate_record(stage="some_custom_stage")
-        mock_crud.list_records.return_value = [candidate]
+
+        def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                return [_company_record()]
+            if model == "JobListing":
+                return [_job_record()]
+            if model == "Candidate":
+                return [candidate]
+            return []
+
+        mock_crud.list_records.side_effect = _list_records
 
         resp = public_client.get(
-            "/recruitment/careers/application-status",
-            params={"email": "alice@example.com", "job_id": 1},
+            "/recruitment/careers/acme-pte-ltd/application-status",
+            params={"email": "alice@example.com", "job_slug": "1"},
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "Under Review"

@@ -12,12 +12,12 @@ from fastapi import HTTPException, Request
 
 logger = logging.getLogger(__name__)
 
-# Store: {key: deque([timestamp1, timestamp2, ...], maxlen=bounded)}
-# Using OrderedDict with a size cap to prevent unbounded memory growth.
-# Each key's deque is bounded to prevent burst-induced memory spikes.
+# Store: {key: deque([timestamp1, timestamp2, ...], maxlen=max_requests + 1)}
+# T-RX05: Each key's deque is bounded to max_requests + 1 — exactly the smallest
+# size that lets us reject a burst at the limit without losing any in-window
+# entries. The OrderedDict is also bounded (MAX_RATE_KEYS) for global safety.
 _request_log: OrderedDict[str, deque] = OrderedDict()
 MAX_RATE_KEYS = 50_000
-_DEFAULT_MAXLEN = 200  # Max timestamps per key
 
 def _clean_old_entries(key: str, window_seconds: int) -> None:
     """Remove entries older than the window."""
@@ -60,7 +60,7 @@ def check_rate_limit(
         _request_log.popitem(last=False)
 
     if identifier not in _request_log:
-        _request_log[identifier] = deque(maxlen=max(max_requests + 1, _DEFAULT_MAXLEN))
+        _request_log[identifier] = deque(maxlen=max_requests + 1)
     _request_log[identifier].append(time.time())
     # Move to end so LRU eviction removes least-recently-used keys
     _request_log.move_to_end(identifier)

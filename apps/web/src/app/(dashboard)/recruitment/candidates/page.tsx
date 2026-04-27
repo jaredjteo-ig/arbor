@@ -1,12 +1,9 @@
-"use client";
-
 import { redirect } from "next/navigation";
 
 /**
- * /recruitment/candidates — global candidate pool (searchable).
- * Currently redirects to the main recruitment page.
- * Will become the dedicated cross-job candidate search view.
+ * /recruitment/candidates — focused candidate pipeline view.
+ * Server-side redirect to the recruitment page with candidates tab selected.
  */
 export default function CandidatesPage() {
-  redirect("/recruitment");
+  redirect("/recruitment?tab=candidates");
 }

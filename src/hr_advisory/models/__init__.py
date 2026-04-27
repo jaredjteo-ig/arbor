@@ -79,6 +79,8 @@ from hr_advisory.models.company_user import (
     Offer,
     ScreeningQuestion,
     ScreeningResponse,
+    ScorecardTemplate,
+    ScorecardEntry,
     Referral,
     ReferralStatus,
     UserRole,
@@ -196,6 +198,9 @@ __all__ = [
     "Offer",
     "ScreeningQuestion",
     "ScreeningResponse",
+    # T-R035: Interview scorecards
+    "ScorecardTemplate",
+    "ScorecardEntry",
     # M12: Referral Tracking (T-R051)
     "Referral",
     "ReferralStatus",

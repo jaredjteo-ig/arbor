@@ -33,7 +33,11 @@ class TestRecruitmentTemplates:
     """Verify all recruitment email templates are well-formed and renderable."""
 
     def test_recruitment_templates_dict_exists(self):
-        """RECRUITMENT_TEMPLATES dict exists and has all 5 templates."""
+        """RECRUITMENT_TEMPLATES dict exists and contains the core templates.
+
+        Uses superset semantics so future templates (e.g. T-R030 PDPA pre-purge
+        ``data_retention_warning``) can be added without breaking this test.
+        """
         from hr_advisory.templates.recruitment_emails import RECRUITMENT_TEMPLATES
 
         assert isinstance(RECRUITMENT_TEMPLATES, dict)
@@ -43,8 +47,12 @@ class TestRecruitmentTemplates:
             "offer_sent",
             "rejection_notice",
             "feedback_reminder",
+            "data_retention_warning",
         }
-        assert set(RECRUITMENT_TEMPLATES.keys()) == expected_keys
+        # Superset check: all required templates present, but additions allowed
+        assert expected_keys.issubset(set(RECRUITMENT_TEMPLATES.keys())), (
+            f"Missing templates: {expected_keys - set(RECRUITMENT_TEMPLATES.keys())}"
+        )
 
     def test_each_template_has_subject_and_html(self):
         """Each template entry must have 'subject' and 'html' keys."""

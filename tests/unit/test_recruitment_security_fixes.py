@@ -142,7 +142,7 @@ class TestH1EmailValidationPublicApply:
     def _setup_mocks(self, mock_crud, mock_rate, job=None):
         if job is None:
             job = _job_record(job_id=1, status="open")
-        company = {"id": 1, "name": "Acme Pte Ltd"}
+        company = {"id": 1, "name": "Acme Pte Ltd", "slug": "acme-pte-ltd"}
 
         def _read(model, record_id):
             if model == "JobListing":
@@ -152,10 +152,17 @@ class TestH1EmailValidationPublicApply:
             return None
 
         def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                return [company]
             if model == "Candidate":
                 return []
             if model == "JobListing":
-                return [job] if filters.get("id") == job.get("id") else []
+                target_id = job.get("id")
+                if filters.get("id") == target_id:
+                    return [job]
+                if filters.get("unique_slug") in (str(target_id), job.get("unique_slug", "")):
+                    return [job]
+                return []
             if model == "ScreeningQuestion":
                 return []
             return []
@@ -169,7 +176,7 @@ class TestH1EmailValidationPublicApply:
     def test_rejects_email_without_at_sign(self, mock_crud, mock_rate, public_client):
         self._setup_mocks(mock_crud, mock_rate)
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": "Bob", "email": "bobexample.com", "pdpa_consent": True},
         )
         assert resp.status_code == 400
@@ -180,7 +187,7 @@ class TestH1EmailValidationPublicApply:
     def test_rejects_email_without_domain(self, mock_crud, mock_rate, public_client):
         self._setup_mocks(mock_crud, mock_rate)
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": "Bob", "email": "bob@", "pdpa_consent": True},
         )
         assert resp.status_code == 400
@@ -191,7 +198,7 @@ class TestH1EmailValidationPublicApply:
     def test_rejects_email_with_spaces(self, mock_crud, mock_rate, public_client):
         self._setup_mocks(mock_crud, mock_rate)
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": "Bob", "email": "bob @example.com", "pdpa_consent": True},
         )
         assert resp.status_code == 400
@@ -202,7 +209,7 @@ class TestH1EmailValidationPublicApply:
     def test_rejects_email_missing_tld(self, mock_crud, mock_rate, public_client):
         self._setup_mocks(mock_crud, mock_rate)
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": "Bob", "email": "bob@example", "pdpa_consent": True},
         )
         assert resp.status_code == 400
@@ -215,7 +222,7 @@ class TestH1EmailValidationPublicApply:
         self._setup_mocks(mock_crud, mock_rate)
         mock_email.return_value = True
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": "Bob", "email": "bob@example.com", "pdpa_consent": True},
         )
         assert resp.status_code == 200
@@ -227,7 +234,7 @@ class TestH1EmailValidationPublicApply:
         self._setup_mocks(mock_crud, mock_rate)
         mock_email.return_value = True
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={"name": "Bob", "email": "bob+tag@example.com", "pdpa_consent": True},
         )
         assert resp.status_code == 200
@@ -519,7 +526,7 @@ class TestM6ScreeningQuestionValidation:
     def test_valid_question_ids_saved(self, mock_crud, mock_rate, mock_email, public_client):
         """Only question_ids belonging to the job are saved."""
         job = _job_record(job_id=1, status="open")
-        company = {"id": 1, "name": "Acme"}
+        company = {"id": 1, "name": "Acme", "slug": "acme-pte-ltd"}
         q1 = {"id": 10, "job_listing_id": 1, "company_id": 1, "question_text": "Q1"}
         q2 = {"id": 20, "job_listing_id": 1, "company_id": 1, "question_text": "Q2"}
 
@@ -531,6 +538,12 @@ class TestM6ScreeningQuestionValidation:
             return None
 
         def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                return [company]
+            if model == "JobListing":
+                if filters.get("unique_slug") in ("1", job.get("unique_slug", "")):
+                    return [job]
+                return []
             if model == "Candidate":
                 return []
             if model == "ScreeningQuestion":
@@ -543,7 +556,7 @@ class TestM6ScreeningQuestionValidation:
         mock_email.return_value = True
 
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={
                 "name": "Bob",
                 "email": "bob@example.com",
@@ -570,7 +583,7 @@ class TestM6ScreeningQuestionValidation:
     def test_all_invalid_question_ids_skipped(self, mock_crud, mock_rate, mock_email, public_client):
         """If all question_ids are invalid, no screening responses are saved."""
         job = _job_record(job_id=1, status="open")
-        company = {"id": 1, "name": "Acme"}
+        company = {"id": 1, "name": "Acme", "slug": "acme-pte-ltd"}
 
         def _read(model, record_id):
             if model == "JobListing":
@@ -580,6 +593,12 @@ class TestM6ScreeningQuestionValidation:
             return None
 
         def _list_records(model, filters, **kwargs):
+            if model == "Company":
+                return [company]
+            if model == "JobListing":
+                if filters.get("unique_slug") in ("1", job.get("unique_slug", "")):
+                    return [job]
+                return []
             if model == "Candidate":
                 return []
             if model == "ScreeningQuestion":
@@ -592,7 +611,7 @@ class TestM6ScreeningQuestionValidation:
         mock_email.return_value = True
 
         resp = public_client.post(
-            "/recruitment/careers/jobs/1/apply",
+            "/recruitment/careers/acme-pte-ltd/jobs/1/apply",
             json={
                 "name": "Bob",
                 "email": "bob@example.com",

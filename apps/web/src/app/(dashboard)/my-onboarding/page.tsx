@@ -211,6 +211,8 @@ function ContentStepBody({
     }
   }
 
+  const hasContent = !!(sp.body_content && sp.body_content.trim());
+
   return (
     <div className="mt-2 space-y-2">
       {!showContent && !isCompleted && (
@@ -223,9 +225,15 @@ function ContentStepBody({
           Read
         </AppButton>
       )}
-      {(showContent || isCompleted) && sp.body_content && (
+      {(showContent || isCompleted) && (
         <div className="rounded-[8px] border border-[var(--color-gray-200)] bg-[var(--color-gray-50)] p-4 text-sm text-[var(--color-gray-700)] whitespace-pre-wrap">
-          {sp.body_content}
+          {hasContent ? (
+            sp.body_content
+          ) : (
+            <span className="italic text-[var(--color-gray-500)]">
+              No content provided.
+            </span>
+          )}
         </div>
       )}
       {showContent && !isCompleted && (
@@ -339,6 +347,14 @@ function DocumentUploadStepBody({
   async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Client-side 10MB limit (T203)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error("File must be 10 MB or smaller.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
 
     setSubmitting(true);
     try {

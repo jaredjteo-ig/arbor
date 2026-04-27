@@ -238,16 +238,21 @@ async def publish_regulatory_update(update_id: str, current_user: dict = Depends
             status_code=400, detail="Unable to publish this update."
         ) from e
 
-    # Send email notifications to subscribed users (non-blocking)
+    # Send email notifications to subscribed users (non-blocking).
+    # B05: pass severity so the helper can suppress email for low/medium.
     try:
         from hr_advisory.api.routers.alerts import notify_users_of_alert
 
+        severity_value = (
+            update.urgency.value if hasattr(update.urgency, "value") else str(update.urgency)
+        )
         await notify_users_of_alert(
             alert_title=update.title,
             alert_description=update.description,
             source=update.source,
             effective_date=update.effective_date.isoformat() if update.effective_date else "",
             domains=", ".join(update.domains_affected) if update.domains_affected else "",
+            severity=severity_value,
         )
     except Exception as exc:
         logger.warning("Alert email notification failed (non-blocking): %s", exc)

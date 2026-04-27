@@ -231,7 +231,24 @@ def _company_to_response(company: dict) -> dict:
         headcount_sp = company.get("headcount_sp", 0)
         headcount_wp = company.get("headcount_wp", 0)
 
-    return {
+    # B21: actual_employee_count is the source-of-truth count of active
+    # employees. If profile headcount drifts more than 10% from the actual
+    # value we surface a warning so HR can refresh the manual fields.
+    actual_employee_count = live_total
+    profile_total = (
+        headcount_local + headcount_pr + headcount_ep + headcount_sp + headcount_wp
+    )
+    headcount_warning: str | None = None
+    if actual_employee_count > 0 and profile_total > 0:
+        # Use the larger of the two as the divisor for a symmetric % drift.
+        denom = max(actual_employee_count, profile_total)
+        drift = abs(actual_employee_count - profile_total) / denom
+        if drift > 0.10:
+            headcount_warning = (
+                "Profile headcount differs from actual employees — please update"
+            )
+
+    response = {
         "id": company["id"],
         "name": company.get("name", ""),
         "uen": company.get("uen"),
@@ -241,9 +258,8 @@ def _company_to_response(company: dict) -> dict:
         "headcount_ep": headcount_ep,
         "headcount_sp": headcount_sp,
         "headcount_wp": headcount_wp,
-        "total_headcount": live_total if live_total > 0 else (
-            headcount_local + headcount_pr + headcount_ep + headcount_sp + headcount_wp
-        ),
+        "total_headcount": live_total if live_total > 0 else profile_total,
+        "actual_employee_count": actual_employee_count,
         "has_foreign_workers": (headcount_ep + headcount_sp + headcount_wp) > 0,
         "profile_completeness_score": company.get(
             "profile_completeness_score",
@@ -251,6 +267,9 @@ def _company_to_response(company: dict) -> dict:
         ),
         "is_active": company.get("is_active", True),
     }
+    if headcount_warning:
+        response["headcount_warning"] = headcount_warning
+    return response
 
 
 @router.get(

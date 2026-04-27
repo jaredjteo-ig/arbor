@@ -905,7 +905,7 @@ class ToolRegistry:
 
         # ── M62: Additional modules ──────────────────────────────────
 
-        # Recruitment
+        # Recruitment — paths and verbs verified against routers/recruitment.py (T-R060).
         for action, method, path, params, trust, desc in [
             (
                 "post_job",
@@ -916,6 +916,30 @@ class ToolRegistry:
                 "Post a new job listing",
             ),
             ("list_jobs", "GET", "/recruitment/jobs", [], "autonomous", "List all job listings"),
+            (
+                "publish_job",
+                "POST",
+                "/recruitment/jobs/{job_id}/publish",
+                [],
+                "propose",
+                "Publish a draft job listing",
+            ),
+            (
+                "close_job",
+                "POST",
+                "/recruitment/jobs/{job_id}/close",
+                [],
+                "always_propose",
+                "Close a job listing (cascades to active candidates and pending offers)",
+            ),
+            (
+                "scan_job_for_tafep",
+                "POST",
+                "/recruitment/jobs/{job_id}/scan",
+                [],
+                "autonomous",
+                "Scan a job listing for TAFEP fair-employment issues",
+            ),
             (
                 "add_candidate",
                 "POST",
@@ -930,7 +954,7 @@ class ToolRegistry:
                 "/recruitment/candidates",
                 [],
                 "autonomous",
-                "List candidates for a job",
+                "List candidates across the company",
             ),
             (
                 "schedule_interview",
@@ -941,12 +965,28 @@ class ToolRegistry:
                 "Schedule an interview",
             ),
             (
-                "update_candidate_status",
+                "update_candidate",
                 "PATCH",
                 "/recruitment/candidates/{candidate_id}",
                 ["stage"],
                 "propose",
-                "Update candidate pipeline stage",
+                "Update a candidate (stage transitions validated server-side)",
+            ),
+            (
+                "reject_candidate",
+                "POST",
+                "/recruitment/candidates/{candidate_id}/reject",
+                ["reason"],
+                "always_propose",
+                "Reject a candidate with a documented reason",
+            ),
+            (
+                "generate_offer",
+                "POST",
+                "/recruitment/candidates/{candidate_id}/offer",
+                ["salary", "start_date"],
+                "always_propose",
+                "Generate an offer for a candidate",
             ),
             (
                 "hire_candidate",
@@ -954,7 +994,15 @@ class ToolRegistry:
                 "/recruitment/candidates/{candidate_id}/hire",
                 [],
                 "always_propose",
-                "Convert candidate to employee",
+                "Convert candidate to employee (creates onboarding assignment)",
+            ),
+            (
+                "list_overdue_feedback",
+                "GET",
+                "/recruitment/feedback/overdue",
+                [],
+                "autonomous",
+                "List interviews with overdue feedback",
             ),
         ]:
             self.register(

@@ -2172,6 +2172,7 @@ class Candidate:
     rejection_reason: str = ""
     pdpa_consent: bool = False
     pdpa_consent_date: str = ""
+    pdpa_purge_warned_at: Optional[datetime] = None  # T-R030: 700-day pre-purge notice timestamp
     notes: str = ""
     created_by: int = 0
     hired_at: str = ""
@@ -2302,6 +2303,61 @@ class ScreeningResponse:
         "indexes": [
             {"name": "idx_sr_candidate", "fields": ["candidate_id"]},
             {"name": "idx_sr_question", "fields": ["question_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# T-R035: Interview scorecards (templates + entries)
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class ScorecardTemplate:
+    """Reusable interview scorecard definition.
+
+    The ``criteria`` field is a JSON-encoded list of {name, weight} dicts.
+    Weights should sum to 1.0 for a meaningful weighted average; the API
+    layer enforces this on create/update.
+    """
+
+    company_id: int
+    name: str = ""
+    description: str = ""
+    criteria: str = ""  # JSON: list of {"name": str, "weight": float}
+    created_by: int = 0
+    is_active: bool = True
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_scorecardtmpl_company", "fields": ["company_id"]},
+            {"name": "idx_scorecardtmpl_active", "fields": ["is_active"]},
+        ],
+    }
+
+
+@db.model
+class ScorecardEntry:
+    """A single filled-in scorecard linked to interview feedback.
+
+    ``scores`` is a JSON dict mapping criterion name -> 1..5 int. The
+    ``total_score`` is computed as the weighted average against the
+    parent template's criteria weights.
+    """
+
+    company_id: int
+    interview_feedback_id: int
+    template_id: int
+    scores: str = ""  # JSON: {criterion_name: 1..5}
+    notes: str = ""
+    total_score: float = 0.0
+    created_by: int = 0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_scorecard_entry_company", "fields": ["company_id"]},
+            {"name": "idx_scorecard_entry_feedback", "fields": ["interview_feedback_id"]},
+            {"name": "idx_scorecard_entry_template", "fields": ["template_id"]},
         ],
     }
 

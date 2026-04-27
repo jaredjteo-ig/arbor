@@ -15,7 +15,7 @@ export interface JobListing {
   requirements: string;
   salary_range_min: number | null;
   salary_range_max: number | null;
-  status: "draft" | "open" | "closed" | "on_hold";
+  status: "draft" | "open" | "closed" | "on_hold" | "filled";
   posted_date: string | null;
   closing_date: string | null;
   candidate_count?: number;
@@ -70,6 +70,105 @@ export interface InterviewFeedback {
   weaknesses: string;
   recommendation: "strong_hire" | "hire" | "no_hire" | "strong_no_hire";
   notes: string;
+}
+
+export interface CandidateActivity {
+  id: number;
+  candidate_id: number;
+  activity_type: string;
+  description: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  actor_id?: number | null;
+  actor_name?: string | null;
+}
+
+export interface ScreeningQuestion {
+  id: number;
+  job_listing_id: number;
+  question_text: string;
+  question_type: "text" | "yes_no" | "multiple_choice" | "number";
+  is_required: boolean;
+  is_knockout: boolean;
+  knockout_value?: string | null;
+  options?: string[];
+  sort_order: number;
+}
+
+export interface ScreeningResponse {
+  id: number;
+  candidate_id: number;
+  question_id: number;
+  question_text?: string;
+  is_knockout?: boolean;
+  knockout_value?: string | null;
+  answer: string;
+  is_failure?: boolean;
+  created_at: string;
+}
+
+export interface ScorecardCriterion {
+  id?: number;
+  name: string;
+  description?: string;
+  weight?: number;
+  sort_order?: number;
+}
+
+export interface ScorecardTemplate {
+  id: number;
+  company_id: number;
+  name: string;
+  description?: string;
+  criteria: ScorecardCriterion[];
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ScorecardEntryScore {
+  criterion_id?: number;
+  criterion_name: string;
+  rating: number; // 1-5
+  notes?: string;
+}
+
+export interface ScorecardEntry {
+  id: number;
+  candidate_id: number;
+  interview_id?: number | null;
+  template_id: number;
+  template_name?: string;
+  interviewer_id: number;
+  interviewer_name?: string;
+  scores: ScorecardEntryScore[];
+  overall_score?: number;
+  notes?: string;
+  created_at: string;
+}
+
+export interface PublicJobSummary {
+  id: number;
+  slug?: string;
+  title: string;
+  department: string;
+  location: string;
+  employment_type: string;
+  description: string;
+  requirements?: string;
+  salary_range_min: number | null;
+  salary_range_max: number | null;
+  posted_date: string | null;
+  questions?: ScreeningQuestion[];
+}
+
+export interface PublicCompanyCareers {
+  company: {
+    name: string;
+    slug: string;
+    sector?: string;
+    description?: string;
+  };
+  jobs: PublicJobSummary[];
 }
 
 export interface Offer {
@@ -198,12 +297,110 @@ export const recruitmentApi = {
   /* Hiring */
   hireCandidate: (
     candidateId: number,
-    data: { start_date: string; department: string; designation: string },
+    data: {
+      start_date: string;
+      department: string;
+      designation: string;
+      onboarding_template_id?: number | null;
+    },
   ) =>
-    apiClient.post<{ message: string; employee_id: number }>(
-      `/recruitment/candidates/${candidateId}/hire`,
+    apiClient.post<{
+      message: string;
+      employee_id: number;
+      onboarding_assignment_id?: number;
+    }>(`/recruitment/candidates/${candidateId}/hire`, data),
+
+  /* Activity timeline (T-R013) — endpoint may not yet be deployed; callers
+     should swallow 404 and render an empty-state. */
+  listCandidateActivity: (candidateId: number) =>
+    apiClient.get<{ activities: CandidateActivity[]; count: number }>(
+      `/recruitment/candidates/${candidateId}/activity`,
+    ),
+
+  /* Screening questions (T-R033 / T-R034) */
+  listJobQuestions: (jobId: number) =>
+    apiClient.get<{ questions: ScreeningQuestion[]; count: number }>(
+      `/recruitment/jobs/${jobId}/questions`,
+    ),
+  createJobQuestion: (jobId: number, data: Partial<ScreeningQuestion>) =>
+    apiClient.post<{ question: ScreeningQuestion }>(
+      `/recruitment/jobs/${jobId}/questions`,
       data,
     ),
+  updateJobQuestion: (
+    jobId: number,
+    questionId: number,
+    data: Partial<ScreeningQuestion>,
+  ) =>
+    apiClient.patch<{ question: ScreeningQuestion }>(
+      `/recruitment/jobs/${jobId}/questions/${questionId}`,
+      data,
+    ),
+  deleteJobQuestion: (jobId: number, questionId: number) =>
+    apiClient.delete<{ message: string }>(
+      `/recruitment/jobs/${jobId}/questions/${questionId}`,
+    ),
+  listScreeningResponses: (candidateId: number) =>
+    apiClient.get<{ responses: ScreeningResponse[]; count: number }>(
+      `/recruitment/candidates/${candidateId}/screening-responses`,
+    ),
+
+  /* Scorecard (T-R036) — backend may not be deployed yet */
+  listScorecardTemplates: () =>
+    apiClient.get<{ templates: ScorecardTemplate[]; count: number }>(
+      "/recruitment/scorecard-templates",
+    ),
+  getScorecardTemplate: (id: number) =>
+    apiClient.get<{ template: ScorecardTemplate }>(
+      `/recruitment/scorecard-templates/${id}`,
+    ),
+  createScorecardEntry: (data: {
+    candidate_id: number;
+    interview_id?: number | null;
+    template_id: number;
+    scores: ScorecardEntryScore[];
+    notes?: string;
+  }) =>
+    apiClient.post<{ entry: ScorecardEntry }>(
+      "/recruitment/scorecard-entries",
+      data,
+    ),
+  listCandidateScorecards: (candidateId: number) =>
+    apiClient.get<{ entries: ScorecardEntry[]; count: number }>(
+      `/recruitment/candidates/${candidateId}/scorecard-entries`,
+    ),
+
+  /* Onboarding templates (used in hire review) */
+  listOnboardingTemplatesForHire: () =>
+    apiClient.get<{
+      templates: Array<{ id: number; name: string; is_default: boolean }>;
+      count: number;
+    }>("/onboarding/templates"),
+
+  /* Public careers (T-R045 / T-R046) — no auth required */
+  getPublicCompanyCareers: async (
+    slug: string,
+  ): Promise<PublicCompanyCareers> =>
+    apiClient.get<PublicCompanyCareers>(`/recruitment/careers/${slug}/jobs`),
+  getPublicJob: async (
+    slug: string,
+    jobSlug: string,
+  ): Promise<PublicJobSummary> => {
+    const resp = await apiClient.get<{ job: PublicJobSummary }>(
+      `/recruitment/careers/${slug}/jobs/${jobSlug}`,
+    );
+    return (resp as { job: PublicJobSummary }).job;
+  },
+  submitPublicApplication: (
+    slug: string,
+    jobSlug: string,
+    formData: FormData,
+  ) =>
+    apiClient.postFormData<{
+      message: string;
+      reference_number: string;
+      candidate_id: number;
+    }>(`/recruitment/careers/${slug}/jobs/${jobSlug}/apply`, formData),
 
   /* TAFEP Compliance Scan */
   scanJob: (jobId: number) =>

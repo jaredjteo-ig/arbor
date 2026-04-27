@@ -253,6 +253,38 @@ _FEEDBACK_REMINDER_HTML = """<!DOCTYPE html>
 
 
 # ---------------------------------------------------------------------------
+# 6. Data Retention Warning (T-R030: PDPA pre-purge notice)
+# ---------------------------------------------------------------------------
+
+_DATA_RETENTION_WARNING_SUBJECT = (
+    "Action Required: Your application data with {company_name} will be deleted soon"
+)
+
+_DATA_RETENTION_WARNING_HTML = """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="{base_style}">
+  <div style="background: #fff3e0; border-radius: 8px; padding: 24px; margin-bottom: 16px;">
+    <h2 style="margin: 0 0 8px; color: #e65100;">Your application data will be deleted soon</h2>
+    <p style="margin: 0; color: #e65100;">Hi {{candidate_name}},</p>
+  </div>
+  <div style="padding: 16px;">
+    <p>Under Singapore's Personal Data Protection Act (PDPA), <strong>{{company_name}}</strong> retains unsuccessful applicants' personal data for no longer than <strong>2 years</strong>.</p>
+    <p>Your application for the <strong>{{job_title}}</strong> role was submitted on <strong>{{applied_date}}</strong>. Your record will be permanently deleted on or around <strong>{{purge_date}}</strong> (about 30 days from now).</p>
+    <p>If you would like to remain in our talent pool for future roles, please reply to this email and we will renew your consent. If you do nothing, your data will be deleted automatically.</p>
+    <p style="color: #666; font-size: 0.9em;">You may also exercise your PDPA rights to access, correct, or withdraw consent for your personal data at any time before the deletion date.</p>
+  </div>
+  <div style="{footer_style}">
+    <p>This is an automated PDPA retention notice from {{company_name}} via Arbor HR Platform.</p>
+  </div>
+</body>
+</html>
+""".format(
+    base_style=_BASE_STYLE, footer_style=_FOOTER_STYLE
+)
+
+
+# ---------------------------------------------------------------------------
 # Public template registry
 # ---------------------------------------------------------------------------
 
@@ -276,5 +308,9 @@ RECRUITMENT_TEMPLATES: dict[str, dict[str, str]] = {
     "feedback_reminder": {
         "subject": _FEEDBACK_REMINDER_SUBJECT,
         "html": _FEEDBACK_REMINDER_HTML,
+    },
+    "data_retention_warning": {
+        "subject": _DATA_RETENTION_WARNING_SUBJECT,
+        "html": _DATA_RETENTION_WARNING_HTML,
     },
 }

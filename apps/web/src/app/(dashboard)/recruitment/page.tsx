@@ -43,6 +43,11 @@ import {
   type InterviewSchedule,
   type Offer,
   type InterviewFeedback,
+  type CandidateActivity,
+  type ScreeningResponse,
+  type ScreeningQuestion,
+  type ScorecardEntry,
+  type ScorecardTemplate,
 } from "@/services/api/recruitment";
 
 /* ── Helpers ──────────────────────────────────────────────── */
@@ -62,8 +67,17 @@ const JOB_STATUS_STYLES: Record<string, string> = {
   draft:
     "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] border-[var(--color-gray-200)]",
   open: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  // "published" was renamed to "open" — keep alias so historical records render correctly
+  published: "bg-emerald-50 text-emerald-700 border-emerald-200",
   closed: "bg-red-50 text-red-700 border-red-200",
   on_hold: "bg-amber-50 text-amber-700 border-amber-200",
+  filled: "bg-blue-50 text-blue-700 border-blue-200",
+  // Interview-status styles (the same map is reused for the interviews table)
+  scheduled: "bg-amber-50 text-amber-700 border-amber-200",
+  completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  cancelled: "bg-red-50 text-red-700 border-red-200",
+  no_show:
+    "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] border-[var(--color-gray-200)]",
 };
 
 const STAGE_STYLES: Record<string, string> = {
@@ -77,6 +91,40 @@ const STAGE_STYLES: Record<string, string> = {
   withdrawn:
     "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] border-[var(--color-gray-200)]",
 };
+
+const STAGE_LABELS: Record<string, string> = {
+  new: "New",
+  screening: "Screening",
+  interview: "Interview",
+  assessment: "Assessment",
+  offered: "Offered",
+  hired: "Hired",
+  rejected: "Rejected",
+  withdrawn: "Withdrawn",
+};
+
+/* Canonical stage order — kept in sync with the backend `stage` enum.
+   Active pipeline stages are shown in the kanban by default; terminal
+   stages (rejected, withdrawn) are revealed via the toggle. */
+const STAGE_ORDER: CandidateStage[] = [
+  "new",
+  "screening",
+  "interview",
+  "assessment",
+  "offered",
+  "hired",
+  "rejected",
+  "withdrawn",
+];
+
+const ACTIVE_PIPELINE_STAGES: CandidateStage[] = [
+  "new",
+  "screening",
+  "interview",
+  "assessment",
+  "offered",
+  "hired",
+];
 
 function StatusBadge({
   status,
@@ -698,18 +746,11 @@ function ScheduleInterviewModal({
 
 /* ── Candidate Pipeline ───────────────────────────────────── */
 
-const PIPELINE_STAGES: CandidateStage[] = [
-  "new",
-  "screening",
-  "interview",
-  "offered",
-  "hired",
-];
-
 const NEXT_STAGE: Partial<Record<CandidateStage, CandidateStage>> = {
   new: "screening",
   screening: "interview",
-  interview: "offered",
+  interview: "assessment",
+  assessment: "offered",
 };
 
 function CandidatePipeline({
@@ -733,6 +774,15 @@ function CandidatePipeline({
   const [selectedCandidates, setSelectedCandidates] = useState<Set<number>>(
     new Set(),
   );
+  const [showTerminalStages, setShowTerminalStages] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{
+    total: number;
+    done: number;
+  } | null>(null);
+
+  const visibleStages: CandidateStage[] = showTerminalStages
+    ? STAGE_ORDER
+    : ACTIVE_PIPELINE_STAGES;
 
   async function handleDrop(
     candidateId: number,
@@ -764,10 +814,76 @@ function CandidatePipeline({
     );
   }
 
+  function exportCandidatesAsCsv(rows: Candidate[]) {
+    const sanitize = (val: unknown) => {
+      let s = val == null ? "" : String(val);
+      // CSV formula injection: prefix risky cells with a single quote
+      if (/^[=+\-@]/.test(s)) s = "'" + s;
+      // escape double quotes
+      s = s.replace(/"/g, '""');
+      return `"${s}"`;
+    };
+    const header = [
+      "id",
+      "name",
+      "email",
+      "phone",
+      "stage",
+      "source",
+      "job_title",
+      "created_at",
+    ];
+    const csv = [
+      header.join(","),
+      ...rows.map((c) =>
+        [
+          c.id,
+          c.name,
+          c.email,
+          c.phone || "",
+          c.stage,
+          c.source || "",
+          c.job_title || "",
+          c.created_at,
+        ]
+          .map(sanitize)
+          .join(","),
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `candidates-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function runSequential(
+    ids: number[],
+    op: (id: number) => Promise<unknown>,
+  ): Promise<void> {
+    setBulkProgress({ total: ids.length, done: 0 });
+    let done = 0;
+    for (const id of ids) {
+      try {
+        await op(id);
+      } catch {
+        /* individual failures acceptable in bulk */
+      }
+      done += 1;
+      setBulkProgress({ total: ids.length, done });
+    }
+    setBulkProgress(null);
+  }
+
   return (
     <>
       <div className="flex gap-3 overflow-x-auto pb-2">
-        {PIPELINE_STAGES.map((stage) => {
+        {visibleStages.map((stage) => {
           const stageCandidates = candidates.filter((c) => c.stage === stage);
           return (
             <div
@@ -806,7 +922,7 @@ function CandidatePipeline({
             >
               <div className="flex items-center gap-2 mb-2">
                 <h3 className="text-xs font-semibold text-[var(--color-gray-500)] uppercase tracking-wider">
-                  {stage.charAt(0).toUpperCase() + stage.slice(1)}
+                  {STAGE_LABELS[stage] || stage}
                 </h3>
                 <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full bg-[var(--color-gray-200)] text-[10px] font-bold text-[var(--color-gray-600)]">
                   {stageCandidates.length}
@@ -922,68 +1038,100 @@ function CandidatePipeline({
         })}
       </div>
 
+      {/* Toggle for terminal stages */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowTerminalStages((v) => !v)}
+          className="text-xs text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)] underline"
+        >
+          {showTerminalStages
+            ? "Hide rejected/withdrawn"
+            : "Show rejected/withdrawn"}
+        </button>
+      </div>
+
       {/* Bulk action toolbar */}
       {selectedCandidates.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[var(--color-gray-900)] text-white rounded-xl shadow-xl px-5 py-3 flex items-center gap-4">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[var(--color-gray-900)] text-white rounded-xl shadow-xl px-5 py-3 flex items-center gap-4 flex-wrap">
           <span className="text-sm font-medium">
             {selectedCandidates.size} selected
           </span>
+          {bulkProgress && (
+            <span className="text-xs text-white/70">
+              {bulkProgress.done}/{bulkProgress.total}
+            </span>
+          )}
           <div className="h-4 w-px bg-white/30" />
           <select
             onChange={async (e) => {
               const targetStage = e.target.value;
               if (!targetStage) return;
-              for (const id of selectedCandidates) {
-                try {
-                  await recruitmentApi.moveStage(
-                    id,
-                    targetStage as CandidateStage,
-                  );
-                } catch {
-                  /* individual failures are acceptable in bulk */
-                }
-              }
+              const ids = Array.from(selectedCandidates);
+              await runSequential(ids, (id) =>
+                recruitmentApi.moveStage(id, targetStage as CandidateStage),
+              );
               toast.success(
-                `${selectedCandidates.size} candidates moved to ${targetStage}`,
+                `${ids.length} candidates moved to ${STAGE_LABELS[targetStage] || targetStage}`,
               );
               setSelectedCandidates(new Set());
               onRefresh();
+              // reset the select
+              e.target.value = "";
             }}
             className="bg-transparent text-white text-sm border border-white/30 rounded-lg px-2 py-1"
             defaultValue=""
+            disabled={!!bulkProgress}
           >
             <option value="" disabled>
               Move to...
             </option>
-            <option value="screening">Screening</option>
-            <option value="interview">Interview</option>
-            <option value="offered">Offered</option>
+            {ACTIVE_PIPELINE_STAGES.map((s) => (
+              <option key={s} value={s}>
+                {STAGE_LABELS[s] || s}
+              </option>
+            ))}
           </select>
           <AppButton
             size="sm"
             variant="text"
             className="!text-red-300 hover:!text-red-200"
+            disabled={!!bulkProgress}
             onClick={async () => {
-              for (const id of selectedCandidates) {
-                try {
-                  await recruitmentApi.rejectCandidate(id, {
-                    reason: "Bulk rejection",
-                    send_email: false,
-                  });
-                } catch {
-                  /* individual failures are acceptable in bulk */
-                }
-              }
-              toast.success(`${selectedCandidates.size} candidates rejected`);
+              const ids = Array.from(selectedCandidates);
+              await runSequential(ids, (id) =>
+                recruitmentApi.rejectCandidate(id, {
+                  reason: "Bulk rejection",
+                  send_email: false,
+                }),
+              );
+              toast.success(`${ids.length} candidates rejected`);
               setSelectedCandidates(new Set());
               onRefresh();
             }}
           >
-            Reject All
+            Bulk reject
+          </AppButton>
+          <AppButton
+            size="sm"
+            variant="text"
+            className="!text-white"
+            disabled={!!bulkProgress}
+            onClick={() => {
+              const rows = candidates.filter((c) =>
+                selectedCandidates.has(c.id),
+              );
+              exportCandidatesAsCsv(rows);
+              toast.success(`Exported ${rows.length} candidates to CSV`);
+            }}
+          >
+            <Download className="h-3.5 w-3.5 mr-1" />
+            Export
           </AppButton>
           <button
             onClick={() => setSelectedCandidates(new Set())}
             className="text-white/60 hover:text-white"
+            disabled={!!bulkProgress}
           >
             <X className="h-4 w-4" />
           </button>
@@ -997,9 +1145,16 @@ function CandidatePipeline({
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-function ResumeViewer({ candidateId }: { candidateId: number }) {
+function ResumeViewer({
+  candidateId,
+  resumeFilename,
+}: {
+  candidateId: number;
+  resumeFilename?: string;
+}) {
   const resumeUrl = `${API_BASE}/recruitment/candidates/${candidateId}/resume`;
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [contentType, setContentType] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -1018,6 +1173,7 @@ function ResumeViewer({ candidateId }: { candidateId: number }) {
         const blob = await resp.blob();
         if (!cancelled) {
           setBlobUrl(URL.createObjectURL(blob));
+          setContentType(resp.headers.get("Content-Type") || blob.type || "");
           setLoading(false);
         }
       } catch {
@@ -1056,12 +1212,26 @@ function ResumeViewer({ candidateId }: { candidateId: number }) {
     );
   }
 
+  // Detect file type from filename or content type
+  const filename = resumeFilename || "";
+  const ext = filename.toLowerCase().split(".").pop() || "";
+  const ctLower = contentType.toLowerCase();
+
+  const isPdf = ext === "pdf" || ctLower.includes("pdf");
+  const isImage =
+    ["png", "jpg", "jpeg", "gif", "webp"].includes(ext) ||
+    ctLower.startsWith("image/");
+  const canEmbed = isPdf || isImage;
+
+  const downloadName =
+    filename || `resume-${candidateId}${ext ? "." + ext : ""}`;
+
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-3">
         <a
           href={blobUrl}
-          download
+          download={downloadName}
           className="text-sm text-[var(--color-primary)] hover:underline flex items-center gap-1"
         >
           <Download className="h-4 w-4" /> Download
@@ -1075,50 +1245,268 @@ function ResumeViewer({ candidateId }: { candidateId: number }) {
           <ExternalLink className="h-4 w-4" /> Open in new tab
         </a>
       </div>
-      <iframe
-        src={blobUrl}
-        className="w-full h-[500px] rounded-lg border border-[var(--color-gray-200)]"
-        title="Resume"
-      />
+
+      {canEmbed ? (
+        isPdf ? (
+          <iframe
+            src={blobUrl}
+            className="w-full h-[500px] rounded-lg border border-[var(--color-gray-200)]"
+            title="Resume"
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={blobUrl}
+            alt="Resume"
+            className="w-full h-auto max-h-[500px] rounded-lg border border-[var(--color-gray-200)] object-contain bg-[var(--color-gray-50)]"
+          />
+        )
+      ) : (
+        <div className="rounded-lg border border-dashed border-[var(--color-gray-200)] p-6 text-center bg-[var(--color-gray-50)]">
+          <FileText className="h-10 w-10 text-[var(--color-gray-400)] mx-auto mb-2" />
+          <p className="text-sm font-medium text-[var(--color-gray-700)]">
+            {filename || "Resume file"}
+          </p>
+          <p className="text-xs text-[var(--color-gray-500)] mt-1 mb-3">
+            Preview not supported for this file type
+            {ext ? ` (.${ext})` : ""}.
+          </p>
+          <a
+            href={blobUrl}
+            download={downloadName}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-white text-sm font-medium hover:opacity-90"
+          >
+            <Download className="h-4 w-4" />
+            Download to view
+          </a>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ── Activity Timeline ───────────────────────────────────── */
+/* ── Activity Timeline (T-R013) ──────────────────────────── */
 
-function ActivityTimeline({ notes }: { notes: string }) {
-  const entries = (notes || "")
+function ActivityTimeline({
+  candidateId,
+  fallbackNotes,
+}: {
+  candidateId: number;
+  fallbackNotes: string;
+}) {
+  const [activities, setActivities] = useState<CandidateActivity[] | null>(
+    null,
+  );
+  const [loading, setLoading] = useState(true);
+  const [endpointMissing, setEndpointMissing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    recruitmentApi
+      .listCandidateActivity(candidateId)
+      .then((res) => {
+        if (cancelled) return;
+        setActivities(res.activities ?? []);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        // Endpoint may not be deployed yet (T-R013): graceful fallback
+        const status =
+          (err as { status?: number })?.status ??
+          (err instanceof Error && /404/.test(err.message) ? 404 : 0);
+        if (status === 404) {
+          setEndpointMissing(true);
+        }
+        setActivities([]);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [candidateId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-6">
+        <Loader2 className="h-5 w-5 animate-spin text-[var(--color-gray-400)]" />
+      </div>
+    );
+  }
+
+  // If we have proper activity records, render those
+  if (activities && activities.length > 0) {
+    return (
+      <div className="space-y-3">
+        {activities.map((a, i) => (
+          <div key={a.id} className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <div className="h-2 w-2 rounded-full bg-[var(--color-primary)] mt-1.5" />
+              {i < activities.length - 1 && (
+                <div className="w-px flex-1 bg-[var(--color-gray-200)]" />
+              )}
+            </div>
+            <div className="pb-3 flex-1 min-w-0">
+              <p className="text-sm text-[var(--color-gray-900)]">
+                {a.description}
+              </p>
+              <div className="flex items-center gap-2 text-xs text-[var(--color-gray-400)] mt-0.5">
+                <span>{new Date(a.created_at).toLocaleString("en-SG")}</span>
+                {a.actor_name && (
+                  <>
+                    <span>·</span>
+                    <span>{a.actor_name}</span>
+                  </>
+                )}
+                {a.activity_type && (
+                  <>
+                    <span>·</span>
+                    <span className="capitalize">
+                      {a.activity_type.replace(/_/g, " ")}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Fall back to parsing legacy "notes" field for inline timestamps if present
+  const legacyEntries = (fallbackNotes || "")
     .split("\n")
     .filter((line) => line.trim().startsWith("["));
 
-  if (entries.length === 0) {
+  if (legacyEntries.length > 0) {
     return (
-      <p className="text-sm text-[var(--color-gray-500)] text-center py-4">
-        No activity recorded yet.
+      <div className="space-y-3">
+        {legacyEntries.map((entry, i) => {
+          const match = entry.match(/^\[(.+?)\]\s*(.+)$/);
+          const timestamp = match?.[1] || "";
+          const action = match?.[2] || entry;
+          return (
+            <div key={i} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className="h-2 w-2 rounded-full bg-[var(--color-primary)] mt-1.5" />
+                {i < legacyEntries.length - 1 && (
+                  <div className="w-px flex-1 bg-[var(--color-gray-200)]" />
+                )}
+              </div>
+              <div className="pb-3">
+                <p className="text-sm text-[var(--color-gray-900)]">{action}</p>
+                <p className="text-xs text-[var(--color-gray-400)]">
+                  {timestamp}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+        {endpointMissing && (
+          <p className="text-xs text-[var(--color-gray-400)] italic pt-2 border-t border-[var(--color-gray-100)]">
+            Showing legacy activity. Detailed timeline will appear once
+            recording is enabled.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <p className="text-sm text-[var(--color-gray-500)] text-center py-6">
+      No activity recorded yet.
+    </p>
+  );
+}
+
+/* ── Screening Responses Panel (T-R034) ──────────────────── */
+
+function ScreeningResponsesPanel({ candidateId }: { candidateId: number }) {
+  const [responses, setResponses] = useState<ScreeningResponse[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    recruitmentApi
+      .listScreeningResponses(candidateId)
+      .then((res) => {
+        if (!cancelled) {
+          setResponses(res.responses ?? []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setResponses([]);
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [candidateId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-6">
+        <Loader2 className="h-5 w-5 animate-spin text-[var(--color-gray-400)]" />
+      </div>
+    );
+  }
+
+  if (!responses || responses.length === 0) {
+    return (
+      <p className="text-sm text-[var(--color-gray-500)] text-center py-6">
+        No screening responses recorded.
       </p>
     );
   }
 
   return (
     <div className="space-y-3">
-      {entries.map((entry, i) => {
-        const match = entry.match(/^\[(.+?)\]\s*(.+)$/);
-        const timestamp = match?.[1] || "";
-        const action = match?.[2] || entry;
+      {responses.map((r) => {
+        const failed = !!r.is_failure;
         return (
-          <div key={i} className="flex gap-3">
-            <div className="flex flex-col items-center">
-              <div className="h-2 w-2 rounded-full bg-[var(--color-primary)] mt-1.5" />
-              {i < entries.length - 1 && (
-                <div className="w-px flex-1 bg-[var(--color-gray-200)]" />
+          <div
+            key={r.id}
+            className={`rounded-lg border p-3 ${
+              failed
+                ? "border-red-200 bg-red-50"
+                : "border-[var(--color-gray-200)] bg-[var(--color-gray-50)]"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                {r.question_text || `Question #${r.question_id}`}
+              </p>
+              {r.is_knockout && (
+                <span
+                  className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full whitespace-nowrap ${
+                    failed
+                      ? "bg-red-200 text-red-800"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  Knockout
+                </span>
               )}
             </div>
-            <div className="pb-3">
-              <p className="text-sm text-[var(--color-gray-900)]">{action}</p>
-              <p className="text-xs text-[var(--color-gray-400)]">
-                {timestamp}
+            <p
+              className={`text-sm ${
+                failed
+                  ? "text-red-700 font-medium"
+                  : "text-[var(--color-gray-700)]"
+              }`}
+            >
+              {r.answer || <span className="italic">No answer</span>}
+            </p>
+            {failed && (
+              <p className="text-xs text-red-600 mt-1">
+                Did not meet the required answer
+                {r.knockout_value ? ` (expected: ${r.knockout_value})` : ""}.
               </p>
-            </div>
+            )}
           </div>
         );
       })}
@@ -1126,9 +1514,107 @@ function ActivityTimeline({ notes }: { notes: string }) {
   );
 }
 
+/* ── Scorecard Summary (T-R036, read-only) ────────────────── */
+
+function ScorecardSummaryPanel({ candidateId }: { candidateId: number }) {
+  const [entries, setEntries] = useState<ScorecardEntry[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    recruitmentApi
+      .listCandidateScorecards(candidateId)
+      .then((res) => {
+        if (!cancelled) {
+          setEntries(res.entries ?? []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEntries([]);
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [candidateId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-6">
+        <Loader2 className="h-5 w-5 animate-spin text-[var(--color-gray-400)]" />
+      </div>
+    );
+  }
+
+  if (!entries || entries.length === 0) {
+    return (
+      <p className="text-sm text-[var(--color-gray-500)] text-center py-6">
+        No scorecards submitted yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {entries.map((entry) => (
+        <div
+          key={entry.id}
+          className="rounded-lg border border-[var(--color-gray-200)] p-3 bg-[var(--color-surface-card)]"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-[var(--color-gray-900)]">
+              {entry.template_name || `Template #${entry.template_id}`}
+            </p>
+            <span className="text-xs text-[var(--color-gray-400)]">
+              {entry.interviewer_name ? `${entry.interviewer_name} · ` : ""}
+              {new Date(entry.created_at).toLocaleDateString("en-SG", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })}
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {entry.scores.map((s, i) => (
+              <div
+                key={s.criterion_id ?? i}
+                className="flex items-center justify-between gap-3"
+              >
+                <span className="text-xs text-[var(--color-gray-600)]">
+                  {s.criterion_name}
+                </span>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: 5 }, (_, idx) => (
+                    <Star
+                      key={idx}
+                      className={`h-3 w-3 ${
+                        idx < (s.rating ?? 0)
+                          ? "fill-amber-400 text-amber-400"
+                          : "text-[var(--color-gray-300)]"
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          {entry.notes && (
+            <p className="text-xs text-[var(--color-gray-600)] mt-2 italic">
+              {entry.notes}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── Candidate Profile Panel ─────────────────────────────── */
 
-type ProfileTab = "resume" | "activity" | "details";
+type ProfileTab = "resume" | "activity" | "screening" | "scorecard" | "details";
 
 function CandidateProfilePanel({
   candidate,
@@ -1305,7 +1791,7 @@ function CandidateProfilePanel({
             {/* Right content — tabs */}
             <div className="flex-1 flex flex-col min-w-0">
               {/* Tab bar */}
-              <div className="flex gap-1 p-2 border-b border-[var(--color-gray-200)] flex-shrink-0">
+              <div className="flex gap-1 p-2 border-b border-[var(--color-gray-200)] flex-shrink-0 overflow-x-auto">
                 {(
                   [
                     {
@@ -1319,6 +1805,16 @@ function CandidateProfilePanel({
                       icon: Clock,
                     },
                     {
+                      key: "screening" as ProfileTab,
+                      label: "Screening",
+                      icon: ShieldCheck,
+                    },
+                    {
+                      key: "scorecard" as ProfileTab,
+                      label: "Scorecard",
+                      icon: Star,
+                    },
+                    {
                       key: "details" as ProfileTab,
                       label: "Details",
                       icon: Users,
@@ -1329,7 +1825,7 @@ function CandidateProfilePanel({
                     key={key}
                     type="button"
                     onClick={() => setActiveTab(key)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                       activeTab === key
                         ? "bg-[var(--color-primary)] text-white"
                         : "text-[var(--color-gray-600)] hover:bg-[var(--color-gray-100)]"
@@ -1348,7 +1844,18 @@ function CandidateProfilePanel({
                 )}
 
                 {activeTab === "activity" && (
-                  <ActivityTimeline notes={candidate.notes || ""} />
+                  <ActivityTimeline
+                    candidateId={candidate.id}
+                    fallbackNotes={candidate.notes || ""}
+                  />
+                )}
+
+                {activeTab === "screening" && (
+                  <ScreeningResponsesPanel candidateId={candidate.id} />
+                )}
+
+                {activeTab === "scorecard" && (
+                  <ScorecardSummaryPanel candidateId={candidate.id} />
                 )}
 
                 {activeTab === "details" && (
@@ -1557,14 +2064,13 @@ function DashboardView() {
 
 /* ── Reject Candidate Modal ──────────────────────────────── */
 
-const REJECTION_REASONS = [
-  "Not qualified for the role",
-  "Overqualified for the role",
-  "Position has been filled",
-  "Candidate withdrew",
-  "Insufficient experience",
-  "Failed assessment",
-  "Other",
+/** T-R069 — canonical reason values must match the backend reject endpoint. */
+const REJECTION_REASONS: Array<{ value: string; label: string }> = [
+  { value: "not_qualified", label: "Not qualified" },
+  { value: "position_filled", label: "Position filled" },
+  { value: "candidate_withdrew", label: "Candidate withdrew" },
+  { value: "failed_screening", label: "Failed screening" },
+  { value: "other", label: "Other" },
 ];
 
 function RejectCandidateModal({
@@ -1584,6 +2090,16 @@ function RejectCandidateModal({
   const [notes, setNotes] = useState("");
   const [sendEmail, setSendEmail] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    function h(e: KeyboardEvent) {
+      if (e.key === "Escape" && !isSubmitting) onClose();
+    }
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [isOpen, onClose, isSubmitting]);
 
   if (!isOpen) return null;
 
@@ -1656,8 +2172,8 @@ function RejectCandidateModal({
             >
               <option value="">Select a reason</option>
               {REJECTION_REASONS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
+                <option key={r.value} value={r.value}>
+                  {r.label}
                 </option>
               ))}
             </select>
@@ -2053,12 +2569,14 @@ function SubmitFeedbackModal({
   onClose,
   onSuccess,
   interviewId,
+  candidateId,
   candidateName,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
   interviewId: number;
+  candidateId: number;
   candidateName: string;
 }) {
   const [rating, setRating] = useState(0);
@@ -2068,7 +2586,47 @@ function SubmitFeedbackModal({
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Scorecard state (T-R036)
+  const [scorecardTemplates, setScorecardTemplates] = useState<
+    ScorecardTemplate[]
+  >([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const selectedTemplate = scorecardTemplates.find(
+    (t) => String(t.id) === selectedTemplateId,
+  );
+  const [criterionScores, setCriterionScores] = useState<
+    Record<string, number>
+  >({});
+
+  // Close on escape
+  useEffect(() => {
+    if (!isOpen) return;
+    function h(e: KeyboardEvent) {
+      if (e.key === "Escape" && !isSubmitting) onClose();
+    }
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [isOpen, onClose, isSubmitting]);
+
+  // Load templates when modal opens — gracefully degrade on 404
+  useEffect(() => {
+    if (!isOpen) return;
+    recruitmentApi
+      .listScorecardTemplates()
+      .then((res) => setScorecardTemplates(res.templates ?? []))
+      .catch(() => setScorecardTemplates([]));
+  }, [isOpen]);
+
+  // Reset criterion scores when template changes
+  useEffect(() => {
+    setCriterionScores({});
+  }, [selectedTemplateId]);
+
   if (!isOpen) return null;
+
+  function setCriterionScore(key: string, score: number) {
+    setCriterionScores((prev) => ({ ...prev, [key]: score }));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -2085,12 +2643,44 @@ function SubmitFeedbackModal({
         weaknesses: weaknesses.trim(),
         notes: notes.trim(),
       });
+
+      // If a scorecard template was selected with at least one rating, post it
+      if (selectedTemplate) {
+        const scores = selectedTemplate.criteria
+          .map((crit, idx) => {
+            const key = String(crit.id ?? idx);
+            const ratingValue = criterionScores[key] ?? 0;
+            if (ratingValue <= 0) return null;
+            return {
+              criterion_id: crit.id,
+              criterion_name: crit.name,
+              rating: ratingValue,
+            };
+          })
+          .filter((s): s is NonNullable<typeof s> => s !== null);
+        if (scores.length > 0) {
+          try {
+            await recruitmentApi.createScorecardEntry({
+              candidate_id: candidateId,
+              interview_id: interviewId,
+              template_id: selectedTemplate.id,
+              scores,
+              notes: notes.trim(),
+            });
+          } catch {
+            toast.error("Feedback saved, but scorecard could not be recorded.");
+          }
+        }
+      }
+
       toast.success("Interview feedback submitted");
       setRating(0);
       setRecommendation("");
       setStrengths("");
       setWeaknesses("");
       setNotes("");
+      setSelectedTemplateId("");
+      setCriterionScores({});
       onSuccess();
       onClose();
     } catch (err: unknown) {
@@ -2181,6 +2771,78 @@ function SubmitFeedbackModal({
               <option value="strong_no_hire">Strong No Hire</option>
             </select>
           </div>
+
+          {/* Scorecard (T-R036) */}
+          {scorecardTemplates.length > 0 && (
+            <div>
+              <label
+                htmlFor="fb-template"
+                className="block text-sm font-medium text-[var(--color-gray-700)] mb-1"
+              >
+                Scorecard Template{" "}
+                <span className="text-xs text-[var(--color-gray-400)] font-normal">
+                  (optional)
+                </span>
+              </label>
+              <select
+                id="fb-template"
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+                className="w-full rounded-[8px] border px-3 py-2 text-sm min-h-[44px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+              >
+                <option value="">No scorecard</option>
+                {scorecardTemplates.map((t) => (
+                  <option key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              {selectedTemplate && (
+                <div className="mt-3 space-y-2 rounded-lg border border-[var(--color-gray-200)] p-3 bg-[var(--color-gray-50)]">
+                  {selectedTemplate.criteria.map((crit, idx) => {
+                    const key = String(crit.id ?? idx);
+                    const value = criterionScores[key] ?? 0;
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between gap-3"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                            {crit.name}
+                          </p>
+                          {crit.description && (
+                            <p className="text-xs text-[var(--color-gray-500)]">
+                              {crit.description}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => setCriterionScore(key, s)}
+                              aria-label={`${crit.name}: ${s} stars`}
+                            >
+                              <Star
+                                className={`h-5 w-5 ${
+                                  s <= value
+                                    ? "fill-amber-400 text-amber-400"
+                                    : "text-[var(--color-gray-300)]"
+                                }`}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label
               htmlFor="fb-strengths"
@@ -2255,6 +2917,1008 @@ function SubmitFeedbackModal({
   );
 }
 
+/* ── Interview Calendar (T-R043) ─────────────────────────── */
+
+function InterviewCalendar({
+  interviews,
+  onSelectInterview,
+}: {
+  interviews: InterviewSchedule[];
+  onSelectInterview?: (iv: InterviewSchedule) => void;
+}) {
+  const today = new Date();
+  const [viewMonth, setViewMonth] = useState({
+    year: today.getFullYear(),
+    month: today.getMonth(), // 0-indexed
+  });
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  // Group interviews by ISO date (yyyy-mm-dd)
+  const byDate = useMemo(() => {
+    const map = new Map<string, InterviewSchedule[]>();
+    for (const iv of interviews) {
+      if (!iv.scheduled_at) continue;
+      const d = new Date(iv.scheduled_at);
+      if (Number.isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(iv);
+    }
+    return map;
+  }, [interviews]);
+
+  const firstDay = new Date(viewMonth.year, viewMonth.month, 1);
+  const startWeekday = firstDay.getDay(); // 0 = Sun
+  const daysInMonth = new Date(
+    viewMonth.year,
+    viewMonth.month + 1,
+    0,
+  ).getDate();
+
+  // Build the grid: leading blanks + days
+  const cells: Array<{ day: number | null; iso: string | null }> = [];
+  for (let i = 0; i < startWeekday; i++) cells.push({ day: null, iso: null });
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    cells.push({ day: d, iso });
+  }
+  // Pad to a 6-row grid (42 cells)
+  while (cells.length < 42) cells.push({ day: null, iso: null });
+
+  const monthLabel = new Date(viewMonth.year, viewMonth.month).toLocaleString(
+    "en-SG",
+    { month: "long", year: "numeric" },
+  );
+
+  function goPrev() {
+    const m = viewMonth.month - 1;
+    if (m < 0) setViewMonth({ year: viewMonth.year - 1, month: 11 });
+    else setViewMonth({ ...viewMonth, month: m });
+    setSelectedDay(null);
+  }
+  function goNext() {
+    const m = viewMonth.month + 1;
+    if (m > 11) setViewMonth({ year: viewMonth.year + 1, month: 0 });
+    else setViewMonth({ ...viewMonth, month: m });
+    setSelectedDay(null);
+  }
+  function goToday() {
+    setViewMonth({ year: today.getFullYear(), month: today.getMonth() });
+    setSelectedDay(null);
+  }
+
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const selectedInterviews = selectedDay ? byDate.get(selectedDay) || [] : [];
+
+  return (
+    <AppCard variant="standard">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-semibold text-[var(--color-gray-900)]">
+          {monthLabel}
+        </h3>
+        <div className="flex items-center gap-1.5">
+          <AppButton variant="outlined" size="sm" onClick={goPrev}>
+            <ChevronRight className="h-4 w-4 rotate-180" />
+          </AppButton>
+          <AppButton variant="outlined" size="sm" onClick={goToday}>
+            Today
+          </AppButton>
+          <AppButton variant="outlined" size="sm" onClick={goNext}>
+            <ChevronRight className="h-4 w-4" />
+          </AppButton>
+        </div>
+      </div>
+
+      {/* Weekday header */}
+      <div className="grid grid-cols-7 gap-1 mb-1">
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((w) => (
+          <div
+            key={w}
+            className="text-[10px] font-semibold uppercase text-[var(--color-gray-500)] text-center py-1"
+          >
+            {w}
+          </div>
+        ))}
+      </div>
+
+      {/* Grid */}
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((cell, idx) => {
+          if (!cell.iso || !cell.day) {
+            return (
+              <div
+                key={idx}
+                className="aspect-square rounded-md bg-transparent"
+              />
+            );
+          }
+          const dayInterviews = byDate.get(cell.iso) || [];
+          const isToday = cell.iso === todayIso;
+          const isSelected = cell.iso === selectedDay;
+          return (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => setSelectedDay(cell.iso)}
+              className={`aspect-square rounded-md p-1 text-left transition-colors border ${
+                isSelected
+                  ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
+                  : isToday
+                    ? "border-[var(--color-primary)] bg-[var(--color-surface-card)]"
+                    : "border-transparent hover:bg-[var(--color-gray-50)]"
+              }`}
+            >
+              <div className="text-xs font-medium">{cell.day}</div>
+              {dayInterviews.length > 0 && (
+                <div className="flex items-center gap-0.5 mt-0.5">
+                  <span
+                    className={`inline-block h-1 w-1 rounded-full ${
+                      isSelected ? "bg-white" : "bg-[var(--color-primary)]"
+                    }`}
+                  />
+                  <span
+                    className={`text-[10px] ${
+                      isSelected
+                        ? "text-white/90"
+                        : "text-[var(--color-gray-500)]"
+                    }`}
+                  >
+                    {dayInterviews.length}
+                  </span>
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Selected-day panel */}
+      {selectedDay && (
+        <div className="mt-4 border-t border-[var(--color-gray-200)] pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-gray-500)] mb-2">
+            {new Date(selectedDay).toLocaleDateString("en-SG", {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            })}
+          </p>
+          {selectedInterviews.length === 0 ? (
+            <p className="text-sm text-[var(--color-gray-500)]">
+              No interviews scheduled.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {selectedInterviews
+                .slice()
+                .sort((a, b) => (a.scheduled_at < b.scheduled_at ? -1 : 1))
+                .map((iv) => {
+                  const dt = new Date(iv.scheduled_at);
+                  const time = dt.toLocaleTimeString("en-SG", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                  return (
+                    <button
+                      key={iv.id}
+                      type="button"
+                      onClick={() => onSelectInterview?.(iv)}
+                      className="w-full text-left rounded-lg border border-[var(--color-gray-200)] p-2 hover:border-[var(--color-primary)] transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-[var(--color-gray-900)]">
+                          {iv.candidate_name || `Candidate #${iv.candidate_id}`}
+                        </span>
+                        <span className="text-xs text-[var(--color-gray-500)]">
+                          {time}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 text-xs text-[var(--color-gray-500)]">
+                        <span className="capitalize">{iv.interview_type}</span>
+                        {iv.location && (
+                          <>
+                            <span>·</span>
+                            <span>{iv.location}</span>
+                          </>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
+    </AppCard>
+  );
+}
+
+/* ── Screening Questions Manager (T-R033) ───────────────── */
+
+function ScreeningQuestionsModal({
+  isOpen,
+  jobId,
+  jobTitle,
+  onClose,
+}: {
+  isOpen: boolean;
+  jobId: number | null;
+  jobTitle: string;
+  onClose: () => void;
+}) {
+  const [questions, setQuestions] = useState<ScreeningQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [newQ, setNewQ] = useState<{
+    question_text: string;
+    question_type: ScreeningQuestion["question_type"];
+    is_required: boolean;
+    is_knockout: boolean;
+    knockout_value: string;
+  }>({
+    question_text: "",
+    question_type: "text",
+    is_required: false,
+    is_knockout: false,
+    knockout_value: "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  // ESC closes modal
+  useEffect(() => {
+    if (!isOpen) return;
+    function h(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen || !jobId) return;
+    setLoading(true);
+    recruitmentApi
+      .listJobQuestions(jobId)
+      .then((res) =>
+        setQuestions(
+          [...(res.questions ?? [])].sort(
+            (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
+          ),
+        ),
+      )
+      .catch(() => setQuestions([]))
+      .finally(() => setLoading(false));
+  }, [isOpen, jobId]);
+
+  if (!isOpen || !jobId) return null;
+
+  function handleDragStart(e: React.DragEvent<HTMLDivElement>, id: number) {
+    setDraggingId(id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  async function handleDrop(
+    e: React.DragEvent<HTMLDivElement>,
+    targetId: number,
+  ) {
+    e.preventDefault();
+    if (draggingId == null || draggingId === targetId) return;
+
+    const next = [...questions];
+    const fromIdx = next.findIndex((q) => q.id === draggingId);
+    const toIdx = next.findIndex((q) => q.id === targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+
+    // Re-number sort_order
+    const reordered = next.map((q, i) => ({ ...q, sort_order: i }));
+    setQuestions(reordered);
+    setDraggingId(null);
+
+    // Persist sort_order changes — fire-and-forget
+    for (const q of reordered) {
+      try {
+        await recruitmentApi.updateJobQuestion(jobId!, q.id, {
+          sort_order: q.sort_order,
+        });
+      } catch {
+        /* swallow individual failures */
+      }
+    }
+  }
+
+  async function handleAdd() {
+    if (!newQ.question_text.trim()) return;
+    setSaving(true);
+    try {
+      const res = (await recruitmentApi.createJobQuestion(jobId!, {
+        question_text: newQ.question_text.trim(),
+        question_type: newQ.question_type,
+        is_required: newQ.is_required,
+        is_knockout: newQ.is_knockout,
+        knockout_value: newQ.knockout_value || null,
+        sort_order: questions.length,
+      })) as { question: ScreeningQuestion };
+      const q = (res as { question: ScreeningQuestion }).question || res;
+      setQuestions([...questions, q as ScreeningQuestion]);
+      setNewQ({
+        question_text: "",
+        question_type: "text",
+        is_required: false,
+        is_knockout: false,
+        knockout_value: "",
+      });
+      toast.success("Question added");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to add question";
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(qid: number) {
+    try {
+      await recruitmentApi.deleteJobQuestion(jobId!, qid);
+      setQuestions(questions.filter((q) => q.id !== qid));
+      toast.success("Question removed");
+    } catch {
+      toast.error("Failed to remove question");
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-xl mx-4 rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] shadow-[var(--shadow-raised)] p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
+              Screening questions
+            </h2>
+            <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+              {jobTitle}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+          >
+            <X className="h-5 w-5 text-[var(--color-gray-500)]" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-[var(--color-gray-400)]" />
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-[var(--color-gray-500)] mb-2">
+              Drag to reorder. Knockout questions automatically reject
+              candidates who answer incorrectly.
+            </p>
+            <div className="space-y-2 mb-4">
+              {questions.length === 0 && (
+                <p className="text-sm text-[var(--color-gray-500)] text-center py-4 border border-dashed border-[var(--color-gray-200)] rounded-lg">
+                  No screening questions yet
+                </p>
+              )}
+              {questions.map((q) => (
+                <div
+                  key={q.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, q.id)}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(e) => handleDrop(e, q.id)}
+                  className={`flex items-start gap-2 p-3 rounded-lg border bg-[var(--color-surface-card)] cursor-grab active:cursor-grabbing transition-opacity ${
+                    draggingId === q.id
+                      ? "opacity-40 border-[var(--color-primary)]"
+                      : "border-[var(--color-gray-200)]"
+                  }`}
+                >
+                  <div className="flex flex-col gap-0.5 mt-1 text-[var(--color-gray-400)] select-none">
+                    <span className="block w-1 h-1 rounded-full bg-current" />
+                    <span className="block w-1 h-1 rounded-full bg-current" />
+                    <span className="block w-1 h-1 rounded-full bg-current" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-[var(--color-gray-900)]">
+                      {q.question_text}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span className="text-[10px] uppercase font-medium text-[var(--color-gray-500)]">
+                        {q.question_type.replace(/_/g, " ")}
+                      </span>
+                      {q.is_required && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                          Required
+                        </span>
+                      )}
+                      {q.is_knockout && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                          Knockout
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(q.id)}
+                    className="text-[var(--color-gray-400)] hover:text-red-600"
+                    aria-label="Remove question"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-[var(--color-gray-200)] pt-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-gray-500)]">
+                Add a question
+              </p>
+              <input
+                type="text"
+                value={newQ.question_text}
+                onChange={(e) =>
+                  setNewQ({ ...newQ, question_text: e.target.value })
+                }
+                className="w-full rounded-[8px] border px-3 py-2 text-sm bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+                placeholder="Question text"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={newQ.question_type}
+                  onChange={(e) =>
+                    setNewQ({
+                      ...newQ,
+                      question_type: e.target
+                        .value as ScreeningQuestion["question_type"],
+                    })
+                  }
+                  className="rounded-[8px] border px-3 py-2 text-sm bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+                  aria-label="Question type"
+                >
+                  <option value="text">Text</option>
+                  <option value="yes_no">Yes / No</option>
+                  <option value="multiple_choice">Multiple choice</option>
+                  <option value="number">Number</option>
+                </select>
+                {newQ.is_knockout && (
+                  <input
+                    type="text"
+                    value={newQ.knockout_value}
+                    onChange={(e) =>
+                      setNewQ({ ...newQ, knockout_value: e.target.value })
+                    }
+                    className="rounded-[8px] border px-3 py-2 text-sm bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+                    placeholder="Required answer"
+                  />
+                )}
+              </div>
+              <div className="flex items-center gap-4 text-sm">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newQ.is_required}
+                    onChange={(e) =>
+                      setNewQ({ ...newQ, is_required: e.target.checked })
+                    }
+                  />
+                  Required
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newQ.is_knockout}
+                    onChange={(e) =>
+                      setNewQ({ ...newQ, is_knockout: e.target.checked })
+                    }
+                  />
+                  Knockout
+                </label>
+              </div>
+              <AppButton
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={handleAdd}
+                loading={saving}
+                disabled={!newQ.question_text.trim()}
+                className="w-full"
+              >
+                <Plus className="h-4 w-4 mr-1" /> Add question
+              </AppButton>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Hire Review Modal (T-R024) ──────────────────────────── */
+
+interface HireReviewTarget {
+  candidateId: number;
+  candidate: Candidate;
+  latestOffer?: Offer | null;
+}
+
+function HireReviewModal({
+  isOpen,
+  target,
+  onClose,
+  onSuccess,
+}: {
+  isOpen: boolean;
+  target: HireReviewTarget | null;
+  onClose: () => void;
+  onSuccess: (result: {
+    employeeId: number;
+    onboardingAssignmentId?: number;
+  }) => void;
+}) {
+  const [step, setStep] = useState(1);
+  const [department, setDepartment] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [startDate, setStartDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [templates, setTemplates] = useState<
+    Array<{ id: number; name: string; is_default: boolean }>
+  >([]);
+  const [templateId, setTemplateId] = useState<string>("default");
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<{
+    employeeId: number;
+    onboardingAssignmentId?: number;
+  } | null>(null);
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    setStep(1);
+    setResult(null);
+    setSubmitting(false);
+    setDepartment("");
+    setDesignation(target?.candidate.job_title || "");
+    setStartDate(new Date().toISOString().slice(0, 10));
+    setTemplateId("default");
+    // Try to load onboarding templates; gracefully degrade if endpoint unavailable
+    recruitmentApi
+      .listOnboardingTemplatesForHire()
+      .then((res) => setTemplates(res.templates ?? []))
+      .catch(() => setTemplates([]));
+  }, [isOpen, target]);
+
+  // Escape closes modal
+  useEffect(() => {
+    if (!isOpen) return;
+    function handler(e: KeyboardEvent) {
+      if (e.key === "Escape" && !submitting) onClose();
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isOpen, onClose, submitting]);
+
+  if (!isOpen || !target) return null;
+
+  const c = target.candidate;
+  const offer = target.latestOffer;
+
+  async function handleSubmit() {
+    setSubmitting(true);
+    try {
+      const res = (await recruitmentApi.hireCandidate(target!.candidateId, {
+        start_date: startDate,
+        department: department.trim(),
+        designation: designation.trim(),
+        onboarding_template_id:
+          templateId === "default" || templateId === ""
+            ? null
+            : Number(templateId),
+      })) as {
+        message: string;
+        employee_id: number;
+        onboarding_assignment_id?: number;
+      };
+      const final = {
+        employeeId: res.employee_id,
+        onboardingAssignmentId: res.onboarding_assignment_id,
+      };
+      setResult(final);
+      setStep(4);
+      onSuccess(final);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to hire";
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const stepDots = [1, 2, 3];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={() => !submitting && onClose()}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-md mx-4 rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] shadow-[var(--shadow-raised)] p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="h-5 w-5 text-emerald-600" />
+            <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
+              Hire {c.name}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => !submitting && onClose()}
+            className="p-1 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+            disabled={submitting}
+          >
+            <X className="h-5 w-5 text-[var(--color-gray-500)]" />
+          </button>
+        </div>
+
+        {/* Step indicator */}
+        {step <= 3 && (
+          <div className="flex items-center justify-center gap-2 mb-5">
+            {stepDots.map((s) => (
+              <div key={s} className="flex items-center gap-2">
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    s < step
+                      ? "bg-emerald-500"
+                      : s === step
+                        ? "bg-[var(--color-primary)]"
+                        : "bg-[var(--color-gray-300)]"
+                  }`}
+                />
+                {s < 3 && (
+                  <div
+                    className={`w-8 h-px ${s < step ? "bg-emerald-500" : "bg-[var(--color-gray-200)]"}`}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {step === 1 && (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--color-gray-600)]">
+              Confirm the candidate&apos;s details before completing the hire.
+            </p>
+            <div className="rounded-lg border border-[var(--color-gray-200)] p-3 space-y-1.5 text-sm">
+              <div>
+                <span className="text-[var(--color-gray-500)]">Name:</span>{" "}
+                <span className="font-medium">{c.name}</span>
+              </div>
+              <div>
+                <span className="text-[var(--color-gray-500)]">Email:</span>{" "}
+                <span className="font-medium">{c.email}</span>
+              </div>
+              {c.job_title && (
+                <div>
+                  <span className="text-[var(--color-gray-500)]">
+                    Position:
+                  </span>{" "}
+                  <span className="font-medium">{c.job_title}</span>
+                </div>
+              )}
+              {offer && (
+                <>
+                  <div>
+                    <span className="text-[var(--color-gray-500)]">
+                      Salary:
+                    </span>{" "}
+                    <span className="font-medium">
+                      {offer.currency || "SGD"} {offer.salary?.toLocaleString()}
+                      /{offer.salary_period || "monthly"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-gray-500)]">
+                      Start date:
+                    </span>{" "}
+                    <span className="font-medium">{offer.start_date}</span>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label
+                  htmlFor="hire-department"
+                  className="block text-xs font-medium text-[var(--color-gray-700)] mb-1"
+                >
+                  Department
+                </label>
+                <input
+                  id="hire-department"
+                  type="text"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  className="w-full rounded-[8px] border px-3 py-2 text-sm min-h-[40px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+                  placeholder="e.g. Engineering"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="hire-designation"
+                  className="block text-xs font-medium text-[var(--color-gray-700)] mb-1"
+                >
+                  Designation
+                </label>
+                <input
+                  id="hire-designation"
+                  type="text"
+                  value={designation}
+                  onChange={(e) => setDesignation(e.target.value)}
+                  className="w-full rounded-[8px] border px-3 py-2 text-sm min-h-[40px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+                  placeholder="e.g. Software Engineer"
+                />
+              </div>
+            </div>
+            <div>
+              <label
+                htmlFor="hire-start"
+                className="block text-xs font-medium text-[var(--color-gray-700)] mb-1"
+              >
+                Start date *
+              </label>
+              <input
+                id="hire-start"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full rounded-[8px] border px-3 py-2 text-sm min-h-[40px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+                required
+              />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <AppButton
+                type="button"
+                variant="outlined"
+                size="sm"
+                onClick={onClose}
+                className="flex-1"
+              >
+                Cancel
+              </AppButton>
+              <AppButton
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => setStep(2)}
+                className="flex-1"
+                disabled={!startDate}
+              >
+                Next
+              </AppButton>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--color-gray-600)]">
+              Choose an onboarding template for this hire.
+            </p>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 p-3 rounded-lg border border-[var(--color-gray-200)] cursor-pointer hover:border-[var(--color-primary)]">
+                <input
+                  type="radio"
+                  name="template"
+                  value="default"
+                  checked={templateId === "default"}
+                  onChange={() => setTemplateId("default")}
+                  className="mt-0.5"
+                />
+                <div>
+                  <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                    Use default template
+                  </p>
+                  <p className="text-xs text-[var(--color-gray-500)]">
+                    Apply your company&apos;s default onboarding workflow.
+                  </p>
+                </div>
+              </label>
+              {templates
+                .filter((t) => !t.is_default)
+                .map((t) => (
+                  <label
+                    key={t.id}
+                    className="flex items-start gap-2 p-3 rounded-lg border border-[var(--color-gray-200)] cursor-pointer hover:border-[var(--color-primary)]"
+                  >
+                    <input
+                      type="radio"
+                      name="template"
+                      value={String(t.id)}
+                      checked={templateId === String(t.id)}
+                      onChange={() => setTemplateId(String(t.id))}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                        {t.name}
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              <label className="flex items-start gap-2 p-3 rounded-lg border border-[var(--color-gray-200)] cursor-pointer hover:border-[var(--color-primary)]">
+                <input
+                  type="radio"
+                  name="template"
+                  value=""
+                  checked={templateId === ""}
+                  onChange={() => setTemplateId("")}
+                  className="mt-0.5"
+                />
+                <div>
+                  <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                    Skip onboarding template
+                  </p>
+                  <p className="text-xs text-[var(--color-gray-500)]">
+                    Create the employee record only — no onboarding assigned.
+                  </p>
+                </div>
+              </label>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <AppButton
+                type="button"
+                variant="outlined"
+                size="sm"
+                onClick={() => setStep(1)}
+                className="flex-1"
+              >
+                Back
+              </AppButton>
+              <AppButton
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => setStep(3)}
+                className="flex-1"
+              >
+                Next
+              </AppButton>
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--color-gray-600)]">
+              Review and confirm. This will create an employee record and send
+              the onboarding invitation.
+            </p>
+            <div className="rounded-lg border border-[var(--color-gray-200)] p-3 space-y-1 text-sm">
+              <div>
+                <span className="text-[var(--color-gray-500)]">Name:</span>{" "}
+                {c.name}
+              </div>
+              <div>
+                <span className="text-[var(--color-gray-500)]">Email:</span>{" "}
+                {c.email}
+              </div>
+              <div>
+                <span className="text-[var(--color-gray-500)]">
+                  Department:
+                </span>{" "}
+                {department || "—"}
+              </div>
+              <div>
+                <span className="text-[var(--color-gray-500)]">
+                  Designation:
+                </span>{" "}
+                {designation || c.job_title || "—"}
+              </div>
+              <div>
+                <span className="text-[var(--color-gray-500)]">
+                  Start date:
+                </span>{" "}
+                {startDate}
+              </div>
+              <div>
+                <span className="text-[var(--color-gray-500)]">
+                  Onboarding:
+                </span>{" "}
+                {templateId === "default"
+                  ? "Default template"
+                  : templateId === ""
+                    ? "None"
+                    : templates.find((t) => String(t.id) === templateId)
+                        ?.name || "Custom template"}
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <AppButton
+                type="button"
+                variant="outlined"
+                size="sm"
+                onClick={() => setStep(2)}
+                className="flex-1"
+                disabled={submitting}
+              >
+                Back
+              </AppButton>
+              <AppButton
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={handleSubmit}
+                loading={submitting}
+                className="flex-1"
+              >
+                Confirm hire
+              </AppButton>
+            </div>
+          </div>
+        )}
+
+        {step === 4 && result && (
+          <div className="space-y-4 text-center py-2">
+            <div className="mx-auto w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
+              <CheckCircle className="w-7 h-7 text-emerald-600" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-[var(--color-gray-900)]">
+                {c.name} hired
+              </h3>
+              <p className="text-sm text-[var(--color-gray-600)] mt-1">
+                Employee record created and invitation sent.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <a
+                href={`/employees/${result.employeeId}`}
+                className="text-sm text-[var(--color-primary)] hover:underline inline-flex items-center justify-center gap-1"
+              >
+                <Users className="h-4 w-4" /> View employee profile
+              </a>
+              {result.onboardingAssignmentId && (
+                <a
+                  href={`/employees/${result.employeeId}?tab=onboarding`}
+                  className="text-sm text-[var(--color-primary)] hover:underline inline-flex items-center justify-center gap-1"
+                >
+                  <CheckCircle className="h-4 w-4" /> View onboarding
+                </a>
+              )}
+            </div>
+            <AppButton
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={onClose}
+              className="w-full"
+            >
+              Close
+            </AppButton>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Page ─────────────────────────────────────────────────── */
 
 function RecruitmentPageInner() {
@@ -2290,7 +3954,17 @@ function RecruitmentPageInner() {
     null,
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [stageFilters, setStageFilters] = useState<Set<CandidateStage>>(
+    new Set(),
+  );
+
+  // Debounce search query (300ms) — T-R014
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
   const [rejectTarget, setRejectTarget] = useState<{
     id: number;
     name: string;
@@ -2310,13 +3984,28 @@ function RecruitmentPageInner() {
   // Interview feedback state
   const [feedbackTarget, setFeedbackTarget] = useState<{
     interviewId: number;
+    candidateId: number;
     candidateName: string;
   } | null>(null);
 
+  // Hire review state (T-R024)
+  const [hireTarget, setHireTarget] = useState<HireReviewTarget | null>(null);
+
+  // Screening questions modal state (T-R033)
+  const [questionsTarget, setQuestionsTarget] = useState<{
+    jobId: number;
+    title: string;
+  } | null>(null);
+
+  // Interviews view toggle (T-R043)
+  const [interviewView, setInterviewView] = useState<"list" | "calendar">(
+    "list",
+  );
+
   const filteredCandidates = useMemo(() => {
     let results = candidates;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
       results = results.filter(
         (c) =>
           c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q),
@@ -2325,8 +4014,28 @@ function RecruitmentPageInner() {
     if (sourceFilter !== "all") {
       results = results.filter((c) => c.source === sourceFilter);
     }
+    if (stageFilters.size > 0) {
+      results = results.filter((c) => stageFilters.has(c.stage));
+    }
     return results;
-  }, [candidates, searchQuery, sourceFilter]);
+  }, [candidates, debouncedSearch, sourceFilter, stageFilters]);
+
+  const hasActiveFilters =
+    searchQuery !== "" || sourceFilter !== "all" || stageFilters.size > 0;
+
+  function clearFilters() {
+    setSearchQuery("");
+    setDebouncedSearch("");
+    setSourceFilter("all");
+    setStageFilters(new Set());
+  }
+
+  function toggleStageFilter(stage: CandidateStage) {
+    const next = new Set(stageFilters);
+    if (next.has(stage)) next.delete(stage);
+    else next.add(stage);
+    setStageFilters(next);
+  }
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -2386,19 +4095,29 @@ function RecruitmentPageInner() {
   }
 
   async function handleHire(candidateId: number) {
+    const candidate = candidates.find((c) => c.id === candidateId);
+    if (!candidate) return;
+
+    // Best-effort fetch of latest offer for review-screen pre-fill (T-R024)
+    let latestOffer: Offer | null = null;
     try {
-      await recruitmentApi.hireCandidate(candidateId, {
-        start_date: new Date().toISOString().slice(0, 10),
-        department: "",
-        designation: "",
+      const res = await recruitmentApi.listOffers({
+        candidate_id: String(candidateId),
       });
-      toast.success("Candidate hired and invitation sent");
-      fetchData();
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to hire candidate";
-      toast.error(message);
+      const offers = res.offers || [];
+      if (offers.length > 0) {
+        latestOffer = [...offers].sort((a, b) =>
+          (b as unknown as { id: number }).id >
+          (a as unknown as { id: number }).id
+            ? 1
+            : -1,
+        )[0];
+      }
+    } catch {
+      latestOffer = null;
     }
+
+    setHireTarget({ candidateId, candidate, latestOffer });
   }
 
   async function handleScanJob(jobId: number) {
@@ -2572,26 +4291,40 @@ function RecruitmentPageInner() {
                             />
                           </td>
                           <td className="py-3 px-5 text-center">
-                            {job.status === "draft" && (
-                              <div className="flex items-center justify-center gap-2">
-                                <AppButton
-                                  variant="outlined"
-                                  size="sm"
-                                  onClick={() => handleScanJob(job.id)}
-                                  loading={scanningJobId === job.id}
-                                >
-                                  <ShieldCheck className="h-3.5 w-3.5 mr-1" />
-                                  Check Compliance
-                                </AppButton>
-                                <AppButton
-                                  variant="primary"
-                                  size="sm"
-                                  onClick={() => handlePublish(job.id)}
-                                >
-                                  Publish
-                                </AppButton>
-                              </div>
-                            )}
+                            <div className="flex items-center justify-center gap-2 flex-wrap">
+                              <AppButton
+                                variant="outlined"
+                                size="sm"
+                                onClick={() =>
+                                  setQuestionsTarget({
+                                    jobId: job.id,
+                                    title: job.title,
+                                  })
+                                }
+                              >
+                                Questions
+                              </AppButton>
+                              {job.status === "draft" && (
+                                <>
+                                  <AppButton
+                                    variant="outlined"
+                                    size="sm"
+                                    onClick={() => handleScanJob(job.id)}
+                                    loading={scanningJobId === job.id}
+                                  >
+                                    <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+                                    Check Compliance
+                                  </AppButton>
+                                  <AppButton
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => handlePublish(job.id)}
+                                  >
+                                    Publish
+                                  </AppButton>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2606,45 +4339,83 @@ function RecruitmentPageInner() {
         {/* Candidates Tab */}
         {tab === "candidates" && (
           <>
-            {/* Filter bar */}
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative flex-1 min-w-[200px] max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-gray-400)]" />
-                <input
-                  type="text"
-                  placeholder="Search by name or email..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-[8px] border px-3 py-2 pl-9 text-sm min-h-[40px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] placeholder:text-[var(--color-gray-400)]"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-[var(--color-gray-400)]" />
-                <select
-                  value={sourceFilter}
-                  onChange={(e) => setSourceFilter(e.target.value)}
-                  className="rounded-[8px] border px-3 py-2 text-sm min-h-[40px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
-                >
-                  <option value="all">All Sources</option>
-                  <option value="direct">Direct</option>
-                  <option value="referral">Referral</option>
-                  <option value="linkedin">LinkedIn</option>
-                  <option value="job_board">Job Board</option>
-                  <option value="agency">Agency</option>
-                  <option value="career_fair">Career Fair</option>
-                </select>
-              </div>
-              {isAdmin && (
-                <div className="ml-auto">
-                  <AppButton
-                    variant="primary"
-                    size="sm"
-                    onClick={() => setShowCandidateModal(true)}
-                  >
-                    <Plus className="h-4 w-4 mr-1" /> Add Candidate
-                  </AppButton>
+            {/* Filter bar (T-R014) */}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-gray-400)]" />
+                  <input
+                    type="text"
+                    placeholder="Search by name or email..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full rounded-[8px] border px-3 py-2 pl-9 text-sm min-h-[40px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] placeholder:text-[var(--color-gray-400)]"
+                  />
                 </div>
-              )}
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-[var(--color-gray-400)]" />
+                  <select
+                    value={sourceFilter}
+                    onChange={(e) => setSourceFilter(e.target.value)}
+                    className="rounded-[8px] border px-3 py-2 text-sm min-h-[40px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)]"
+                    aria-label="Filter by source"
+                  >
+                    <option value="all">All sources</option>
+                    <option value="linkedin">LinkedIn</option>
+                    <option value="indeed">Indeed</option>
+                    <option value="jobstreet">JobStreet</option>
+                    <option value="referral">Referral</option>
+                    <option value="direct">Direct</option>
+                    <option value="job_board">Job board</option>
+                    <option value="agency">Agency</option>
+                    <option value="career_fair">Career fair</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="text-xs text-[var(--color-gray-500)] hover:text-[var(--color-gray-700)] underline whitespace-nowrap"
+                  >
+                    Clear filters
+                  </button>
+                )}
+                {isAdmin && (
+                  <div className="ml-auto">
+                    <AppButton
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setShowCandidateModal(true)}
+                    >
+                      <Plus className="h-4 w-4 mr-1" /> Add Candidate
+                    </AppButton>
+                  </div>
+                )}
+              </div>
+              {/* Stage chips multi-select */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-[var(--color-gray-500)] mr-1">
+                  Stage:
+                </span>
+                {STAGE_ORDER.map((stage) => {
+                  const active = stageFilters.has(stage);
+                  return (
+                    <button
+                      key={stage}
+                      type="button"
+                      onClick={() => toggleStageFilter(stage)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                        active
+                          ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
+                          : "bg-[var(--color-surface-card)] text-[var(--color-gray-600)] border-[var(--color-gray-200)] hover:border-[var(--color-gray-400)]"
+                      }`}
+                    >
+                      {STAGE_LABELS[stage] || stage}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             {isLoading ? (
               <AppCard variant="standard">
@@ -2671,6 +4442,38 @@ function RecruitmentPageInner() {
         {/* Interviews Tab */}
         {tab === "interviews" && (
           <>
+            {/* View toggle (T-R043) */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[var(--color-gray-500)]">
+                View:
+              </span>
+              <div className="flex gap-1 p-1 rounded-lg bg-[var(--color-gray-100)]">
+                <button
+                  type="button"
+                  onClick={() => setInterviewView("list")}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    interviewView === "list"
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "text-[var(--color-gray-600)]"
+                  }`}
+                >
+                  List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInterviewView("calendar")}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    interviewView === "calendar"
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "text-[var(--color-gray-600)]"
+                  }`}
+                >
+                  <Calendar className="h-3 w-3 inline mr-1" />
+                  Calendar
+                </button>
+              </div>
+            </div>
+
             {isLoading ? (
               <AppCard variant="standard">
                 <div className="-mx-5 -my-4">
@@ -2682,6 +4485,19 @@ function RecruitmentPageInner() {
                 icon={<Calendar className="h-12 w-12" aria-hidden="true" />}
                 message="No interviews scheduled"
                 description="Scheduled interviews will appear here."
+              />
+            ) : interviewView === "calendar" ? (
+              <InterviewCalendar
+                interviews={interviews}
+                onSelectInterview={(iv) => {
+                  if (iv.status === "completed") {
+                    setFeedbackTarget({
+                      interviewId: iv.id,
+                      candidateId: iv.candidate_id,
+                      candidateName: iv.candidate_name || `#${iv.candidate_id}`,
+                    });
+                  }
+                }}
               />
             ) : (
               <AppCard variant="standard">
@@ -2741,6 +4557,7 @@ function RecruitmentPageInner() {
                                 onClick={() =>
                                   setFeedbackTarget({
                                     interviewId: iv.id,
+                                    candidateId: iv.candidate_id,
                                     candidateName:
                                       iv.candidate_name ||
                                       `#${iv.candidate_id}`,
@@ -2832,7 +4649,25 @@ function RecruitmentPageInner() {
           onClose={() => setFeedbackTarget(null)}
           onSuccess={fetchData}
           interviewId={feedbackTarget?.interviewId ?? 0}
+          candidateId={feedbackTarget?.candidateId ?? 0}
           candidateName={feedbackTarget?.candidateName ?? ""}
+        />
+
+        <HireReviewModal
+          isOpen={hireTarget !== null}
+          target={hireTarget}
+          onClose={() => setHireTarget(null)}
+          onSuccess={() => {
+            toast.success("Candidate hired and invitation sent");
+            fetchData();
+          }}
+        />
+
+        <ScreeningQuestionsModal
+          isOpen={questionsTarget !== null}
+          jobId={questionsTarget?.jobId ?? null}
+          jobTitle={questionsTarget?.title ?? ""}
+          onClose={() => setQuestionsTarget(null)}
         />
       </div>
     </AdminGuard>

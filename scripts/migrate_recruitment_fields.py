@@ -179,6 +179,30 @@ def run_migration():
             else:
                 logger.info(f"candidates.{col} already absent -- skipping")
 
+        # ------------------------------------------------------------------
+        # T-RX08: composite index on (job_listing_id, email) for fast
+        # duplicate-application lookups.
+        # ------------------------------------------------------------------
+        logger.info("Ensuring composite index idx_candidate_job_email exists")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_candidate_job_email "
+            "ON candidates (job_listing_id, email)"
+        )
+
+        # ------------------------------------------------------------------
+        # T-R030: PDPA pre-purge warning column on candidates.
+        # ------------------------------------------------------------------
+        if not _column_exists(cursor, "candidates", "pdpa_purge_warned_at"):
+            logger.info("Adding candidates.pdpa_purge_warned_at column")
+            cursor.execute(
+                "ALTER TABLE candidates "
+                "ADD COLUMN pdpa_purge_warned_at TIMESTAMP NULL"
+            )
+        else:
+            logger.info(
+                "candidates.pdpa_purge_warned_at already exists -- skipping"
+            )
+
         conn.commit()
         logger.info("Migration completed successfully.")
 

@@ -6,6 +6,7 @@ Tracks per-user read/dismissed status separately from the admin update workflow.
 
 from __future__ import annotations
 
+import logging
 from collections import OrderedDict
 from datetime import datetime, timezone
 
@@ -21,6 +22,8 @@ from hr_advisory.workflows.regulatory_updates import (
     list_updates,
 )
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(tags=["alerts"])
@@ -448,14 +451,29 @@ async def notify_users_of_alert(
     source: str = "",
     effective_date: str = "",
     domains: str = "",
+    severity: str = "medium",
+    company_id: int | None = None,
 ) -> int:
     """Send email notifications about a published regulatory alert.
 
-    Attempts to send via the Resend adapter to all users with email
-    alerts enabled. Returns the count of emails sent. Fails silently
-    (logs errors) to avoid blocking the publish operation.
+    B05: Only critical/high severity alerts trigger email. Recipients are
+    filtered to users with role 'owner' or 'hr_manager'. When company_id is
+    given, recipients are scoped to that company; otherwise all companies.
+
+    Returns the count of emails sent. Fails silently (logs errors) to avoid
+    blocking the publish operation.
     """
     import os
+
+    # B05: only escalate critical/high to email. Lower severities are still
+    # written to the alerts feed but don't generate inbox traffic.
+    sev_norm = (severity or "").lower()
+    if sev_norm not in ("critical", "high"):
+        logger.info(
+            "Alert email delivery: severity=%s does not warrant email — skipping",
+            severity,
+        )
+        return 0
 
     api_key = os.environ.get("RESEND_API_KEY", "")
     if not api_key:
@@ -463,21 +481,26 @@ async def notify_users_of_alert(
         return 0
 
     try:
+        from hr_advisory.api.routers.settings import _notification_prefs
         from hr_advisory.mcp_servers.adapters.resend_email import ResendAdapter, TEMPLATES
         from hr_advisory.services import dataflow_crud
 
         adapter = ResendAdapter()
 
-        # Get all active users with email alerts enabled
-        users = dataflow_crud.list_records("User", {"is_active": True})
-        sent = 0
+        # B05: Filter to admin/hr_manager users in the target company.
+        user_filter: dict = {"is_active": True}
+        if company_id is not None:
+            user_filter["company_id"] = company_id
+        users = dataflow_crud.list_records("User", user_filter)
+        eligible_roles = {"owner", "hr_manager"}
+        users = [u for u in users if (u.get("role") or "") in eligible_roles]
 
+        sent = 0
         for user in users:
             email = user.get("email", "")
             if not email:
                 continue
 
-            # Check if user has email alerts enabled (default: True)
             user_id = user.get("id")
             prefs = _notification_prefs.get(user_id, {})
             if not prefs.get("emailAlerts", True):
@@ -490,7 +513,7 @@ async def notify_users_of_alert(
                     if company:
                         company_name = company.get("name", company_name)
             except Exception:
-                pass
+                logger.debug("Company lookup failed for alert email", exc_info=True)
 
             html = TEMPLATES.get("regulatory_update", "").format(
                 update_title=alert_title,
@@ -511,7 +534,10 @@ async def notify_users_of_alert(
             except Exception as exc:
                 logger.warning("Failed to send alert email to %s: %s", email, exc)
 
-        logger.info("Alert email delivery: sent=%d, total_users=%d", sent, len(users))
+        logger.info(
+            "Alert email delivery: severity=%s, sent=%d, eligible_users=%d",
+            sev_norm, sent, len(users),
+        )
         return sent
 
     except Exception as exc:
