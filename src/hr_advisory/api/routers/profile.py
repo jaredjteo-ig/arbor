@@ -6,6 +6,7 @@ Uses DataFlow workflow nodes for all data operations.
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -14,6 +15,13 @@ from hr_advisory.api.middleware.auth_middleware import get_current_user, require
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
 
 logger = logging.getLogger(__name__)
+
+
+def _generate_slug(name: str) -> str:
+    """Generate a URL-safe slug from a company name."""
+    slug = name.lower().strip()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    return slug.strip("-")
 
 router = APIRouter()
 
@@ -247,7 +255,7 @@ def _company_to_response(company: dict) -> dict:
 
 @router.get(
     "/{company_id}",
-    dependencies=[Depends(require_role("owner", "hr_manager", "consultant", "platform_admin"))],
+    dependencies=[Depends(require_role("owner", "hr_manager", "platform_admin"))],
 )
 async def get_company_profile(
     company_id: int,
@@ -296,6 +304,7 @@ async def create_company_profile(
 
     create_params = {
         "name": name.strip(),
+        "slug": _generate_slug(name),
         "uen": body.get("uen"),
         "sector": body.get("sector"),
         "sub_sector": body.get("sub_sector"),
@@ -378,7 +387,7 @@ async def create_company_profile(
 
 @router.put(
     "/{company_id}",
-    dependencies=[Depends(require_role("owner", "hr_manager", "consultant", "platform_admin"))],
+    dependencies=[Depends(require_role("owner", "hr_manager", "platform_admin"))],
 )
 async def update_company_profile(
     company_id: int,
@@ -408,6 +417,7 @@ async def update_company_profile(
     # Only allow updating known fields
     allowed_fields = {
         "name",
+        "slug",
         "uen",
         "sector",
         "sub_sector",
@@ -420,6 +430,10 @@ async def update_company_profile(
         "is_active",
     }
     updates = {k: v for k, v in body.items() if k in allowed_fields}
+
+    # Auto-regenerate slug when name changes (unless slug was explicitly set)
+    if "name" in updates and "slug" not in updates:
+        updates["slug"] = _generate_slug(updates["name"])
 
     if not updates:
         raise HTTPException(
@@ -454,7 +468,7 @@ async def update_company_profile(
 
 @router.get(
     "/{company_id}/workforce",
-    dependencies=[Depends(require_role("owner", "hr_manager", "consultant", "platform_admin"))],
+    dependencies=[Depends(require_role("owner", "hr_manager", "platform_admin"))],
 )
 async def get_workforce_composition(
     company_id: int,

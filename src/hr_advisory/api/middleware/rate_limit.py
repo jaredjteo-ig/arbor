@@ -7,21 +7,25 @@ rate limiting in production.
 
 import time
 import logging
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from fastapi import HTTPException, Request
 
 logger = logging.getLogger(__name__)
 
-# Store: {key: [timestamp1, timestamp2, ...]}
+# Store: {key: deque([timestamp1, timestamp2, ...], maxlen=bounded)}
 # Using OrderedDict with a size cap to prevent unbounded memory growth.
-_request_log: OrderedDict[str, list[float]] = OrderedDict()
+# Each key's deque is bounded to prevent burst-induced memory spikes.
+_request_log: OrderedDict[str, deque] = OrderedDict()
 MAX_RATE_KEYS = 50_000
+_DEFAULT_MAXLEN = 200  # Max timestamps per key
 
 def _clean_old_entries(key: str, window_seconds: int) -> None:
     """Remove entries older than the window."""
     cutoff = time.time() - window_seconds
     if key in _request_log:
-        _request_log[key] = [t for t in _request_log[key] if t > cutoff]
+        dq = _request_log[key]
+        while dq and dq[0] <= cutoff:
+            dq.popleft()
 
 def check_rate_limit(
     identifier: str,
@@ -56,7 +60,7 @@ def check_rate_limit(
         _request_log.popitem(last=False)
 
     if identifier not in _request_log:
-        _request_log[identifier] = []
+        _request_log[identifier] = deque(maxlen=max(max_requests + 1, _DEFAULT_MAXLEN))
     _request_log[identifier].append(time.time())
     # Move to end so LRU eviction removes least-recently-used keys
     _request_log.move_to_end(identifier)

@@ -23,6 +23,7 @@ class ConsentPurpose(str, Enum):
     ANALYTICS = "analytics"
     NOTIFICATIONS = "notifications"
     MARKETING = "marketing"
+    RECRUITMENT = "recruitment"
 
 
 class DataCategory(str, Enum):
@@ -137,6 +138,14 @@ def check_data_minimisation(
         ConsentPurpose.MARKETING: {
             "email",
             "company_name",
+        },
+        ConsentPurpose.RECRUITMENT: {
+            "name",
+            "email",
+            "phone",
+            "resume_url",
+            "nationality",
+            "citizenship_status",
         },
     }
 

@@ -15,11 +15,10 @@ const MODULE = {
     "End-to-end recruitment management. Post job listings, track candidates through your hiring pipeline, schedule interviews, collect feedback, and convert hires into employees seamlessly.",
   usps: [
     "Job listings with department, type, and salary range",
-    "Kanban-style candidate pipeline (new to hired)",
+    "Candidate pipeline tracking (new to hired)",
     "Interview scheduling with multiple round support",
-    "Structured interview feedback and scorecards",
-    "One-click candidate-to-employee conversion",
-    "Recruitment analytics and time-to-hire metrics",
+    "Interview feedback and ratings from interviewers",
+    "Candidate-to-employee conversion on hire",
   ],
   features: [
     {
@@ -30,17 +29,17 @@ const MODULE = {
     {
       title: "Candidate Pipeline",
       description:
-        "Visual kanban board showing candidates at each stage. Drag-and-drop between stages. Bulk actions for efficient processing.",
+        "Track candidates at each stage from new through screening, interview, offer, to hired. Update stages and add notes as candidates progress.",
     },
     {
       title: "Interview Management",
       description:
-        "Schedule phone, video, onsite, and panel interviews. Calendar integration. Automated reminders for interviewers and candidates.",
+        "Schedule phone, video, onsite, and panel interviews. Collect structured feedback and ratings from interviewers.",
     },
     {
       title: "Hiring & Onboarding",
       description:
-        "Generate offer letters. Convert hired candidates directly into employee records with pre-filled data. Seamless onboarding handoff.",
+        "Generate offers for candidates. Convert hired candidates directly into employee records. Seamless onboarding handoff.",
     },
   ],
 };

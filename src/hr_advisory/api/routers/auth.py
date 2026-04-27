@@ -522,9 +522,11 @@ async def register_employee(
 
     import hr_advisory.models  # noqa: F401
 
-    # Pull department/designation from invitation if set
+    # Pull department/designation/phone/salary from invitation if set
     inv_department = invitation.get("department", "")
     inv_designation = invitation.get("designation", "")
+    inv_phone = invitation.get("phone", "")
+    inv_salary = invitation.get("salary")
 
     wf = WorkflowBuilder()
     emp_fields = {
@@ -538,6 +540,10 @@ async def register_employee(
         emp_fields["department"] = inv_department
     if inv_designation:
         emp_fields["designation"] = inv_designation
+    if inv_phone:
+        emp_fields["phone"] = inv_phone
+    if inv_salary is not None:
+        emp_fields["salary_monthly"] = inv_salary
     wf.add_node("EmployeeCreateNode", "create_emp", emp_fields)
     runtime = LocalRuntime()
     results, _ = runtime.execute(wf.build())

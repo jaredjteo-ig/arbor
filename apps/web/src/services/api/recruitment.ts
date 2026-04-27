@@ -13,8 +13,8 @@ export interface JobListing {
   employment_type: "full_time" | "part_time" | "contract" | "intern";
   description: string;
   requirements: string;
-  salary_min: number | null;
-  salary_max: number | null;
+  salary_range_min: number | null;
+  salary_range_max: number | null;
   status: "draft" | "open" | "closed" | "on_hold";
   posted_date: string | null;
   closing_date: string | null;
@@ -42,8 +42,8 @@ export interface Candidate {
   stage: CandidateStage;
   source: string;
   notes: string;
-  applied_date: string;
-  rating: number | null;
+  created_at: string;
+  overall_score: number | null;
 }
 
 export interface InterviewSchedule {
@@ -69,6 +69,33 @@ export interface InterviewFeedback {
   strengths: string;
   weaknesses: string;
   recommendation: "strong_hire" | "hire" | "no_hire" | "strong_no_hire";
+  notes: string;
+}
+
+export interface Offer {
+  id: number;
+  candidate_id: number;
+  job_listing_id: number;
+  company_id: number;
+  salary: number;
+  currency: string;
+  salary_period: "monthly" | "annual";
+  start_date: string;
+  position_title: string;
+  employment_type: string;
+  probation_months: number;
+  notice_period_days: number;
+  benefits_summary: string;
+  terms_text: string;
+  status:
+    | "draft"
+    | "pending_approval"
+    | "approved"
+    | "sent"
+    | "accepted"
+    | "declined"
+    | "expired";
+  expiry_date: string;
   notes: string;
 }
 
@@ -156,6 +183,18 @@ export const recruitmentApi = {
       data,
     ),
 
+  /* Resume */
+  uploadResume: (candidateId: number, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiClient.postFormData<{ message: string; resume_url: string }>(
+      `/recruitment/candidates/${candidateId}/resume`,
+      formData,
+    );
+  },
+  getResumeUrl: (candidateId: number) =>
+    `/recruitment/candidates/${candidateId}/resume`,
+
   /* Hiring */
   hireCandidate: (
     candidateId: number,
@@ -163,6 +202,66 @@ export const recruitmentApi = {
   ) =>
     apiClient.post<{ message: string; employee_id: number }>(
       `/recruitment/candidates/${candidateId}/hire`,
+      data,
+    ),
+
+  /* TAFEP Compliance Scan */
+  scanJob: (jobId: number) =>
+    apiClient.post<{
+      job_id: number;
+      findings: Array<{
+        matched_text: string;
+        category: string;
+        suggestion: string;
+        field: string;
+        position: number;
+      }>;
+      count: number;
+      compliant: boolean;
+    }>(`/recruitment/jobs/${jobId}/scan`),
+
+  /* Offers */
+  createOffer: (candidateId: number, data: Partial<Offer>) =>
+    apiClient.post<{ offer: Offer }>(
+      `/recruitment/candidates/${candidateId}/offer`,
+      data,
+    ),
+  listOffers: (params?: Record<string, string>) =>
+    apiClient.get<{ offers: Offer[]; count: number }>(
+      "/recruitment/offers",
+      params,
+    ),
+  approveOffer: (offerId: number) =>
+    apiClient.post<{ offer: Offer; message: string }>(
+      `/recruitment/offers/${offerId}/approve`,
+    ),
+  sendOffer: (offerId: number) =>
+    apiClient.post<{ offer: Offer; message: string }>(
+      `/recruitment/offers/${offerId}/send`,
+    ),
+  getOfferLetterUrl: (offerId: number) =>
+    `${process.env.NEXT_PUBLIC_API_URL || ""}/recruitment/offers/${offerId}/letter`,
+
+  /* Analytics */
+  getAnalyticsSummary: () =>
+    apiClient.get<{
+      open_jobs: number;
+      total_candidates: number;
+      pipeline: Record<string, number>;
+      interviews_this_week: number;
+      sources: Record<string, number>;
+      total_offers: number;
+      accepted_offers: number;
+      offer_acceptance_rate: number;
+    }>("/recruitment/analytics/summary"),
+
+  /* Rejection */
+  rejectCandidate: (
+    id: number,
+    data: { reason: string; notes?: string; send_email?: boolean },
+  ) =>
+    apiClient.post<{ candidate: Candidate; message: string }>(
+      `/recruitment/candidates/${id}/reject`,
       data,
     ),
 };

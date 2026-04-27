@@ -64,6 +64,7 @@ def seed_company_defaults(company_id: int) -> dict:
         ("inventory", _seed_demo_inventory),
         ("appraisal_template", _seed_demo_appraisal_template),
         ("job_listings", _seed_demo_job_listings),
+        ("recruitment_data", _seed_demo_recruitment_data),
         ("onboarding_template", _seed_onboarding_template),
     ]:
         try:
@@ -704,7 +705,7 @@ def _seed_demo_appraisal_template(company_id: int) -> dict:
 
 DEFAULT_JOB_LISTINGS = [
     {
-        "position_title": "Senior Software Engineer",
+        "title": "Senior Software Engineer",
         "employment_type": "full_time",
         "department": "Tech",
         "description": (
@@ -720,10 +721,10 @@ DEFAULT_JOB_LISTINGS = [
         ),
         "salary_range_min": 7000.0,
         "salary_range_max": 10000.0,
-        "is_published": True,
+        "status": "open",
     },
     {
-        "position_title": "HR Executive",
+        "title": "HR Executive",
         "employment_type": "full_time",
         "department": "HR",
         "description": (
@@ -738,7 +739,7 @@ DEFAULT_JOB_LISTINGS = [
         ),
         "salary_range_min": 4000.0,
         "salary_range_max": 5500.0,
-        "is_published": True,
+        "status": "open",
     },
 ]
 
@@ -763,6 +764,299 @@ def _seed_demo_job_listings(company_id: int) -> dict:
         )
         count += 1
     return {"created": count}
+
+
+# ---------------------------------------------------------------------------
+# Recruitment demo data seeding (candidates, interviews, feedback, offers)
+# ---------------------------------------------------------------------------
+
+# Candidate definitions per job listing index.  Each entry includes all fields
+# needed by the Candidate model.  The ``_job_idx`` key selects which seeded
+# job listing the candidate belongs to (0 = first, 1 = second).
+
+_DEMO_CANDIDATES = [
+    # --- Job 1: Senior Software Engineer (8 candidates) ---
+    {
+        "_job_idx": 0,
+        "name": "Lim Wei Jie",
+        "email": "weijie.lim@example.com",
+        "phone": "+65 9123 4567",
+        "nationality": "Singaporean",
+        "citizenship_status": "citizen",
+        "source": "linkedin",
+        "stage": "new",
+        "notes": "Applied via LinkedIn, strong GitHub portfolio.",
+    },
+    {
+        "_job_idx": 0,
+        "name": "Priya Nair",
+        "email": "priya.nair@example.com",
+        "phone": "+65 9234 5678",
+        "nationality": "Indian",
+        "citizenship_status": "ep",
+        "source": "direct",
+        "stage": "new",
+        "notes": "Referral from current employee. 7 years backend experience.",
+    },
+    {
+        "_job_idx": 0,
+        "name": "Tan Mei Ling",
+        "email": "meiling.tan@example.com",
+        "phone": "+65 9345 6789",
+        "nationality": "Singaporean",
+        "citizenship_status": "citizen",
+        "source": "jobstreet",
+        "stage": "screening",
+        "notes": "Passed initial resume review. Scheduling phone screen.",
+    },
+    {
+        "_job_idx": 0,
+        "name": "Ahmad Rizwan",
+        "email": "ahmad.rizwan@example.com",
+        "phone": "+65 9456 7890",
+        "nationality": "Malaysian",
+        "citizenship_status": "sp",
+        "source": "referral",
+        "stage": "interview",
+        "notes": "Completed phone screen. Technical interview scheduled.",
+        "_interview": {
+            "interview_type": "onsite",
+            "scheduled_at": "2026-04-20T10:00:00",
+            "duration_minutes": 60,
+            "location": "Office - Meeting Room A",
+            "interviewers": "[]",
+            "status": "completed",
+            "notes": "Technical round completed.",
+        },
+        "_feedback": {
+            "overall_rating": 4.0,
+            "recommendation": "hire",
+            "strengths": "Strong Python and system design skills. Clear communicator.",
+            "weaknesses": "Limited experience with distributed systems.",
+            "scores": "{}",
+            "notes": "",
+        },
+    },
+    {
+        "_job_idx": 0,
+        "name": "Chen Hui Wen",
+        "email": "huiwen.chen@example.com",
+        "phone": "+65 9567 8901",
+        "nationality": "Singaporean",
+        "citizenship_status": "citizen",
+        "source": "linkedin",
+        "stage": "interview",
+        "notes": "Passed screening. Panel interview scheduled.",
+        "_interview": {
+            "interview_type": "panel",
+            "scheduled_at": "2026-04-22T14:00:00",
+            "duration_minutes": 90,
+            "location": "Office - Board Room",
+            "interviewers": "[]",
+            "status": "completed",
+            "notes": "Panel round with engineering leads.",
+        },
+        "_feedback": {
+            "overall_rating": 4.5,
+            "recommendation": "strong_hire",
+            "strengths": "Excellent problem-solving. Led migration of microservices at previous company.",
+            "weaknesses": "Salary expectations slightly above budget.",
+            "scores": "{}",
+            "notes": "",
+        },
+    },
+    {
+        "_job_idx": 0,
+        "name": "Siti Aisyah",
+        "email": "siti.aisyah@example.com",
+        "phone": "+65 9678 9012",
+        "nationality": "Singaporean",
+        "citizenship_status": "citizen",
+        "source": "direct",
+        "stage": "offered",
+        "notes": "Top candidate. Offer extended.",
+        "_offer": {
+            "salary": 8500.0,
+            "currency": "SGD",
+            "salary_period": "monthly",
+            "start_date": "2026-05-15",
+            "employment_type": "full_time",
+            "probation_months": 6,
+            "notice_period_days": 30,
+            "benefits_summary": "14 days annual leave, medical insurance, AWS, hybrid work arrangement",
+            "status": "sent",
+            "created_by": 0,
+        },
+    },
+    {
+        "_job_idx": 0,
+        "name": "Raj Kumar",
+        "email": "raj.kumar@example.com",
+        "phone": "+65 9789 0123",
+        "nationality": "Indian",
+        "citizenship_status": "ep",
+        "source": "linkedin",
+        "stage": "hired",
+        "notes": "Accepted offer. Starting 1 May 2026.",
+    },
+    {
+        "_job_idx": 0,
+        "name": "David Ong",
+        "email": "david.ong@example.com",
+        "phone": "+65 9890 1234",
+        "nationality": "Singaporean",
+        "citizenship_status": "citizen",
+        "source": "jobstreet",
+        "stage": "rejected",
+        "rejection_reason": "Did not meet minimum experience requirements.",
+        "notes": "Polite rejection email sent.",
+    },
+    # --- Job 2: HR Executive (3 candidates) ---
+    {
+        "_job_idx": 1,
+        "name": "Nurul Huda",
+        "email": "nurul.huda@example.com",
+        "phone": "+65 9901 2345",
+        "nationality": "Singaporean",
+        "citizenship_status": "citizen",
+        "source": "direct",
+        "stage": "new",
+        "notes": "Fresh application. 3 years HR experience at an SME.",
+    },
+    {
+        "_job_idx": 1,
+        "name": "Jason Teo",
+        "email": "jason.teo@example.com",
+        "phone": "+65 9012 3456",
+        "nationality": "Singaporean",
+        "citizenship_status": "citizen",
+        "source": "referral",
+        "stage": "new",
+        "notes": "Internal referral. Currently at a recruitment agency.",
+    },
+    {
+        "_job_idx": 1,
+        "name": "Aisha bte Rahman",
+        "email": "aisha.rahman@example.com",
+        "phone": "+65 8123 4567",
+        "nationality": "Malaysian",
+        "citizenship_status": "pr",
+        "source": "linkedin",
+        "stage": "screening",
+        "notes": "Resume looks strong. Scheduling phone screen.",
+    },
+]
+
+
+def _seed_demo_recruitment_data(company_id: int) -> dict:
+    """Seed demo candidates, interviews, feedback, and offers.
+
+    Requires job listings to already exist (run after _seed_demo_job_listings).
+    Idempotent — checks for existing candidates before creating.
+    """
+    # Idempotency check
+    existing_candidates = dataflow_crud.list_records(
+        "Candidate", {"company_id": company_id}, limit=1,
+    )
+    if existing_candidates:
+        return {"skipped": True, "reason": "candidates already exist"}
+
+    # Fetch job listings to link candidates
+    job_listings = dataflow_crud.list_records(
+        "JobListing", {"company_id": company_id},
+    )
+    if not job_listings:
+        return {"skipped": True, "reason": "no job listings found — seed job listings first"}
+
+    candidates_created = 0
+    interviews_created = 0
+    feedback_created = 0
+    offers_created = 0
+
+    for candidate_def in _DEMO_CANDIDATES:
+        job_idx = candidate_def["_job_idx"]
+        if job_idx >= len(job_listings):
+            logger.warning(
+                "Skipping candidate %s: job_idx=%s but only %s listings exist",
+                candidate_def["name"], job_idx, len(job_listings),
+            )
+            continue
+
+        job = job_listings[job_idx]
+        job_id = job["id"]
+
+        # Extract nested definitions before building candidate data
+        interview_def = candidate_def.get("_interview")
+        feedback_def = candidate_def.get("_feedback")
+        offer_def = candidate_def.get("_offer")
+
+        # Build candidate record (exclude internal keys)
+        candidate_data = {
+            "company_id": company_id,
+            "job_listing_id": job_id,
+            "name": candidate_def["name"],
+            "email": candidate_def["email"],
+            "phone": candidate_def["phone"],
+            "nationality": candidate_def["nationality"],
+            "citizenship_status": candidate_def["citizenship_status"],
+            "source": candidate_def["source"],
+            "stage": candidate_def["stage"],
+            "notes": candidate_def.get("notes", ""),
+            "rejection_reason": candidate_def.get("rejection_reason", ""),
+            "pdpa_consent": True,
+            "pdpa_consent_date": "2026-04-01",
+        }
+        candidate = dataflow_crud.create("Candidate", candidate_data)
+        candidate_id = candidate["id"]
+        candidates_created += 1
+
+        # Create interview if defined
+        if interview_def:
+            interview_record = {
+                "candidate_id": candidate_id,
+                "company_id": company_id,
+                **interview_def,
+            }
+            interview = dataflow_crud.create("InterviewSchedule", interview_record)
+            interview_id = interview["id"]
+            interviews_created += 1
+
+            # Create feedback if defined (only for completed interviews)
+            if feedback_def:
+                feedback_record = {
+                    "interview_id": interview_id,
+                    "interviewer_id": 0,
+                    "company_id": company_id,
+                    "candidate_id": candidate_id,
+                    **feedback_def,
+                }
+                dataflow_crud.create("InterviewFeedback", feedback_record)
+                feedback_created += 1
+
+        # Create offer if defined
+        if offer_def:
+            offer_record = {
+                "candidate_id": candidate_id,
+                "job_listing_id": job_id,
+                "company_id": company_id,
+                "position_title": job["title"],
+                **offer_def,
+            }
+            dataflow_crud.create("Offer", offer_record)
+            offers_created += 1
+
+    logger.info(
+        "Seeded recruitment data for company_id=%s: candidates=%s, interviews=%s, feedback=%s, offers=%s",
+        company_id, candidates_created, interviews_created, feedback_created, offers_created,
+    )
+    return {
+        "created": {
+            "candidates": candidates_created,
+            "interviews": interviews_created,
+            "feedback": feedback_created,
+            "offers": offers_created,
+        }
+    }
 
 
 # ---------------------------------------------------------------------------

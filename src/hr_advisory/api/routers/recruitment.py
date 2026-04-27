@@ -1,26 +1,111 @@
 """Recruitment management endpoints.
 
 Handles job listings, candidates, interview scheduling,
-interviewer feedback, offer generation, and hire conversion.
+interviewer feedback, offer generation, hire conversion,
+resume upload/download, and automated recruitment emails.
 """
 
+import json
 import logging
 import math
+import os
+import re
+import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, UploadFile, File
+from fastapi.responses import FileResponse
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.mcp_servers.adapters.resend_email import ResendAdapter
+from hr_advisory.templates.recruitment_emails import RECRUITMENT_TEMPLATES
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+# --------------------------------------------------------------------------
+# Recruitment email helper (T-R018)
+# --------------------------------------------------------------------------
+
+
+async def _send_recruitment_email(
+    to: str,
+    template_name: str,
+    variables: dict,
+) -> bool:
+    """Send a recruitment email. Returns True on success, False on failure.
+
+    Never raises — email delivery must not block recruitment operations.
+    """
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    if not api_key:
+        logger.debug("RESEND_API_KEY not configured — skipping recruitment email")
+        return False
+
+    try:
+        template = RECRUITMENT_TEMPLATES.get(template_name)
+        if not template:
+            logger.warning("Unknown recruitment email template: %s", template_name)
+            return False
+
+        from html import escape as html_escape
+        safe_vars = {k: html_escape(str(v)) for k, v in variables.items()}
+        subject = template["subject"].format(**variables)  # Subject is plain text, no escaping
+        html = template["html"].format(**safe_vars)
+
+        adapter = ResendAdapter(api_key=api_key)
+        await adapter.send_email(to=to, subject=subject, html_body=html)
+        to_masked = to[:3] + "***" + to[to.index("@"):] if "@" in to else "***"
+        logger.info("Recruitment email sent: template=%s, to=%s", template_name, to_masked)
+        return True
+    except Exception as exc:
+        logger.warning("Failed to send recruitment email: %s", exc)
+        return False
+
+# Upload directory for recruitment resumes
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(os.getcwd(), "uploads", "documents"))
+RECRUITMENT_UPLOAD_DIR = os.path.join(UPLOAD_DIR, "recruitment")
+
+# Resume upload constraints
+MAX_RESUME_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_RESUME_MIME_TYPES = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "image/jpeg",
+    "image/png",
+}
+ALLOWED_RESUME_EXTENSIONS = {".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png"}
+
+# Magic byte signatures for file type verification
+_MAGIC_BYTES = {
+    "application/pdf": (b"%PDF", 4),
+    "image/jpeg": (b"\xff\xd8\xff", 3),
+    "image/png": (b"\x89PNG", 4),
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (b"PK\x03\x04", 4),
+    "application/msword": (b"\xd0\xcf\x11\xe0", 4),
+}
+
+# Extension to MIME type mapping for download responses
+_EXT_TO_MIME = {
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+}
+
 # Input length limits
 MAX_TEXT_LENGTH = 2000
 MAX_NAME_LENGTH = 200
+
+# Email format regex for input validation
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
 def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_LENGTH) -> str:
@@ -56,6 +141,24 @@ def _verify_candidate_ownership(candidate_id: int, company_id: int) -> dict:
     return candidate
 
 
+def _log_candidate_activity(candidate_id: int, action: str, actor_id: int, details: str = "") -> None:
+    """Append an activity entry to the candidate's notes for audit trail.
+
+    T-R026: Each entry is timestamped and prepended to existing notes so the
+    most recent activity appears first.
+    """
+    candidate = dataflow_crud.read("Candidate", candidate_id)
+    if not candidate:
+        return
+    existing_notes = candidate.get("notes", "")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    entry = f"[{timestamp}] {action}"
+    if details:
+        entry += f" — {details}"
+    new_notes = f"{entry}\n{existing_notes}" if existing_notes else entry
+    dataflow_crud.update("Candidate", candidate_id, {"notes": new_notes})
+
+
 # --------------------------------------------------------------------------
 # Job listings
 # --------------------------------------------------------------------------
@@ -64,7 +167,7 @@ def _verify_candidate_ownership(candidate_id: int, company_id: int) -> dict:
 @router.get("/jobs")
 async def list_jobs(
     status: str | None = Query(None),
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """List all job listings for the current company."""
     company_id = get_current_company_id(current_user)
@@ -82,7 +185,7 @@ async def list_jobs(
 @router.post("/jobs")
 async def create_job(
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Create a new job listing."""
     company_id = get_current_company_id(current_user)
@@ -122,7 +225,7 @@ async def create_job(
             "employment_type": body.get("employment_type", "full_time"),
             "salary_range_min": salary_min,
             "salary_range_max": salary_max,
-            "requirements": body.get("requirements", []),
+            "requirements": body.get("requirements", ""),
             "status": "draft",
             "created_by": int(current_user.get("sub", 0)),
         },
@@ -133,7 +236,7 @@ async def create_job(
 @router.get("/jobs/{job_id}")
 async def get_job(
     job_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Get a single job listing by ID."""
     company_id = get_current_company_id(current_user)
@@ -148,7 +251,7 @@ async def get_job(
 async def update_job(
     job_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Update a job listing."""
     company_id = get_current_company_id(current_user)
@@ -172,6 +275,21 @@ async def update_job(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
+    # H5: Validate salary fields with math.isfinite() to prevent NaN/Inf bypass
+    if "salary_range_min" in updates:
+        val = float(updates["salary_range_min"])
+        if not math.isfinite(val) or val < 0:
+            raise HTTPException(status_code=400, detail="Invalid salary_range_min: must be a finite non-negative number.")
+        updates["salary_range_min"] = val
+    if "salary_range_max" in updates:
+        val = float(updates["salary_range_max"])
+        if not math.isfinite(val) or val < 0:
+            raise HTTPException(status_code=400, detail="Invalid salary_range_max: must be a finite non-negative number.")
+        updates["salary_range_max"] = val
+    if "salary_range_min" in updates and "salary_range_max" in updates:
+        if updates["salary_range_min"] > updates["salary_range_max"]:
+            raise HTTPException(status_code=400, detail="salary_range_min cannot exceed salary_range_max.")
+
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = dataflow_crud.update("JobListing", job_id, updates)
     return {"job": result}
@@ -180,7 +298,7 @@ async def update_job(
 @router.post("/jobs/{job_id}/publish")
 async def publish_job(
     job_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Publish a job listing, making it visible to applicants."""
     company_id = get_current_company_id(current_user)
@@ -195,7 +313,7 @@ async def publish_job(
         "JobListing",
         job_id,
         {
-            "status": "published",
+            "status": "open",
             "published_at": datetime.now(timezone.utc).isoformat(),
         },
     )
@@ -205,7 +323,7 @@ async def publish_job(
 @router.post("/jobs/{job_id}/close")
 async def close_job(
     job_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Close a job listing."""
     company_id = get_current_company_id(current_user)
@@ -228,6 +346,47 @@ async def close_job(
 
 
 # --------------------------------------------------------------------------
+# TAFEP Compliance Scan (T-R029)
+# --------------------------------------------------------------------------
+
+
+@router.post("/jobs/{job_id}/scan")
+async def scan_job_listing(
+    job_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Scan a job listing description for TAFEP compliance issues.
+
+    Checks both the description and requirements fields for
+    language that may violate TAFEP's fair employment guidelines.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    job = _verify_job_ownership(job_id, company_id)
+
+    from hr_advisory.services.tafep_scanner import scan_job_description
+
+    # Scan description and requirements
+    desc_findings = scan_job_description(job.get("description", ""))
+    req_findings = scan_job_description(job.get("requirements", ""))
+
+    all_findings = [
+        {**f, "field": "description"} for f in desc_findings
+    ] + [
+        {**f, "field": "requirements"} for f in req_findings
+    ]
+
+    return {
+        "job_id": job_id,
+        "findings": all_findings,
+        "count": len(all_findings),
+        "compliant": len(all_findings) == 0,
+    }
+
+
+# --------------------------------------------------------------------------
 # Candidates (cross-job)
 # --------------------------------------------------------------------------
 
@@ -235,7 +394,7 @@ async def close_job(
 @router.get("/candidates")
 async def list_all_candidates(
     stage: str | None = Query(None),
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """List ALL candidates across all job listings for the company."""
     company_id = get_current_company_id(current_user)
@@ -258,7 +417,7 @@ async def list_all_candidates(
 @router.get("/interviews")
 async def list_all_interviews(
     status: str | None = Query(None),
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """List ALL interviews across all candidates for the company."""
     company_id = get_current_company_id(current_user)
@@ -282,7 +441,7 @@ async def list_all_interviews(
 async def list_candidates(
     job_id: int,
     stage: str | None = Query(None),
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """List candidates for a job listing."""
     company_id = get_current_company_id(current_user)
@@ -303,14 +462,14 @@ async def list_candidates(
 async def add_candidate(
     job_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Add a candidate to a job listing (direct or application)."""
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    _verify_job_ownership(job_id, company_id)
+    job = _verify_job_ownership(job_id, company_id)
 
     body = await request.json()
     name = body.get("name", "").strip()
@@ -321,6 +480,10 @@ async def add_candidate(
     _validate_text_length(name, "name", MAX_NAME_LENGTH)
     _validate_text_length(body.get("notes", ""), "notes")
 
+    # Validate email format
+    if email and not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Invalid email format.")
+
     # Check for duplicate candidate on same job
     existing = dataflow_crud.list_records(
         "Candidate",
@@ -329,6 +492,12 @@ async def add_candidate(
     )
     if existing:
         raise HTTPException(status_code=400, detail="Candidate already exists for this job.")
+
+    # T-R027: PDPA consent fields
+    pdpa_consent = bool(body.get("pdpa_consent", False))
+    pdpa_consent_date = ""
+    if pdpa_consent:
+        pdpa_consent_date = datetime.now(timezone.utc).isoformat()
 
     candidate = dataflow_crud.create(
         "Candidate",
@@ -341,17 +510,52 @@ async def add_candidate(
             "source": body.get("source", "direct"),
             "resume_url": body.get("resume_url", ""),
             "notes": body.get("notes", ""),
-            "stage": "applied",
+            "stage": "new",
+            "pdpa_consent": pdpa_consent,
+            "pdpa_consent_date": pdpa_consent_date,
             "created_by": int(current_user.get("sub", 0)),
         },
     )
+
+    # T-R027: Record PDPA consent for recruitment if granted
+    if pdpa_consent:
+        try:
+            from hr_advisory.security.pdpa import ConsentPurpose, record_consent
+
+            record_consent(
+                user_id=str(candidate.get("id", "")),
+                purpose=ConsentPurpose.RECRUITMENT,
+                granted=True,
+                ip_address="",
+            )
+            logger.info(
+                "PDPA recruitment consent recorded for candidate_id=%s",
+                candidate.get("id"),
+            )
+        except Exception as exc:
+            logger.warning("Failed to record PDPA consent: %s", exc)
+
+    # T-R018: Send application received email (non-blocking)
+    if email:
+        company = dataflow_crud.read("Company", company_id)
+        company_name = company.get("name", "") if company else ""
+        await _send_recruitment_email(
+            to=email,
+            template_name="application_received",
+            variables={
+                "candidate_name": name or "Applicant",
+                "job_title": job.get("title", ""),
+                "company_name": company_name,
+            },
+        )
+
     return {"candidate": candidate}
 
 
 @router.get("/candidates/{candidate_id}")
 async def get_candidate(
     candidate_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Get a single candidate by ID."""
     company_id = get_current_company_id(current_user)
@@ -366,7 +570,7 @@ async def get_candidate(
 async def update_candidate(
     candidate_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Update candidate details (stage change, notes, etc.)."""
     company_id = get_current_company_id(current_user)
@@ -383,7 +587,76 @@ async def update_candidate(
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = dataflow_crud.update("Candidate", candidate_id, updates)
+
+    # T-R026: Log stage transitions for audit trail
+    if "stage" in body:
+        actor_id = int(current_user.get("sub", 0))
+        _log_candidate_activity(candidate_id, f"Stage changed to {body['stage']}", actor_id)
+
     return {"candidate": result}
+
+
+# --------------------------------------------------------------------------
+# Structured rejection (T-R025)
+# --------------------------------------------------------------------------
+
+
+@router.post("/candidates/{candidate_id}/reject")
+async def reject_candidate(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Reject a candidate with a documented reason."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    candidate = _verify_candidate_ownership(candidate_id, company_id)
+
+    if candidate.get("stage") == "hired":
+        raise HTTPException(status_code=400, detail="Cannot reject a hired candidate.")
+
+    body = await request.json()
+    reason = body.get("reason", "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Rejection reason is required.")
+
+    _validate_text_length(reason, "reason", MAX_TEXT_LENGTH)
+    notes = body.get("notes", "").strip()
+    _validate_text_length(notes, "notes", MAX_TEXT_LENGTH)
+
+    updates: dict = {
+        "stage": "rejected",
+        "rejection_reason": reason,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if notes:
+        updates["notes"] = notes
+
+    result = dataflow_crud.update("Candidate", candidate_id, updates)
+
+    # T-R026: Log rejection in audit trail
+    actor_id = int(current_user.get("sub", 0))
+    _log_candidate_activity(candidate_id, "Rejected", actor_id, reason)
+
+    # Send rejection email
+    candidate_email = candidate.get("email", "")
+    if candidate_email and body.get("send_email", True):
+        job = dataflow_crud.read("JobListing", candidate.get("job_listing_id"))
+        company = dataflow_crud.read("Company", company_id)
+        await _send_recruitment_email(
+            to=candidate_email,
+            template_name="rejection_notice",
+            variables={
+                "candidate_name": candidate.get("name", ""),
+                "job_title": job.get("title", "") if job else "",
+                "company_name": company.get("name", "") if company else "",
+            },
+        )
+
+    logger.info("Candidate rejected: id=%s, reason=%s", candidate_id, reason)
+    return {"candidate": result, "message": "Candidate rejected."}
 
 
 # --------------------------------------------------------------------------
@@ -395,7 +668,7 @@ async def update_candidate(
 async def schedule_interview(
     candidate_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Schedule an interview for a candidate."""
     company_id = get_current_company_id(current_user)
@@ -416,21 +689,48 @@ async def schedule_interview(
             "candidate_id": candidate_id,
             "scheduled_at": scheduled_at,
             "duration_minutes": body.get("duration_minutes", 60),
-            "interview_type": body.get("interview_type", "in_person"),
+            "interview_type": body.get("interview_type", "onsite"),
             "location": body.get("location", ""),
-            "interviewers": body.get("interviewers", []),
+            "interviewers": json.dumps(body.get("interviewers", [])) if isinstance(body.get("interviewers"), list) else body.get("interviewers", "[]"),
             "notes": body.get("notes", ""),
             "status": "scheduled",
             "created_by": int(current_user.get("sub", 0)),
         },
     )
 
-    # Move candidate to interview stage if not already there
-    dataflow_crud.update(
-        "Candidate",
-        candidate_id,
-        {"stage": "interview", "updated_at": datetime.now(timezone.utc).isoformat()},
-    )
+    # T-R019: Load candidate for stage check and email
+    candidate = _verify_candidate_ownership(candidate_id, company_id)
+
+    # Move candidate to interview stage only if at an earlier stage
+    STAGE_ORDER = {"new": 0, "screening": 1, "interview": 2, "assessment": 3, "offered": 4, "hired": 5, "rejected": 6, "withdrawn": 7}
+    current_stage = candidate.get("stage", "new")
+    if STAGE_ORDER.get(current_stage, 0) < STAGE_ORDER.get("interview", 2):
+        dataflow_crud.update(
+            "Candidate",
+            candidate_id,
+            {"stage": "interview", "updated_at": datetime.now(timezone.utc).isoformat()},
+        )
+
+    # T-R019: Send interview invitation email to candidate
+    candidate_email = candidate.get("email", "")
+    if candidate_email:
+        job = dataflow_crud.read("JobListing", candidate.get("job_listing_id"))
+        company = dataflow_crud.read("Company", company_id)
+        await _send_recruitment_email(
+            to=candidate_email,
+            template_name="interview_invitation",
+            variables={
+                "candidate_name": candidate.get("name", ""),
+                "job_title": job.get("title", "") if job else "",
+                "company_name": company.get("name", "") if company else "",
+                "interview_date": body.get("scheduled_at", "")[:10],
+                "interview_time": body.get("scheduled_at", "")[11:16] if len(body.get("scheduled_at", "")) > 11 else "",
+                "duration": str(body.get("duration_minutes", 60)),
+                "interview_format": body.get("interview_type", "onsite"),
+                "location_or_link": body.get("location", ""),
+                "interviewer_names": "The hiring team",
+            },
+        )
 
     return {"interview": interview}
 
@@ -438,7 +738,7 @@ async def schedule_interview(
 @router.get("/candidates/{candidate_id}/interviews")
 async def list_interviews(
     candidate_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """List all interviews for a candidate."""
     company_id = get_current_company_id(current_user)
@@ -455,7 +755,7 @@ async def list_interviews(
 async def update_interview(
     interview_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Update an interview (reschedule, change status, etc.)."""
     company_id = get_current_company_id(current_user)
@@ -494,7 +794,7 @@ async def update_interview(
 async def add_feedback(
     interview_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Add interviewer feedback for an interview."""
     company_id = get_current_company_id(current_user)
@@ -517,10 +817,10 @@ async def add_feedback(
             "interview_id": interview_id,
             "candidate_id": existing.get("candidate_id"),
             "interviewer_id": int(current_user.get("sub", 0)),
-            "rating": rating,
+            "overall_rating": rating,
             "strengths": body.get("strengths", ""),
             "weaknesses": body.get("weaknesses", ""),
-            "comments": body.get("comments", ""),
+            "notes": body.get("comments", body.get("notes", "")),
             "recommendation": body.get("recommendation", ""),
         },
     )
@@ -530,7 +830,7 @@ async def add_feedback(
 @router.get("/candidates/{candidate_id}/feedback")
 async def list_candidate_feedback(
     candidate_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """List all interview feedback for a candidate."""
     company_id = get_current_company_id(current_user)
@@ -552,7 +852,7 @@ async def list_candidate_feedback(
 async def generate_offer(
     candidate_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Generate an offer for a candidate. Changes stage to 'offered'."""
     company_id = get_current_company_id(current_user)
@@ -578,12 +878,18 @@ async def generate_offer(
             "candidate_id": candidate_id,
             "job_listing_id": candidate.get("job_listing_id"),
             "salary": salary,
+            "currency": body.get("currency", "SGD"),
+            "salary_period": body.get("salary_period", "monthly"),
             "start_date": start_date,
             "position_title": body.get("position_title", ""),
             "employment_type": body.get("employment_type", "full_time"),
-            "benefits": body.get("benefits", ""),
+            "probation_months": body.get("probation_months", 6),
+            "notice_period_days": body.get("notice_period_days", 30),
+            "benefits_summary": body.get("benefits_summary", ""),
+            "terms_text": body.get("terms_text", ""),
+            "expiry_date": body.get("expiry_date", ""),
             "notes": body.get("notes", ""),
-            "status": "pending",
+            "status": "draft",
             "created_by": int(current_user.get("sub", 0)),
         },
     )
@@ -601,7 +907,7 @@ async def generate_offer(
 async def hire_candidate(
     candidate_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant")),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
     """Convert a candidate to an employee.
 
@@ -623,7 +929,18 @@ async def hire_candidate(
     body = await request.json()
     actor_id = int(current_user.get("sub", 0))
 
+    # T-R021: Fetch the latest offer for salary pre-fill
+    offers = dataflow_crud.list_records("Offer", {"candidate_id": candidate_id, "company_id": company_id})
+    latest_offer = offers[0] if offers else {}
+
+    # T-R021: Resolve department and designation from body, job listing, or offer
+    job = dataflow_crud.read("JobListing", candidate.get("job_listing_id"))
+    department = body.get("department") or (job.get("department", "") if job else "")
+    designation = body.get("designation") or (job.get("title", "") if job else "")
+
     # Create invitation for the new hire
+    # Invitation model fields: company_id, inviter_id, email, role, token, expires_at,
+    # accepted_at, is_active, department, designation
     import secrets
 
     token = secrets.token_urlsafe(32)
@@ -633,10 +950,14 @@ async def hire_candidate(
             "company_id": company_id,
             "email": candidate.get("email"),
             "name": candidate.get("name"),
+            "phone": candidate.get("phone", ""),
+            "department": department,
+            "designation": designation,
+            "salary": latest_offer.get("salary"),
             "role": body.get("role", "employee"),
             "token": token,
-            "invited_by": actor_id,
-            "status": "pending",
+            "inviter_id": actor_id,
+            "is_active": True,
         },
     )
 
@@ -651,7 +972,1350 @@ async def hire_candidate(
         },
     )
 
+    # T-R026: Log hire in audit trail
+    _log_candidate_activity(candidate_id, "Hired", actor_id)
+
+    # T-R023: Log hired count for auto-close tracking
+    job_id = candidate.get("job_listing_id")
+    if job_id:
+        all_candidates = dataflow_crud.list_records("Candidate", {"job_listing_id": job_id, "company_id": company_id})
+        hired_count = sum(1 for c in all_candidates if c.get("stage") == "hired")
+        logger.info("Job %s has %d hired candidates", job_id, hired_count)
+
     return {
         "detail": "Candidate hired. Invitation created.",
         "candidate_id": candidate_id,
+    }
+
+
+# --------------------------------------------------------------------------
+# Resume upload & download
+# --------------------------------------------------------------------------
+
+
+def _validate_magic_bytes(content: bytes, content_type: str) -> bool:
+    """Verify file content matches declared MIME type via magic byte signatures.
+
+    Returns True if magic bytes match, False otherwise.
+    """
+    if content_type not in _MAGIC_BYTES:
+        # No magic bytes check available for this type — reject as unsafe
+        return False
+    expected_prefix, prefix_len = _MAGIC_BYTES[content_type]
+    if len(content) < prefix_len:
+        return False
+    return content[:prefix_len] == expected_prefix
+
+
+@router.post("/candidates/{candidate_id}/resume")
+async def upload_resume(
+    candidate_id: int,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Upload a resume file for a candidate.
+
+    Validates file size (10MB), MIME type, file extension, and magic bytes.
+    Stores the file with a UUID-based filename under uploads/recruitment/{company_id}/.
+    Updates the candidate's resume_url field with the stored filename.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    check_rate_limit(
+        f"resume_upload:{company_id}",
+        max_requests=30,
+        window_seconds=3600,
+        action_name="uploading resumes",
+    )
+
+    _verify_candidate_ownership(candidate_id, company_id)
+
+    # Read file content with size guard
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(content) > MAX_RESUME_SIZE:
+        raise HTTPException(status_code=400, detail="File exceeds 10MB limit.")
+
+    # MIME type validation
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in ALLOWED_RESUME_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{content_type}' not allowed. Use PDF, DOC, DOCX, JPG, or PNG.",
+        )
+
+    # Extension validation (defence in depth — don't trust content_type alone)
+    original_filename = file.filename or "resume"
+    file_ext = os.path.splitext(original_filename)[1].lower()
+    if file_ext not in ALLOWED_RESUME_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File extension '{file_ext}' not allowed. Use PDF, DOC, DOCX, JPG, or PNG.",
+        )
+
+    # Magic byte validation — verify actual file content matches declared type
+    if not _validate_magic_bytes(content, content_type):
+        raise HTTPException(
+            status_code=400,
+            detail="File content does not match declared type. Magic bytes verification failed.",
+        )
+
+    # Save file with UUID-based name under company subdirectory
+    company_upload_dir = os.path.join(RECRUITMENT_UPLOAD_DIR, str(company_id))
+    os.makedirs(company_upload_dir, exist_ok=True)
+    stored_name = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(company_upload_dir, stored_name)
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # Update candidate's resume_url with the UUID filename
+    dataflow_crud.update(
+        "Candidate",
+        candidate_id,
+        {"resume_url": stored_name, "updated_at": datetime.now(timezone.utc).isoformat()},
+    )
+
+    logger.info(
+        "Resume uploaded: candidate_id=%s, file=%s, size=%d, company_id=%s",
+        candidate_id,
+        stored_name,
+        len(content),
+        company_id,
+    )
+
+    return {"message": "Resume uploaded.", "resume_url": stored_name}
+
+
+@router.get("/candidates/{candidate_id}/resume")
+async def download_resume(
+    candidate_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> FileResponse:
+    """Download/serve the resume file for a candidate.
+
+    Resolves the stored UUID filename from the candidate's resume_url field,
+    verifies the file exists on disk, and returns it with the correct MIME type
+    and Content-Disposition header.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    candidate = _verify_candidate_ownership(candidate_id, company_id)
+
+    resume_url = candidate.get("resume_url", "")
+    if not resume_url:
+        raise HTTPException(status_code=404, detail="No resume on file for this candidate.")
+
+    # Prevent path traversal — reject any resume_url containing path separators or ..
+    if "/" in resume_url or "\\" in resume_url or ".." in resume_url or "\x00" in resume_url:
+        raise HTTPException(status_code=400, detail="Invalid resume reference.")
+
+    file_path = os.path.join(RECRUITMENT_UPLOAD_DIR, str(company_id), resume_url)
+    # Double-check resolved path stays within expected directory
+    expected_dir = os.path.realpath(os.path.join(RECRUITMENT_UPLOAD_DIR, str(company_id)))
+    if not os.path.realpath(file_path).startswith(expected_dir + os.sep) and os.path.realpath(file_path) != expected_dir:
+        raise HTTPException(status_code=400, detail="Invalid resume reference.")
+
+    if not os.path.isfile(file_path):
+        logger.error(
+            "Resume file not found on disk: candidate_id=%s, path=%s",
+            candidate_id,
+            file_path,
+        )
+        raise HTTPException(status_code=404, detail="Resume file not found on disk.")
+
+    # Determine media type from extension
+    file_ext = os.path.splitext(resume_url)[1].lower()
+    media_type = _EXT_TO_MIME.get(file_ext, "application/octet-stream")
+
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename=\"{resume_url}\""},
+    )
+
+
+# --------------------------------------------------------------------------
+# Screening Questions (T-R031, T-R032)
+# --------------------------------------------------------------------------
+
+
+@router.get("/jobs/{job_id}/questions")
+async def list_screening_questions(
+    job_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List screening questions for a job listing, sorted by sort_order."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    _verify_job_ownership(job_id, company_id)
+
+    questions = dataflow_crud.list_records(
+        "ScreeningQuestion",
+        {"job_listing_id": job_id, "company_id": company_id},
+    )
+    questions.sort(key=lambda q: q.get("sort_order", 0))
+    return {"questions": questions, "count": len(questions)}
+
+
+@router.post("/jobs/{job_id}/questions")
+async def create_screening_question(
+    job_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Create a screening question for a job listing."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    _verify_job_ownership(job_id, company_id)
+
+    body = await request.json()
+    question_text = body.get("question_text", "").strip()
+    if not question_text:
+        raise HTTPException(status_code=400, detail="Question text is required.")
+
+    _validate_text_length(question_text, "question_text")
+
+    q = dataflow_crud.create(
+        "ScreeningQuestion",
+        {
+            "job_listing_id": job_id,
+            "company_id": company_id,
+            "question_text": question_text,
+            "question_type": body.get("question_type", "text"),
+            "options": body.get("options", ""),
+            "is_required": body.get("is_required", False),
+            "is_knockout": body.get("is_knockout", False),
+            "sort_order": body.get("sort_order", 0),
+        },
+    )
+    return {"question": q}
+
+
+@router.patch("/questions/{question_id}")
+async def update_screening_question(
+    question_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Update a screening question."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    q = dataflow_crud.read("ScreeningQuestion", question_id)
+    if not q or q.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Question not found.")
+
+    body = await request.json()
+    allowed = {
+        "question_text",
+        "question_type",
+        "options",
+        "is_required",
+        "is_knockout",
+        "sort_order",
+    }
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    result = dataflow_crud.update("ScreeningQuestion", question_id, updates)
+    return {"question": result}
+
+
+@router.delete("/questions/{question_id}")
+async def delete_screening_question(
+    question_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Delete a screening question."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    q = dataflow_crud.read("ScreeningQuestion", question_id)
+    if not q or q.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Question not found.")
+
+    dataflow_crud.delete("ScreeningQuestion", question_id)
+    return {"message": "Question deleted."}
+
+
+# --------------------------------------------------------------------------
+# M8: Offers & Approvals (T-R038, T-R040)
+# --------------------------------------------------------------------------
+
+
+@router.post("/offers/{offer_id}/approve")
+async def approve_offer(
+    offer_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Approve a pending offer."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    offer = dataflow_crud.read("Offer", offer_id)
+    if not offer or offer.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Offer not found.")
+
+    if offer.get("status") not in ("draft", "pending_approval"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Offer cannot be approved from status '{offer.get('status')}'.",
+        )
+
+    user_id = int(current_user.get("sub", 0))
+    result = dataflow_crud.update(
+        "Offer",
+        offer_id,
+        {
+            "status": "approved",
+            "approved_by": user_id,
+            "approved_at": datetime.now(timezone.utc).replace(tzinfo=None),
+        },
+    )
+    return {"offer": result, "message": "Offer approved."}
+
+
+@router.post("/offers/{offer_id}/send")
+async def send_offer(
+    offer_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Send an approved offer to the candidate."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    offer = dataflow_crud.read("Offer", offer_id)
+    if not offer or offer.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Offer not found.")
+
+    if offer.get("status") not in ("draft", "approved"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Offer cannot be sent from status '{offer.get('status')}'.",
+        )
+
+    # Get candidate and send email
+    candidate = dataflow_crud.read("Candidate", offer.get("candidate_id"))
+    if candidate and candidate.get("email"):
+        company = dataflow_crud.read("Company", company_id)
+        await _send_recruitment_email(
+            to=candidate["email"],
+            template_name="offer_sent",
+            variables={
+                "candidate_name": candidate.get("name", ""),
+                "position_title": offer.get("position_title", ""),
+                "company_name": company.get("name", "") if company else "",
+                "salary": f"{offer.get('currency', 'SGD')} {offer.get('salary', 0):,.2f}/{offer.get('salary_period', 'month')}",
+                "start_date": offer.get("start_date", ""),
+                "expiry_date": offer.get("expiry_date", "TBD"),
+            },
+        )
+
+    result = dataflow_crud.update(
+        "Offer",
+        offer_id,
+        {
+            "status": "sent",
+            "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
+        },
+    )
+
+    # Update candidate stage to offered
+    if offer.get("candidate_id"):
+        dataflow_crud.update(
+            "Candidate",
+            offer["candidate_id"],
+            {
+                "stage": "offered",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+    return {"offer": result, "message": "Offer sent to candidate."}
+
+
+@router.get("/offers")
+async def list_offers(
+    status: str | None = Query(None),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List all offers for the company."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    filters: dict = {"company_id": company_id}
+    if status:
+        filters["status"] = status
+
+    offers = dataflow_crud.list_records("Offer", filters)
+
+    # Enrich with candidate names
+    for offer in offers:
+        cand = dataflow_crud.read("Candidate", offer.get("candidate_id"))
+        offer["candidate_name"] = cand.get("name", "") if cand else ""
+
+    return {"offers": offers, "count": len(offers)}
+
+
+@router.post("/offers/{offer_id}/respond")
+async def respond_to_offer(
+    offer_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Accept or decline an offer."""
+    company_id = get_current_company_id(current_user)
+
+    offer = dataflow_crud.read("Offer", offer_id)
+    if not offer or offer.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Offer not found.")
+
+    if offer.get("status") != "sent":
+        raise HTTPException(
+            status_code=400,
+            detail="Offer is not in a respondable state.",
+        )
+
+    body = await request.json()
+    response = body.get("response", "").strip().lower()
+    if response not in ("accepted", "declined"):
+        raise HTTPException(
+            status_code=400,
+            detail="Response must be 'accepted' or 'declined'.",
+        )
+
+    result = dataflow_crud.update(
+        "Offer",
+        offer_id,
+        {
+            "status": response,
+            "responded_at": datetime.now(timezone.utc).replace(tzinfo=None),
+        },
+    )
+
+    return {"offer": result, "message": f"Offer {response}."}
+
+
+# --------------------------------------------------------------------------
+# M9: Recruitment Analytics (T-R042)
+# --------------------------------------------------------------------------
+
+
+@router.get("/analytics/summary")
+async def recruitment_summary(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Get recruitment summary metrics."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    jobs = dataflow_crud.list_records("JobListing", {"company_id": company_id})
+    candidates = dataflow_crud.list_records("Candidate", {"company_id": company_id})
+    interviews = dataflow_crud.list_records(
+        "InterviewSchedule", {"company_id": company_id}
+    )
+
+    open_jobs = sum(1 for j in jobs if j.get("status") == "open")
+    total_candidates = len(candidates)
+
+    # Pipeline distribution
+    pipeline: dict[str, int] = {}
+    for c in candidates:
+        stage = c.get("stage", "new")
+        pipeline[stage] = pipeline.get(stage, 0) + 1
+
+    # Interviews this week
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    week_start = now - timedelta(days=now.weekday())
+    interviews_this_week = sum(
+        1
+        for i in interviews
+        if i.get("scheduled_at", "") >= week_start.isoformat()[:10]
+        and i.get("status") == "scheduled"
+    )
+
+    # Source distribution
+    sources: dict[str, int] = {}
+    for c in candidates:
+        src = c.get("source", "direct")
+        sources[src] = sources.get(src, 0) + 1
+
+    # Offers
+    offers = dataflow_crud.list_records("Offer", {"company_id": company_id})
+    total_offers = len(offers)
+    accepted_offers = sum(1 for o in offers if o.get("status") == "accepted")
+    offer_acceptance_rate = (
+        round(accepted_offers / total_offers * 100, 1)
+        if total_offers > 0
+        else 0
+    )
+
+    return {
+        "open_jobs": open_jobs,
+        "total_jobs": len(jobs),
+        "total_candidates": total_candidates,
+        "pipeline": pipeline,
+        "interviews_this_week": interviews_this_week,
+        "sources": sources,
+        "total_offers": total_offers,
+        "accepted_offers": accepted_offers,
+        "offer_acceptance_rate": offer_acceptance_rate,
+    }
+
+
+# --------------------------------------------------------------------------
+# M10: Public Careers Page (no auth) — T-R044
+# --------------------------------------------------------------------------
+
+
+@router.get("/careers/jobs")
+async def public_list_jobs(
+    company_slug: str = Query(..., description="Company identifier"),
+) -> dict:
+    """Public endpoint: list published jobs for a company's careers page."""
+    # Find company by slug only (no name fallback — prevents enumeration)
+    companies = dataflow_crud.list_records("Company", {"slug": company_slug})
+    if not companies:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    company = companies[0]
+    company_id = company.get("id")
+
+    jobs = dataflow_crud.list_records(
+        "JobListing", {"company_id": company_id, "status": "open"}
+    )
+
+    # Strip internal fields -- only show public-safe data
+    public_jobs = []
+    for job in jobs:
+        public_jobs.append(
+            {
+                "id": job.get("id"),
+                "title": job.get("title", ""),
+                "department": job.get("department", ""),
+                "location": job.get("location", ""),
+                "employment_type": job.get("employment_type", ""),
+                "description": job.get("description", ""),
+                "requirements": job.get("requirements", ""),
+                "posted_date": job.get("published_at", ""),
+            }
+        )
+
+    return {
+        "company_name": company.get("name", ""),
+        "jobs": public_jobs,
+        "count": len(public_jobs),
+    }
+
+
+@router.get("/careers/jobs/{job_id}")
+async def public_get_job(job_id: int) -> dict:
+    """Public endpoint: get a single published job listing."""
+    job = dataflow_crud.read("JobListing", job_id)
+    if not job:
+        # Fallback: try list_records
+        matches = dataflow_crud.list_records("JobListing", {"id": job_id})
+        job = matches[0] if matches else None
+
+    if not job or job.get("status") != "open":
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    company = dataflow_crud.read("Company", job.get("company_id"))
+
+    # Get screening questions for the application form
+    questions = dataflow_crud.list_records(
+        "ScreeningQuestion",
+        {
+            "job_listing_id": job_id,
+            "company_id": job.get("company_id"),
+        },
+    )
+    questions.sort(key=lambda q: q.get("sort_order", 0))
+
+    return {
+        "job": {
+            "id": job.get("id"),
+            "title": job.get("title", ""),
+            "department": job.get("department", ""),
+            "location": job.get("location", ""),
+            "employment_type": job.get("employment_type", ""),
+            "description": job.get("description", ""),
+            "requirements": job.get("requirements", ""),
+            "posted_date": job.get("published_at", ""),
+        },
+        "company_name": company.get("name", "") if company else "",
+        "screening_questions": [
+            {
+                "id": q.get("id"),
+                "question_text": q.get("question_text", ""),
+                "question_type": q.get("question_type", "text"),
+                "options": q.get("options", ""),
+                "is_required": q.get("is_required", False),
+            }
+            for q in questions
+        ],
+    }
+
+
+@router.post("/careers/jobs/{job_id}/apply")
+async def public_apply(
+    job_id: int,
+    request: Request,
+) -> dict:
+    """Public endpoint: submit a job application."""
+    job = dataflow_crud.read("JobListing", job_id)
+    if not job:
+        matches = dataflow_crud.list_records("JobListing", {"id": job_id})
+        job = matches[0] if matches else None
+
+    if not job or job.get("status") != "open":
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found or not accepting applications.",
+        )
+
+    company_id = job.get("company_id")
+
+    body = await request.json()
+    name = body.get("name", "").strip()
+    email = body.get("email", "").strip()
+
+    if not name or not email:
+        raise HTTPException(
+            status_code=400, detail="Name and email are required."
+        )
+
+    _validate_text_length(name, "name", MAX_NAME_LENGTH)
+    _validate_text_length(email, "email", MAX_NAME_LENGTH)
+
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Invalid email format.")
+
+    # Check PDPA consent
+    if not body.get("pdpa_consent", False):
+        raise HTTPException(
+            status_code=400,
+            detail="PDPA consent is required to submit your application.",
+        )
+
+    # Check for duplicate application
+    existing = dataflow_crud.list_records(
+        "Candidate",
+        {
+            "job_listing_id": job_id,
+            "email": email,
+            "company_id": company_id,
+        },
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="You have already applied for this position.",
+        )
+
+    # Rate limit by IP (basic anti-spam)
+    client_host = request.client.host if request.client else "unknown"
+    check_rate_limit(
+        f"apply:{client_host}",
+        max_requests=10,
+        window_seconds=3600,
+        action_name="job applications",
+    )
+
+    candidate = dataflow_crud.create(
+        "Candidate",
+        {
+            "company_id": company_id,
+            "job_listing_id": job_id,
+            "name": name,
+            "email": email,
+            "phone": body.get("phone", ""),
+            "source": "careers_page",
+            "stage": "new",
+            "nationality": body.get("nationality", ""),
+            "citizenship_status": body.get("citizenship_status", ""),
+            "pdpa_consent": True,
+            "pdpa_consent_date": datetime.now(timezone.utc).isoformat(),
+            "notes": body.get("cover_letter", ""),
+        },
+    )
+
+    # M6: Save screening responses — validate question_ids belong to this job
+    responses = body.get("screening_responses", [])
+    # Load screening questions for validation
+    job_questions = dataflow_crud.list_records("ScreeningQuestion", {
+        "job_listing_id": job_id,
+        "company_id": company_id,
+    })
+    valid_question_ids = {q.get("id") for q in job_questions}
+
+    # Enforce required questions
+    required_ids = {q.get("id") for q in job_questions if q.get("is_required")}
+    if required_ids:
+        answered_ids = {r.get("question_id") for r in responses if r.get("question_id")}
+        missing = required_ids - answered_ids
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail="All required screening questions must be answered.",
+            )
+
+    for resp in responses:
+        question_id = resp.get("question_id")
+        if question_id and question_id in valid_question_ids:
+            dataflow_crud.create(
+                "ScreeningResponse",
+                {
+                    "candidate_id": candidate.get("id"),
+                    "question_id": question_id,
+                    "company_id": company_id,
+                    "response_text": resp.get("response_text", ""),
+                    "response_value": resp.get("response_value", ""),
+                },
+            )
+
+    # Send confirmation email
+    company = dataflow_crud.read("Company", company_id)
+    await _send_recruitment_email(
+        to=email,
+        template_name="application_received",
+        variables={
+            "candidate_name": name,
+            "job_title": job.get("title", ""),
+            "company_name": company.get("name", "") if company else "",
+        },
+    )
+
+    logger.info(
+        "Public application received: job=%s, candidate=%s",
+        job_id,
+        candidate.get("id"),
+    )
+    return {
+        "message": "Application submitted successfully.",
+        "application_id": candidate.get("id"),
+    }
+
+
+# --------------------------------------------------------------------------
+# M11: Candidate Application Status (T-R048)
+# --------------------------------------------------------------------------
+
+
+@router.get("/careers/application-status")
+async def public_application_status(
+    request: Request,
+    email: str = Query(...),
+    job_id: int = Query(...),
+) -> dict:
+    """Public endpoint: check application status by email."""
+    # Rate limit to prevent email enumeration
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(
+        f"status_check:{client_ip}",
+        max_requests=20,
+        window_seconds=3600,
+        action_name="application status checks",
+    )
+    candidates = dataflow_crud.list_records(
+        "Candidate",
+        {
+            "email": email,
+            "job_listing_id": job_id,
+        },
+    )
+
+    if not candidates:
+        raise HTTPException(
+            status_code=404,
+            detail="No application found for this email and job.",
+        )
+
+    candidate = candidates[0]
+
+    # Map internal stages to candidate-friendly labels
+    stage_labels = {
+        "new": "Under Review",
+        "screening": "Under Review",
+        "interview": "Interview Stage",
+        "assessment": "Assessment Stage",
+        "offered": "Offer Extended",
+        "hired": "Hired",
+        "rejected": "Application Closed",
+        "withdrawn": "Withdrawn",
+    }
+
+    return {
+        "status": stage_labels.get(
+            candidate.get("stage", "new"), "Under Review"
+        ),
+        "applied_date": candidate.get("created_at", ""),
+        "job_title": "",  # Don't expose internal data unnecessarily
+    }
+
+
+# --------------------------------------------------------------------------
+# M12: Overdue Feedback Reminders (T-R020)
+# --------------------------------------------------------------------------
+
+
+@router.get("/feedback/overdue")
+async def list_overdue_feedback(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """List interviews with overdue feedback (completed > 48h ago, no feedback)."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    interviews = dataflow_crud.list_records("InterviewSchedule", {
+        "company_id": company_id,
+        "status": "completed",
+    })
+
+    now = datetime.now(timezone.utc)
+    overdue = []
+    for interview in interviews:
+        # Check if feedback exists for this interview
+        feedback = dataflow_crud.list_records("InterviewFeedback", {
+            "interview_id": interview.get("id"),
+            "company_id": company_id,
+        })
+        if not feedback:
+            # Check if interview was > 48h ago
+            scheduled = interview.get("scheduled_at", "")
+            if scheduled:
+                try:
+                    interview_dt = datetime.fromisoformat(scheduled.replace("Z", "+00:00"))
+                    if interview_dt.tzinfo:
+                        interview_dt = interview_dt.replace(tzinfo=None)
+                    if (now.replace(tzinfo=None) - interview_dt).total_seconds() > 48 * 3600:
+                        candidate = dataflow_crud.read("Candidate", interview.get("candidate_id"))
+                        overdue.append({
+                            "interview_id": interview.get("id"),
+                            "candidate_id": interview.get("candidate_id"),
+                            "candidate_name": candidate.get("name", "") if candidate else "",
+                            "scheduled_at": scheduled,
+                            "interview_type": interview.get("interview_type", ""),
+                            "hours_overdue": round((now.replace(tzinfo=None) - interview_dt).total_seconds() / 3600),
+                        })
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "Invalid scheduled_at value for interview %s: %s",
+                        interview.get("id"),
+                        scheduled,
+                    )
+
+    return {"overdue": overdue, "count": len(overdue)}
+
+
+@router.post("/feedback/remind")
+async def send_feedback_reminders(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Send reminder emails to interviewers with overdue feedback."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    interviews = dataflow_crud.list_records("InterviewSchedule", {
+        "company_id": company_id,
+        "status": "completed",
+    })
+
+    now = datetime.now(timezone.utc)
+    sent_count = 0
+    for interview in interviews:
+        feedback = dataflow_crud.list_records("InterviewFeedback", {
+            "interview_id": interview.get("id"),
+            "company_id": company_id,
+        })
+        if not feedback:
+            scheduled = interview.get("scheduled_at", "")
+            if scheduled:
+                try:
+                    interview_dt = datetime.fromisoformat(scheduled.replace("Z", "+00:00"))
+                    if interview_dt.tzinfo:
+                        interview_dt = interview_dt.replace(tzinfo=None)
+                    if (now.replace(tzinfo=None) - interview_dt).total_seconds() > 48 * 3600:
+                        candidate = dataflow_crud.read("Candidate", interview.get("candidate_id"))
+                        candidate_name = candidate.get("name", "") if candidate else "Unknown"
+                        logger.info(
+                            "Feedback reminder: interview=%s, candidate=%s",
+                            interview.get("id"),
+                            candidate_name,
+                        )
+                        sent_count += 1
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "Invalid scheduled_at value for interview %s: %s",
+                        interview.get("id"),
+                        scheduled,
+                    )
+
+    return {"reminders_sent": sent_count, "message": f"Sent {sent_count} feedback reminders."}
+
+
+# --------------------------------------------------------------------------
+# M13: FCF Compliance Checker (T-R028)
+# --------------------------------------------------------------------------
+
+
+@router.get("/jobs/{job_id}/fcf-check")
+async def check_fcf_compliance(
+    job_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Check FCF (Fair Consideration Framework) compliance for a job listing.
+
+    Under FCF, employers with 10+ employees must advertise on MyCareersFuture
+    for 14 days before applying for an EP or S Pass, unless exempt.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    job = _verify_job_ownership(job_id, company_id)
+
+    # Count employees
+    employees = dataflow_crud.list_records("Employee", {"company_id": company_id})
+    employee_count = len(employees)
+
+    # Get salary range
+    salary_max = job.get("salary_range_max", 0) or 0
+
+    # FCF exemptions
+    exempt = False
+    exemption_reason = ""
+
+    if employee_count < 10:
+        exempt = True
+        exemption_reason = "Company has fewer than 10 employees"
+    elif salary_max >= 22500:
+        exempt = True
+        exemption_reason = "Salary exceeds $22,500/month (exempt from FCF advertising)"
+
+    # Check MCF posting status
+    mcf_posted_date = job.get("mcf_posted_date", "")
+    days_since_posting = 0
+    mcf_requirement_met = False
+
+    if mcf_posted_date:
+        try:
+            posted_dt = datetime.fromisoformat(mcf_posted_date)
+            days_since_posting = (
+                datetime.now(timezone.utc).replace(tzinfo=None) - posted_dt.replace(tzinfo=None)
+            ).days
+            mcf_requirement_met = days_since_posting >= 14
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid mcf_posted_date for job %s: %s", job_id, mcf_posted_date
+            )
+
+    return {
+        "job_id": job_id,
+        "employee_count": employee_count,
+        "salary_max": salary_max,
+        "fcf_exempt": exempt,
+        "exemption_reason": exemption_reason,
+        "mcf_posted": bool(mcf_posted_date),
+        "mcf_posted_date": mcf_posted_date,
+        "days_since_posting": days_since_posting,
+        "mcf_requirement_met": mcf_requirement_met or exempt,
+        "advisory": (
+            "No FCF advertising required — exempt." if exempt
+            else "MyCareersFuture advertising completed." if mcf_requirement_met
+            else f"FCF requires 14 days on MyCareersFuture before EP/S Pass application. "
+                 f"{'Post not yet submitted.' if not mcf_posted_date else f'{14 - days_since_posting} days remaining.'}"
+        ),
+    }
+
+
+@router.post("/jobs/{job_id}/mcf-posted")
+async def record_mcf_posting(
+    job_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Record that a job has been posted on MyCareersFuture."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    _verify_job_ownership(job_id, company_id)
+
+    result = dataflow_crud.update("JobListing", job_id, {
+        "mcf_posted_date": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"job": result, "message": "MCF posting date recorded."}
+
+
+# --------------------------------------------------------------------------
+# M14: Offer Letter PDF Generation (T-R039)
+# --------------------------------------------------------------------------
+
+
+@router.get("/offers/{offer_id}/letter")
+async def generate_offer_letter(
+    offer_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> FileResponse:
+    """Generate an offer letter PDF for a given offer."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    offer = dataflow_crud.read("Offer", offer_id)
+    if not offer or offer.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Offer not found.")
+
+    candidate = dataflow_crud.read("Candidate", offer.get("candidate_id"))
+    company = dataflow_crud.read("Company", company_id)
+
+    candidate_name = candidate.get("name", "Candidate") if candidate else "Candidate"
+    company_name = company.get("name", "Company") if company else "Company"
+
+    # Generate PDF using reportlab (already installed for payslip generation)
+    import tempfile
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    doc = SimpleDocTemplate(
+        tmp.name,
+        pagesize=A4,
+        leftMargin=1 * inch,
+        rightMargin=1 * inch,
+        topMargin=1 * inch,
+        bottomMargin=1 * inch,
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "OfferTitle", parent=styles["Heading1"], fontSize=16, spaceAfter=20
+    )
+    body_style = ParagraphStyle(
+        "OfferBody", parent=styles["Normal"], fontSize=11, leading=16, spaceAfter=12
+    )
+
+    story = []
+    story.append(Paragraph(company_name, title_style))
+    story.append(Spacer(1, 0.3 * inch))
+    story.append(
+        Paragraph(f"Date: {datetime.now().strftime('%d %B %Y')}", body_style)
+    )
+    story.append(Spacer(1, 0.2 * inch))
+    story.append(Paragraph(f"Dear {candidate_name},", body_style))
+    story.append(Spacer(1, 0.1 * inch))
+
+    position_title = offer.get("position_title", "")
+    story.append(
+        Paragraph(
+            f"We are pleased to offer you the position of <b>{position_title}</b> "
+            f"at {company_name}. We were impressed with your qualifications and believe you will be "
+            f"a valuable addition to our team.",
+            body_style,
+        )
+    )
+
+    employment_type = offer.get("employment_type", "Full-time").replace("_", " ").title()
+    currency = offer.get("currency", "SGD")
+    salary = offer.get("salary", 0)
+    start_date = offer.get("start_date", "TBD")
+    probation_months = offer.get("probation_months", 6)
+    notice_period_days = offer.get("notice_period_days", 30)
+
+    story.append(
+        Paragraph(
+            f"<b>Position:</b> {position_title}<br/>"
+            f"<b>Employment Type:</b> {employment_type}<br/>"
+            f"<b>Monthly Salary:</b> {currency} {salary:,.2f}<br/>"
+            f"<b>Start Date:</b> {start_date}<br/>"
+            f"<b>Probation Period:</b> {probation_months} months<br/>"
+            f"<b>Notice Period:</b> {notice_period_days} days",
+            body_style,
+        )
+    )
+
+    benefits_summary = offer.get("benefits_summary", "")
+    if benefits_summary:
+        story.append(
+            Paragraph(f"<b>Benefits:</b> {benefits_summary}", body_style)
+        )
+
+    story.append(Spacer(1, 0.2 * inch))
+    expiry_date = offer.get("expiry_date", "further notice") or "further notice"
+    story.append(
+        Paragraph(
+            "Please confirm your acceptance of this offer by signing and returning this letter. "
+            f"This offer is valid until {expiry_date}.",
+            body_style,
+        )
+    )
+
+    story.append(Spacer(1, 0.3 * inch))
+    story.append(Paragraph("Yours sincerely,", body_style))
+    story.append(Paragraph(company_name, body_style))
+    story.append(Spacer(1, 0.5 * inch))
+    story.append(Paragraph("_________________________", body_style))
+    story.append(Paragraph(f"Accepted by: {candidate_name}", body_style))
+    story.append(Paragraph("Date: _____________", body_style))
+
+    doc.build(story)
+
+    # H3: Sanitize filename — strip all characters except alphanumeric, underscore, hyphen
+    safe_filename = re.sub(r"[^a-zA-Z0-9_-]", "", candidate_name.replace(" ", "-").lower())[:50]
+    if not safe_filename:
+        safe_filename = "offer-letter"
+
+    # H4: Schedule temp file cleanup via BackgroundTasks
+    def _cleanup_temp_file(path: str) -> None:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+    background_tasks.add_task(_cleanup_temp_file, tmp.name)
+
+    return FileResponse(
+        tmp.name,
+        media_type="application/pdf",
+        filename=f"offer-letter-{safe_filename}.pdf",
+    )
+
+
+# --------------------------------------------------------------------------
+# M12: Talent Pool (T-R050)
+# --------------------------------------------------------------------------
+
+
+@router.get("/talent-pool")
+async def search_talent_pool(
+    query: str = Query("", description="Search by name or email"),
+    stage: str = Query("", description="Filter by stage"),
+    source: str = Query("", description="Filter by source"),
+    tag: str = Query("", description="Filter by tag in notes"),
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Search the talent pool — all candidates across all jobs."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    candidates = dataflow_crud.list_records("Candidate", {"company_id": company_id})
+
+    # Apply filters
+    if query:
+        q = query.lower()
+        candidates = [
+            c for c in candidates
+            if q in c.get("name", "").lower() or q in c.get("email", "").lower()
+        ]
+    if stage:
+        candidates = [c for c in candidates if c.get("stage") == stage]
+    if source:
+        candidates = [c for c in candidates if c.get("source") == source]
+    if tag:
+        t = tag.lower()
+        candidates = [c for c in candidates if t in c.get("notes", "").lower()]
+
+    # Enrich with job title
+    for c in candidates:
+        job = dataflow_crud.read("JobListing", c.get("job_listing_id"))
+        c["job_title"] = job.get("title", "") if job else ""
+
+    return {"candidates": candidates, "count": len(candidates)}
+
+
+@router.post("/candidates/{candidate_id}/reapply")
+async def reapply_candidate(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Move a talent pool candidate to a new job's pipeline."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    candidate = _verify_candidate_ownership(candidate_id, company_id)
+
+    body = await request.json()
+    new_job_id = body.get("job_listing_id")
+    if not new_job_id:
+        raise HTTPException(status_code=400, detail="job_listing_id is required.")
+
+    _verify_job_ownership(new_job_id, company_id)
+
+    # Create a new candidate record for the new job (preserving history)
+    new_candidate = dataflow_crud.create("Candidate", {
+        "company_id": company_id,
+        "job_listing_id": new_job_id,
+        "name": candidate.get("name", ""),
+        "email": candidate.get("email", ""),
+        "phone": candidate.get("phone", ""),
+        "source": "talent_pool",
+        "stage": "new",
+        "nationality": candidate.get("nationality", ""),
+        "citizenship_status": candidate.get("citizenship_status", ""),
+        "resume_url": candidate.get("resume_url", ""),
+        "pdpa_consent": False,
+        "pdpa_consent_date": "",
+        "notes": f"Re-applied from talent pool (original candidate #{candidate_id}). PDPA consent must be re-confirmed.",
+    })
+
+    return {"candidate": new_candidate, "message": "Candidate added to new job pipeline. PDPA consent must be re-confirmed."}
+
+
+# --------------------------------------------------------------------------
+# M12: Employee Referrals (T-R051)
+# --------------------------------------------------------------------------
+
+
+@router.post("/referrals")
+async def create_referral(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Submit an employee referral. Available to all authenticated users."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+
+    body = await request.json()
+    job_id = body.get("job_listing_id")
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_listing_id is required.")
+
+    _verify_job_ownership(job_id, company_id)
+
+    candidate_name = body.get("candidate_name", "").strip()
+    candidate_email = body.get("candidate_email", "").strip()
+    if not candidate_name or not candidate_email:
+        raise HTTPException(status_code=400, detail="Candidate name and email are required.")
+
+    _validate_text_length(candidate_name, "candidate_name", MAX_NAME_LENGTH)
+
+    # Find the employee record for the referrer
+    employees = dataflow_crud.list_records("Employee", {"user_id": user_id, "company_id": company_id})
+    employee = employees[0] if employees else None
+    if not employee:
+        raise HTTPException(status_code=400, detail="No employee record found for current user.")
+
+    referral = dataflow_crud.create("Referral", {
+        "company_id": company_id,
+        "referrer_employee_id": employee.get("id"),
+        "job_listing_id": job_id,
+        "candidate_name": candidate_name,
+        "candidate_email": candidate_email,
+        "candidate_phone": body.get("candidate_phone", ""),
+        "status": "pending",
+        "notes": body.get("notes", ""),
+    })
+
+    logger.info(
+        "Referral submitted: referrer=%s, candidate=%s, job=%s",
+        employee.get("id"),
+        candidate_name,
+        job_id,
+    )
+    return {"referral": referral, "message": "Referral submitted."}
+
+
+@router.get("/referrals")
+async def list_referrals(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """List referrals. HR sees all; employees see their own."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    role = current_user.get("role", "employee")
+
+    if role in ("owner", "hr_manager"):
+        referrals = dataflow_crud.list_records("Referral", {"company_id": company_id})
+    else:
+        user_id = int(current_user.get("sub", 0))
+        employees = dataflow_crud.list_records("Employee", {"user_id": user_id, "company_id": company_id})
+        employee = employees[0] if employees else None
+        if not employee:
+            return {"referrals": [], "count": 0}
+        referrals = dataflow_crud.list_records("Referral", {
+            "company_id": company_id,
+            "referrer_employee_id": employee.get("id"),
+        })
+
+    # Enrich with job title
+    for r in referrals:
+        job = dataflow_crud.read("JobListing", r.get("job_listing_id"))
+        r["job_title"] = job.get("title", "") if job else ""
+
+    return {"referrals": referrals, "count": len(referrals)}
+
+
+# --------------------------------------------------------------------------
+# M12: Hiring Manager Filtered View (T-R052)
+# --------------------------------------------------------------------------
+
+
+@router.get("/my-department/candidates")
+async def list_department_candidates(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """List candidates for jobs in the current user's department."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    employees = dataflow_crud.list_records("Employee", {"user_id": user_id, "company_id": company_id})
+    employee = employees[0] if employees else None
+    if not employee:
+        return {"candidates": [], "count": 0}
+
+    department = employee.get("department", "")
+    if not department:
+        return {"candidates": [], "count": 0, "message": "No department assigned."}
+
+    # Find jobs in this department
+    jobs = dataflow_crud.list_records("JobListing", {"company_id": company_id, "department": department})
+    job_ids = {j.get("id") for j in jobs}
+
+    # Find candidates for those jobs
+    all_candidates = dataflow_crud.list_records("Candidate", {"company_id": company_id})
+    dept_candidates = [c for c in all_candidates if c.get("job_listing_id") in job_ids]
+
+    # Enrich with job title
+    for c in dept_candidates:
+        job = dataflow_crud.read("JobListing", c.get("job_listing_id"))
+        c["job_title"] = job.get("title", "") if job else ""
+
+    return {
+        "department": department,
+        "candidates": dept_candidates,
+        "count": len(dept_candidates),
     }

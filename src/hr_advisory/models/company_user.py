@@ -20,7 +20,6 @@ from hr_advisory.models.enums import RiskTier
 class UserRole:
     OWNER = "owner"
     HR_MANAGER = "hr_manager"
-    CONSULTANT = "consultant"
     EMPLOYEE = "employee"
 
 
@@ -251,11 +250,12 @@ class ContentUrgency:
 class Company:
     """A Singapore SME company profile.
 
-    Stores workforce composition used for provision applicability filtering.
-    Multi-tenant enabled for consultant access to multiple clients.
+    Single-tenant: each deployment is bound to one company. Stores workforce
+    composition used for provision applicability filtering.
     """
 
     name: str
+    slug: str = ""
     uen: Optional[str] = None
     sector: Optional[str] = None
     sub_sector: Optional[str] = None
@@ -273,6 +273,7 @@ class Company:
         "multi_tenant": True,
         "indexes": [
             {"name": "idx_company_uen", "fields": ["uen"]},
+            {"name": "idx_company_slug", "fields": ["slug"]},
             {"name": "idx_company_sector", "fields": ["sector"]},
         ],
     }
@@ -1111,8 +1112,11 @@ class Invitation:
     """
 
     company_id: int
-    inviter_id: int
-    email: str
+    inviter_id: int = 0
+    email: str = ""
+    name: str = ""
+    phone: str = ""
+    salary: float = 0.0
     role: str = UserRole.EMPLOYEE
     token: str = ""
     expires_at: str = ""
@@ -2124,19 +2128,20 @@ class JobListing:
     company_id: int
     organization_id: int = 0
     department: str = ""
-    position_title: str = ""
+    title: str = ""
     employment_type: str = "full_time"  # full_time/part_time/contract/internship
     location: str = ""
     description: str = ""
     requirements: str = ""
     salary_range_min: float = 0.0
     salary_range_max: float = 0.0
-    is_published: bool = False
+    status: str = "draft"  # draft/open/closed/on_hold
     unique_slug: str = ""
     application_form_config: str = ""  # JSON
     created_by: int = 0
     published_at: str = ""
     closed_at: str = ""
+    mcf_posted_date: str = ""  # T-R028: MyCareersFuture posting date for FCF compliance
 
     __dataflow__ = {
         "indexes": [
@@ -2155,10 +2160,6 @@ class Candidate:
     name: str = ""
     email: str = ""
     phone: str = ""
-    nric_fin: str = ""  # encrypted
-    gender: str = ""
-    date_of_birth: str = ""
-    race: str = ""
     nationality: str = ""
     citizenship_status: str = ""
     address: str = ""
@@ -2166,19 +2167,23 @@ class Candidate:
     cover_letter_url: str = ""
     application_data: str = ""  # JSON
     source: str = "direct"  # direct/linkedin/indeed/jobstreet/referral/other
-    stage: str = "new"  # new/screening/shortlisted/interview/offered/hired/rejected/withdrawn
+    stage: str = "new"  # new/screening/interview/assessment/offered/hired/rejected/withdrawn
     overall_score: float = 0.0
     rejection_reason: str = ""
     pdpa_consent: bool = False
     pdpa_consent_date: str = ""
     notes: str = ""
+    created_by: int = 0
+    hired_at: str = ""
 
     __dataflow__ = {
         "indexes": [
             {"name": "idx_candidate_company", "fields": ["company_id"]},
             {"name": "idx_candidate_job", "fields": ["job_listing_id"]},
             {"name": "idx_candidate_stage", "fields": ["stage"]},
+            {"name": "idx_candidate_job_email", "fields": ["job_listing_id", "email"]},
         ],
+        "retention": {"after_days": 730},  # PDPA: auto-purge after 2 years
     }
 
 
@@ -2188,11 +2193,11 @@ class InterviewSchedule:
 
     candidate_id: int
     company_id: int
-    interview_type: str = "in_person"  # phone/video/in_person/panel
+    interview_type: str = "onsite"  # phone/video/onsite/panel
     scheduled_at: str = ""
     duration_minutes: int = 60
-    location_or_link: str = ""
-    interviewer_ids: str = ""  # JSON array
+    location: str = ""
+    interviewers: str = ""  # JSON array
     status: str = "scheduled"  # scheduled/completed/cancelled/no_show
     notes: str = ""
 
@@ -2223,6 +2228,122 @@ class InterviewFeedback:
         "indexes": [
             {"name": "idx_feedback_interview", "fields": ["interview_id"]},
             {"name": "idx_feedback_candidate", "fields": ["candidate_id"]},
+        ],
+    }
+
+
+@db.model
+class Offer:
+    """Job offer for a candidate (T393)."""
+
+    candidate_id: int
+    job_listing_id: int
+    company_id: int
+    salary: float = 0.0
+    currency: str = "SGD"
+    salary_period: str = "monthly"  # monthly/annual
+    start_date: str = ""
+    position_title: str = ""
+    employment_type: str = "full_time"
+    probation_months: int = 6
+    notice_period_days: int = 30
+    benefits_summary: str = ""
+    terms_text: str = ""
+    status: str = "draft"  # draft/pending_approval/approved/sent/accepted/declined/expired
+    approved_by: Optional[int] = None
+    approved_at: Optional[datetime] = None
+    sent_at: Optional[datetime] = None
+    responded_at: Optional[datetime] = None
+    expiry_date: str = ""
+    created_by: int = 0
+    notes: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_offer_candidate", "fields": ["candidate_id"]},
+            {"name": "idx_offer_job", "fields": ["job_listing_id"]},
+            {"name": "idx_offer_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class ScreeningQuestion:
+    """Pre-screening question for a job listing."""
+
+    job_listing_id: int
+    company_id: int
+    question_text: str = ""
+    question_type: str = "text"  # text/boolean/multiple_choice
+    options: str = ""  # JSON array for multiple_choice
+    is_required: bool = False
+    is_knockout: bool = False
+    sort_order: int = 0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_sq_job", "fields": ["job_listing_id"]},
+            {"name": "idx_sq_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class ScreeningResponse:
+    """Candidate's answer to a screening question."""
+
+    candidate_id: int
+    question_id: int
+    company_id: int
+    response_text: str = ""
+    response_value: str = ""  # for boolean/MC: "true"/"false" or selected option
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_sr_candidate", "fields": ["candidate_id"]},
+            {"name": "idx_sr_question", "fields": ["question_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# M12: Referral Tracking (T-R051)
+# ---------------------------------------------------------------------------
+
+
+class ReferralStatus:
+    PENDING = "pending"
+    APPLIED = "applied"
+    HIRED = "hired"
+    REJECTED = "rejected"
+
+
+@db.model
+class Referral:
+    """Employee referral tracking.
+
+    Allows employees to refer candidates for open positions.
+    Tracks the referral lifecycle from submission through hire/rejection,
+    including optional reward tracking.
+    """
+
+    company_id: int
+    referrer_employee_id: int
+    candidate_id: int = 0
+    job_listing_id: int
+    candidate_name: str = ""
+    candidate_email: str = ""
+    candidate_phone: str = ""
+    status: str = ReferralStatus.PENDING  # pending/applied/hired/rejected
+    reward_amount: float = 0.0
+    reward_paid: bool = False
+    notes: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_referral_company", "fields": ["company_id"]},
+            {"name": "idx_referral_referrer", "fields": ["referrer_employee_id"]},
+            {"name": "idx_referral_job", "fields": ["job_listing_id"]},
         ],
     }
 
