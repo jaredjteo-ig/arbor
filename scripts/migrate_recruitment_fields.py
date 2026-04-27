@@ -151,23 +151,23 @@ def run_migration():
         # ------------------------------------------------------------------
         # Company: add slug column for public careers page
         # ------------------------------------------------------------------
-        if not _column_exists(cursor, "companys", "slug"):
-            logger.info("Adding companys.slug column")
+        if not _column_exists(cursor, "companies", "slug"):
+            logger.info("Adding companies.slug column")
             cursor.execute(
-                "ALTER TABLE companys ADD COLUMN slug VARCHAR(255) DEFAULT ''"
+                "ALTER TABLE companies ADD COLUMN slug VARCHAR(255) DEFAULT ''"
             )
             # Backfill slug from company name
             logger.info("Backfilling slugs from company names")
             cursor.execute(
-                "UPDATE companys SET slug = LOWER(REGEXP_REPLACE("
+                "UPDATE companies SET slug = LOWER(REGEXP_REPLACE("
                 "TRIM(name), '[^a-zA-Z0-9]+', '-', 'g'))"
             )
             # Trim leading/trailing dashes
             cursor.execute(
-                "UPDATE companys SET slug = TRIM(BOTH '-' FROM slug)"
+                "UPDATE companies SET slug = TRIM(BOTH '-' FROM slug)"
             )
         else:
-            logger.info("companys.slug already exists -- skipping")
+            logger.info("companies.slug already exists -- skipping")
 
         # ------------------------------------------------------------------
         # Candidate: drop NRIC and demographic fields (PDPC pre-hire)
