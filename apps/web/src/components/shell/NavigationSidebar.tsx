@@ -211,6 +211,12 @@ const adminManagementNavItems: NavItem[] = [
         href: "/recruitment?tab=interviews",
         icon: CalendarDays,
       },
+      {
+        labelKey: "nav.recruitment.settings",
+        label: "Settings",
+        href: "/recruitment/settings",
+        icon: Settings,
+      },
     ],
   },
   {

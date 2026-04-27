@@ -4123,9 +4123,21 @@ function RecruitmentPageInner() {
   async function handleScanJob(jobId: number) {
     setScanningJobId(jobId);
     try {
-      const result = await recruitmentApi.scanJob(jobId);
+      const useAi =
+        typeof window !== "undefined" &&
+        window.localStorage.getItem("recruitment.tafep.ai_check") === "1";
+      const result = await recruitmentApi.scanJob(jobId, useAi);
+      if (result.ai_unavailable) {
+        toast("AI scan unavailable — falling back to rule-based check.", {
+          icon: "⚠️",
+        });
+      }
       if (result.compliant || result.count === 0) {
-        toast.success("Job listing is TAFEP compliant");
+        toast.success(
+          useAi && !result.ai_unavailable
+            ? "Job listing is TAFEP compliant (AI + rules)"
+            : "Job listing is TAFEP compliant",
+        );
       } else {
         setScanFindings(result.findings);
         setShowScanModal(true);

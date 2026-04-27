@@ -354,6 +354,32 @@ export const recruitmentApi = {
     apiClient.get<{ template: ScorecardTemplate }>(
       `/recruitment/scorecard-templates/${id}`,
     ),
+  createScorecardTemplate: (data: {
+    name: string;
+    description?: string;
+    criteria: Array<{ name: string; weight: number }>;
+  }) =>
+    apiClient.post<{ template: ScorecardTemplate }>(
+      "/recruitment/scorecard-templates",
+      data,
+    ),
+  updateScorecardTemplate: (
+    id: number,
+    data: Partial<{
+      name: string;
+      description: string;
+      criteria: Array<{ name: string; weight: number }>;
+      is_active: boolean;
+    }>,
+  ) =>
+    apiClient.patch<{ template: ScorecardTemplate }>(
+      `/recruitment/scorecard-templates/${id}`,
+      data,
+    ),
+  deleteScorecardTemplate: (id: number) =>
+    apiClient.delete<{ message: string }>(
+      `/recruitment/scorecard-templates/${id}`,
+    ),
   createScorecardEntry: (data: {
     candidate_id: number;
     interview_id?: number | null;
@@ -369,6 +395,19 @@ export const recruitmentApi = {
     apiClient.get<{ entries: ScorecardEntry[]; count: number }>(
       `/recruitment/candidates/${candidateId}/scorecard-entries`,
     ),
+
+  /* Maintenance sweeps (admin/cron-callable, T-R020 / T-R030) */
+  runDataRetentionSweep: () =>
+    apiClient.post<{
+      eligible_candidates: number;
+      notified: number;
+      message: string;
+    }>("/recruitment/run-data-retention-sweep"),
+  runOverdueReminderSweep: () =>
+    apiClient.post<{
+      reminders_sent: number;
+      message: string;
+    }>("/recruitment/feedback/run-overdue-reminder-sweep"),
 
   /* Onboarding templates (used in hire review) */
   listOnboardingTemplatesForHire: () =>
@@ -402,9 +441,10 @@ export const recruitmentApi = {
       candidate_id: number;
     }>(`/recruitment/careers/${slug}/jobs/${jobSlug}/apply`, formData),
 
-  /* TAFEP Compliance Scan */
-  scanJob: (jobId: number) =>
-    apiClient.post<{
+  /* TAFEP Compliance Scan — optional `aiCheck` enables LLM second-pass (T-R053) */
+  scanJob: (jobId: number, aiCheck = false) => {
+    const qs = aiCheck ? "?ai_check=true" : "";
+    return apiClient.post<{
       job_id: number;
       findings: Array<{
         matched_text: string;
@@ -415,7 +455,9 @@ export const recruitmentApi = {
       }>;
       count: number;
       compliant: boolean;
-    }>(`/recruitment/jobs/${jobId}/scan`),
+      ai_unavailable?: boolean;
+    }>(`/recruitment/jobs/${jobId}/scan${qs}`);
+  },
 
   /* Offers */
   createOffer: (candidateId: number, data: Partial<Offer>) =>
