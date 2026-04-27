@@ -441,12 +441,12 @@ class TestRoleBasedAccess:
     def test_role_middleware_rejects_non_matching_role(
         self, auth_service: AuthService, settings: Settings
     ):
-        """A user with 'consultant' role is rejected by require_role('owner')."""
+        """A user with 'employee' role is rejected by require_role('owner')."""
         token = auth_service.create_access_token(
-            user_id=2, email="consultant@test.com", role="consultant"
+            user_id=2, email="employee@test.com", role="employee"
         )
         payload = auth_service.decode_token(token)
-        assert payload["role"] == "consultant"
+        assert payload["role"] == "employee"
         assert payload["role"] not in ("owner", "hr_manager")
 
 

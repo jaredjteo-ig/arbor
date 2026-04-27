@@ -9,8 +9,8 @@ import { useAuth } from "@/contexts/AuthContext";
  *
  * Usage: wrap the page content in <AdminGuard>...</AdminGuard>.
  * If the current user is an employee, it renders an "Access Denied" screen
- * with a link back to the employee dashboard. Owners, HR managers, and
- * consultants pass through.
+ * with a link back to the employee dashboard. Owners and HR managers pass
+ * through.
  */
 export function AdminGuard({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -20,7 +20,7 @@ export function AdminGuard({ children }: { children: ReactNode }) {
     return null;
   }
 
-  /* Employees are blocked — all other roles (owner, hr_manager, consultant) pass. */
+  /* Employees are blocked — all other roles (owner, hr_manager) pass. */
   if (user.role === "employee") {
     return (
       <div className="max-w-lg mx-auto py-16 text-center">

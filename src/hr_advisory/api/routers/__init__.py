@@ -12,7 +12,7 @@ from hr_advisory.api.routers.banking import router as banking_router
 from hr_advisory.api.routers.approval_groups import router as approval_groups_router
 from hr_advisory.api.routers.auth import router as auth_router
 from hr_advisory.api.routers.calculator import router as calculator_router
-from hr_advisory.api.routers.clients import router as clients_router
+from hr_advisory.api.routers.company import router as company_router
 from hr_advisory.api.routers.compliance import router as compliance_router
 from hr_advisory.api.routers.document import router as document_router
 from hr_advisory.api.routers.employees import router as employees_router
@@ -52,7 +52,7 @@ __all__ = [
     "auth_router",
     "calculator_router",
     "claims_router",
-    "clients_router",
+    "company_router",
     "compliance_router",
     "document_router",
     "employees_router",

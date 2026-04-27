@@ -143,24 +143,6 @@ class TestUserCRUD:
         assert user["email"] == "boss@example.com"
         assert user["role"] == "owner"
 
-    def test_create_consultant_user(self, db_instance):
-        from kailash.workflow.builder import WorkflowBuilder
-        from kailash.runtime import LocalRuntime
-
-        runtime = LocalRuntime()
-        wf = WorkflowBuilder()
-        wf.add_node(
-            "UserCreateNode",
-            "create",
-            {
-                "email": "consultant@hrfirm.sg",
-                "name": "Sarah Lee",
-                "role": "consultant",
-            },
-        )
-        results, _ = runtime.execute(wf.build())
-        assert results["create"]["role"] == "consultant"
-        assert results["create"]["company_id"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -1,11 +1,12 @@
-"""Client management endpoints for the consultant view.
+"""Company endpoints for the single-tenant deployment.
 
-Wraps the company profile DataFlow operations to provide a
-multi-tenant client list. Consultants can manage multiple client
-companies through these endpoints.
+Wraps the Company DataFlow operations. Each deployment is bound to a
+single Company; these endpoints support listing/getting/updating that
+company and creating it during onboarding.
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -13,6 +14,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import validate_company_access
+
+
+def _generate_slug(name: str) -> str:
+    """Generate a URL-safe slug from a company name."""
+    slug = name.lower().strip()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    return slug.strip("-")
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +50,8 @@ def _extract_records(result) -> list[dict]:
     return []
 
 
-def _company_to_client(company: dict) -> dict:
-    """Convert a DataFlow company record to the client API response format."""
+def _company_to_response(company: dict) -> dict:
+    """Convert a DataFlow company record to the API response format."""
     total = (
         company.get("headcount_local", 0)
         + company.get("headcount_pr", 0)
@@ -65,13 +73,12 @@ def _company_to_client(company: dict) -> dict:
 
 
 @router.get("")
-async def list_clients(
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant", "platform_admin")),
+async def list_companies(
+    current_user: dict = Depends(require_role("owner", "hr_manager", "platform_admin")),
 ) -> dict:
-    """List all client companies visible to the current user.
+    """List companies visible to the current user.
 
-    Platform admins and consultants see all active companies.
-    Regular users see only their own company.
+    Platform admins see all active companies. Regular users see only their own.
 
     Requires owner, hr_manager, or platform_admin role.
     """
@@ -79,44 +86,44 @@ async def list_clients(
     user_company_id = current_user.get("company_id")
 
     try:
-        if role in ("platform_admin", "consultant"):
+        if role == "platform_admin":
             result = _execute_node(
                 "CompanyListNode",
-                "list_clients",
+                "list_companies",
                 {"filter": {"is_active": True}, "limit": 200},
             )
         elif user_company_id:
             result = _execute_node(
                 "CompanyListNode",
-                "list_clients",
+                "list_companies",
                 {"filter": {"id": user_company_id, "is_active": True}, "limit": 10},
             )
         else:
-            return {"clients": [], "count": 0}
+            return {"companies": [], "count": 0}
     except Exception as exc:
-        logger.error("Failed to list clients: %s", exc)
+        logger.error("Failed to list companies: %s", exc)
         raise HTTPException(
             status_code=500,
-            detail="Failed to retrieve client list. Please try again later.",
+            detail="Failed to retrieve company list. Please try again later.",
         ) from exc
 
     records = _extract_records(result)
-    clients = [_company_to_client(r) for r in records]
+    companies = [_company_to_response(r) for r in records]
 
-    return {"clients": clients, "count": len(clients)}
+    return {"companies": companies, "count": len(companies)}
 
 
 @router.post("")
-async def create_client(
+async def create_company(
     request: Request,
     current_user: dict = Depends(require_role("owner", "platform_admin")),
 ) -> dict:
-    """Create a new client company.
+    """Create a new company.
 
     Requires owner or platform_admin role.
     """
     user_id = int(current_user.get("sub", 0))
-    check_rate_limit(f"create_client:{user_id}", max_requests=30, window_seconds=60, action_name="create client")
+    check_rate_limit(f"create_company:{user_id}", max_requests=30, window_seconds=60, action_name="create company")
 
     body = await request.json()
 
@@ -136,6 +143,7 @@ async def create_client(
 
     create_params = {
         "name": name.strip(),
+        "slug": _generate_slug(name),
         "uen": uen.strip(),
         "sector": sector,
         "headcount_local": employee_count,
@@ -148,12 +156,12 @@ async def create_client(
     }
 
     try:
-        result = _execute_node("CompanyCreateNode", "create_client", create_params)
+        result = _execute_node("CompanyCreateNode", "create_company", create_params)
     except Exception as exc:
-        logger.error("Failed to create client: %s", exc)
+        logger.error("Failed to create company: %s", exc)
         raise HTTPException(
             status_code=500,
-            detail="Failed to create client company. Please try again later.",
+            detail="Failed to create company. Please try again later.",
         ) from exc
 
     # Attempt to retrieve the ID of the created record
@@ -162,7 +170,7 @@ async def create_client(
         try:
             lookup = _execute_node(
                 "CompanyListNode",
-                "find_created_client",
+                "find_created_company",
                 {"filter": {"name": name.strip()}, "limit": 1, "enable_cache": False},
             )
             records = _extract_records(lookup)
@@ -211,63 +219,63 @@ async def create_client(
     }
 
 
-@router.get("/{client_id}")
-async def get_client(
-    client_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager", "consultant", "platform_admin")),
+@router.get("/{company_id}")
+async def get_company(
+    company_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager", "platform_admin")),
 ) -> dict:
-    """Get a specific client company by ID.
+    """Get a specific company by ID.
 
     Requires owner, hr_manager, or platform_admin role.
     """
-    validate_company_access(current_user, requested_company_id=client_id)
+    validate_company_access(current_user, requested_company_id=company_id)
 
     try:
-        result = _execute_node("CompanyReadNode", "read_client", {"id": client_id})
+        result = _execute_node("CompanyReadNode", "read_company", {"id": company_id})
     except Exception as exc:
-        logger.error("Failed to read client id=%s: %s", client_id, exc)
+        logger.error("Failed to read company id=%s: %s", company_id, exc)
         raise HTTPException(
             status_code=500,
-            detail="Failed to retrieve client. Please try again later.",
+            detail="Failed to retrieve company. Please try again later.",
         ) from exc
 
     if not result or result.get("error") or result.get("failed"):
-        raise HTTPException(status_code=404, detail=f"Client with id={client_id} not found")
+        raise HTTPException(status_code=404, detail=f"Company with id={company_id} not found")
 
-    return _company_to_client(result)
+    return _company_to_response(result)
 
 
-@router.put("/{client_id}")
-async def update_client(
-    client_id: int,
+@router.put("/{company_id}")
+async def update_company(
+    company_id: int,
     request: Request,
     current_user: dict = Depends(require_role("owner", "platform_admin")),
 ) -> dict:
-    """Update an existing client company.
+    """Update an existing company.
 
     Requires owner or platform_admin role.
     """
     user_id = int(current_user.get("sub", 0))
-    check_rate_limit(f"update_client:{user_id}", max_requests=30, window_seconds=60, action_name="update client")
+    check_rate_limit(f"update_company:{user_id}", max_requests=30, window_seconds=60, action_name="update company")
 
-    validate_company_access(current_user, requested_company_id=client_id)
+    validate_company_access(current_user, requested_company_id=company_id)
     body = await request.json()
 
     if not body:
         raise HTTPException(status_code=400, detail="No fields provided for update")
 
-    # Verify client exists
+    # Verify company exists
     try:
-        existing = _execute_node("CompanyReadNode", "read_client_check", {"id": client_id})
+        existing = _execute_node("CompanyReadNode", "read_company_check", {"id": company_id})
     except Exception as exc:
-        logger.error("Failed to read client id=%s for update: %s", client_id, exc)
+        logger.error("Failed to read company id=%s for update: %s", company_id, exc)
         raise HTTPException(
             status_code=500,
-            detail="Failed to verify client. Please try again later.",
+            detail="Failed to verify company. Please try again later.",
         ) from exc
 
     if not existing or existing.get("error") or existing.get("failed"):
-        raise HTTPException(status_code=404, detail=f"Client with id={client_id} not found")
+        raise HTTPException(status_code=404, detail=f"Company with id={company_id} not found")
 
     # Map frontend fields to DataFlow fields
     allowed_fields = {"name", "uen", "sector", "employee_count", "is_active"}
@@ -288,18 +296,18 @@ async def update_client(
     try:
         _execute_node(
             "CompanyUpdateNode",
-            "update_client",
-            {"filter": {"id": client_id}, "fields": updates},
+            "update_company",
+            {"filter": {"id": company_id}, "fields": updates},
         )
     except Exception as exc:
-        logger.error("Failed to update client id=%s: %s", client_id, exc)
+        logger.error("Failed to update company id=%s: %s", company_id, exc)
         raise HTTPException(
             status_code=500,
-            detail="Failed to update client. Please try again later.",
+            detail="Failed to update company. Please try again later.",
         ) from exc
 
     return {
-        "id": client_id,
+        "id": company_id,
         "updated_fields": list(updates.keys()),
         "updated": True,
         "timestamp": datetime.now(timezone.utc).isoformat(),

@@ -676,9 +676,9 @@ export interface FulltextSearchResponse {
   page_size: number;
 }
 
-/* ── Clients (multi-tenant consultant view) ──────────────────── */
+/* ── Company (single-tenant) ─────────────────────────────────── */
 
-export interface ClientCompany {
+export interface Company {
   id: number;
   name: string;
   uen: string;
@@ -690,12 +690,12 @@ export interface ClientCompany {
   created_at: string;
 }
 
-export interface ClientListResponse {
-  clients: ClientCompany[];
+export interface CompanyListResponse {
+  companies: Company[];
   total: number;
 }
 
-export interface ClientCreateRequest {
+export interface CompanyCreateRequest {
   name: string;
   uen: string;
   sector: string;

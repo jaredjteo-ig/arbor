@@ -5,7 +5,6 @@ Provides analytics for platform users:
 - Compliance status tracking
 - Cost modeling (CPF, levy projections)
 - Advisory usage metrics
-- Per-client analytics for consultants
 """
 
 from hr_advisory.analytics.engine import (

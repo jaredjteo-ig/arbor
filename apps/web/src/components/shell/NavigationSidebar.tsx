@@ -35,6 +35,7 @@ import {
   Package,
   Timer,
   ClipboardCheck,
+  Briefcase,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -186,12 +187,26 @@ const adminManagementNavItems: NavItem[] = [
     label: "Recruitment",
     href: "/recruitment",
     icon: UserPlus,
-  },
-  {
-    labelKey: "nav.clients",
-    label: "Clients",
-    href: "/clients",
-    icon: Building2,
+    children: [
+      {
+        labelKey: "nav.recruitment.dashboard",
+        label: "Dashboard",
+        href: "/recruitment",
+        icon: BarChart3,
+      },
+      {
+        labelKey: "nav.recruitment.jobs",
+        label: "Jobs",
+        href: "/recruitment?tab=jobs",
+        icon: Briefcase,
+      },
+      {
+        labelKey: "nav.recruitment.candidates",
+        label: "Candidates",
+        href: "/recruitment?tab=candidates",
+        icon: Users,
+      },
+    ],
   },
   {
     labelKey: "nav.approvals",

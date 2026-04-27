@@ -222,15 +222,4 @@ test.describe("Employee — Restricted Access (RBAC)", () => {
     console.log(`Employee /profile body: ${bodyText.slice(0, 300)}`);
     await screenshot(page, "04-24-emp-company-profile-result");
   });
-
-  test("04-25: Employee access to /clients page", async ({ page }) => {
-    const { bodyText } = await visitAndCapture(
-      page,
-      "/clients",
-      "04-25-emp-clients-page",
-    );
-    const url = page.url();
-    console.log(`Employee /clients: URL=${url}`);
-    await screenshot(page, "04-25-emp-clients-result");
-  });
 });

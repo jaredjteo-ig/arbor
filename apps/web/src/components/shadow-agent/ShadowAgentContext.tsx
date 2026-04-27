@@ -358,7 +358,6 @@ const ADMIN_ONLY_PATHS = [
   "/calculators",
   "/documents",
   "/advisory",
-  "/clients",
   "/analytics",
   "/emergency",
   "/alerts",

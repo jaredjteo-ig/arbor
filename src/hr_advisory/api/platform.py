@@ -25,7 +25,7 @@ from hr_advisory.api.routers import (
     auth_router,
     calculator_router,
     claims_router,
-    clients_router,
+    company_router,
     compliance_router,
     document_router,
     employees_router,
@@ -170,7 +170,7 @@ def _register_routers(app: Nexus) -> None:
     api.include_router(alerts_router, prefix="/alerts", tags=["Alerts"])
     api.include_router(banking_router, prefix="/banking", tags=["Banking"])
     api.include_router(calculator_router, prefix="/calculator", tags=["Calculator"])
-    api.include_router(clients_router, prefix="/clients", tags=["Clients"])
+    api.include_router(company_router, prefix="/company", tags=["Company"])
     api.include_router(compliance_router, prefix="/compliance", tags=["Compliance"])
     api.include_router(document_router, prefix="/document", tags=["Document"])
     api.include_router(employees_router, prefix="/employees", tags=["Employees"])

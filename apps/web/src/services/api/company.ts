@@ -1,27 +1,27 @@
 import { apiClient } from "./client";
 import type {
-  ClientListResponse,
-  ClientCompany,
-  ClientCreateRequest,
+  CompanyListResponse,
+  Company,
+  CompanyCreateRequest,
 } from "@/types/api";
 
-export const clientsApi = {
-  list(): Promise<ClientListResponse> {
-    return apiClient.get<ClientListResponse>("/clients");
+export const companyApi = {
+  list(): Promise<CompanyListResponse> {
+    return apiClient.get<CompanyListResponse>("/company");
   },
 
-  get(clientId: number): Promise<ClientCompany> {
-    return apiClient.get<ClientCompany>(`/clients/${clientId}`);
+  get(companyId: number): Promise<Company> {
+    return apiClient.get<Company>(`/company/${companyId}`);
   },
 
-  create(data: ClientCreateRequest): Promise<ClientCompany> {
-    return apiClient.post<ClientCompany>("/clients", data);
+  create(data: CompanyCreateRequest): Promise<Company> {
+    return apiClient.post<Company>("/company", data);
   },
 
   update(
-    clientId: number,
-    data: Partial<ClientCreateRequest>,
-  ): Promise<ClientCompany> {
-    return apiClient.put<ClientCompany>(`/clients/${clientId}`, data);
+    companyId: number,
+    data: Partial<CompanyCreateRequest>,
+  ): Promise<Company> {
+    return apiClient.put<Company>(`/company/${companyId}`, data);
   },
 };

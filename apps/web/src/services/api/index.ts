@@ -13,7 +13,7 @@ export { profileApi } from "./profile";
 export { kbApi } from "./kb";
 export { searchApi } from "./search";
 export { alertsApi } from "./alerts";
-export { clientsApi } from "./clients";
+export { companyApi } from "./company";
 export { emergencyApi } from "./emergency";
 export { helpApi } from "./help";
 export { settingsApi } from "./settings";

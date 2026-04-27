@@ -11,7 +11,7 @@ import {
 } from "@/components/onboarding";
 import type { CompanyProfileData } from "@/components/onboarding";
 import { useAuth } from "@/contexts/AuthContext";
-import { clientsApi } from "@/services/api/clients";
+import { companyApi } from "@/services/api/company";
 
 const STEPS = ["Welcome", "Company", "Snapshot", "Ask"];
 
@@ -37,7 +37,7 @@ export default function OnboardingPage() {
     async (data: CompanyProfileData) => {
       setProfileData(data);
       try {
-        await clientsApi.create({
+        await companyApi.create({
           name: data.companyName,
           sector: data.sector,
           estimated_headcount: data.totalHeadcount || 5,

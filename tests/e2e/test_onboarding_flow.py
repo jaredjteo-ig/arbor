@@ -198,40 +198,6 @@ class TestOnboardingFlow:
         assert resp.status_code == 200
         assert "employer_contribution" in resp.json()
 
-    def test_persona_c_onboarding(self, client: TestClient) -> None:
-        """Persona C (consultant) onboarding flow.
-
-        Steps:
-        1. Register as HR consultant
-        2. Create company profile
-        3. Browse available document templates
-        4. Query knowledge base for legislative acts
-        5. Run semantic search for regulatory info
-        """
-        from tests.e2e.conftest import TEST_USERS
-
-        persona = TEST_USERS["persona_c"]
-        auth = _register_user(client, persona)
-
-        # Step 2: Create company profile
-        resp = client.post(
-            "/profile/",
-            json={
-                "name": persona.company_name,
-                "uen": "202400005C",
-                "sector": persona.sector,
-            },
-            headers=auth["headers"],
-        )
-        assert resp.status_code == 200
-
-        # Step 3: Browse document templates
-        resp = client.get("/document/templates", headers=auth["headers"])
-        assert resp.status_code == 200
-        templates = resp.json()
-        assert "templates" in templates
-        assert templates["total"] > 0
-
         # Step 4: Knowledge base - list acts
         resp = client.get("/kb/acts", headers=auth["headers"])
         assert resp.status_code == 200

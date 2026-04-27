@@ -82,7 +82,7 @@ async def list_projects(
 
     # Non-admin users see only projects they are assigned to
     role = current_user.get("role", "employee")
-    if role not in ("owner", "hr_manager", "consultant"):
+    if role not in ("owner", "hr_manager"):
         user_id = int(current_user.get("sub", 0))
         emp = _get_employee_for_user(user_id, company_id)
         if emp:

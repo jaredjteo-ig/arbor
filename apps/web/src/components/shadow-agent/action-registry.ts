@@ -34,7 +34,6 @@ const NAVIGATION_MAP: Record<string, { path: string; label: string }> = {
   documents: { path: "/documents", label: "Documents" },
   templates: { path: "/documents", label: "Documents" },
   emergency: { path: "/emergency", label: "Emergency Guides" },
-  clients: { path: "/clients", label: "Clients" },
   analytics: { path: "/analytics", label: "Analytics" },
   settings: { path: "/settings", label: "Settings" },
   help: { path: "/help", label: "Help" },

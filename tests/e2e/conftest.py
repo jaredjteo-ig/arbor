@@ -58,7 +58,7 @@ class TestUser:
     company_name: str
     sector: str
     employee_count: int
-    persona: str  # A (new employer), B (growing SME), C (consultant), D (employee)
+    persona: str  # A (new employer), B (growing SME), D (employee)
 
 
 TEST_USERS = {
@@ -78,14 +78,6 @@ TEST_USERS = {
         employee_count=25,
         persona="B",
     ),
-    "persona_c": TestUser(
-        email="test_consultant@example.com",
-        password="TestPass123!",
-        company_name="HR Advisory Consulting",
-        sector="Professional Services",
-        employee_count=5,
-        persona="C",
-    ),
     "persona_d": TestUser(
         email="test_employee@example.com",
         password="TestPass123!",
@@ -103,7 +95,7 @@ def test_config() -> TestConfig:
     return get_test_config()
 
 
-@pytest.fixture(params=["persona_a", "persona_b", "persona_c", "persona_d"])
+@pytest.fixture(params=["persona_a", "persona_b", "persona_d"])
 def test_user(request: pytest.FixtureRequest) -> TestUser:
     """Provide test users (parameterised across all personas)."""
     return TEST_USERS[request.param]
