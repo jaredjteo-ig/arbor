@@ -1,228 +1,89 @@
 # Test Results — hr-ai-advisory workspace
 
-**Generated:** 2026-04-28 (Final batch — T-R054, T-R055, T196-T220, all onboarding clusters)
-**HEAD:** 3440ee014bc23e48e1edce73a2f90d67afb40378 (working tree dirty)
+**Generated:** 2026-04-29 (Round-13 CRITICAL fix batch)
+**HEAD:** 6b251f7 + uncommitted CRIT/HIGH fixes
+**Test posture:** 2340 passed, 0 failed (was 2326).
 
 ---
 
-## Summary
+## Round 13 fix batch — 3 CRITICALs + 4 HIGHs closed
 
-```
-Tier 1 unit + regression:  2326 passed, 9 warnings in 60.34s
-```
+### CRIT-S1 — Multi-channel handler tenant leak (FIXED)
 
-**Zero failures.** Every regression test from clusters 1–14 still passes.
+`platform.py` advisory_query_handler + compliance_check_handler no longer
+accept `company_id` from caller input. They run tenant-LESS over the
+public KB. Adding company_id back without trusted-channel auth would
+re-open the leak — pinned by `test_crit_s1_advisory_query_handler_drops_company_id`.
 
-Delta this final batch:
-- T-R054 AI scorecards: +12 unit tests
-- T-R055 Calendar sync: +16 unit tests
-- T208-T211 onboarding integrations: +9 integration tests
-- T214 preboarding regression: +1 test
-- T215 onboarding e2e: +7 integration tests
-- (Other adds throughout the parallel work)
-- Net: +33 from previous final state of 2293 → 2326 passed.
+### CRIT-S2 — Webhook URL injection (FIXED)
 
----
+`integrations_calendar._validate_webhook_base_url` enforces an
+https-allowlist (terrene.foundation, terrene.dev) in production with a
+localhost-only carve-out for dev. Invalid URL → skip webhook
+registration entirely (Calendar still works one-way Arbor→Google) rather
+than register a poisoned URL.
 
-## Final Batch Clusters
+### CRIT-S3 — OAuth callback unauth + no CSRF (FIXED)
 
-### T-R054 — AI candidate scorecards (Kaizen)
+`build_signed_state(company_id, user_id)` now binds state to BOTH IDs.
+`exchange_code(..., expected_user_id=...)` rejects state issued for a
+different user. The `/callback` route now requires
+`Depends(require_role("owner", "hr_manager"))` — same authenticated
+session that started the auth-url request must complete the callback.
 
-- New: `src/hr_advisory/agents/scorecard_agent.py` — Kaizen `BaseAgent`
-  with signature-based prompt, system-prompt boundaries (no protected
-  attributes, no inventing qualifications), rating clamping 1–5,
-  decision constrained to `{proceed, reject, further_interview}`,
-  graceful LLM-error fallback.
-- Endpoint: `POST /recruitment/candidates/{id}/scorecard/generate`
-  (owner/hr_manager, rate-limited 10/min, full tenant isolation).
-- Persistence: best-effort write to `ScorecardEntry` with
-  `is_ai_generated=True` + `generation_id`.
-- Frontend: candidate detail page with "Generate AI Scorecard" gated
-  by Settings toggle (`arbor.ai-scorecards`); template picker; full
-  results render.
-- Tests: 12 in `tests/unit/test_scorecard_agent.py` (all mocked LLM,
-  no real API calls).
+### H1 — OAuth tokens encrypted at rest (FIXED)
 
-### T-R055 — Google Calendar interview sync (full delivery)
+`access_token` and `refresh_token` now flow through `encrypt_field` /
+`decrypt_field` at the persistence boundary in `_credentials_to_record`
+and `_record_to_credentials`. Backwards-compatible with rows written
+before the fix (decrypt_field tolerates plaintext).
 
-- OAuth: `src/hr_advisory/integrations/google_calendar/oauth.py` with
-  HMAC-signed state (15-min TTL, prevents cross-company callback hijack),
-  auto-refresh credentials, `disconnect` revokes tokens.
-- Sync service: `src/hr_advisory/integrations/google_calendar/sync.py` —
-  `create_event/update_event/delete_event/fetch_event/watch_events`,
-  best-effort error handling.
-- Persistence: new `GoogleCalendarConnection` DataFlow model; new
-  `google_event_id` column on `InterviewSchedule`.
-- Endpoints: 5 under `/integrations/google-calendar/` — `auth-url`,
-  `callback`, `status`, `disconnect`, `webhook` (constant-time channel
-  token compare via `secrets.compare_digest`).
-- Recruitment hooks: `schedule_interview` calls `sync.create_event`,
-  `update_interview` calls `update_event` (or `delete_event` on
-  `status=cancelled`). Wrapped so Calendar outages don't block
-  interviewing.
-- Frontend: Settings card with Connect (opens auth URL in new tab,
-  listens for postMessage) / Disconnect.
-- Tests: 16 in `tests/unit/test_google_calendar_sync.py`.
-- Setup docs in `cluster-8a-google-calendar-sync.md` (Cloud project,
-  consent screen, redirect URIs, env vars).
+### H2 — JWT_SECRET_KEY default fallback (FIXED)
 
-### Onboarding T196-T200 — Auto-assign + admin frontend
+OAuth state HMAC now uses dedicated `OAUTH_STATE_SECRET` env var with
+fail-fast on default placeholders. Falls back to JWT_SECRET_KEY only
+if THAT is also non-default — no signing with `"change-this-in-production"`.
 
-- T196: verified `auto_assign_default_onboarding(...)` already wired in
-  `register-employee` (auth.py:597). Walks role-filtered steps, creates
-  `OnboardingStepProgress` rows, copies preboarding tasks.
-- T197: employees page already has Directory / Onboarding / Invitations
-  tabs.
-- T198 (NEW): admin template list page at `/onboarding` with create /
-  edit / duplicate / set-default / archive.
-- T199 (NEW): template builder at `/onboarding/templates/[id]` with
-  module + step CRUD (numeric `sort_order` for reorder; drag-and-drop
-  deferred per brief).
-- T200 (NEW): assign-template button on Employees Onboarding tab with
-  picker modal.
+### H3 — Webhook X-Goog-Resource-ID verification (FIXED)
 
-### Onboarding T201-T207 — Employee self-service UI
+Webhook handler now compares `X-Goog-Resource-ID` against stored
+`channel_resource_id` using `secrets.compare_digest`, in addition to
+the existing channel-token compare.
 
-- T201: refactored `/my-onboarding` page with module-grouped step list
-  + new `ProgressBar` (T204) with module-level tooltip.
-- T202: 6 step renderers under
-  `apps/web/src/components/onboarding/steps/` —
-  `Content`, `Checklist`, `DocumentUpload`, `PolicyAcknowledgment`,
-  `Form` (dynamic JSON-schema), `Approval`.
-- T203: each renderer calls the correct backend endpoint and triggers
-  a parent-level refresh.
-- T205: `PreboardingChecklist` for HR/owner viewing
-  `/my-onboarding?employee_id=N`.
-- T206: side-nav entry verified.
-- T207: `POST /onboarding/reminders/send-overdue` — Resend-backed
-  digest emails, capped at 5 calls/hour/company,
-  graceful skip when `RESEND_API_KEY` missing.
+### H5+H7 — Token leak in OAuth refresh / disconnect log lines (FIXED)
 
-### Onboarding T208-T211 — Integrations + tests
-
-- T208: shadow briefing now surfaces "X new hires onboarding (Y%
-  complete on average)" + overdue alert for HR/owner; "Continue your
-  onboarding" card for employees.
-- T209: leave application returns soft `warning` field when employee
-  is `on_probation` AND has an active onboarding assignment. Soft, not
-  blocking.
-- T210: `tests/integration/test_onboarding_flow.py` — full happy path
-  against real Postgres (9 tests).
-- T211: shadow agent `onboarding` intent + tool registry with
-  `my_progress`, `list_assignments`, `list_templates`. Rule-based
-  fallback handles "show my onboarding progress" etc.
-
-### Onboarding phase B-D (T212-T220)
-
-8 of 9 already done at HEAD; **T215 surfaced a real product bug**:
-
-- 19 `datetime.now(timezone.utc).isoformat()` calls in
-  `routers/onboarding.py` were writing tz-aware ISO strings into the
-  Postgres `timestamp without time zone` columns, which crashed every
-  HTTP-path import / assign. Fixed inline.
-- *(Note: the agent first replaced these with deprecated
-  `datetime.utcnow()`, which broke the cluster-1 ban-utcnow regression
-  test. Replaced again with `datetime.now(timezone.utc).replace(tzinfo=None)`
-  — preserves UTC semantics + naive output + no deprecation warning.)*
-- T215: `tests/integration/test_onboarding_e2e.py` — 7-test e2e flow
-  Excel→template→assign→complete→completed against real Postgres.
-- T214: `tests/regression/test_t214_preboarding_auto_create.py` locks
-  in auto-assign + deadline math.
-- T216-T220: pre-boarding UI, filters/export, buddy assignment, pulse
-  surveys + frontend — all already at HEAD per the audit.
+Both error paths now log `type(exc).__name__` instead of `str(exc)` so
+Google client errors that may serialize the bearer token can't reach
+the log file.
 
 ---
 
-## Cumulative Across All Clusters (1–14 + final batch)
+## What remains open from round 13
 
-- **All 22 round-11 backlog items** (B01-B22) closed.
-- **All recruitment red-team round 1 items** (T-RX01-T-RX11) closed.
-- **All onboarding feature tasks** (T193-T220) closed (verified or
-  built).
-- **T-R054 AI scorecards** delivered.
-- **T-R055 Google Calendar sync** delivered (full scope, including
-  webhook + interview hooks).
-- **T223 chat onboarding** delivered (cluster 7b).
-- **B17 i18n scaffold** + 4 locales delivered (cluster 9).
-- **3 pre-existing test failures** fixed, including 2 real product bugs
-  (search_kb practical_examples enrichment + citation cache key types).
-- **T215 surfaced a real product bug** (datetime tz-mismatch in
-  onboarding HTTP path) — fixed inline.
-
-### Test counts
-
-- Cluster 0 (test maintenance): 2058 passing baseline
-- Through cluster 5: 2100 passing
-- Through cluster 14 + first batch: 2293 passing
-- Final batch: **2326 passing** (+33 from final 5 agents' work)
-
-### Known follow-ups (not in this run)
-
-- recruitment.py + recruitment/page.tsx architectural split (refactor;
-  the file is 4,701+ lines after T-R054 and T-R055 hooks). High blast
-  radius; should be its own dedicated cluster.
-- Drag-and-drop reorder on the onboarding template builder (T199
-  shipped numeric sort-order; brief said drag is optional).
-- i18n translations for the onboarding employee surfaces (cluster 9
-  scaffold + 2 surfaces; cluster 11/12 employee UI added new strings
-  with English `defaultValue` only).
-- Daily cron for the overdue-reminder endpoint (T207 shipped the
-  endpoint; scheduling is external).
-- Persist `last_reminded_at` on `OnboardingStepProgress` so the cron
-  debounces per-step.
-- Google OAuth setup steps for production (Cloud project, consent
-  screen, redirect URIs, env vars) — documented in
-  `cluster-8a-google-calendar-sync.md`.
+- Multi-channel CLI/MCP smoke test (round-12 #10) — not a critical path
+  today; deferred until CLI/MCP gets real auth.
+- Round-12 carryovers: hire-role allow-list, hire→onboarding
+  transactionality, compliance cache invalidation, trust chain finalize,
+  immutable audit log.
+- T-R055 webhook two-way sync semantic gap (deep-analyst HIGH 4) —
+  current path is one-way Arbor→Google, the inbound write-back never
+  fires because Google push payloads are empty. Docs updated; full
+  two-way sync is its own cluster.
+- Architectural split of recruitment.py (3,382 lines) and onboarding.py
+  (4,060 lines).
 
 ---
 
-## Production code changes (uncommitted) — final batch
+## Files changed in this batch
 
 Backend:
-- `src/hr_advisory/agents/scorecard_agent.py` (new, T-R054)
-- `src/hr_advisory/agents/__init__.py` (re-export)
-- `src/hr_advisory/api/routers/recruitment.py` (T-R054 endpoint append + T-R055 interview hooks)
-- `src/hr_advisory/integrations/google_calendar/{__init__,oauth,sync}.py` (new, T-R055)
-- `src/hr_advisory/models/google_calendar.py` (new, T-R055)
-- `src/hr_advisory/models/__init__.py` (register new model)
-- `src/hr_advisory/models/company_user.py` (added `google_event_id` to InterviewSchedule)
-- `src/hr_advisory/api/routers/integrations_calendar.py` (new, T-R055)
-- `src/hr_advisory/api/routers/__init__.py` + `platform.py` (register router)
-- `src/hr_advisory/api/routers/onboarding.py` (T207 reminder endpoint + T215 datetime fixes)
-- `src/hr_advisory/api/routers/leave.py` (T209 probation warning)
-- `src/hr_advisory/shadow/briefing.py` (T208 onboarding insights)
-- `src/hr_advisory/shadow/intent_classifier.py` (T211 intent)
-- `src/hr_advisory/shadow/tool_registry.py` (T211 tools)
-- `src/hr_advisory/api/routers/shadow.py` (T208 logging)
-- `pyproject.toml` (google-api-python-client + google-auth-oauthlib)
+- `src/hr_advisory/api/platform.py` (CRIT-S1)
+- `src/hr_advisory/integrations/google_calendar/oauth.py` (H1, H2, CRIT-S3, H5+H7)
+- `src/hr_advisory/api/routers/integrations_calendar.py` (CRIT-S2, CRIT-S3, H3)
 
-Frontend:
-- `apps/web/src/app/(dashboard)/recruitment/candidates/[id]/page.tsx` (full T-R054 detail)
-- `apps/web/src/app/(dashboard)/recruitment/settings/page.tsx` (T-R054 toggle + T-R055 connect card)
-- `apps/web/src/services/api/recruitment.ts` (T-R054 method)
-- `apps/web/src/services/api/integrations.ts` (T-R055 methods)
-- `apps/web/src/app/(dashboard)/onboarding/page.tsx` (new, T198)
-- `apps/web/src/app/(dashboard)/onboarding/templates/[id]/page.tsx` (new, T199)
-- `apps/web/src/app/(dashboard)/employees/page.tsx` (T200 assign button)
-- `apps/web/src/app/(dashboard)/my-onboarding/page.tsx` (refactored, T201)
-- `apps/web/src/components/onboarding/steps/{Content,Checklist,DocumentUpload,PolicyAcknowledgment,Form,Approval}Step.tsx` (new, T202)
-- `apps/web/src/components/onboarding/steps/index.ts` (new)
-- `apps/web/src/components/onboarding/ProgressBar.tsx` (new, T204)
-- `apps/web/src/components/onboarding/PreboardingChecklist.tsx` (new, T205)
-- `apps/web/src/services/api/onboarding.ts` (extended)
+Tests:
+- `tests/unit/test_google_calendar_sync.py` (updated for new signatures + 2 new tests)
+- `tests/regression/test_round13_critical_fixes.py` (new — 12 tests pinning the fixes)
 
-New tests:
-- `tests/unit/test_scorecard_agent.py` (12 tests)
-- `tests/unit/test_google_calendar_sync.py` (16 tests)
-- `tests/integration/test_onboarding_flow.py` (9 tests)
-- `tests/integration/test_onboarding_e2e.py` (7 tests)
-- `tests/regression/test_t214_preboarding_auto_create.py` (1 test)
-- `tests/unit/test_onboarding_reminders.py` (cluster T207)
+Test count: 2326 → 2340 (+14 from new regression file + 2 new OAuth tests).
 
----
-
-## Test-Once Protocol
-
-Per `rules/testing.md` Rule 0: full suite ran ONCE this final batch (after
-all 5 agents completed and after the inline datetime fix to recover from
-the regression).

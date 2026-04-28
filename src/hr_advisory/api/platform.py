@@ -222,24 +222,32 @@ def _register_handlers(app: Nexus, session_store) -> None:
     They wrap the router logic so that the same advisory functionality
     is accessible from any channel.
 
-    Security note: These handlers are invoked outside FastAPI's dependency
-    injection system, so Depends(get_current_user) is not available.
-    CLI and MCP channels rely on their own authentication mechanisms
-    (CLI SSO, MCP transport auth). The HTTP API routes (which use
-    Depends(get_current_user)) are the primary web-facing interface.
+    Security note (round-13 CRIT-S1 — RESOLVED):
+    These handlers are invoked outside FastAPI's dependency injection
+    system, so ``Depends(get_current_user)`` is not available. We
+    therefore CANNOT trust any tenant identifier the caller hands us.
+    Earlier revisions accepted ``company_id: int = 0`` as a body parameter
+    and passed it straight to ``AdvisoryEngine`` / ``search_provisions``,
+    which let an unauthenticated CLI/MCP caller dump arbitrary companies'
+    data. The parameters have been removed; these handlers now run in a
+    tenant-LESS mode that exposes only the public KB. When a future
+    CLI/MCP authentication mechanism is wired up, add a ``current_user``
+    parameter that the channel pre-populates from a verified token, and
+    derive ``company_id`` from there — never from caller-supplied input.
+    The HTTP API routes (which use ``Depends(get_current_user)``) remain
+    the primary web-facing interface and continue to enforce tenant
+    isolation correctly.
     """
 
     @app.handler("advisory_query", description="Submit an HR advisory question")
-    async def advisory_query_handler(
-        query: str,
-        company_id: int = 0,
-        conversation_id: int = 0,
-    ) -> dict:
-        """Multi-channel handler for HR advisory queries.
+    async def advisory_query_handler(query: str) -> dict:
+        """Multi-channel handler for HR advisory queries (tenant-less).
 
-        Runs the autonomous AdvisoryEngine (LLM function-calling) which
-        performs sanitisation, screening, KB lookup, citation validation,
-        and response generation as a single agentic flow.
+        Runs the autonomous AdvisoryEngine (LLM function-calling) using
+        ONLY the public KB — no company context. CLI and MCP channels
+        cannot establish a trustworthy tenant identifier today, so we
+        deliberately give up company-specific policy lookups rather than
+        accept an unauthenticated tenant id. See module docstring above.
         """
         import asyncio
 
@@ -275,7 +283,7 @@ def _register_handlers(app: Nexus, session_store) -> None:
             lambda: engine.run(
                 query=clean_query,
                 conversation_history=[],
-                company_id=company_id or None,
+                company_id=None,  # tenant-less by design — see handler docstring
             ),
         )
 
@@ -287,18 +295,16 @@ def _register_handlers(app: Nexus, session_store) -> None:
             "confidence_score": engine_result.get("confidence", 0.7),
             "domains": engine_result.get("domains", []),
             "degraded": engine_result.get("degraded", False),
-            "company_id": company_id or None,
-            "conversation_id": conversation_id or None,
         }
 
     @app.handler("compliance_check", description="Run a compliance check")
-    async def compliance_check_handler(
-        company_id: int = 0,
-        domains: str = "",
-    ) -> dict:
-        """Multi-channel handler for compliance checks.
+    async def compliance_check_handler(domains: str = "") -> dict:
+        """Multi-channel handler for compliance checks (tenant-less).
 
-        Evaluates KB provision coverage across requested regulatory domains.
+        Evaluates KB provision coverage across requested regulatory
+        domains using only the public KB — no company context. See
+        the module docstring above for why ``company_id`` is no longer
+        accepted.
         """
         from hr_advisory.api.routers.compliance import (
             CORE_DOMAINS,
@@ -332,7 +338,6 @@ def _register_handlers(app: Nexus, session_store) -> None:
         risk_tier = _risk_tier_from_status(status)
 
         return {
-            "company_id": company_id or None,
             "domains_checked": domain_list,
             "status": status,
             "risk_tier": risk_tier,

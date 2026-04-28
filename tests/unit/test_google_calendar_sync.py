@@ -23,6 +23,20 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _set_oauth_state_secret(monkeypatch):
+    """Round-13 H2: production code refuses to sign OAuth state with the
+    default placeholder. Tests need a real secret in the env.
+
+    Tests that explicitly verify the fail-fast path (e.g.
+    `test_default_secret_rejected`) override this with their own
+    monkeypatch."""
+    monkeypatch.setenv(
+        "OAUTH_STATE_SECRET",
+        "test-oauth-state-secret-32-chars-min-12345",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Signed state
 # ---------------------------------------------------------------------------
@@ -32,13 +46,13 @@ class TestSignedState:
     def test_roundtrip(self):
         from hr_advisory.integrations.google_calendar import oauth
 
-        signed = oauth.build_signed_state(42)
-        assert oauth.verify_signed_state(signed) == 42
+        signed = oauth.build_signed_state(42, 7)
+        assert oauth.verify_signed_state(signed) == (42, 7)
 
     def test_tampered_payload_rejected(self):
         from hr_advisory.integrations.google_calendar import oauth
 
-        signed = oauth.build_signed_state(42)
+        signed = oauth.build_signed_state(42, 7)
         head, sig = signed.split(".", 1)
         # Flip the last char of the signature so HMAC mismatches.
         flipped = head + "." + sig[:-1] + ("A" if sig[-1] != "A" else "B")
@@ -50,9 +64,24 @@ class TestSignedState:
 
         # Build a state that was issued 30 minutes ago.
         old_time = time.time() - (30 * 60)
-        signed = oauth.build_signed_state(7, now=old_time)
+        signed = oauth.build_signed_state(7, 99, now=old_time)
         with pytest.raises(oauth.OAuthStateError):
             oauth.verify_signed_state(signed)
+
+    def test_default_secret_rejected(self, monkeypatch):
+        """Round-13 H2: must fail-fast when OAUTH_STATE_SECRET / JWT_SECRET_KEY
+        is unset or set to a known-default placeholder."""
+        from hr_advisory.integrations.google_calendar import oauth
+
+        monkeypatch.delenv("OAUTH_STATE_SECRET", raising=False)
+        monkeypatch.setenv("JWT_SECRET_KEY", "change-this-in-production")
+        with pytest.raises(RuntimeError, match="non-default"):
+            oauth.build_signed_state(42, 7)
+
+
+# ---------------------------------------------------------------------------
+# OAuth exchange_code (state binding to user_id — round-13 CRIT-S3)
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +93,7 @@ class TestExchangeCode:
     def test_exchange_code_persists_tokens(self):
         from hr_advisory.integrations.google_calendar import oauth
 
-        signed = oauth.build_signed_state(99)
+        signed = oauth.build_signed_state(99, 5)
 
         # Fake credentials object returned by the Flow.
         fake_creds = MagicMock()
@@ -94,7 +123,9 @@ class TestExchangeCode:
         ), patch.object(oauth, "_build_flow", return_value=fake_flow), patch.object(
             oauth, "_persist_connection", side_effect=fake_persist
         ):
-            result = oauth.exchange_code("AUTH-CODE", signed)
+            result = oauth.exchange_code(
+                "AUTH-CODE", signed, expected_user_id=5
+            )
 
         # The Flow had its code exchanged.
         fake_flow.fetch_token.assert_called_once_with(code="AUTH-CODE")
@@ -103,12 +134,28 @@ class TestExchangeCode:
         assert result["access_token"] == "ACCESS-TOKEN"
         assert result["refresh_token"] == "REFRESH-TOKEN"
         assert oauth.GOOGLE_CALENDAR_SCOPE in result["scope"]
+        # The user that completed the callback is recorded as connected_by.
+        assert result["connected_by"] == 5
 
     def test_exchange_code_rejects_bad_state(self):
         from hr_advisory.integrations.google_calendar import oauth
 
         with pytest.raises(oauth.OAuthStateError):
-            oauth.exchange_code("AUTH-CODE", "not.a.valid.state")
+            oauth.exchange_code(
+                "AUTH-CODE", "not.a.valid.state", expected_user_id=1
+            )
+
+    def test_exchange_code_rejects_user_mismatch(self):
+        """Round-13 CRIT-S3: state issued for user 5 cannot be redeemed
+        by a callback authenticated as user 6, even within the same
+        company. This blocks the cross-user OAuth-state-stealing chain."""
+        from hr_advisory.integrations.google_calendar import oauth
+
+        signed = oauth.build_signed_state(99, 5)
+        with pytest.raises(oauth.OAuthStateError, match="different user"):
+            oauth.exchange_code(
+                "AUTH-CODE", signed, expected_user_id=6
+            )
 
 
 # ---------------------------------------------------------------------------

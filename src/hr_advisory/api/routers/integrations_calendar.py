@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 from datetime import datetime, timezone
 from typing import Any
@@ -35,6 +36,57 @@ router = APIRouter()
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
+
+
+# Round-13 CRIT-S2: only these schemes/hosts are allowed as the webhook URL
+# we register with Google. ``ARBOR_API_URL`` flows from server config but
+# without validation an env-injection attacker (or a misconfigured deploy)
+# could redirect every Google push notification to a third-party host.
+#
+# Production: must be ``https://`` and the host must end in one of the
+# Foundation-controlled domains. Localhost is permitted ONLY for dev
+# (http://localhost:PORT or http://127.0.0.1:PORT). Anything else is
+# rejected so we fail loudly at OAuth-callback time rather than silently
+# leaking interview data to an attacker.
+_ALLOWED_WEBHOOK_HOSTS_PROD = (".terrene.foundation", ".terrene.dev")
+_LOCALHOST_RE = re.compile(r"^http://(localhost|127\.0\.0\.1)(:\d+)?(/|$)")
+
+
+def _validate_webhook_base_url(url: str) -> str:
+    """Validate ``ARBOR_API_URL`` and return a normalised value.
+
+    Raises ``ValueError`` (caller turns into 503) if the URL is not on the
+    allowlist. Localhost is permitted only when ``APP_ENV`` is ``development``
+    or unset.
+    """
+    cleaned = (url or "").strip()
+    if not cleaned:
+        raise ValueError("ARBOR_API_URL must be set to register Calendar webhooks")
+
+    app_env = os.environ.get("APP_ENV", "development").strip().lower()
+
+    if _LOCALHOST_RE.match(cleaned):
+        if app_env in ("production", "prod"):
+            raise ValueError(
+                "ARBOR_API_URL points at localhost but APP_ENV is production"
+            )
+        return cleaned.rstrip("/")
+
+    if not cleaned.startswith("https://"):
+        raise ValueError(
+            "ARBOR_API_URL must use https:// (or http://localhost in dev)"
+        )
+
+    # Pull the host out without depending on urllib parsing edge cases.
+    after_scheme = cleaned[len("https://"):]
+    host = after_scheme.split("/", 1)[0].split(":", 1)[0].lower()
+    if not any(host.endswith(suffix) for suffix in _ALLOWED_WEBHOOK_HOSTS_PROD):
+        raise ValueError(
+            f"ARBOR_API_URL host '{host}' is not on the webhook allowlist "
+            f"(allowed suffixes: {_ALLOWED_WEBHOOK_HOSTS_PROD})"
+        )
+
+    return cleaned.rstrip("/")
 
 
 def _connection_for(company_id: int) -> dict[str, Any] | None:
@@ -82,7 +134,7 @@ async def google_calendar_auth_url(
     )
 
     try:
-        return oauth.get_authorization_url(company_id)
+        return oauth.get_authorization_url(company_id, user_id)
     except RuntimeError as exc:
         # GOOGLE_OAUTH_CLIENT_ID/SECRET missing — surface a clear error to the
         # frontend so the user knows the integration has not been configured.
@@ -90,12 +142,21 @@ async def google_calendar_auth_url(
 
 
 @router.get("/callback")
-async def google_calendar_callback(request: Request) -> HTMLResponse:
+async def google_calendar_callback(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> HTMLResponse:
     """Handle the OAuth redirect from Google.
 
-    Validates the signed ``state`` (binds the callback to a specific company),
-    exchanges the code for tokens, and renders a small HTML page that closes
-    the popup window and notifies the parent tab via ``postMessage``.
+    Round-13 CRIT-S3: this endpoint NOW REQUIRES the same authenticated
+    session that started the flow. Combined with state HMAC binding to
+    user_id, this prevents an attacker who steals a state from another
+    user (or who is unauthenticated) from completing the OAuth flow and
+    binding their own Google tokens to the victim company.
+
+    Practical effect: the auth-url popup must be opened from a logged-in
+    Arbor browser session; the same browser receives the redirect, so the
+    auth cookie travels with the callback request automatically.
     """
 
     code = request.query_params.get("code")
@@ -103,17 +164,30 @@ async def google_calendar_callback(request: Request) -> HTMLResponse:
     error = request.query_params.get("error")
 
     if error:
-        logger.info("Google Calendar OAuth callback error: %s", error)
+        logger.info(
+            "Google Calendar OAuth callback error: %s", error
+        )
+        from html import escape as _esc
+
         return HTMLResponse(
-            content=f"<html><body><h2>Google Calendar connection cancelled</h2><p>{error}</p></body></html>",
+            content=(
+                "<html><body><h2>Google Calendar connection cancelled</h2>"
+                f"<p>{_esc(error)}</p></body></html>"
+            ),
             status_code=400,
         )
 
     if not code or not signed_state:
         raise HTTPException(status_code=400, detail="Missing code or state in callback.")
 
+    callback_user_id = int(current_user.get("sub", 0))
+
     try:
-        record = oauth.exchange_code(code=code, signed_state=signed_state)
+        record = oauth.exchange_code(
+            code=code,
+            signed_state=signed_state,
+            expected_user_id=callback_user_id,
+        )
     except oauth.OAuthStateError as exc:
         logger.warning("Rejected Google Calendar OAuth callback: %s", exc)
         raise HTTPException(status_code=400, detail=f"Invalid state: {exc}") from exc
@@ -122,16 +196,35 @@ async def google_calendar_callback(request: Request) -> HTMLResponse:
         raise HTTPException(status_code=502, detail="Could not exchange OAuth code with Google.") from exc
 
     # Best-effort: register a webhook so Google pushes us updates.
-    webhook_base = os.environ.get("ARBOR_API_URL", "http://localhost:8001")
-    webhook_url = f"{webhook_base.rstrip('/')}/integrations/google-calendar/webhook"
-    channel_id = secrets.token_urlsafe(24)
-    channel_token = secrets.token_urlsafe(32)
-    watch_result = sync.watch_events(
-        company_id=int(record["company_id"]),
-        channel_id=channel_id,
-        channel_token=channel_token,
-        webhook_url=webhook_url,
-    )
+    # Round-13 CRIT-S2: validate ARBOR_API_URL against an https-allowlist
+    # (or http://localhost in dev) so an env-injection or misconfigured
+    # deploy can't redirect Google's push notifications to a third-party
+    # host. If the URL is invalid we skip webhook registration entirely
+    # rather than register a poisoned URL — Calendar sync still works
+    # one-way (Arbor → Google) until ARBOR_API_URL is fixed.
+    raw_webhook_base = os.environ.get("ARBOR_API_URL", "http://localhost:8001")
+    watch_result = None
+    try:
+        webhook_base = _validate_webhook_base_url(raw_webhook_base)
+    except ValueError as exc:
+        logger.warning(
+            "Skipping Calendar webhook registration — ARBOR_API_URL invalid: %s",
+            exc,
+        )
+        webhook_base = None
+        channel_id = ""
+        channel_token = ""
+
+    if webhook_base:
+        webhook_url = f"{webhook_base}/integrations/google-calendar/webhook"
+        channel_id = secrets.token_urlsafe(24)
+        channel_token = secrets.token_urlsafe(32)
+        watch_result = sync.watch_events(
+            company_id=int(record["company_id"]),
+            channel_id=channel_id,
+            channel_token=channel_token,
+            webhook_url=webhook_url,
+        )
     if watch_result:
         try:
             dataflow_crud.update(
@@ -267,6 +360,22 @@ async def google_calendar_webhook(request: Request):
     if not secrets.compare_digest(str(record.get("channel_token", "")), channel_token):
         logger.warning("Google Calendar webhook channel-token mismatch (channel=%s)", channel_id)
         raise HTTPException(status_code=401, detail="Invalid channel token.")
+
+    # Round-13 H3: also verify the resource id matches what Google handed us
+    # at watch-creation time. A stale token leaked from a rotated channel
+    # cannot be replayed against a different channel's resource. Google's
+    # X-Goog-Resource-ID is the calendar identifier we subscribed to.
+    expected_resource_id = str(record.get("channel_resource_id", ""))
+    if expected_resource_id and resource_id and not secrets.compare_digest(
+        expected_resource_id, resource_id
+    ):
+        logger.warning(
+            "Google Calendar webhook resource-id mismatch (channel=%s, expected=%s, got=%s)",
+            channel_id,
+            expected_resource_id,
+            resource_id,
+        )
+        raise HTTPException(status_code=401, detail="Invalid resource id.")
 
     company_id = int(record["company_id"])
 
