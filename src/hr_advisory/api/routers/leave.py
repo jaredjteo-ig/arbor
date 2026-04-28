@@ -769,7 +769,31 @@ async def apply_leave(
     # Enrich with human-readable names
     _enrich_leave_applications([application], company_id)
 
-    return {"application": application}
+    # T209: Probation soft-warning when employee is still onboarding.
+    # We only surface a warning — leave eligibility during probation is a
+    # policy decision, not a hard block.
+    response: dict = {"application": application}
+    try:
+        if employee.get("confirmation_status") == "on_probation":
+            active_onboarding = dataflow_crud.list_records(
+                "OnboardingAssignment",
+                {"employee_id": employee_id, "company_id": company_id},
+                limit=50,
+            )
+            has_active = any(
+                a.get("status") in ("in_progress", "overdue")
+                for a in (active_onboarding or [])
+            )
+            if has_active:
+                response["warning"] = (
+                    "Employee is still on probation; check leave eligibility "
+                    "in employment terms."
+                )
+    except Exception:
+        # Never let the probation lookup break leave application creation.
+        logger.debug("Failed to compute probation warning", exc_info=True)
+
+    return response
 
 
 # --------------------------------------------------------------------------

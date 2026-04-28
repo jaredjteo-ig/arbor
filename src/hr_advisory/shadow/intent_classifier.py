@@ -81,6 +81,8 @@ _AUTONOMOUS_ACTIONS = frozenset(
         "my_payslips",
         "my_leave",
         "my_schedule",
+        "my_progress",
+        "my_onboarding",
     }
 )
 
@@ -214,6 +216,9 @@ Given a user message and the current page context, classify the user's intent in
 19. **search** — Global search across all modules
     Actions: search
 
+20. **onboarding** — New-hire onboarding templates, modules, steps, assignments, and personal progress
+    Actions: my_progress, list, list_assignments, list_templates, get_assignment, complete_step, acknowledge_step, navigate
+
 ## Attachment Detection
 
 If the user mentions uploading, attaching, importing from CSV/Excel/file, or references a document they want to add:
@@ -270,6 +275,18 @@ Page: employees
 User: "Clock me in"
 Page: attendance
 → {"module": "attendance", "action": "clock_in", "entities": {}, "confirmation_message": "Record your clock-in for today"}
+
+User: "Show my onboarding progress"
+Page: my-dashboard
+→ {"module": "onboarding", "action": "my_progress", "entities": {}, "confirmation_message": "Show your active onboarding progress"}
+
+User: "How is my onboarding going?"
+Page: dashboard
+→ {"module": "onboarding", "action": "my_progress", "entities": {}, "confirmation_message": "Show your active onboarding progress"}
+
+User: "What onboarding steps do I have left?"
+Page: my-onboarding
+→ {"module": "onboarding", "action": "my_progress", "entities": {}, "confirmation_message": "Show your remaining onboarding steps"}
 
 ---
 
@@ -551,6 +568,34 @@ class ShadowIntentClassifier:
                 trust_level="propose",
                 requires_confirmation=True,
                 confirmation_message="Apply for leave",
+                has_attachment=False,
+                attachment_intent="",
+                raw_query=message,
+            )
+
+        # Onboarding patterns (T211) — surface "my onboarding progress" intents
+        # before more generic terms so the agent routes them correctly.
+        onboarding_keywords = [
+            "onboarding progress",
+            "my onboarding",
+            "onboarding status",
+            "onboarding steps",
+            "onboarding tasks",
+            "show my onboarding",
+            "show onboarding progress",
+            "how is my onboarding",
+            "how's my onboarding",
+            "onboarding checklist",
+            "remaining onboarding",
+        ]
+        if any(kw in msg_lower for kw in onboarding_keywords):
+            return ShadowIntent(
+                module="onboarding",
+                action="my_progress",
+                entities={},
+                trust_level="autonomous",
+                requires_confirmation=False,
+                confirmation_message="Show your active onboarding progress",
                 has_attachment=False,
                 attachment_intent="",
                 raw_query=message,

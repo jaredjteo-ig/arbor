@@ -2,6 +2,12 @@
 
 All tasks required to build the full recruitment module from the current skeleton to production-ready, organized into milestones.
 
+## ~~T223: Chat-style onboarding~~ ✅ DONE (cluster 7b)
+
+Beta toggle in Settings (`arbor.chat-onboarding`), backend state machine at
+`POST /shadow/onboarding/chat`, frontend `ChatOnboarding.tsx`. 78 unit tests.
+See `workspaces/hr-ai-advisory/todos/completed/backlog-cluster-7b-chat-onboarding.md`.
+
 **API Service Layer**: Update `apps/web/src/services/api/recruitment.ts` incrementally with each milestone — add types and methods as endpoints are built, not as a single batch task.
 
 ---

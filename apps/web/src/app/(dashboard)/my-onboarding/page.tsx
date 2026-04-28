@@ -1,6 +1,23 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+/**
+ * My Onboarding (T201) — employee self-service onboarding view.
+ *
+ * - GET /onboarding/my-progress  → shows the active assignment, modules,
+ *   step progress, completion percent, due date.
+ * - Step renderers (T202) live in apps/web/src/components/onboarding/steps/
+ *   and are dispatched per `step_type`.
+ * - Progress bar (T204) — overall + module-level breakdown via tooltip.
+ * - Pre-boarding (T205) — admin (HR/owner) viewing an upcoming hire can
+ *   pass `?employee_id=N` and see the pre-boarding checklist above the
+ *   regular progress view.
+ * - Pulse check-ins and milestone timeline render below modules when
+ *   the backend has data for the current employee.
+ */
+
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import {
   AppCard,
   AppButton,
@@ -25,6 +42,7 @@ import {
   CalendarDays,
   Star,
   MessageSquare,
+  ListChecks,
 } from "lucide-react";
 import {
   onboardingApi,
@@ -34,6 +52,17 @@ import {
   type OnboardingMilestone,
   type PulseSurvey,
 } from "@/services/api/onboarding";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  ContentStep,
+  ChecklistStep,
+  DocumentUploadStep,
+  PolicyAcknowledgmentStep,
+  FormStep,
+  ApprovalStep,
+} from "@/components/onboarding/steps";
+import { ProgressBar } from "@/components/onboarding/ProgressBar";
+import { PreboardingChecklist } from "@/components/onboarding/PreboardingChecklist";
 
 /* ── Phase badge styles ──────────────────────────────────── */
 
@@ -90,6 +119,11 @@ const STATUS_STYLES: Record<
     text: "text-[var(--color-gray-600)]",
     label: "Pending",
   },
+  in_progress: {
+    bg: "bg-blue-50",
+    text: "text-blue-700",
+    label: "In Progress",
+  },
   completed: {
     bg: "bg-emerald-50",
     text: "text-emerald-700",
@@ -126,6 +160,8 @@ function StepIcon({ stepType }: { stepType: string }) {
       return <Upload className={`${iconClass} text-amber-500`} />;
     case "policy_acknowledgment":
       return <FileText className={`${iconClass} text-purple-500`} />;
+    case "form":
+      return <ListChecks className={`${iconClass} text-indigo-500`} />;
     case "approval":
       return (
         <UserCheck className={`${iconClass} text-[var(--color-gray-500)]`} />
@@ -149,353 +185,6 @@ function ModuleCardSkeleton() {
         <div className="h-2 w-full bg-[var(--color-gray-200)] rounded-full" />
       </div>
     </AppCard>
-  );
-}
-
-/* ── Checklist items parsing ─────────────────────────────── */
-
-interface ParsedChecklistItem {
-  id: string;
-  label: string;
-  checked: boolean;
-}
-
-function parseChecklistItems(raw: string): ParsedChecklistItem[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed.map((item, idx) => ({
-        id: item.id ?? String(idx),
-        label: item.label ?? item.text ?? String(item),
-        checked: !!item.checked,
-      }));
-    }
-  } catch {
-    // If not valid JSON, treat as newline-separated text
-    return raw
-      .split("\n")
-      .filter((line) => line.trim())
-      .map((line, idx) => ({
-        id: String(idx),
-        label: line.trim(),
-        checked: false,
-      }));
-  }
-  return [];
-}
-
-/* ── Content Step ────────────────────────────────────────── */
-
-function ContentStepBody({
-  sp,
-  onStepCompleted,
-}: {
-  sp: StepProgressWithStep;
-  onStepCompleted: () => void;
-}) {
-  const [showContent, setShowContent] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const isCompleted = sp.status === "completed";
-
-  async function handleMarkRead() {
-    setSubmitting(true);
-    try {
-      await onboardingApi.completeStep(sp.id);
-      toast.success("Step marked as read");
-      onStepCompleted();
-    } catch {
-      toast.error("Failed to mark as read. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  const hasContent = !!(sp.body_content && sp.body_content.trim());
-
-  return (
-    <div className="mt-2 space-y-2">
-      {!showContent && !isCompleted && (
-        <AppButton
-          variant="outlined"
-          size="sm"
-          onClick={() => setShowContent(true)}
-        >
-          <BookOpen className="h-4 w-4 mr-1" />
-          Read
-        </AppButton>
-      )}
-      {(showContent || isCompleted) && (
-        <div className="rounded-[8px] border border-[var(--color-gray-200)] bg-[var(--color-gray-50)] p-4 text-sm text-[var(--color-gray-700)] whitespace-pre-wrap">
-          {hasContent ? (
-            sp.body_content
-          ) : (
-            <span className="italic text-[var(--color-gray-500)]">
-              No content provided.
-            </span>
-          )}
-        </div>
-      )}
-      {showContent && !isCompleted && (
-        <AppButton
-          variant="primary"
-          size="sm"
-          onClick={handleMarkRead}
-          loading={submitting}
-        >
-          Mark as Read
-        </AppButton>
-      )}
-    </div>
-  );
-}
-
-/* ── Checklist Step ──────────────────────────────────────── */
-
-function ChecklistStepBody({
-  sp,
-  onStepCompleted,
-}: {
-  sp: StepProgressWithStep;
-  onStepCompleted: () => void;
-}) {
-  const [items, setItems] = useState<ParsedChecklistItem[]>(() =>
-    parseChecklistItems(sp.checklist_items),
-  );
-  const [submitting, setSubmitting] = useState(false);
-  const isCompleted = sp.status === "completed";
-
-  function toggleItem(id: string) {
-    if (isCompleted) return;
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, checked: !item.checked } : item,
-      ),
-    );
-  }
-
-  const allChecked = items.length > 0 && items.every((item) => item.checked);
-
-  async function handleComplete() {
-    setSubmitting(true);
-    try {
-      await onboardingApi.completeStep(sp.id);
-      toast.success("Checklist completed");
-      onStepCompleted();
-    } catch {
-      toast.error("Failed to complete checklist. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="mt-2 space-y-2">
-      <div className="space-y-1.5">
-        {items.map((item) => (
-          <label
-            key={item.id}
-            className="flex items-center gap-2 text-sm cursor-pointer"
-          >
-            <input
-              type="checkbox"
-              checked={isCompleted || item.checked}
-              disabled={isCompleted}
-              onChange={() => toggleItem(item.id)}
-              className="h-4 w-4 rounded border-[var(--color-gray-300)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-            />
-            <span
-              className={
-                isCompleted || item.checked
-                  ? "text-[var(--color-gray-500)] line-through"
-                  : "text-[var(--color-gray-700)]"
-              }
-            >
-              {item.label}
-            </span>
-          </label>
-        ))}
-      </div>
-      {!isCompleted && (
-        <AppButton
-          variant="primary"
-          size="sm"
-          onClick={handleComplete}
-          disabled={!allChecked}
-          loading={submitting}
-        >
-          Complete
-        </AppButton>
-      )}
-    </div>
-  );
-}
-
-/* ── Document Upload Step ────────────────────────────────── */
-
-function DocumentUploadStepBody({
-  sp,
-  onStepCompleted,
-}: {
-  sp: StepProgressWithStep;
-  onStepCompleted: () => void;
-}) {
-  const [submitting, setSubmitting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const isCompleted = sp.status === "completed";
-
-  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Client-side 10MB limit (T203)
-    const MAX_FILE_SIZE = 10 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error("File must be 10 MB or smaller.");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      await onboardingApi.uploadStepDocument(sp.id, formData);
-      toast.success("Document uploaded");
-      onStepCompleted();
-    } catch {
-      toast.error("Failed to upload document. Please try again.");
-    } finally {
-      setSubmitting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  }
-
-  return (
-    <div className="mt-2 space-y-2">
-      {isCompleted && sp.document_url ? (
-        <div className="flex items-center gap-2 text-sm text-emerald-600">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>
-            Uploaded: {sp.document_url.split("/").pop() ?? "document"}
-          </span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            onChange={handleUpload}
-            disabled={submitting}
-            className="text-sm text-[var(--color-gray-600)] file:mr-3 file:rounded-[8px] file:border-0 file:bg-[var(--color-primary)] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:cursor-pointer hover:file:bg-[var(--color-primary-light)] disabled:opacity-50"
-          />
-          {submitting && (
-            <RefreshCw className="h-4 w-4 text-[var(--color-gray-400)] animate-spin" />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Policy Acknowledgment Step ──────────────────────────── */
-
-function PolicyAckStepBody({
-  sp,
-  onStepCompleted,
-}: {
-  sp: StepProgressWithStep;
-  onStepCompleted: () => void;
-}) {
-  const [acknowledged, setAcknowledged] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const isCompleted = sp.status === "completed";
-
-  async function handleAcknowledge() {
-    setSubmitting(true);
-    try {
-      await onboardingApi.acknowledgeStep(sp.id);
-      toast.success("Policy acknowledged");
-      onStepCompleted();
-    } catch {
-      toast.error("Failed to acknowledge policy. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="mt-2 space-y-2">
-      {sp.policy_id && (
-        <a
-          href={`/policies/${sp.policy_id}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
-        >
-          <FileText className="h-3.5 w-3.5" />
-          Read Policy
-        </a>
-      )}
-      {isCompleted ? (
-        <div className="flex items-center gap-2 text-sm text-emerald-600">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>Acknowledged</span>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={acknowledged}
-              onChange={(e) => setAcknowledged(e.target.checked)}
-              className="h-4 w-4 rounded border-[var(--color-gray-300)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-            />
-            <span className="text-[var(--color-gray-700)]">
-              I acknowledge that I have read and understood this policy
-            </span>
-          </label>
-          <AppButton
-            variant="primary"
-            size="sm"
-            onClick={handleAcknowledge}
-            disabled={!acknowledged}
-            loading={submitting}
-          >
-            Submit Acknowledgment
-          </AppButton>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Approval Step ───────────────────────────────────────── */
-
-function ApprovalStepBody({ sp }: { sp: StepProgressWithStep }) {
-  const isCompleted = sp.status === "completed";
-
-  return (
-    <div className="mt-2">
-      {isCompleted ? (
-        <div className="flex items-center gap-2 text-sm text-emerald-600">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>
-            Approved
-            {sp.completed_at
-              ? ` on ${new Date(sp.completed_at).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })}`
-              : ""}
-          </span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 text-sm text-[var(--color-gray-500)]">
-          <Clock className="h-4 w-4" />
-          <span>Pending approval from HR</span>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -525,18 +214,21 @@ function StepRow({
 
       <div className="ml-6">
         {sp.step_type === "content" && (
-          <ContentStepBody sp={sp} onStepCompleted={onStepCompleted} />
+          <ContentStep sp={sp} onStepCompleted={onStepCompleted} />
         )}
         {sp.step_type === "checklist" && (
-          <ChecklistStepBody sp={sp} onStepCompleted={onStepCompleted} />
+          <ChecklistStep sp={sp} onStepCompleted={onStepCompleted} />
         )}
         {sp.step_type === "document_upload" && (
-          <DocumentUploadStepBody sp={sp} onStepCompleted={onStepCompleted} />
+          <DocumentUploadStep sp={sp} onStepCompleted={onStepCompleted} />
         )}
         {sp.step_type === "policy_acknowledgment" && (
-          <PolicyAckStepBody sp={sp} onStepCompleted={onStepCompleted} />
+          <PolicyAcknowledgmentStep sp={sp} onStepCompleted={onStepCompleted} />
         )}
-        {sp.step_type === "approval" && <ApprovalStepBody sp={sp} />}
+        {sp.step_type === "form" && (
+          <FormStep sp={sp} onStepCompleted={onStepCompleted} />
+        )}
+        {sp.step_type === "approval" && <ApprovalStep sp={sp} />}
       </div>
     </div>
   );
@@ -577,7 +269,7 @@ function ModuleCard({
               <ChevronRight className="h-5 w-5 text-[var(--color-gray-400)] shrink-0" />
             )}
             <span className="text-base font-semibold text-[var(--color-gray-900)]">
-              {mod.module_name}
+              {mod.module_name ?? mod.name}
             </span>
             <PhaseBadge phase={mod.phase} />
           </div>
@@ -1054,11 +746,39 @@ function MilestoneTimeline() {
 
 /* ── Page ────────────────────────────────────────────────── */
 
+function formatDueDate(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    return new Date(value).toLocaleDateString("en-SG", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return null;
+  }
+}
+
 export default function MyOnboardingPage() {
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const searchParams = useSearchParams();
+
   const [data, setData] = useState<MyOnboardingProgress | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [noAssignment, setNoAssignment] = useState(false);
+
+  // T205 admin override: HR/owner can pass ?employee_id=N to view someone's
+  // pre-boarding checklist alongside this page. The pre-boarding endpoint
+  // requires HR/owner role server-side, so unauthorised users get a 403 from
+  // the API and the section just shows an inline error.
+  const queryEmployeeId = searchParams?.get("employee_id");
+  const isAdminRole = user?.role === "owner" || user?.role === "hr_manager";
+  const adminEmployeeId =
+    isAdminRole && queryEmployeeId ? Number(queryEmployeeId) : null;
+  const adminViewing =
+    adminEmployeeId !== null && !Number.isNaN(adminEmployeeId);
 
   const fetchProgress = useCallback(async () => {
     setIsLoading(true);
@@ -1084,13 +804,16 @@ export default function MyOnboardingPage() {
         const message =
           err instanceof Error
             ? err.message
-            : "Unable to load your onboarding progress. Please try again.";
+            : t("onboarding.my.load_error", {
+                defaultValue:
+                  "Unable to load your onboarding progress. Please try again.",
+              });
         setError(message);
       }
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchProgress();
@@ -1110,6 +833,17 @@ export default function MyOnboardingPage() {
   );
   const isComplete =
     assignment?.status === "completed" || progressPercent >= 100;
+  const dueDateLabel = formatDueDate(assignment?.due_date ?? null);
+
+  // Build module breakdown for ProgressBar tooltip.
+  const moduleBreakdown = modules.map((m) => {
+    const steps = m.steps ?? [];
+    return {
+      name: m.module_name ?? m.name ?? "Module",
+      completed: steps.filter((s) => s.status === "completed").length,
+      total: steps.length,
+    };
+  });
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-8">
@@ -1122,10 +856,22 @@ export default function MyOnboardingPage() {
           />
           <div>
             <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-              My Onboarding
+              {t("onboarding.my.page_title", { defaultValue: "My Onboarding" })}
             </h1>
             <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-              {assignment?.template_name ?? "Track your onboarding progress"}
+              {assignment?.template_name ??
+                t("onboarding.my.page_description", {
+                  defaultValue: "Track your onboarding progress",
+                })}
+              {dueDateLabel && (
+                <span className="ml-2 text-[var(--color-gray-400)]">
+                  ·{" "}
+                  {t("onboarding.my.due_by", {
+                    defaultValue: "Due by {{date}}",
+                    date: dueDateLabel,
+                  })}
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -1139,31 +885,30 @@ export default function MyOnboardingPage() {
             <RefreshCw
               className={`h-4 w-4 mr-1 ${isLoading ? "animate-spin" : ""}`}
             />
-            Refresh
+            {t("common.refresh", { defaultValue: "Refresh" })}
           </AppButton>
         )}
       </div>
 
-      {/* Overall progress bar */}
+      {/* T205: Pre-boarding checklist (admin viewing an upcoming hire) */}
+      {adminViewing && <PreboardingChecklist employeeId={adminEmployeeId!} />}
+
+      {/* Overall progress bar (T204) */}
       {!isLoading && !noAssignment && !error && assignment && (
         <AppCard variant="flat">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-[var(--color-gray-700)]">
-              Overall Progress
-            </span>
-            <span className="text-sm font-bold text-[var(--color-gray-900)]">
-              {Math.round(progressPercent)}%
-            </span>
-          </div>
-          <div className="h-3 rounded-full bg-[var(--color-gray-100)] overflow-hidden">
-            <div
-              className="h-full rounded-full bg-[var(--color-primary)] transition-all"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
+          <ProgressBar
+            percent={progressPercent}
+            modules={moduleBreakdown}
+            label={t("onboarding.progress.overall", {
+              defaultValue: "Overall Progress",
+            })}
+          />
           <p className="text-xs text-[var(--color-gray-500)] mt-2">
-            {completedSteps} of {totalSteps} step{totalSteps !== 1 ? "s" : ""}{" "}
-            completed
+            {t("onboarding.progress.steps_count", {
+              defaultValue: "{{done}} of {{total}} steps completed",
+              done: completedSteps,
+              total: totalSteps,
+            })}
           </p>
         </AppCard>
       )}
@@ -1193,21 +938,26 @@ export default function MyOnboardingPage() {
           <div className="py-8 text-center">
             <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
             <AppButton variant="outlined" size="sm" onClick={fetchProgress}>
-              Try again
+              {t("common.retry", { defaultValue: "Try again" })}
             </AppButton>
           </div>
         </AppCard>
       ) : noAssignment ? (
         <EmptyState
           icon={<ClipboardCheck className="h-12 w-12" aria-hidden="true" />}
-          message="No onboarding tasks assigned"
-          description="If you've just joined, your HR team will set this up for you."
+          message={t("onboarding.my.empty_title", {
+            defaultValue: "No onboarding tasks assigned",
+          })}
+          description={t("onboarding.my.empty_description", {
+            defaultValue:
+              "If you've just joined, your HR team will set this up for you.",
+          })}
         />
       ) : (
         <div className="space-y-3">
           {modules.map((mod) => (
             <ModuleCard
-              key={mod.module_id}
+              key={mod.module_id ?? mod.id}
               mod={mod}
               onStepCompleted={fetchProgress}
             />

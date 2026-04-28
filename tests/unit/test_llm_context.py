@@ -42,10 +42,10 @@ class TestLLMKeyContextCreation:
     """Test LLMKeyContext dataclass construction with all field combinations."""
 
     def test_defaults(self) -> None:
-        """Default LLMKeyContext has no key, provider=openai, empty model."""
+        """Default LLMKeyContext has no key, provider=gemini, empty model."""
         ctx = LLMKeyContext()
         assert ctx.api_key is None
-        assert ctx.provider == "openai"
+        assert ctx.provider == "gemini"
         assert ctx.model == ""
         assert ctx.base_url is None
         assert ctx.is_byok is False
@@ -154,10 +154,12 @@ class TestFromServerEnv:
     """Test LLMKeyContext.from_server_env() factory method."""
 
     def test_with_openai_key(self, monkeypatch) -> None:
-        """When OPENAI_API_KEY is set, returns openai context."""
+        """When OPENAI_API_KEY is the only provider key, returns openai context."""
         from hr_advisory.config.settings import get_settings
 
         get_settings.cache_clear()
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "sk-env-test-key-for-unit-tests")
         monkeypatch.setenv("OPENAI_PROD_MODEL", "gpt-5-chat-latest")
         monkeypatch.setenv("APP_ENV", "development")
@@ -174,10 +176,12 @@ class TestFromServerEnv:
             get_settings.cache_clear()
 
     def test_without_openai_key_falls_back_to_ollama(self, monkeypatch) -> None:
-        """When no OPENAI_API_KEY, falls back to Ollama context."""
+        """When no provider keys are set, falls back to Ollama context."""
         from hr_advisory.config.settings import get_settings
 
         get_settings.cache_clear()
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.setenv("OLLAMA_MODEL", "llama3.1:8b")
         monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")

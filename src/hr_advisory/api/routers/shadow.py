@@ -2148,12 +2148,13 @@ async def shadow_briefing(
     briefing = generate_briefing(company_id, user_role)
 
     logger.info(
-        "Briefing generated for company_id=%s: %d actions, %d deadlines, %d attention, %d cpf items",
+        "Briefing generated for company_id=%s: %d actions, %d deadlines, %d attention, %d cpf items, %d onboarding",
         company_id,
         len(briefing.get("pending_actions", [])),
         len(briefing.get("upcoming_deadlines", [])),
         len(briefing.get("attention_needed", [])),
         len(briefing.get("cpf_validation", [])),
+        len(briefing.get("onboarding", [])),
     )
 
     return {
@@ -2747,4 +2748,316 @@ async def shadow_leave_team_balances(
             },
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ── Chat-style onboarding (T223) ──────────────────────────────
+# A deterministic, LLM-free state machine that drives a conversational
+# company-setup flow. The frontend exchanges turns with this endpoint to
+# collect the same fields as CompanySetupModal (name, sector, headcount,
+# foreign-worker presence) and then calls the existing /profile create
+# endpoint when the chat is "done".
+#
+# This intentionally avoids the full PACE loop because:
+#   1. The user is signing up — they have no company yet, so PACE preview
+#      ("are you sure you want to create...") would be confusing UX.
+#   2. The fields collected are simple form-equivalent values; no
+#      free-form LLM judgement is required to interpret them.
+#   3. The actual profile creation is still gated by the same backend
+#      validation as the form path.
+
+_CHAT_ONBOARDING_SECTOR_KEYS: set[str] = {
+    "technology",
+    "fnb",
+    "retail",
+    "manufacturing",
+    "construction",
+    "services",
+    "healthcare",
+    "education",
+    "logistics",
+    "other",
+}
+
+_CHAT_ONBOARDING_SECTOR_LABELS: dict[str, str] = {
+    "technology": "Technology & IT",
+    "fnb": "Food & Beverage",
+    "retail": "Retail & E-commerce",
+    "manufacturing": "Manufacturing",
+    "construction": "Construction",
+    "services": "Professional Services",
+    "healthcare": "Healthcare",
+    "education": "Education",
+    "logistics": "Logistics & Transport",
+    "other": "Other",
+}
+
+_CHAT_ONBOARDING_SECTOR_ALIASES: dict[str, str] = {
+    "tech": "technology",
+    "it": "technology",
+    "information technology": "technology",
+    "f&b": "fnb",
+    "food": "fnb",
+    "food and beverage": "fnb",
+    "food & beverage": "fnb",
+    "ecommerce": "retail",
+    "e-commerce": "retail",
+    "professional services": "services",
+    "consulting": "services",
+    "health": "healthcare",
+    "medical": "healthcare",
+    "transport": "logistics",
+    "shipping": "logistics",
+}
+
+_CHAT_ONBOARDING_HEADCOUNT_RANGES: list[tuple[str, int, int]] = [
+    ("1-5", 1, 5),
+    ("6-25", 6, 25),
+    ("26-50", 26, 50),
+    ("51-100", 51, 100),
+    ("101-200", 101, 200),
+]
+
+_CHAT_ONBOARDING_STEPS: tuple[str, ...] = (
+    "name",
+    "sector",
+    "headcount",
+    "foreign_workers",
+    "confirm",
+)
+
+
+def _chat_onboarding_match_sector(answer: str) -> str | None:
+    """Loose-match a free-text answer to one of the canonical sector keys."""
+    if not answer:
+        return None
+    cleaned = answer.strip().lower()
+    if cleaned in _CHAT_ONBOARDING_SECTOR_KEYS:
+        return cleaned
+    if cleaned in _CHAT_ONBOARDING_SECTOR_ALIASES:
+        return _CHAT_ONBOARDING_SECTOR_ALIASES[cleaned]
+    # Substring fallback — pick the first canonical key whose label appears in the answer
+    for key in _CHAT_ONBOARDING_SECTOR_KEYS:
+        if key in cleaned:
+            return key
+    for alias, key in _CHAT_ONBOARDING_SECTOR_ALIASES.items():
+        if alias in cleaned:
+            return key
+    return None
+
+
+def _chat_onboarding_match_headcount(answer: str) -> str | None:
+    """Match a free-text answer (range or number) to a canonical range string."""
+    if not answer:
+        return None
+    cleaned = answer.strip().lower().replace(" ", "")
+    # Direct range match (e.g. "26-50")
+    for range_str, _lo, _hi in _CHAT_ONBOARDING_HEADCOUNT_RANGES:
+        if range_str in cleaned:
+            return range_str
+    # Numeric fallback — find the first integer and bucket it
+    digits = re.findall(r"\d+", cleaned)
+    if digits:
+        try:
+            count = int(digits[0])
+        except ValueError:
+            return None
+        for range_str, lo, hi in _CHAT_ONBOARDING_HEADCOUNT_RANGES:
+            if lo <= count <= hi:
+                return range_str
+        if count > 200:
+            return "101-200"
+    return None
+
+
+def _chat_onboarding_match_yes_no(answer: str) -> bool | None:
+    """Match a yes/no-ish answer; returns None if ambiguous."""
+    if not answer:
+        return None
+    cleaned = answer.strip().lower()
+    if cleaned in {"yes", "y", "yeah", "yep", "true", "1", "confirm", "ok", "okay"}:
+        return True
+    if cleaned in {"no", "n", "nope", "false", "0", "none", "cancel"}:
+        return False
+    if cleaned.startswith("yes") or "confirm" in cleaned:
+        return True
+    if cleaned.startswith("no"):
+        return False
+    return None
+
+
+def _chat_onboarding_prompt(step: str, fields: dict) -> str:
+    """Return the Arbor-prefixed prompt for the given step."""
+    prefix = "Arbor: "
+    if step == "name":
+        return prefix + "Welcome! Let's set up your company. What's the legal name of your company?"
+    if step == "sector":
+        name = fields.get("name", "your company")
+        return (
+            prefix
+            + f"Great, {name}. Which industry best describes your business? "
+            + "(e.g. Technology, F&B, Retail, Manufacturing, Construction, Services, "
+            + "Healthcare, Education, Logistics, Other)"
+        )
+    if step == "headcount":
+        return (
+            prefix
+            + "How many employees do you have today? "
+            + "Pick a range: 1-5, 6-25, 26-50, 51-100, or 101-200."
+        )
+    if step == "foreign_workers":
+        return (
+            prefix
+            + "Do you currently employ any foreign workers (Work Permit, S Pass, or EP holders)? "
+            + "Yes or No."
+        )
+    if step == "confirm":
+        sector_label = _CHAT_ONBOARDING_SECTOR_LABELS.get(
+            fields.get("sector", ""), fields.get("sector", "")
+        )
+        fw = "yes" if fields.get("foreign_workers") else "no"
+        return (
+            prefix
+            + "Here's what I have:\n"
+            + f"- Company: {fields.get('name', '')}\n"
+            + f"- Industry: {sector_label}\n"
+            + f"- Headcount: {fields.get('headcount', '')}\n"
+            + f"- Foreign workers: {fw}\n\n"
+            + "Shall I create this company? Yes to confirm, or no to start over."
+        )
+    return prefix + "Setup is complete."
+
+
+@router.post("/onboarding/chat")
+async def shadow_onboarding_chat(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Drive the chat-style company onboarding flow (T223).
+
+    Request body:
+        step: str -- current step in the conversation. One of:
+            "" (initial), "name", "sector", "headcount", "foreign_workers", "confirm".
+        answer: str -- the user's most recent reply (ignored for the initial turn).
+        fields: dict -- accumulated fields collected so far. The frontend echoes
+            this back on each turn so the backend stays stateless.
+
+    Returns:
+        next_step: str -- the next step the frontend should track. "done" when
+            all fields are collected and the frontend should call profileApi.create.
+        prompt: str -- the next Arbor-prefixed message to display.
+        fields: dict -- updated accumulated fields.
+        error: str | None -- a friendly clarification message when the user's
+            answer could not be parsed; the step is not advanced when set.
+    """
+    body = await request.json()
+    step = (body.get("step") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    fields = body.get("fields") or {}
+    if not isinstance(fields, dict):
+        fields = {}
+
+    user_id = str(current_user.get("sub", "anonymous"))
+
+    # Rate-limit chat onboarding so a misbehaving client cannot flood the endpoint.
+    if not check_rate_limit(user_id):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
+
+    if len(answer) > 200:
+        raise HTTPException(status_code=400, detail="Answer is too long (max 200 characters).")
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    # Initial turn — kick off with the first prompt.
+    if not step:
+        return {
+            "next_step": "name",
+            "prompt": _chat_onboarding_prompt("name", fields),
+            "fields": fields,
+            "error": None,
+            "timestamp": timestamp,
+        }
+
+    if step not in _CHAT_ONBOARDING_STEPS:
+        raise HTTPException(status_code=400, detail=f"Unknown onboarding step '{step}'.")
+
+    error: str | None = None
+    next_step = step
+
+    if step == "name":
+        if not answer or len(answer) < 2:
+            error = "I didn't catch that. Could you share the company name?"
+        else:
+            cleaned = re.sub(r"[\x00-\x1f]", "", answer)[:200]
+            fields["name"] = cleaned
+            next_step = "sector"
+    elif step == "sector":
+        sector_key = _chat_onboarding_match_sector(answer)
+        if not sector_key:
+            error = (
+                "I couldn't match that to an industry. Try one of: "
+                "Technology, F&B, Retail, Manufacturing, Construction, Services, "
+                "Healthcare, Education, Logistics, or Other."
+            )
+        else:
+            fields["sector"] = sector_key
+            next_step = "headcount"
+    elif step == "headcount":
+        range_str = _chat_onboarding_match_headcount(answer)
+        if not range_str:
+            error = "Pick a range: 1-5, 6-25, 26-50, 51-100, or 101-200."
+        else:
+            fields["headcount"] = range_str
+            next_step = "foreign_workers"
+    elif step == "foreign_workers":
+        flag = _chat_onboarding_match_yes_no(answer)
+        if flag is None:
+            error = "Just yes or no — do you employ any foreign workers?"
+        else:
+            fields["foreign_workers"] = flag
+            next_step = "confirm"
+    elif step == "confirm":
+        flag = _chat_onboarding_match_yes_no(answer)
+        if flag is True:
+            # Final turn — frontend should now call profileApi.create() with
+            # the accumulated fields. Backend does not create the company
+            # here so that we reuse the existing /profile validation path.
+            return {
+                "next_step": "done",
+                "prompt": (
+                    "Arbor: Perfect — creating your company profile now. "
+                    "I'll show you a compliance snapshot once it's set up."
+                ),
+                "fields": fields,
+                "error": None,
+                "timestamp": timestamp,
+            }
+        if flag is False:
+            return {
+                "next_step": "name",
+                "prompt": (
+                    "Arbor: No problem. Let's go through it again. "
+                    "What's the legal name of your company?"
+                ),
+                "fields": fields,
+                "error": None,
+                "timestamp": timestamp,
+            }
+        error = "I need a yes or no — shall I create the company with these details?"
+
+    if error:
+        return {
+            "next_step": step,
+            "prompt": _chat_onboarding_prompt(step, fields),
+            "fields": fields,
+            "error": error,
+            "timestamp": timestamp,
+        }
+
+    return {
+        "next_step": next_step,
+        "prompt": _chat_onboarding_prompt(next_step, fields),
+        "fields": fields,
+        "error": None,
+        "timestamp": timestamp,
     }

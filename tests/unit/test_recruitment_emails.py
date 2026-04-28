@@ -273,7 +273,7 @@ class TestSendRecruitmentEmail:
         from hr_advisory.api.routers.recruitment import _send_recruitment_email
 
         with patch.dict("os.environ", {"RESEND_API_KEY": ""}, clear=False):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 _send_recruitment_email(
                     to="alice@example.com",
                     template_name="application_received",
@@ -292,7 +292,7 @@ class TestSendRecruitmentEmail:
 
         env = {k: v for k, v in __import__("os").environ.items() if k != "RESEND_API_KEY"}
         with patch.dict("os.environ", env, clear=True):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 _send_recruitment_email(
                     to="alice@example.com",
                     template_name="application_received",
@@ -310,7 +310,7 @@ class TestSendRecruitmentEmail:
         from hr_advisory.api.routers.recruitment import _send_recruitment_email
 
         with patch.dict("os.environ", {"RESEND_API_KEY": "re_test_key"}, clear=False):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 _send_recruitment_email(
                     to="alice@example.com",
                     template_name="nonexistent_template",
@@ -333,7 +333,7 @@ class TestSendRecruitmentEmail:
             mock_instance.send_email.side_effect = RuntimeError("Network error")
             MockAdapter.return_value = mock_instance
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 _send_recruitment_email(
                     to="alice@example.com",
                     template_name="application_received",
@@ -360,7 +360,7 @@ class TestSendRecruitmentEmail:
             mock_instance.send_email.return_value = {"id": "msg_123", "status": "sent"}
             MockAdapter.return_value = mock_instance
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 _send_recruitment_email(
                     to="alice@example.com",
                     template_name="application_received",
@@ -387,7 +387,7 @@ class TestSendRecruitmentEmail:
             mock_instance.send_email.return_value = {"id": "msg_456", "status": "sent"}
             MockAdapter.return_value = mock_instance
 
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 _send_recruitment_email(
                     to="bob@example.com",
                     template_name="application_received",
@@ -422,7 +422,7 @@ class TestSendRecruitmentEmail:
             ),
         ):
             # This should NOT raise, it should return False
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 _send_recruitment_email(
                     to="alice@example.com",
                     template_name="application_received",

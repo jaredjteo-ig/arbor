@@ -214,6 +214,13 @@ async def unassign_employee(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"unassign_project:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="unassign employee from project",
+    )
 
     _verify_project_ownership(project_id, company_id)
 
@@ -282,6 +289,13 @@ async def update_project_role(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"update_project_role:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="update project role",
+    )
 
     existing = dataflow_crud.read("ProjectRole", role_id)
     if not existing or existing.get("company_id") != company_id:
@@ -363,6 +377,13 @@ async def update_overhead(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"update_project_overhead:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="update project overhead",
+    )
 
     _verify_project_ownership(project_id, company_id)
 
@@ -390,6 +411,13 @@ async def delete_overhead(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"delete_project_overhead:{user_id}",
+        max_requests=20,
+        window_seconds=60,
+        action_name="delete project overhead",
+    )
 
     _verify_project_ownership(project_id, company_id)
 
@@ -517,6 +545,13 @@ async def update_timesheet_entry(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id_rl = current_user.get("sub")
+    check_rate_limit(
+        f"update_timesheet:{user_id_rl}",
+        max_requests=60,
+        window_seconds=60,
+        action_name="update timesheet entry",
+    )
 
     existing = dataflow_crud.read("TimesheetEntry", entry_id)
     if not existing:
@@ -553,6 +588,13 @@ async def delete_timesheet_entry(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id_rl = current_user.get("sub")
+    check_rate_limit(
+        f"delete_timesheet:{user_id_rl}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="delete timesheet entry",
+    )
 
     existing = dataflow_crud.read("TimesheetEntry", entry_id)
     if not existing:
@@ -623,6 +665,13 @@ async def approve_timesheet_entry(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id_rl = current_user.get("sub")
+    check_rate_limit(
+        f"approve_timesheet:{user_id_rl}",
+        max_requests=60,
+        window_seconds=60,
+        action_name="approve timesheet entry",
+    )
 
     existing = dataflow_crud.read("TimesheetEntry", entry_id)
     if not existing:
@@ -661,6 +710,13 @@ async def reject_timesheet_entry(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id_rl = current_user.get("sub")
+    check_rate_limit(
+        f"reject_timesheet:{user_id_rl}",
+        max_requests=60,
+        window_seconds=60,
+        action_name="reject timesheet entry",
+    )
 
     existing = dataflow_crud.read("TimesheetEntry", entry_id)
     if not existing:
@@ -932,6 +988,13 @@ async def update_project(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"update_project:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="update project",
+    )
 
     _verify_project_ownership(project_id, company_id)
 
@@ -963,6 +1026,13 @@ async def archive_project(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"archive_project:{user_id}",
+        max_requests=20,
+        window_seconds=60,
+        action_name="archive project",
+    )
 
     _verify_project_ownership(project_id, company_id)
     dataflow_crud.update("Project", project_id, {"is_archived": True})

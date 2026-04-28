@@ -290,12 +290,14 @@ class TestDeprecatedEndpoint:
     def test_new_policies_endpoint_also_returns_policy_type(
         self, client: TestClient, owner_token: str
     ):
-        """GET /policies/ (new endpoint) also includes policy_type for consistency.
+        """GET /policies (new endpoint) also includes policy_type for consistency.
 
         Even though the mobile app uses the deprecated endpoint, the new
         endpoint should also return policy_type to support migration.
+        Note: route is registered at "" with prefix "/policies", and the app
+        sets ``redirect_slashes=False`` — the canonical URL is no-slash.
         """
-        resp = client.get("/policies/", headers=_auth(owner_token))
+        resp = client.get("/policies", headers=_auth(owner_token))
         assert resp.status_code == 200
         for policy in resp.json()["policies"]:
             assert "policy_type" in policy, (

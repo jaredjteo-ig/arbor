@@ -32,6 +32,7 @@ from hr_advisory.api.routers import (
     emergency_router,
     help_router,
     integrations_router,
+    integrations_calendar_router,
     inventory_router,
     kb_router,
     onboarding_router,
@@ -192,6 +193,11 @@ def _register_routers(app: Nexus) -> None:
     api.include_router(claims_router, prefix="/claims", tags=["Claims"])
     api.include_router(attendance_router, prefix="/attendance", tags=["Attendance"])
     api.include_router(integrations_router, prefix="/integrations", tags=["Integrations"])
+    api.include_router(
+        integrations_calendar_router,
+        prefix="/integrations/google-calendar",
+        tags=["Integrations - Google Calendar"],
+    )
     api.include_router(appraisals_router, prefix="/appraisals", tags=["Appraisals"])
     api.include_router(approval_groups_router, prefix="/approval-groups", tags=["Approval Groups"])
     api.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])
@@ -231,17 +237,14 @@ def _register_handlers(app: Nexus, session_store) -> None:
     ) -> dict:
         """Multi-channel handler for HR advisory queries.
 
-        Applies the full safety chain: sanitisation, screening, domain
-        detection, KB lookup, citation validation, and response generation.
+        Runs the autonomous AdvisoryEngine (LLM function-calling) which
+        performs sanitisation, screening, KB lookup, citation validation,
+        and response generation as a single agentic flow.
         """
-        from hr_advisory.api.routers.advisory import (
-            _classify_risk_tier,
-            _detect_domains,
-            _generate_grounded_response,
-            _lookup_provisions,
-        )
+        import asyncio
+
+        from hr_advisory.agents.advisory_engine import AdvisoryEngine
         from hr_advisory.security.validation import sanitise_input
-        from hr_advisory.trust.citation_validator import validate_citations
         from hr_advisory.workflows.guardrails import ScreeningResult, screen_query
 
         clean_query = sanitise_input(query)
@@ -265,28 +268,25 @@ def _register_handlers(app: Nexus, session_store) -> None:
                 "escalated": True,
             }
 
-        domains = _detect_domains(clean_query)
-        provision_ids = _lookup_provisions(domains, query=clean_query)
-        citation_result = validate_citations(provision_ids)
-        provisions_cited = [
-            {
-                "provision_id": c.provision_id,
-                "title": c.title,
-                "authority_level": c.authority_level.value,
-            }
-            for c in citation_result.validated_citations
-        ]
-
-        confidence = 0.85 if citation_result.is_valid else 0.6
-        risk_tier = _classify_risk_tier(domains, confidence)
-        response_text = _generate_grounded_response(clean_query, domains, provisions_cited)
+        engine = AdvisoryEngine()
+        loop = asyncio.get_event_loop()
+        engine_result = await loop.run_in_executor(
+            None,
+            lambda: engine.run(
+                query=clean_query,
+                conversation_history=[],
+                company_id=company_id or None,
+            ),
+        )
 
         return {
             "query": clean_query,
-            "response": response_text,
-            "provisions_cited": provisions_cited,
-            "risk_tier": risk_tier,
-            "confidence_score": confidence,
+            "response": engine_result.get("response_text", ""),
+            "provisions_cited": engine_result.get("citations", []),
+            "risk_tier": engine_result.get("risk_tier", "amber"),
+            "confidence_score": engine_result.get("confidence", 0.7),
+            "domains": engine_result.get("domains", []),
+            "degraded": engine_result.get("degraded", False),
             "company_id": company_id or None,
             "conversation_id": conversation_id or None,
         }

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 import {
   Menu,
   Search,
@@ -26,6 +27,7 @@ export interface TopBarProps {
 export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
   const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -166,7 +168,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
           "transition-colors duration-200",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
         )}
-        aria-label="Toggle navigation menu"
+        aria-label={t("topbar.toggle_menu")}
       >
         <Menu className="h-5 w-5" aria-hidden="true" />
       </button>
@@ -191,7 +193,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
                 "transition-colors duration-200",
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
               )}
-              aria-label="Open search"
+              aria-label={t("topbar.open_search")}
             >
               <Search className="h-5 w-5" aria-hidden="true" />
             </button>
@@ -210,7 +212,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
                 <input
                   ref={searchInputRef}
                   type="search"
-                  placeholder="Search..."
+                  placeholder={t("topbar.search_placeholder")}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className={clsx(
@@ -260,7 +262,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
                   "transition-colors duration-200",
                   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
                 )}
-                aria-label="Close search"
+                aria-label={t("topbar.close_search")}
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -283,7 +285,11 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
             "transition-colors duration-200",
             "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
           )}
-          aria-label={`Notifications${notificationCount > 0 ? ` (${notificationCount} unread)` : ""}`}
+          aria-label={
+            notificationCount > 0
+              ? t("topbar.notifications_unread", { count: notificationCount })
+              : t("topbar.notifications")
+          }
         >
           <Bell className="h-5 w-5" aria-hidden="true" />
           {notificationCount > 0 && (
@@ -317,7 +323,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
               "transition-colors duration-200",
               "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
             )}
-            aria-label="User menu"
+            aria-label={t("topbar.user_menu")}
             aria-expanded={profileOpen}
             aria-haspopup="true"
           >
@@ -348,7 +354,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
             >
               <DropdownItem
                 icon={User}
-                label="My Profile"
+                label={t("topbar.my_profile")}
                 onClick={() => {
                   setProfileOpen(false);
                   router.push("/my-profile");
@@ -357,7 +363,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
               {isAdmin && (
                 <DropdownItem
                   icon={Building2}
-                  label="Company Profile"
+                  label={t("topbar.company_profile")}
                   onClick={() => {
                     setProfileOpen(false);
                     router.push("/profile");
@@ -366,7 +372,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
               )}
               <DropdownItem
                 icon={Settings}
-                label="Settings"
+                label={t("topbar.settings")}
                 onClick={() => {
                   setProfileOpen(false);
                   router.push("/settings");
@@ -378,7 +384,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
               />
               <DropdownItem
                 icon={LogOut}
-                label="Log out"
+                label={t("topbar.log_out")}
                 onClick={() => {
                   setProfileOpen(false);
                   logout();

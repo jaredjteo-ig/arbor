@@ -83,6 +83,19 @@ class TestCitationValidation:
 class TestProvisionDetail:
     """Test provision detail retrieval for 'View Source' action."""
 
+    def setup_method(self) -> None:
+        """Clear the module-level provision cache.
+
+        Other tests in the suite (advisory engine, KB search) may have warmed
+        the cache with a partial DataFlow result that fails strict validation.
+        Forcing a fresh load makes this self-consistency test reliable in any
+        run order.
+        """
+        import hr_advisory.trust.citation_validator as mod
+
+        mod._provision_cache = None
+        mod._cache_timestamp = 0.0
+
     def test_known_provision(self) -> None:
         """Known provision should return full detail."""
         detail = get_provision_detail("EA-S95-KETs")

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AppShell } from "@/components/shell";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useState, useEffect } from "react";
+import { getLocale } from "@/lib/i18n";
 import {
   ShadowAgentProvider,
   ShadowWidget,
@@ -31,6 +32,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     if (storedTextSize) {
       document.documentElement.setAttribute("data-text-size", storedTextSize);
     }
+    // Mirror the active locale onto <html lang> so screen readers and
+    // CSS :lang() selectors pick up the user's choice.
+    document.documentElement.lang = getLocale();
   }, []);
 
   return (

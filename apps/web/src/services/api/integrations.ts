@@ -202,10 +202,39 @@ export interface PayNowQRResponse {
 
 /* ── API Methods ─────────────────────────────────────────── */
 
+export interface GoogleCalendarStatus {
+  connected: boolean;
+  expires_at: string | null;
+  last_synced_at: string | null;
+  scope: string | null;
+  channel_id?: string | null;
+}
+
 export const integrationsApi = {
   /** Get connection status for all configured providers. */
   status(): Promise<IntegrationStatusResponse> {
     return apiClient.get<IntegrationStatusResponse>("/integrations/status");
+  },
+
+  /** T-R055: Google Calendar — fetch the OAuth consent URL. */
+  googleCalendarAuthUrl(): Promise<{ auth_url: string; state: string }> {
+    return apiClient.get<{ auth_url: string; state: string }>(
+      "/integrations/google-calendar/auth-url",
+    );
+  },
+
+  /** T-R055: Google Calendar — connection status for the current company. */
+  googleCalendarStatus(): Promise<GoogleCalendarStatus> {
+    return apiClient.get<GoogleCalendarStatus>(
+      "/integrations/google-calendar/status",
+    );
+  },
+
+  /** T-R055: Google Calendar — revoke + delete the stored connection. */
+  googleCalendarDisconnect(): Promise<{ disconnected: boolean }> {
+    return apiClient.post<{ disconnected: boolean }>(
+      "/integrations/google-calendar/disconnect",
+    );
   },
 
   /** Connect a provider (initiates OAuth or API key setup). */

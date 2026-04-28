@@ -112,6 +112,7 @@ from hr_advisory.models.company_user import (
     LLMConfigStatus,
     LLMProvider,
 )
+from hr_advisory.models.google_calendar import GoogleCalendarConnection
 from hr_advisory.models.qa import (
     QASession,
     QAEvaluation,
@@ -204,6 +205,8 @@ __all__ = [
     # M12: Referral Tracking (T-R051)
     "Referral",
     "ReferralStatus",
+    # T-R055: Google Calendar integration
+    "GoogleCalendarConnection",
     # BYOK / LLM Config Models (T405-T406)
     "CompanyLLMConfig",
     "CompanyLLMUsage",

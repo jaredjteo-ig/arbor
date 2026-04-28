@@ -214,4 +214,22 @@ export const shadowApi = {
   nudges(page: string): Promise<NudgesResponse> {
     return apiClient.get<NudgesResponse>("/shadow/nudges", { page });
   },
+
+  /**
+   * Drive the chat-style company onboarding flow (T223).
+   * Pass step="" on the first turn to kick off the conversation.
+   */
+  onboardingChat(
+    step: string,
+    answer: string,
+    fields: Record<string, unknown>,
+  ): Promise<{
+    next_step: string;
+    prompt: string;
+    fields: Record<string, unknown>;
+    error: string | null;
+    timestamp: string;
+  }> {
+    return apiClient.post("/shadow/onboarding/chat", { step, answer, fields });
+  },
 };

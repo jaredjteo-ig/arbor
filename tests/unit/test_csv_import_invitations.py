@@ -8,116 +8,15 @@ Tests use FastAPI TestClient with mocked DataFlow operations.
 
 from __future__ import annotations
 
-import sys
-import types
 import uuid
 from unittest.mock import MagicMock, patch
 
-# ---------------------------------------------------------------------------
-# Pre-populate sys.modules with stubs for all broken kailash submodules.
-#
-# The installed kailash SDK has import chain breakages (version mismatch).
-# Rather than patching each broken attribute one at a time, we inject stub
-# modules for the entire kailash.runtime / kailash.workflow chain BEFORE
-# anything tries to import them through the hr_advisory import chain.
-#
-# We ONLY stub modules that are NOT already loaded (preserving real modules
-# that DO work, like kailash itself and kailash.nodes).
-# ---------------------------------------------------------------------------
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-
-class _StubModule(types.ModuleType):
-    """A stub module that returns MagicMock for any missing attribute.
-
-    This handles `from some.module import AnyName` without needing to
-    enumerate every possible name upfront.
-    """
-
-    def __init__(self, name: str, attrs: dict | None = None):
-        super().__init__(name)
-        self.__path__ = []  # Makes it look like a package
-        self.__file__ = f"<stub:{name}>"
-        if attrs:
-            for k, v in attrs.items():
-                setattr(self, k, v)
-
-    def __getattr__(self, name: str):
-        if name.startswith("_"):
-            raise AttributeError(name)
-        return MagicMock
-
-
-def _stub_module(name: str, attrs: dict | None = None) -> _StubModule:
-    """Create a stub module with __path__ and catch-all __getattr__."""
-    return _StubModule(name, attrs)
-
-
-_RUNTIME_ATTRS = {
-    "LocalRuntime": MagicMock,
-    "AsyncLocalRuntime": MagicMock,
-    "BaseRuntime": MagicMock,
-}
-
-_WORKFLOW_ATTRS = {
-    "Workflow": MagicMock,
-    "WorkflowBuilder": MagicMock,
-    "workflow": MagicMock,
-}
-
-_NODE_ATTRS = {
-    "Node": MagicMock,
-    "NodeParameter": MagicMock,
-    "nodes": MagicMock,
-}
-
-# DataFlow stub: DataFlow() must be callable and return a mock
-_DATAFLOW_ATTRS = {
-    "DataFlow": MagicMock,
-    "Model": MagicMock,
-}
-
-# Modules to stub -- only stubbed if NOT already in sys.modules
-_STUBS: dict[str, dict | None] = {
-    # dataflow (must come before hr_advisory.models.database)
-    "dataflow": _DATAFLOW_ATTRS,
-    # kailash.runtime chain
-    "kailash.runtime": _RUNTIME_ATTRS,
-    "kailash.runtime.async_local": _RUNTIME_ATTRS,
-    "kailash.runtime.local": _RUNTIME_ATTRS,
-    "kailash.runtime.base": _RUNTIME_ATTRS,
-    # kailash.workflow chain
-    "kailash.workflow": _WORKFLOW_ATTRS,
-    "kailash.workflow.builder": _WORKFLOW_ATTRS,
-    # kailash.nodes chain (patch missing attributes)
-    "kailash.nodes": _NODE_ATTRS,
-    "kailash.nodes.base": _NODE_ATTRS,
-    # kaizen chain
-    "kaizen": {"BaseAgent": MagicMock},
-    "kaizen.core": {"BaseAgent": MagicMock, "base_agent": MagicMock},
-    "kaizen.core.base_agent": {"BaseAgent": MagicMock},
-    "kaizen.core.signature": {"Signature": MagicMock},
-    "kaizen.core.chain_of_thought": {"ChainOfThought": MagicMock},
-    "kaizen.memory": {"SharedMemoryPool": MagicMock},
-    "kaizen.signatures": {"Signature": MagicMock},
-}
-
-for _name, _attrs in _STUBS.items():
-    if _name not in sys.modules:
-        sys.modules[_name] = _stub_module(_name, _attrs)
-    else:
-        # Module exists but may be missing attributes
-        _existing = sys.modules[_name]
-        if _attrs:
-            for _k, _v in _attrs.items():
-                if not hasattr(_existing, _k):
-                    setattr(_existing, _k, _v)
-
-import pytest  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-
-from hr_advisory.api.routers.employees import router  # noqa: E402
-from hr_advisory.api.middleware.auth_middleware import get_current_user  # noqa: E402
+from hr_advisory.api.routers.employees import router
+from hr_advisory.api.middleware.auth_middleware import get_current_user
 
 
 # ---------------------------------------------------------------------------
@@ -210,8 +109,8 @@ class TestCSVImportReturnsInviteTokens:
         )
 
     @patch("hr_advisory.api.routers.employees._create_invitation")
-    def test_invite_url_defaults_to_localhost(self, mock_create_inv, owner_client):
-        """When FRONTEND_URL is not set, default to localhost:3000."""
+    def test_invite_url_uses_request_origin_when_env_unset(self, mock_create_inv, owner_client):
+        """When FRONTEND_URL is unset, the resolver must fall back to the Origin header."""
         mock_create_inv.return_value = {"id": 1}
 
         records = [
@@ -222,7 +121,11 @@ class TestCSVImportReturnsInviteTokens:
 
         original = os.environ.pop("FRONTEND_URL", None)
         try:
-            resp = owner_client.post("/employees/import/confirm", json={"records": records})
+            resp = owner_client.post(
+                "/employees/import/confirm",
+                json={"records": records},
+                headers={"origin": "https://hr.acme.com"},
+            )
         finally:
             if original is not None:
                 os.environ["FRONTEND_URL"] = original
@@ -230,7 +133,7 @@ class TestCSVImportReturnsInviteTokens:
         data = resp.json()
         assert len(data["invitations"]) == 1
         assert data["invitations"][0]["invite_url"].startswith(
-            "http://localhost:3000/signup?token="
+            "https://hr.acme.com/signup?token="
         )
 
     @patch("hr_advisory.api.routers.employees._create_invitation")

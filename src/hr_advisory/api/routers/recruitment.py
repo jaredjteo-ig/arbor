@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.integrations.google_calendar import sync as gcal_sync
 from hr_advisory.mcp_servers.adapters.resend_email import ResendAdapter
 from hr_advisory.templates.recruitment_emails import RECRUITMENT_TEMPLATES
 
@@ -108,14 +109,7 @@ MAX_NAME_LENGTH = 200
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
-def _validate_text_length(value: str, field_name: str, max_len: int = MAX_TEXT_LENGTH) -> str:
-    """Validate text input to maximum length."""
-    if value and len(value) > max_len:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{field_name} exceeds maximum length of {max_len} characters.",
-        )
-    return value
+from hr_advisory.api.routers._helpers import _validate_text_length  # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -574,9 +568,15 @@ async def scan_job_listing(
 @router.get("/candidates")
 async def list_all_candidates(
     stage: str | None = Query(None),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
-    """List ALL candidates across all job listings for the company."""
+    """List ALL candidates across all job listings for the company.
+
+    T-RX09: paginated. Returns at most ``page_size`` rows per call so a
+    company with thousands of candidates cannot exhaust server memory.
+    """
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
@@ -586,7 +586,15 @@ async def list_all_candidates(
         filters["stage"] = stage
 
     candidates = dataflow_crud.list_records("Candidate", filters)
-    return {"candidates": candidates, "count": len(candidates)}
+    page_items, total = _paginate(candidates, page, page_size)
+    return {
+        "candidates": page_items,
+        "items": page_items,
+        "count": len(page_items),
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 # --------------------------------------------------------------------------
@@ -944,6 +952,37 @@ async def schedule_interview(
             },
         )
 
+    # T-R055: best-effort Google Calendar sync.  Failures must never block
+    # the interview workflow — log and continue.
+    try:
+        job = dataflow_crud.read("JobListing", candidate.get("job_listing_id"))
+        sync_payload = {
+            "id": interview.get("id"),
+            "scheduled_at": interview.get("scheduled_at", ""),
+            "duration_minutes": interview.get("duration_minutes", 60),
+            "location": interview.get("location", ""),
+            "interviewers": body.get("interviewers", []),
+            "candidate_email": candidate.get("email", ""),
+            "candidate_name": candidate.get("name", ""),
+            "job_title": (job or {}).get("title", "") if job else "",
+            "notes": interview.get("notes", ""),
+            "status": interview.get("status", "scheduled"),
+        }
+        google_event_id = gcal_sync.create_event(company_id, sync_payload)
+        if google_event_id and interview.get("id"):
+            dataflow_crud.update(
+                "InterviewSchedule",
+                interview["id"],
+                {"google_event_id": google_event_id},
+            )
+            interview["google_event_id"] = google_event_id
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Google Calendar sync failed for interview %s: %s",
+            interview.get("id"),
+            exc,
+        )
+
     return {"interview": interview}
 
 
@@ -994,6 +1033,46 @@ async def update_interview(
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = dataflow_crud.update("InterviewSchedule", interview_id, updates)
+
+    # T-R055: keep Google Calendar in sync.  Cancellations delete the event;
+    # any other change patches the event.  Best-effort — never blocks.
+    google_event_id = (existing.get("google_event_id") or "") or ((result or {}).get("google_event_id") or "")
+    try:
+        if google_event_id:
+            new_status = updates.get("status", existing.get("status"))
+            if new_status == "cancelled":
+                gcal_sync.delete_event(company_id, google_event_id)
+                # Detach from the Arbor row so a future reschedule creates a new event.
+                dataflow_crud.update(
+                    "InterviewSchedule",
+                    interview_id,
+                    {"google_event_id": ""},
+                )
+            else:
+                # Build the same payload shape sync.create_event expects.
+                candidate = dataflow_crud.read("Candidate", existing.get("candidate_id")) or {}
+                job = dataflow_crud.read("JobListing", candidate.get("job_listing_id")) or {}
+                merged = {**existing, **updates}
+                sync_payload = {
+                    "id": interview_id,
+                    "scheduled_at": merged.get("scheduled_at", ""),
+                    "duration_minutes": merged.get("duration_minutes", 60),
+                    "location": merged.get("location", ""),
+                    "interviewers": merged.get("interviewers", "[]"),
+                    "candidate_email": candidate.get("email", ""),
+                    "candidate_name": candidate.get("name", ""),
+                    "job_title": job.get("title", ""),
+                    "notes": merged.get("notes", ""),
+                    "status": merged.get("status", "scheduled"),
+                }
+                gcal_sync.update_event(company_id, google_event_id, sync_payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Google Calendar sync failed for interview update %s: %s",
+            interview_id,
+            exc,
+        )
+
     return {"interview": result}
 
 
@@ -1573,9 +1652,15 @@ async def send_offer(
 @router.get("/offers")
 async def list_offers(
     status: str | None = Query(None),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
-    """List all offers for the company."""
+    """List all offers for the company.
+
+    T-RX09: paginated. Candidate-name enrichment is restricted to the page
+    being returned to avoid an N+1 read across the entire offer table.
+    """
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
@@ -1585,13 +1670,21 @@ async def list_offers(
         filters["status"] = status
 
     offers = dataflow_crud.list_records("Offer", filters)
+    page_items, total = _paginate(offers, page, page_size)
 
-    # Enrich with candidate names
-    for offer in offers:
+    # Enrich the page with candidate names (only the rows we'll return)
+    for offer in page_items:
         cand = dataflow_crud.read("Candidate", offer.get("candidate_id"))
         offer["candidate_name"] = cand.get("name", "") if cand else ""
 
-    return {"offers": offers, "count": len(offers)}
+    return {
+        "offers": page_items,
+        "items": page_items,
+        "count": len(page_items),
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.post("/offers/{offer_id}/respond")
@@ -3084,3 +3177,205 @@ async def create_scorecard_entry(
         },
     )
     return {"entry": entry, "total_score": total}
+
+
+# --------------------------------------------------------------------------
+# T-R054: AI candidate scorecard generation (Kaizen)
+# --------------------------------------------------------------------------
+
+
+@router.post("/candidates/{candidate_id}/scorecard/generate")
+async def generate_ai_scorecard(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Generate an AI-authored scorecard for a candidate (T-R054).
+
+    Loads the candidate, the job listing, the requested scorecard
+    template, and any interview feedback collected so far, then runs the
+    Kaizen ScorecardAgent. The structured scorecard is returned to the
+    caller and persisted as a ScorecardEntry row when the schema is
+    available — falling back to a transient generation_id if not.
+
+    LLM calls are expensive: rate-limited to 10 requests / minute / user.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"generate_scorecard:{user_id}",
+        max_requests=10,
+        window_seconds=60,
+    )
+
+    candidate = _verify_candidate_ownership(candidate_id, company_id)
+
+    body = await request.json()
+    template_id = body.get("template_id")
+    if template_id is None:
+        raise HTTPException(status_code=400, detail="template_id is required.")
+    try:
+        template_id = int(template_id)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400, detail="template_id must be an integer.",
+        ) from exc
+
+    template = dataflow_crud.read("ScorecardTemplate", template_id)
+    if not template or template.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Scorecard template not found.")
+
+    # Job listing — required so the agent can compare against requirements.
+    job_id = candidate.get("job_listing_id")
+    job = (
+        dataflow_crud.read("JobListing", job_id) if job_id is not None else None
+    )
+    if not job or job.get("company_id") != company_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Job listing for this candidate was not found.",
+        )
+
+    # Interview feedback — optional, scoped by tenant.
+    feedback_rows = dataflow_crud.list_records(
+        "InterviewFeedback", {"candidate_id": candidate_id},
+    )
+    feedback_rows = [
+        f for f in feedback_rows if f.get("company_id") == company_id
+    ]
+
+    # Build sanitised inputs for the agent (no protected attributes).
+    candidate_payload = {
+        "id": candidate.get("id"),
+        "name": candidate.get("name", ""),
+        "email": candidate.get("email", ""),
+        "current_role": candidate.get("current_role", ""),
+        "experience_summary": candidate.get("experience_summary", "")
+        or candidate.get("notes", ""),
+        "skills": candidate.get("skills", []),
+        "education": candidate.get("education", ""),
+        "resume_excerpt": candidate.get("resume_excerpt", ""),
+        "source": candidate.get("source", ""),
+        "stage": candidate.get("stage", ""),
+    }
+    job_payload = {
+        "id": job.get("id"),
+        "title": job.get("title", ""),
+        "department": job.get("department", ""),
+        "employment_type": job.get("employment_type", ""),
+        "description": job.get("description", ""),
+        "requirements": job.get("requirements", ""),
+    }
+    template_payload = {
+        "id": template.get("id"),
+        "name": template.get("name", ""),
+        "description": template.get("description", ""),
+        "criteria": template.get("criteria", "[]"),
+    }
+    feedback_payload = [
+        {
+            "id": f.get("id"),
+            "interview_id": f.get("interview_id"),
+            "overall_rating": f.get("overall_rating"),
+            "strengths": f.get("strengths", ""),
+            "weaknesses": f.get("weaknesses", ""),
+            "notes": f.get("notes", ""),
+            "recommendation": f.get("recommendation", ""),
+        }
+        for f in feedback_rows
+    ]
+
+    # Lazy-import the agent so the recruitment router stays importable
+    # even if the kaizen extras are missing from the dev environment.
+    try:
+        from hr_advisory.agents.scorecard_agent import (
+            ScorecardAgent,
+            ScorecardAgentConfig,
+        )
+    except ImportError as exc:
+        logger.error("ScorecardAgent unavailable: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="AI scorecard service is not available on this deployment.",
+        ) from exc
+
+    try:
+        agent = ScorecardAgent(config=ScorecardAgentConfig())
+        result = agent.generate(
+            candidate_profile=candidate_payload,
+            job_listing=job_payload,
+            scorecard_template=template_payload,
+            interview_feedback=feedback_payload,
+        )
+    except Exception as exc:
+        logger.error(
+            "ScorecardAgent failed for candidate %s, template %s: %s",
+            candidate_id,
+            template_id,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="AI scorecard generation failed. Please try again or score manually.",
+        ) from exc
+
+    scorecard = result.get("scorecard", {})
+    degraded = bool(result.get("degraded", False))
+
+    # Persist as a ScorecardEntry row keyed against this candidate so the
+    # AI-authored scorecard is reviewable alongside human ones. Falls back
+    # to a transient generation_id when the schema isn't deployed yet.
+    competency_ratings = scorecard.get("competency_ratings", {}) or {}
+    notes_blob = json.dumps(
+        {
+            "ai_generated": True,
+            "overall_fit": scorecard.get("overall_fit"),
+            "recommended_decision": scorecard.get("recommended_decision"),
+            "narrative": scorecard.get("narrative", ""),
+            "strengths": scorecard.get("strengths", []),
+            "concerns": scorecard.get("concerns", []),
+            "degraded": degraded,
+        },
+    )
+    generation_id = f"ai-scorecard-{candidate_id}-{uuid.uuid4().hex[:12]}"
+    persisted_entry: dict | None = None
+    try:
+        persisted_entry = dataflow_crud.create(
+            "ScorecardEntry",
+            {
+                "company_id": company_id,
+                "candidate_id": candidate_id,
+                "interview_feedback_id": None,
+                "template_id": template_id,
+                "scores": json.dumps(competency_ratings),
+                "notes": notes_blob[:MAX_TEXT_LENGTH] if notes_blob else "",
+                "total_score": float(scorecard.get("overall_fit", 0.0) or 0.0),
+                "created_by": user_id,
+                "generation_id": generation_id,
+                "is_ai_generated": True,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 — schema may not have ai columns
+        logger.info(
+            "ScorecardEntry persistence skipped (schema may lack AI columns): %s",
+            exc,
+        )
+        persisted_entry = None
+
+    _log_candidate_activity(
+        candidate_id,
+        f"AI scorecard generated (template_id={template_id}, "
+        f"decision={scorecard.get('recommended_decision', 'unknown')})",
+        user_id,
+    )
+
+    return {
+        "scorecard": scorecard,
+        "generation_id": generation_id,
+        "degraded": degraded,
+        "persisted_entry_id": (persisted_entry or {}).get("id"),
+    }

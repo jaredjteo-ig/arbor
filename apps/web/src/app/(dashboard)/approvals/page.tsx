@@ -301,7 +301,7 @@ function TimesheetApprovalsTab() {
             </span>
           )}
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <AppButton
             variant="outlined"
             size="sm"
@@ -652,8 +652,8 @@ export default function ApprovalsPage() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 border-b border-[var(--color-gray-200)]">
+        {/* Tabs — horizontally scrollable on narrow viewports so the row never breaks */}
+        <div className="flex gap-1 border-b border-[var(--color-gray-200)] overflow-x-auto -mx-5 px-5 sm:mx-0 sm:px-0">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;

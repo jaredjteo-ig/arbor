@@ -10,11 +10,14 @@ Provides:
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 class ScreeningResult(str, Enum):
     """Result of query screening."""

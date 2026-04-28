@@ -583,7 +583,7 @@ class TestQALearnedRulesSection:
             ),
         ],
     )
-    @patch("hr_advisory.agents.config._resolve_provider_and_model")
+    @patch("hr_advisory.agents.config.resolve_provider_and_model")
     @patch("kaizen.core.base_agent.BaseAgent.__init__", return_value=None)
     def test_specialist_has_qa_learned_rules_section(
         self,

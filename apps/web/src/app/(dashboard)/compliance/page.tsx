@@ -441,7 +441,12 @@ export default function CompliancePage() {
               setHasForeign(true);
             }
           })
-          .catch(() => {});
+          .catch((err) => {
+            console.warn(
+              "Could not auto-populate compliance form from company profile:",
+              err,
+            );
+          });
       });
     }
   }, [companyId]);

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 import {
   LayoutDashboard,
   MessageSquare,
@@ -415,6 +416,7 @@ export function NavigationSidebar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   const isEmployee = user?.role === "employee";
 
@@ -480,7 +482,7 @@ export function NavigationSidebar({
         {!isEmployee && (
           <>
             {/* Tools */}
-            <NavGroupLabel label="Tools" collapsed={collapsed} />
+            <NavGroupLabel label={t("nav.group_tools")} collapsed={collapsed} />
             <ul className="flex flex-col gap-0.5 px-2" role="list">
               {adminToolsNavItems.map((item) => (
                 <NavLink
@@ -493,7 +495,10 @@ export function NavigationSidebar({
             </ul>
 
             {/* Management — expandable */}
-            <NavGroupLabel label="Management" collapsed={collapsed} />
+            <NavGroupLabel
+              label={t("nav.group_management")}
+              collapsed={collapsed}
+            />
             <ul className="flex flex-col gap-0.5 px-2" role="list">
               {adminManagementNavItems.map((item) =>
                 item.children && !collapsed ? (
@@ -588,9 +593,11 @@ function ExpandableNavLink({
   collapsed: boolean;
   searchParams?: URLSearchParams | null;
 }) {
+  const { t } = useTranslation();
   const active = isGroupActive(pathname, item, searchParams);
   const [expanded, setExpanded] = useState(active);
   const Icon = item.icon;
+  const translated = t(item.labelKey, { defaultValue: item.label });
 
   return (
     <li>
@@ -608,7 +615,7 @@ function ExpandableNavLink({
       >
         <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
         <span className="text-sm font-medium truncate flex-1">
-          {item.label}
+          {translated}
         </span>
         <ChevronDown
           className={clsx(
@@ -633,7 +640,9 @@ function ExpandableNavLink({
                 )}
               >
                 <child.icon className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{child.label}</span>
+                <span className="truncate">
+                  {t(child.labelKey, { defaultValue: child.label })}
+                </span>
               </Link>
             </li>
           ))}
@@ -654,13 +663,15 @@ function NavLink({
   active: boolean;
   collapsed: boolean;
 }) {
+  const { t } = useTranslation();
   const Icon = item.icon;
+  const translated = t(item.labelKey, { defaultValue: item.label });
 
   return (
     <li>
       <Link
         href={item.href}
-        title={collapsed ? item.label : undefined}
+        title={collapsed ? translated : undefined}
         className={clsx(
           "group relative flex items-center gap-3 rounded-lg",
           "min-h-[44px] px-3 py-2",
@@ -678,7 +689,7 @@ function NavLink({
           aria-hidden="true"
         />
         {!collapsed && (
-          <span className="text-sm font-medium truncate">{item.label}</span>
+          <span className="text-sm font-medium truncate">{translated}</span>
         )}
 
         {/* Tooltip for collapsed */}
@@ -694,7 +705,7 @@ function NavLink({
             )}
             role="tooltip"
           >
-            {item.label}
+            {translated}
           </span>
         )}
       </Link>

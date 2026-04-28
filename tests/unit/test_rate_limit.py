@@ -1,10 +1,12 @@
-"""Unit tests for the rate limiter (T-RX05).
+"""Unit tests for the rate limiter (T-RX05 / T-RX07).
 
-The in-memory limiter switched from a list to ``collections.deque`` with a
-bounded ``maxlen=max_requests + 1``. These tests guard the bound: hammering
-the limiter with far more requests than ``maxlen`` must NOT cause unbounded
-memory growth, even when callers ignore the ``HTTPException`` that signals
-rate-limit refusal.
+The in-memory limiter uses ``collections.deque`` bounded to
+``max_requests + 1``. These tests guard that bound: hammering the limiter
+with more requests than ``maxlen`` must NOT cause unbounded memory growth.
+
+T-RX07 added a Redis backend. These tests target the in-memory fallback,
+so the autouse fixture points REDIS_URL at a closed port and resets all
+limiter state between tests.
 """
 
 from __future__ import annotations
@@ -15,19 +17,15 @@ import pytest
 from fastapi import HTTPException
 
 
-def _reset_log() -> None:
-    """Clear the module-level request log between tests for isolation."""
+@pytest.fixture(autouse=True)
+def _isolate_rate_log(monkeypatch):
+    """Force Redis-unreachable + clear all limiter state for each test."""
     from hr_advisory.api.middleware import rate_limit as rl
 
-    rl._request_log.clear()
-
-
-@pytest.fixture(autouse=True)
-def _isolate_rate_log():
-    """Each test starts with an empty rate-limit log."""
-    _reset_log()
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1/0")
+    rl.reset_rate_limit_state()
     yield
-    _reset_log()
+    rl.reset_rate_limit_state()
 
 
 class TestDequeBounded:

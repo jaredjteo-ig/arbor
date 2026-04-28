@@ -366,7 +366,7 @@ def auto_assign_default_onboarding(
     if active_existing:
         return None
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     # Create the assignment
     assignment = dataflow_crud.create(
@@ -548,7 +548,7 @@ async def create_template(
     _validate_text_length(body.get("description", ""), "description")
 
     actor_id = int(current_user.get("sub", 0))
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     # If marked as default, unset existing defaults for this company
     is_default = body.get("is_default", False)
@@ -635,7 +635,7 @@ async def update_template(
     template = _verify_template_ownership(template_id, company_id)
     body = await request.json()
 
-    updates: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    updates: dict = {"updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}
 
     if "name" in body:
         name = body["name"].strip()
@@ -701,7 +701,7 @@ async def archive_template(
         template_id,
         {
             "is_active": False,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         },
     )
     logger.info("Onboarding template archived: id=%s", template_id)
@@ -723,7 +723,7 @@ async def duplicate_template(
     body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
 
     actor_id = int(current_user.get("sub", 0))
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     new_name = body.get("name", f"{template.get('name', '')} (Copy)").strip()
     _validate_text_length(new_name, "name", MAX_NAME_LENGTH)
@@ -864,7 +864,10 @@ async def import_template(
         )
 
     actor_id = int(current_user.get("sub", 0))
-    now = datetime.now(timezone.utc).isoformat()
+    # Onboarding tables use ``timestamp without time zone`` — store naive
+    # ISO strings so asyncpg does not mix tz-aware and tz-naive datetimes
+    # during downstream reads.
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     # Derive template name from file or company profile
     company_profile = parsed.get("company_profile", {})
@@ -1663,7 +1666,7 @@ async def add_module(
     dataflow_crud.update(
         "OnboardingTemplate",
         template_id,
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()},
     )
 
     logger.info("Onboarding module added: id=%s, template_id=%s", module.get("id"), template_id)
@@ -1719,7 +1722,7 @@ async def update_module(
     dataflow_crud.update(
         "OnboardingTemplate",
         module.get("template_id"),
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()},
     )
 
     logger.info("Onboarding module updated: id=%s", module_id)
@@ -1749,7 +1752,7 @@ async def delete_module(
     dataflow_crud.update(
         "OnboardingTemplate",
         module.get("template_id"),
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()},
     )
 
     logger.info(
@@ -1799,7 +1802,7 @@ async def reorder_modules(
     dataflow_crud.update(
         "OnboardingTemplate",
         template_id,
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()},
     )
 
     logger.info("Modules reordered for template %s: %s", template_id, module_ids)
@@ -1881,7 +1884,7 @@ async def add_step(
     dataflow_crud.update(
         "OnboardingTemplate",
         module.get("template_id"),
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()},
     )
 
     logger.info("Onboarding step added: id=%s, module_id=%s", step.get("id"), module_id)
@@ -1956,7 +1959,7 @@ async def update_step(
     dataflow_crud.update(
         "OnboardingTemplate",
         module.get("template_id"),
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()},
     )
 
     logger.info("Onboarding step updated: id=%s", step_id)
@@ -1986,7 +1989,7 @@ async def delete_step(
     dataflow_crud.update(
         "OnboardingTemplate",
         module.get("template_id"),
-        {"updated_at": datetime.now(timezone.utc).isoformat()},
+        {"updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()},
     )
 
     logger.info("Onboarding step deleted: id=%s", step_id)
@@ -2105,7 +2108,7 @@ async def assign_template(
         )
 
     actor_id = int(current_user.get("sub", 0))
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     assignment = dataflow_crud.create(
         "OnboardingAssignment",
@@ -2260,7 +2263,7 @@ async def assign_template_bulk(
         raise HTTPException(status_code=400, detail="Cannot assign an archived template.")
 
     actor_id = int(current_user.get("sub", 0))
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     results: list[dict] = []
     errors: list[dict] = []
@@ -2814,7 +2817,7 @@ async def upload_step_document(
     document_url = f"/uploads/documents/onboarding/{company_id}/{safe_filename}"
 
     # Update progress record
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     result = dataflow_crud.update(
         "OnboardingStepProgress",
         progress_id,
@@ -2884,7 +2887,7 @@ async def acknowledge_policy_step(
     if progress.get("status") == "completed" and progress.get("acknowledged_at"):
         return {"message": "Policy already acknowledged.", "progress": progress}
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     # Create PolicyAcknowledgment record (if not already present for this version)
     policy = dataflow_crud.read("CompanyPolicy", policy_id)
@@ -2997,7 +3000,7 @@ async def approve_step(
     except Exception:
         pass
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     updates = {
         "status": "completed",
         "completed_at": now,
@@ -3597,7 +3600,7 @@ async def trigger_pulse_survey(
             detail=f"A {survey_type} survey already exists for this assignment.",
         )
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     survey = dataflow_crud.create(
         "PulseSurvey",
         {
@@ -3759,7 +3762,7 @@ async def respond_to_survey(
     # Calculate average and flag
     avg_score = round(total_score / len(responses), 2) if responses else 0.0
     flagged = avg_score < FLAG_THRESHOLD
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     dataflow_crud.update(
         "PulseSurvey",
@@ -3818,3 +3821,239 @@ async def get_survey_results(
     responses.sort(key=lambda r: r.get("question_number", 0))
 
     return {"survey": survey, "responses": responses}
+
+
+# ==========================================================================
+# T207: Email reminders for overdue onboarding steps
+# ==========================================================================
+#
+# A small periodic-friendly endpoint that scans OnboardingStepProgress rows
+# where status="pending" and the parent OnboardingAssignment.due_date is in
+# the past, and sends each affected employee a reminder email via Resend.
+#
+# Heavily rate-limited (5 calls / hour / company) so a misbehaving cron or
+# manual click cannot spam employees. Idempotency is best-effort: a future
+# enhancement could persist last_reminded_at on the progress row so the
+# same step isn't reminded more than once per N hours.
+#
+# Owner/hr_manager only.
+
+
+def _build_overdue_reminder_email(
+    employee_name: str,
+    template_name: str,
+    overdue_steps: list[dict],
+    due_date: str | None,
+    company_name: str,
+) -> str:
+    """Render a simple HTML reminder body for overdue onboarding steps."""
+    safe_employee = (employee_name or "there").replace("<", "&lt;").replace(">", "&gt;")
+    safe_template = (template_name or "your onboarding").replace("<", "&lt;").replace(">", "&gt;")
+    safe_company = (company_name or "your company").replace("<", "&lt;").replace(">", "&gt;")
+
+    items_html = "".join(
+        f"<li>{(s.get('title') or 'Untitled step').replace('<', '&lt;').replace('>', '&gt;')}</li>"
+        for s in overdue_steps
+    )
+    due_line = ""
+    if due_date:
+        due_line = (
+            f"<p style='margin:0 0 12px 0;color:#666;'>"
+            f"Your assignment was due on <strong>{due_date}</strong>.</p>"
+        )
+
+    return f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#222;">
+      <h2 style="margin:0 0 16px 0;color:#1a1a1a;">Reminder: outstanding onboarding tasks</h2>
+      <p style="margin:0 0 12px 0;">Hi {safe_employee},</p>
+      <p style="margin:0 0 12px 0;">
+        You still have outstanding tasks in <strong>{safe_template}</strong> at {safe_company}.
+        Please complete them as soon as possible.
+      </p>
+      {due_line}
+      <ul style="margin:0 0 16px 18px;padding:0;color:#333;">
+        {items_html}
+      </ul>
+      <p style="margin:0 0 12px 0;">
+        Open the My Onboarding page in the platform to continue.
+      </p>
+      <p style="margin:24px 0 0 0;color:#999;font-size:12px;">
+        If you've already completed these tasks, you can ignore this email.
+      </p>
+    </div>
+    """
+
+
+async def _send_overdue_reminders_for_company(company_id: int) -> dict:
+    """Scan + send overdue onboarding reminders for a single company.
+
+    Returns a summary dict with counts of assignments scanned, employees
+    notified, emails sent, and a list of skipped reasons (no email,
+    template missing, etc.).
+    """
+    summary = {
+        "assignments_scanned": 0,
+        "overdue_assignments": 0,
+        "employees_notified": 0,
+        "emails_sent": 0,
+        "skipped": 0,
+        "errors": 0,
+    }
+
+    if not os.environ.get("RESEND_API_KEY"):
+        logger.info(
+            "Onboarding reminders: RESEND_API_KEY not configured — skipping for company_id=%s",
+            company_id,
+        )
+        summary["skipped"] = -1  # sentinel: email transport unavailable
+        return summary
+
+    # Lazy imports — adapter only loaded when this endpoint is hit
+    try:
+        from hr_advisory.mcp_servers.adapters.resend_email import ResendAdapter
+    except Exception as exc:  # pragma: no cover - optional dependency path
+        logger.warning("Onboarding reminders: ResendAdapter unavailable: %s", exc)
+        summary["errors"] = 1
+        return summary
+
+    adapter = ResendAdapter()
+
+    # Lookup company for personalisation
+    company = dataflow_crud.read("Company", company_id) or {}
+    company_name = company.get("name", "your company")
+
+    assignments = dataflow_crud.list_records(
+        "OnboardingAssignment",
+        {"company_id": company_id},
+        cache_ttl=0,
+    )
+    summary["assignments_scanned"] = len(assignments)
+
+    now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    for assignment in assignments:
+        if assignment.get("status") in ("completed", "cancelled"):
+            continue
+
+        due_str = assignment.get("due_date")
+        if not due_str:
+            continue
+
+        try:
+            due_dt = datetime.fromisoformat(due_str)
+            if due_dt.tzinfo:
+                due_dt = due_dt.replace(tzinfo=None)
+        except (ValueError, TypeError):
+            continue
+
+        if now_dt <= due_dt:
+            continue  # not overdue yet
+
+        # Find pending step-progress rows for this assignment
+        progress_rows = dataflow_crud.list_records(
+            "OnboardingStepProgress",
+            {"assignment_id": assignment["id"], "status": "pending"},
+            cache_ttl=0,
+        )
+        if not progress_rows:
+            continue
+
+        summary["overdue_assignments"] += 1
+
+        # Resolve employee + user
+        employee_id = assignment.get("employee_id")
+        employee = dataflow_crud.read("Employee", employee_id) if employee_id else None
+        if not employee:
+            summary["skipped"] += 1
+            continue
+
+        user = dataflow_crud.read("User", employee.get("user_id")) if employee.get("user_id") else None
+        if not user or not user.get("email"):
+            summary["skipped"] += 1
+            continue
+
+        employee_email = user["email"]
+        employee_name = user.get("name", "")
+
+        # Resolve template name for friendlier copy
+        template = dataflow_crud.read("OnboardingTemplate", assignment.get("template_id")) or {}
+        template_name = template.get("name", "your onboarding")
+
+        # Resolve step titles for the digest
+        overdue_steps: list[dict] = []
+        for row in progress_rows[:25]:  # cap at 25 to keep email small
+            step = dataflow_crud.read("OnboardingStep", row.get("step_id"))
+            if step:
+                overdue_steps.append({"title": step.get("title", "")})
+
+        if not overdue_steps:
+            summary["skipped"] += 1
+            continue
+
+        html_body = _build_overdue_reminder_email(
+            employee_name=employee_name,
+            template_name=template_name,
+            overdue_steps=overdue_steps,
+            due_date=due_str.split("T")[0] if "T" in due_str else due_str,
+            company_name=company_name,
+        )
+
+        try:
+            await adapter.send_email(
+                to=employee_email,
+                subject=f"Reminder: complete your onboarding tasks ({template_name})",
+                html_body=html_body,
+                tags=[
+                    {"name": "category", "value": "onboarding_reminder"},
+                    {"name": "company_id", "value": str(company_id)},
+                ],
+            )
+            summary["emails_sent"] += 1
+            summary["employees_notified"] += 1
+            logger.info(
+                "Onboarding reminder sent: company_id=%s, employee_id=%s, steps=%d",
+                company_id,
+                employee_id,
+                len(overdue_steps),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Onboarding reminder failed for employee_id=%s: %s", employee_id, exc
+            )
+            summary["errors"] += 1
+
+    return summary
+
+
+@router.post("/reminders/send-overdue")
+async def send_overdue_reminders(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Send email reminders for overdue onboarding steps in this company.
+
+    Designed for periodic invocation (manually by an admin, or via an
+    external scheduler). Heavily rate-limited so cron mistakes or
+    repeated clicks cannot spam employees: max 5 invocations per hour
+    per company.
+
+    Returns a summary of how many reminders were dispatched. Failures
+    inside the loop are logged but do not abort the batch.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    # Heavy rate limit — onboarding reminders are designed to be infrequent.
+    check_rate_limit(
+        f"onboarding_reminders:{company_id}",
+        max_requests=5,
+        window_seconds=3600,
+        action_name="onboarding reminder dispatch",
+    )
+
+    summary = await _send_overdue_reminders_for_company(company_id)
+    return {
+        "message": "Overdue onboarding reminders processed.",
+        "company_id": company_id,
+        "summary": summary,
+    }

@@ -67,14 +67,7 @@ from hr_advisory.services import dataflow_crud
 # --------------------------------------------------------------------------
 
 
-def _find_employee_for_user(user_id: int, company_id: int) -> dict | None:
-    """Look up the employee record for a given user in a company."""
-    records = dataflow_crud.list_records(
-        "Employee",
-        {"user_id": user_id, "company_id": company_id},
-        limit=1,
-    )
-    return records[0] if records else None
+from hr_advisory.api.routers._helpers import _find_employee_for_user  # noqa: E402
 
 
 def _compute_content_hash(content: str) -> str:

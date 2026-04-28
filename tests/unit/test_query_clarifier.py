@@ -374,14 +374,12 @@ class TestErrorHandling:
 
 
 class TestPackageExport:
-    """Verify that QueryClarifier is exported from the orchestration package."""
+    """QueryClarifier is intentionally NOT exported from the orchestration package
+    after the AdvisoryEngine overhaul (commit 4b3d4c6) — it belongs to the old
+    Kaizen pipeline kept for reference only."""
 
-    def test_import_from_orchestration(self):
-        from hr_advisory.agents.orchestration import QueryClarifier as QC
-
-        assert QC is QueryClarifier
-
-    def test_in_all_list(self):
+    def test_not_exported_from_orchestration(self):
+        """The old Kaizen QueryClarifier must not appear in the public API."""
         from hr_advisory.agents.orchestration import __all__
 
-        assert "QueryClarifier" in __all__
+        assert "QueryClarifier" not in __all__

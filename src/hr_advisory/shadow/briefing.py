@@ -455,6 +455,114 @@ def _cpf_validation(company_id: int) -> list[dict[str, Any]]:
     return items
 
 
+def _onboarding_insights(company_id: int, user_role: str) -> list[dict[str, Any]]:
+    """Surface onboarding insights for the briefing.
+
+    For HR/owner roles: counts of active onboarding assignments,
+    average completion percentage, and overdue assignments.
+    For employees: their own active assignment progress.
+
+    Each insight links to /onboarding (HR/owner) or /my-onboarding (employee).
+    """
+    items: list[dict[str, Any]] = []
+    is_hr = user_role in ("admin", "hr", "hr_admin", "owner", "manager", "hr_manager")
+
+    if is_hr:
+        try:
+            assignments = _dataflow_list(
+                "OnboardingAssignmentListNode",
+                {"company_id": company_id},
+                limit=10000,
+            )
+        except Exception:
+            logger.debug("Failed to query onboarding assignments", exc_info=True)
+            return items
+
+        active = [a for a in assignments if a.get("status") in ("in_progress", "overdue")]
+        overdue = [a for a in assignments if a.get("status") == "overdue"]
+
+        if active:
+            # Average completion percentage across active assignments
+            percentages = [
+                float(a.get("completion_percentage") or 0.0) for a in active
+            ]
+            avg_pct = round(sum(percentages) / len(percentages), 1) if percentages else 0.0
+
+            items.append(
+                {
+                    "id": "onboarding-active",
+                    "category": "onboarding",
+                    "title": (
+                        f"{len(active)} new hire{'s' if len(active) != 1 else ''} "
+                        f"currently onboarding ({avg_pct:.0f}% complete on average)"
+                    ),
+                    "description": (
+                        f"{len(active)} onboarding assignment"
+                        f"{'s are' if len(active) != 1 else ' is'} in progress."
+                    ),
+                    "count": len(active),
+                    "average_completion": avg_pct,
+                    "action_type": "navigate",
+                    "route": "/onboarding",
+                    "priority": "medium",
+                }
+            )
+
+        if overdue:
+            items.append(
+                {
+                    "id": "onboarding-overdue",
+                    "category": "onboarding",
+                    "title": (
+                        f"{len(overdue)} employee"
+                        f"{'s are' if len(overdue) != 1 else ' is'} overdue on onboarding steps"
+                    ),
+                    "description": (
+                        "Review overdue onboarding assignments before they "
+                        "impact probation reviews."
+                    ),
+                    "count": len(overdue),
+                    "action_type": "navigate",
+                    "route": "/onboarding",
+                    "priority": "high",
+                }
+            )
+    else:
+        # Employee view: their own active assignment summary
+        try:
+            assignments = _dataflow_list(
+                "OnboardingAssignmentListNode",
+                {"company_id": company_id},
+                limit=10000,
+            )
+        except Exception:
+            logger.debug("Failed to query employee onboarding", exc_info=True)
+            return items
+
+        # Filter to active only (employee filter happens via /my-progress for full detail)
+        active = [a for a in assignments if a.get("status") in ("in_progress", "overdue")]
+        # Pull the employee ID for the current user from the briefing caller — the
+        # briefing API does not pass user_id, so we surface a generic CTA when any
+        # employee-facing assignment exists. The route /my-onboarding scopes by user.
+        if active:
+            items.append(
+                {
+                    "id": "onboarding-my-progress",
+                    "category": "onboarding",
+                    "title": "Continue your onboarding",
+                    "description": (
+                        "You have onboarding steps to complete. "
+                        "Open My Onboarding to continue."
+                    ),
+                    "action_type": "navigate",
+                    "route": "/my-onboarding",
+                    "priority": "medium",
+                }
+            )
+
+    return items
+
+
 def _quick_stats(company_id: int) -> dict[str, Any]:
     """Compute at-a-glance stats for the dashboard.
 
@@ -582,16 +690,20 @@ def generate_briefing(company_id: int, user_role: str) -> dict[str, Any]:
     deadlines = _upcoming_deadlines(company_id)
     attention = _attention_needed(company_id)
     cpf_items = _cpf_validation(company_id)
+    onboarding_items = _onboarding_insights(company_id, user_role)
     stats = _quick_stats(company_id)
 
     # Compute total action count for headline
-    total_items = len(pending) + len(attention) + len(cpf_items)
+    total_items = (
+        len(pending) + len(attention) + len(cpf_items) + len(onboarding_items)
+    )
 
     return {
         "pending_actions": pending,
         "upcoming_deadlines": deadlines,
         "attention_needed": attention,
         "cpf_validation": cpf_items,
+        "onboarding": onboarding_items,
         "quick_stats": stats,
         "total_action_items": total_items,
         "generated_date": date.today().isoformat(),

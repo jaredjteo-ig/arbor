@@ -44,14 +44,7 @@ def _week_dates(week_start: str) -> list[str]:
     return [(start + timedelta(days=i)).isoformat() for i in range(7)]
 
 
-def _find_employee_for_user(user_id: int, company_id: int) -> dict | None:
-    """Look up the Employee record for a given user and company."""
-    records = dataflow_crud.list_records(
-        "Employee",
-        {"user_id": user_id, "company_id": company_id},
-        limit=1,
-    )
-    return records[0] if records else None
+from hr_advisory.api.routers._helpers import _find_employee_for_user  # noqa: E402
 
 
 # --------------------------------------------------------------------------

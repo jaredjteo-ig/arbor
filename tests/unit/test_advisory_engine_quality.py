@@ -119,7 +119,10 @@ class TestToolResultEnrichment:
         assert has_notes, "search_kb must include interpretation_notes in results"
 
     def test_search_kb_includes_practical_examples(self):
-        result_json = _execute_tool_call("search_kb", {"query": "maternity leave entitlement"})
+        # Use a query whose top-matched provisions have practical_examples in
+        # the seeded KB ("annual leave" — provision 4 has 2 examples in the
+        # current production KB; "maternity leave" provisions have none yet).
+        result_json = _execute_tool_call("search_kb", {"query": "annual leave entitlement"})
         results = json.loads(result_json)
         has_examples = any(r.get("practical_examples") for r in results)
         assert has_examples, "search_kb must include practical_examples in results"

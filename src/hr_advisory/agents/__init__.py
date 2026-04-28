@@ -20,6 +20,11 @@ from hr_advisory.agents.memory import (
 from hr_advisory.agents.orchestration import (
     ResponseSynthesizerAgent,
 )
+from hr_advisory.agents.scorecard_agent import (
+    ScorecardAgent,
+    ScorecardAgentConfig,
+    ScorecardSignature,
+)
 from hr_advisory.agents.specialists import (
     ComplianceAgent,
     CPFAgent,
@@ -46,6 +51,10 @@ __all__ = [
     # Action agents
     "DocumentGenerationAgent",
     "CalculatorAgent",
+    # Recruitment agents (T-R054)
+    "ScorecardAgent",
+    "ScorecardAgentConfig",
+    "ScorecardSignature",
     # Memory
     "HRSharedMemoryPool",
     "ShortTermMemory",

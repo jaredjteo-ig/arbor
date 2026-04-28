@@ -108,10 +108,12 @@ class TestResolveProviderAndModel:
 
     @patch("hr_advisory.agents.config._detect_ollama", return_value="qwen2.5:32b")
     def test_without_context_no_openai_falls_to_ollama(self, mock_detect, monkeypatch) -> None:
-        """Without context and no OPENAI_API_KEY, tries Ollama auto-detect."""
+        """Without context and no provider keys, tries Ollama auto-detect."""
         from hr_advisory.config.settings import get_settings
 
         get_settings.cache_clear()
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.setenv("APP_ENV", "development")
         get_settings.cache_clear()
@@ -127,10 +129,12 @@ class TestResolveProviderAndModel:
     def test_without_context_no_providers_defaults_to_openai(
         self, mock_detect, monkeypatch
     ) -> None:
-        """No OPENAI_API_KEY, no Ollama: returns openai as fallback (will fail at call time)."""
+        """No provider keys, no Ollama: returns openai as fallback (will fail at call time)."""
         from hr_advisory.config.settings import get_settings
 
         get_settings.cache_clear()
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.setenv("APP_ENV", "development")
         get_settings.cache_clear()
@@ -195,6 +199,8 @@ class TestHasLLMAvailable:
         from hr_advisory.config.settings import get_settings
 
         get_settings.cache_clear()
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.setenv("APP_ENV", "development")
         get_settings.cache_clear()

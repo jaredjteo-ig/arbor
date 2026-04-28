@@ -125,6 +125,13 @@ async def update_template(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"update_appraisal_template:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="update appraisal template",
+    )
 
     existing = dataflow_crud.read("AppraisalTemplate", template_id)
     if not existing or existing.get("company_id") != company_id:
@@ -150,6 +157,13 @@ async def archive_template(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"archive_appraisal_template:{user_id}",
+        max_requests=20,
+        window_seconds=60,
+        action_name="archive appraisal template",
+    )
 
     existing = dataflow_crud.read("AppraisalTemplate", template_id)
     if not existing or existing.get("company_id") != company_id:
@@ -230,6 +244,13 @@ async def update_period(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"update_appraisal_period:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="update appraisal period",
+    )
 
     existing = dataflow_crud.read("AppraisalPeriod", period_id)
     if not existing or existing.get("company_id") != company_id:
@@ -380,6 +401,13 @@ async def update_appraisal(
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"update_appraisal:{user_id}",
+        max_requests=60,
+        window_seconds=60,
+        action_name="update appraisal",
+    )
 
     appraisal = dataflow_crud.read("Appraisal", appraisal_id)
     if not appraisal or appraisal.get("company_id") != company_id:

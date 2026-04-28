@@ -14,18 +14,15 @@ import {
   Brain,
   Eye,
   Upload,
+  Sparkles,
 } from "lucide-react";
-import {
-  AppCard,
-  AppButton,
-  AlertBanner,
-  toast,
-} from "@/components/design-system";
+import { AppCard, AppButton, toast } from "@/components/design-system";
 import { settingsApi } from "@/services/api/settings";
 import { apiClient } from "@/services/api/client";
 import { useObservation } from "@/components/shadow-agent";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { LocaleSwitcher } from "@/components/shell/LocaleSwitcher";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -374,6 +371,35 @@ export default function SettingsPage() {
 
   /* Saving feedback */
   const [savingSection, setSavingSection] = useState<string | null>(null);
+
+  /* T223: chat-onboarding (beta) toggle — persisted in localStorage
+     so it survives auth round-trips. Default off. */
+  const [chatOnboardingEnabled, setChatOnboardingEnabled] = useState<boolean>(
+    () => {
+      if (typeof window === "undefined") return false;
+      try {
+        return window.localStorage.getItem("arbor.chat-onboarding") === "true";
+      } catch {
+        return false;
+      }
+    },
+  );
+  const setChatOnboarding = useCallback((value: boolean) => {
+    setChatOnboardingEnabled(value);
+    try {
+      window.localStorage.setItem(
+        "arbor.chat-onboarding",
+        value ? "true" : "false",
+      );
+    } catch {
+      // localStorage may be disabled (private mode); the toggle is best-effort.
+    }
+    toast.success(
+      value
+        ? "Chat onboarding enabled — new signups will use the conversational flow."
+        : "Chat onboarding disabled — using the standard form flow.",
+    );
+  }, []);
 
   /* ── Apply stored theme and text size on mount ──────────── */
 
@@ -861,30 +887,37 @@ export default function SettingsPage() {
           </div>
         }
       >
-        <div className="space-y-3">
-          <div
-            className="flex items-center gap-3 p-3 rounded-lg border
-              border-[var(--color-primary)] bg-[var(--color-primary-bg)]"
-          >
-            <div
-              className="flex items-center justify-center h-8 w-8 rounded-full
-                bg-[var(--color-primary)] text-white text-xs font-bold"
-            >
-              EN
-            </div>
-            <div>
-              <p className="text-sm font-medium text-[var(--color-gray-900)]">
-                English
-              </p>
-              <p className="text-xs text-[var(--color-gray-500)]">
-                Currently selected
-              </p>
-            </div>
+        <LocaleSwitcher />
+      </AppCard>
+
+      {/* Experimental Features (T223) */}
+      <AppCard
+        variant="standard"
+        header={
+          <div className="flex items-center gap-2">
+            <Sparkles
+              className="h-4 w-4 text-[var(--color-gray-500)]"
+              aria-hidden="true"
+            />
+            <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+              Experimental Features
+            </h2>
+            <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--color-primary-bg)] text-[var(--color-primary)] ml-1">
+              Beta
+            </span>
           </div>
-          <AlertBanner
-            variant="info"
-            title="More languages coming soon"
-            description="Support for Mandarin, Malay, and Tamil is on our roadmap to better serve Singapore's multilingual workforce."
+        }
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-[var(--color-gray-600)]">
+            Try previews of upcoming Central features. These are still being
+            polished — feedback welcome.
+          </p>
+          <ToggleSwitch
+            checked={chatOnboardingEnabled}
+            onChange={setChatOnboarding}
+            label="Chat onboarding"
+            description="Use a conversational flow with the Arbor agent to set up your company instead of the standard form."
           />
         </div>
       </AppCard>

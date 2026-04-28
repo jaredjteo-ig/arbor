@@ -170,9 +170,10 @@ class TestRateLimiting:
 
     def test_rate_limit_enforced(self) -> None:
         """Exceeding rate limit should return False."""
+        from hr_advisory.workflows.guardrails import _MAX_REQUESTS_PER_WINDOW
+
         user_id = "test-rate-limit-user"
-        # Send 30 requests (the limit)
-        for _ in range(30):
+        for _ in range(_MAX_REQUESTS_PER_WINDOW):
             check_rate_limit(user_id)
-        # 31st should be blocked
+        # The next request should be blocked.
         assert check_rate_limit(user_id) is False

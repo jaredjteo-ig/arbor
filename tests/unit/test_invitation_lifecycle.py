@@ -17,113 +17,15 @@ and dataflow dependencies to avoid triggering the full SDK import chain.
 
 from __future__ import annotations
 
-import importlib
-import sys
 from datetime import datetime, timedelta, timezone
-from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-# ---------------------------------------------------------------------------
-# Pre-mock kailash/dataflow modules so the employees router can be imported
-# without the full SDK installed. This must happen before any import of
-# hr_advisory.api.routers.employees triggers the kailash import chain.
-# ---------------------------------------------------------------------------
-
-import importlib.util
-import pathlib
-
-# Determine paths relative to this test file
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SRC = _REPO_ROOT / "src"
-
-
-def _load_module_from_file(module_name: str, file_path: pathlib.Path):
-    """Load a single Python module from its file path without triggering __init__.py."""
-    if module_name in sys.modules:
-        return sys.modules[module_name]
-    # Ensure parent packages exist in sys.modules as empty modules
-    parts = module_name.split(".")
-    for i in range(1, len(parts)):
-        parent = ".".join(parts[:i])
-        if parent not in sys.modules:
-            sys.modules[parent] = ModuleType(parent)
-    spec = importlib.util.spec_from_file_location(module_name, file_path)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-# Pre-mock the kailash/dataflow modules so employees.py can be loaded
-_MOCK_MODULES = [
-    "kailash",
-    "kailash._kailash",
-    "kailash.runtime",
-    "kailash.runtime.async_local",
-    "kailash.workflow",
-    "kailash.workflow.builder",
-    "kailash.nodes",
-    "kailash.nodes.base",
-    "dataflow",
-    "hr_advisory.models",
-]
-
-for _mod_name in _MOCK_MODULES:
-    if _mod_name not in sys.modules:
-        sys.modules[_mod_name] = ModuleType(_mod_name)
-
-# Provide stubs for commonly-used names
-sys.modules["kailash"].runtime = sys.modules["kailash.runtime"]  # type: ignore[attr-defined]
-sys.modules["kailash"].workflow = sys.modules["kailash.workflow"]  # type: ignore[attr-defined]
-sys.modules["kailash.runtime"].LocalRuntime = MagicMock  # type: ignore[attr-defined]
-sys.modules["kailash.runtime"].AsyncLocalRuntime = MagicMock  # type: ignore[attr-defined]
-sys.modules["kailash.runtime.async_local"].AsyncLocalRuntime = MagicMock  # type: ignore[attr-defined]
-sys.modules["kailash.workflow.builder"].WorkflowBuilder = MagicMock  # type: ignore[attr-defined]
-sys.modules["dataflow"].DataFlow = MagicMock  # type: ignore[attr-defined]
-
-# Load tenant isolation first (no external deps, used by employees.py)
-_load_module_from_file(
-    "hr_advisory.api.middleware.tenant_isolation",
-    _SRC / "hr_advisory" / "api" / "middleware" / "tenant_isolation.py",
-)
-
-# Load encryption module (no external deps, used by employees.py)
-_load_module_from_file(
-    "hr_advisory.security.encryption",
-    _SRC / "hr_advisory" / "security" / "encryption.py",
-)
-
-# Create a fake auth middleware module with just get_current_user as a
-# callable dependency we can override in FastAPI tests. We don't need the
-# real implementation — FastAPI dependency_overrides replaces it entirely.
-_auth_mod = ModuleType("hr_advisory.api.middleware.auth_middleware")
-
-
-async def _fake_get_current_user():
-    """Placeholder -- overridden in tests via dependency_overrides."""
-    raise RuntimeError("get_current_user not overridden in test")
-
-
-_auth_mod.get_current_user = _fake_get_current_user  # type: ignore[attr-defined]
-
-
-def _require_role_factory(*roles):
-    """Create a dependency that checks user role."""
-    return _fake_get_current_user
-
-
-_auth_mod.require_role = _require_role_factory  # type: ignore[attr-defined]
-sys.modules["hr_advisory.api.middleware.auth_middleware"] = _auth_mod
-
-# Load the employees module directly from file
-_employees_mod = _load_module_from_file(
-    "hr_advisory.api.routers.employees",
-    _SRC / "hr_advisory" / "api" / "routers" / "employees.py",
-)
+import hr_advisory.api.routers.employees as _employees_mod
+import hr_advisory.api.middleware.auth_middleware as _auth_mod
 
 MODULE = "hr_advisory.api.routers.employees"
 

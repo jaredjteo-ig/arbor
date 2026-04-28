@@ -54,6 +54,17 @@ def _provision(domain_name: str, section: str = "s1", title: str = "Test Provisi
     }
 
 
+@pytest.fixture(autouse=True)
+def _clear_compliance_cache():
+    """Reset the in-memory compliance cache between tests so that
+    mocked KB stats are exercised on every request."""
+    from hr_advisory.api.routers.compliance import _compliance_cache
+
+    _compliance_cache.clear()
+    yield
+    _compliance_cache.clear()
+
+
 @pytest.fixture()
 def client():
     """Test client with auth dependency overridden."""

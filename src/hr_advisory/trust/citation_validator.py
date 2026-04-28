@@ -420,8 +420,11 @@ def get_valid_provisions() -> dict[str, dict]:
         db_count = 0
         for prov in provisions:
             pid = prov.get("provision_id") or prov.get("id")
-            if pid:
-                cache[pid] = prov
+            if pid is not None:
+                # Cache is contractually `dict[str, dict]`; DB row.id is an
+                # int. Coerce so the lookup in validate_citations() (which
+                # also stringifies its inputs) always hits the same key.
+                cache[str(pid)] = prov
                 db_count += 1
 
         _provision_cache = cache
@@ -475,7 +478,11 @@ def validate_citations(provision_ids: list[str]) -> CitationValidationResult:
 
     today = date.today()
 
-    for pid in provision_ids:
+    for raw_pid in provision_ids:
+        # When provisions come from DB, the id is an int; the regex below
+        # expects a string. Normalise once so all downstream code paths
+        # (regex, dict lookup, ValidatedCitation field) get a string.
+        pid = str(raw_pid)
         # T017: Recognize company policy citations (format: policy-{id})
         if _is_company_policy_citation(pid):
             validated.append(

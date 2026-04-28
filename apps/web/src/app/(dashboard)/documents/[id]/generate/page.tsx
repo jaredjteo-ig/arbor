@@ -94,13 +94,13 @@ export default function DocumentGeneratePage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownload = async () => {
+  const handleDownload = async (format: "pdf" | "docx" = "pdf") => {
     if (!result?.document_id) return;
     try {
       const token = localStorage.getItem("access_token");
       const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const resp = await fetch(
-        `${base}/document/download/${result.document_id}?format=pdf`,
+        `${base}/document/download/${result.document_id}?format=${format}`,
         {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         },
@@ -113,7 +113,7 @@ export default function DocumentGeneratePage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${result.document.title.replace(/\s+/g, "_")}.pdf`;
+      a.download = `${result.document.title.replace(/\s+/g, "_")}.${format}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -267,8 +267,19 @@ export default function DocumentGeneratePage() {
                     </>
                   )}
                 </AppButton>
-                <AppButton variant="text" size="sm" onClick={handleDownload}>
+                <AppButton
+                  variant="text"
+                  size="sm"
+                  onClick={() => handleDownload("pdf")}
+                >
                   <Download className="h-4 w-4 mr-1" /> Download PDF
+                </AppButton>
+                <AppButton
+                  variant="text"
+                  size="sm"
+                  onClick={() => handleDownload("docx")}
+                >
+                  <Download className="h-4 w-4 mr-1" /> Download DOCX
                 </AppButton>
               </div>
             </div>

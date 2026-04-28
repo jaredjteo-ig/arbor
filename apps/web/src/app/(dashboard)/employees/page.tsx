@@ -1898,9 +1898,12 @@ function PulseSurveySection({
 
 function OnboardingTab({
   refreshKey,
+  onAssignClick,
 }: {
   /** Increment from parent to trigger assignment list re-fetch. */
   refreshKey?: number;
+  /** Open the AssignTemplateModal from the parent (T200). */
+  onAssignClick?: () => void;
 }) {
   const [assignments, setAssignments] = useState<OnboardingAssignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -2202,19 +2205,27 @@ function OnboardingTab({
               Track employee onboarding progress
             </p>
           </div>
-          <AppButton
-            variant="outlined"
-            size="sm"
-            onClick={handleExport}
-            disabled={isExporting || assignments.length === 0}
-          >
-            {isExporting ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4 mr-1" />
+          <div className="flex items-center gap-2">
+            {onAssignClick && (
+              <AppButton variant="primary" size="sm" onClick={onAssignClick}>
+                <ClipboardCheck className="h-4 w-4 mr-1" />
+                Assign template
+              </AppButton>
             )}
-            Export CSV
-          </AppButton>
+            <AppButton
+              variant="outlined"
+              size="sm"
+              onClick={handleExport}
+              disabled={isExporting || assignments.length === 0}
+            >
+              {isExporting ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-1" />
+              )}
+              Export CSV
+            </AppButton>
+          </div>
         </div>
 
         {/* Filters bar */}
@@ -2976,6 +2987,117 @@ function InvitationsTab({
 }
 
 /* ═══════════════════════════════════════════════════════════
+   T200 — employee picker for "Assign template" on Onboarding tab.
+   A two-step flow: this modal picks the employee, then the parent
+   opens the existing AssignTemplateModal for the template + due date.
+   ═══════════════════════════════════════════════════════════ */
+
+function AssignFromOnboardingTabModal({
+  employees,
+  onClose,
+  onPick,
+}: {
+  employees: Employee[];
+  onClose: () => void;
+  onPick: (employee: Employee) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const filtered = employees
+    .filter((e) => e.status === "active")
+    .filter((e) => {
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      return (
+        e.name.toLowerCase().includes(q) ||
+        e.email.toLowerCase().includes(q) ||
+        (e.department ?? "").toLowerCase().includes(q) ||
+        (e.designation ?? "").toLowerCase().includes(q)
+      );
+    })
+    .slice(0, 50);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-md mx-4 max-h-[80vh] overflow-hidden flex flex-col rounded-[12px] border border-[var(--color-gray-200)] bg-[var(--color-surface-card)] shadow-[var(--shadow-raised)] p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <ClipboardCheck className="h-5 w-5 text-[var(--color-primary)]" />
+            <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
+              Assign onboarding template
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors"
+          >
+            <X className="h-5 w-5 text-[var(--color-gray-500)]" />
+          </button>
+        </div>
+
+        <p className="text-sm text-[var(--color-gray-500)] mb-3">
+          Pick an employee to assign a template to.
+        </p>
+
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-gray-400)]" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name, email, department, or designation..."
+            autoFocus
+            className="w-full rounded-[8px] border px-3 py-2 pl-9 text-sm min-h-[40px] bg-[var(--color-surface-input)] text-[var(--foreground)] border-[var(--color-surface-input-border)] placeholder:text-[var(--color-gray-400)]"
+          />
+        </div>
+
+        <div className="overflow-y-auto -mx-1 px-1 space-y-1">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-[var(--color-gray-500)] py-6 text-center">
+              {employees.length === 0
+                ? "No employees yet. Invite one from the Directory tab."
+                : "No active employees match your search."}
+            </p>
+          ) : (
+            filtered.map((emp) => (
+              <button
+                key={emp.id}
+                type="button"
+                onClick={() => onPick(emp)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-transparent hover:border-[var(--color-gray-200)] hover:bg-[var(--color-gray-50)] transition-colors text-left"
+              >
+                <div className="h-8 w-8 rounded-full bg-[var(--color-gray-100)] flex items-center justify-center flex-shrink-0">
+                  <span className="text-xs font-medium text-[var(--color-gray-600)]">
+                    {emp.name
+                      .split(" ")
+                      .slice(0, 2)
+                      .map((p) => p[0]?.toUpperCase() ?? "")
+                      .join("")}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[var(--color-gray-900)] truncate">
+                    {emp.name}
+                  </p>
+                  <p className="text-xs text-[var(--color-gray-500)] truncate">
+                    {emp.designation || emp.department || emp.email}
+                  </p>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
    Page
    ═══════════════════════════════════════════════════════════ */
 
@@ -3005,6 +3127,9 @@ export default function EmployeesPage() {
     employeeId: number;
     employeeName: string;
   } | null>(null);
+
+  /* T200 — employee picker for "Assign template" button on Onboarding tab */
+  const [showAssignPicker, setShowAssignPicker] = useState(false);
 
   /* Key to signal OnboardingTab to re-fetch assignments */
   const [assignmentRefreshKey, setAssignmentRefreshKey] = useState(0);
@@ -3184,7 +3309,10 @@ export default function EmployeesPage() {
             />
           )}
           {activeTab === "onboarding" && (
-            <OnboardingTab refreshKey={assignmentRefreshKey} />
+            <OnboardingTab
+              refreshKey={assignmentRefreshKey}
+              onAssignClick={() => setShowAssignPicker(true)}
+            />
           )}
           {activeTab === "invitations" && (
             <InvitationsTab
@@ -3227,6 +3355,16 @@ export default function EmployeesPage() {
             setAssignmentRefreshKey((k) => k + 1);
           }}
         />
+        {showAssignPicker && (
+          <AssignFromOnboardingTabModal
+            employees={employees}
+            onClose={() => setShowAssignPicker(false)}
+            onPick={(emp) => {
+              setShowAssignPicker(false);
+              setAssignTarget({ employeeId: emp.id, employeeName: emp.name });
+            }}
+          />
+        )}
         <TerminateEmployeeModal
           isOpen={terminateTarget !== null}
           employee={terminateTarget}

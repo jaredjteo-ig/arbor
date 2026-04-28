@@ -9,19 +9,23 @@ import {
   Bot,
   Mail,
   ShieldAlert,
+  Calendar,
 } from "lucide-react";
 
 import { AdminGuard } from "@/components/auth/AdminGuard";
 import { toast } from "@/components/design-system";
 import { recruitmentApi } from "@/services/api";
+import { integrationsApi } from "@/services/api/integrations";
 import type {
   ScorecardTemplate,
   ScorecardCriterion,
 } from "@/services/api/recruitment";
+import type { GoogleCalendarStatus } from "@/services/api/integrations";
 
 type CriterionDraft = { name: string; weight: number };
 
 const AI_TOGGLE_KEY = "recruitment.tafep.ai_check";
+const AI_SCORECARD_TOGGLE_KEY = "arbor.ai-scorecards";
 
 export default function RecruitmentSettingsPage() {
   return (
@@ -37,10 +41,220 @@ export default function RecruitmentSettingsPage() {
           </p>
         </header>
         <AiScanToggle />
+        <AiScorecardToggle />
+        <GoogleCalendarConnect />
         <ScorecardTemplates />
         <MaintenanceSweeps />
       </div>
     </AdminGuard>
+  );
+}
+
+/* ── 1c. Google Calendar (beta) connect/disconnect (T-R055) ─── */
+
+function GoogleCalendarConnect() {
+  const [status, setStatus] = useState<GoogleCalendarStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const s = await integrationsApi.googleCalendarStatus();
+      setStatus(s);
+    } catch (err) {
+      console.warn("Failed to load Google Calendar status:", err);
+      setStatus({
+        connected: false,
+        expires_at: null,
+        last_synced_at: null,
+        scope: null,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const onMessage = (ev: MessageEvent) => {
+      if (
+        ev.data &&
+        typeof ev.data === "object" &&
+        ev.data.source === "arbor" &&
+        ev.data.event === "google_calendar_connected"
+      ) {
+        refresh();
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [refresh]);
+
+  const handleConnect = useCallback(async () => {
+    setBusy(true);
+    try {
+      const res = await integrationsApi.googleCalendarAuthUrl();
+      window.open(res.auth_url, "_blank", "noopener,noreferrer");
+      toast.success("A new tab has opened — finish granting access in Google.");
+    } catch (err) {
+      console.warn("Failed to fetch Google Calendar auth URL:", err);
+      toast.error(
+        "Could not start Google Calendar connection. Make sure GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are set.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const handleDisconnect = useCallback(async () => {
+    if (
+      !window.confirm(
+        "Disconnect Google Calendar? Future interviews won't be added to Calendar until you reconnect.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await integrationsApi.googleCalendarDisconnect();
+      toast.success("Google Calendar disconnected");
+      await refresh();
+    } catch (err) {
+      console.warn("Failed to disconnect Google Calendar:", err);
+      toast.error("Could not disconnect Google Calendar");
+    } finally {
+      setBusy(false);
+    }
+  }, [refresh]);
+
+  const connected = !!status?.connected;
+  const pillClass = connected
+    ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+    : "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] border border-[var(--color-gray-200)]";
+
+  return (
+    <section className="bg-white border border-[var(--color-gray-200)] rounded-lg p-6">
+      <div className="flex items-start gap-4">
+        <div className="rounded-md bg-[var(--color-gray-100)] p-2">
+          <Calendar className="h-5 w-5 text-[var(--color-primary)]" />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-3">
+            <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+              Google Calendar (beta)
+            </h2>
+            <span
+              className={`px-2 py-0.5 text-xs rounded-full ${pillClass}`}
+              data-testid="gcal-status-pill"
+            >
+              {loading
+                ? "Checking…"
+                : connected
+                  ? "Connected"
+                  : "Not connected"}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-[var(--color-gray-500)]">
+            When connected, every interview you schedule in Arbor is added to
+            the connected Google Calendar with the candidate and interviewers as
+            attendees. Reschedules and cancellations sync automatically. You'll
+            need a Google Cloud OAuth client configured in Arbor's environment
+            first.
+          </p>
+          {connected && status?.expires_at ? (
+            <p className="mt-2 text-xs text-[var(--color-gray-500)]">
+              Token expires {status.expires_at}.
+            </p>
+          ) : null}
+          <div className="mt-4 flex gap-2">
+            {!connected ? (
+              <button
+                type="button"
+                onClick={handleConnect}
+                disabled={busy || loading}
+                className="inline-flex items-center gap-2 rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                data-testid="gcal-connect-button"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Connect Google Calendar
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleDisconnect}
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-md border border-[var(--color-gray-300)] px-3 py-1.5 text-sm font-medium text-[var(--color-gray-700)] disabled:opacity-50"
+                data-testid="gcal-disconnect-button"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Disconnect
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── 1b. AI scorecards (beta) toggle ─────────────────────────── */
+
+function AiScorecardToggle() {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    const v = window.localStorage.getItem(AI_SCORECARD_TOGGLE_KEY) === "1";
+    setEnabled(v);
+  }, []);
+
+  const handleToggle = useCallback((next: boolean) => {
+    setEnabled(next);
+    if (next) {
+      window.localStorage.setItem(AI_SCORECARD_TOGGLE_KEY, "1");
+      toast.success(
+        "AI scorecards (beta) enabled — interviewers will see the Generate AI Scorecard button",
+      );
+    } else {
+      window.localStorage.removeItem(AI_SCORECARD_TOGGLE_KEY);
+      toast.success("AI scorecards (beta) disabled");
+    }
+  }, []);
+
+  return (
+    <section className="bg-white border border-[var(--color-gray-200)] rounded-lg p-6">
+      <div className="flex items-start gap-4">
+        <div className="rounded-md bg-[var(--color-gray-100)] p-2">
+          <Bot className="h-5 w-5 text-[var(--color-primary)]" />
+        </div>
+        <div className="flex-1">
+          <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
+            AI scorecards (beta)
+          </h2>
+          <p className="mt-1 text-sm text-[var(--color-gray-500)]">
+            When enabled, interviewers can generate a structured AI scorecard
+            for any candidate. The agent reads the candidate profile, the job
+            requirements, the chosen scorecard template, and any interview
+            feedback collected so far, then returns per-criterion ratings, a
+            recommended decision, strengths, and concerns. Each generation costs
+            roughly 1-2¢ in API tokens; rate-limited to 10 per minute per user.
+            AI output is a starting point — interviewers always make the final
+            call.
+          </p>
+          <label className="mt-4 inline-flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => handleToggle(e.target.checked)}
+              className="h-4 w-4 rounded border-[var(--color-gray-300)]"
+            />
+            <span className="text-sm font-medium text-[var(--color-gray-900)]">
+              Enable AI candidate scorecards (beta)
+            </span>
+          </label>
+        </div>
+      </div>
+    </section>
   );
 }
 

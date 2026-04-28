@@ -618,6 +618,31 @@ def _execute_tool_call(name: str, arguments: dict, company_id: int | None = None
                 domain=arguments.get("domain"),
                 limit=5,
             )
+            # search_provisions returns provision rows from the DB; the
+            # PracticalExample table is separate. Bulk-fetch examples for the
+            # matched provision ids in one query and attach.
+            provision_ids = [r.get("id") for r in results if r.get("id")]
+            examples_by_provision: dict[int, list] = {}
+            if provision_ids:
+                try:
+                    from hr_advisory.services import dataflow_crud
+
+                    for pid in provision_ids:
+                        rows = dataflow_crud.list_records(
+                            "PracticalExample", {"provision_id": pid}
+                        )
+                        if rows:
+                            examples_by_provision[pid] = [
+                                {
+                                    "title": row.get("title", ""),
+                                    "scenario": row.get("scenario", ""),
+                                    "outcome": row.get("outcome", ""),
+                                }
+                                for row in rows
+                            ]
+                except Exception:  # noqa: BLE001 — best-effort enrichment
+                    examples_by_provision = {}
+
             # Include enough context for comprehensive answers — plain_summary
             # alone is too thin for a senior advisor to give thorough guidance.
             enriched = []
@@ -632,8 +657,12 @@ def _execute_tool_call(name: str, arguments: dict, company_id: int | None = None
                 notes = r.get("interpretation_notes", "")
                 if notes:
                     entry["interpretation_notes"] = notes
-                # Include practical examples (worked scenarios with numbers)
-                examples = r.get("practical_examples")
+                # Include practical examples (worked scenarios with numbers).
+                # Prefer rows already attached to the provision (Python KB
+                # fallback path); otherwise pick up the bulk-fetched DB rows.
+                examples = r.get("practical_examples") or examples_by_provision.get(
+                    r.get("id")
+                )
                 if examples:
                     entry["practical_examples"] = examples
                 enriched.append(entry)

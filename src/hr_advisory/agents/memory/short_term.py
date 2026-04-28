@@ -10,7 +10,7 @@ via ConversationThread/ConversationMessage DataFlow models.
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from kaizen.memory import BufferMemory
@@ -60,7 +60,7 @@ class ShortTermMemory:
             "entities": entities or {},
             "domains": domains or [],
             "risk_tier": risk_tier,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         if provisions_cited:
             turn["provisions_cited"] = provisions_cited

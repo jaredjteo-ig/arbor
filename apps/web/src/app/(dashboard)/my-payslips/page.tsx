@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AppCard,
   AppButton,
@@ -43,12 +44,14 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const s = status || "draft";
+  const fallback = s.charAt(0).toUpperCase() + s.slice(1);
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[s] || STATUS_STYLES.draft}`}
     >
-      {s.charAt(0).toUpperCase() + s.slice(1)}
+      {t(`payslips.status_${s}`, { defaultValue: fallback })}
     </span>
   );
 }
@@ -79,6 +82,7 @@ function PayslipListSkeleton() {
 /* ── Expandable Payslip Card ──────────────────────────────── */
 
 function PayslipCard({ payslip }: { payslip: Payslip }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<PayslipDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -121,8 +125,12 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
             <StatusBadge status={payslip.status} />
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1 text-sm text-[var(--color-gray-500)]">
-            <span>Gross: {formatCurrency(payslip.gross_salary)}</span>
-            <span>Net: {formatCurrency(payslip.net_salary)}</span>
+            <span>
+              {t("payslips.gross")}: {formatCurrency(payslip.gross_salary)}
+            </span>
+            <span>
+              {t("payslips.net")}: {formatCurrency(payslip.net_salary)}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -155,17 +163,17 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
               {[
                 {
                   type: "earning",
-                  label: "Earnings",
+                  label: t("payslips.earnings"),
                   color: "text-[var(--color-gray-900)]",
                 },
                 {
                   type: "deduction",
-                  label: "Deductions",
+                  label: t("payslips.deductions"),
                   color: "text-red-600",
                 },
                 {
                   type: "employer_contribution",
-                  label: "Employer Contributions",
+                  label: t("payslips.employer_contributions"),
                   color: "text-[var(--color-gray-600)]",
                 },
               ].map(({ type, label, color }) => {
@@ -189,12 +197,12 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
                             {item.name}
                             {item.is_cpf_applicable && (
                               <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-[var(--color-gray-100)] text-[var(--color-gray-500)]">
-                                CPF
+                                {t("payslips.tag_cpf")}
                               </span>
                             )}
                             {item.is_taxable && (
                               <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-amber-50 text-amber-600">
-                                Tax
+                                {t("payslips.tag_tax")}
                               </span>
                             )}
                           </span>
@@ -213,13 +221,13 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
               {(detail.sdl > 0 || detail.fwl > 0 || detail.shg_amount > 0) && (
                 <div>
                   <h4 className="text-xs font-semibold text-[var(--color-gray-500)] uppercase tracking-wide mb-2">
-                    Statutory Contributions
+                    {t("payslips.statutory_contributions")}
                   </h4>
                   <div className="space-y-1.5 text-sm">
                     {detail.employer_cpf > 0 && (
                       <div className="flex justify-between">
                         <span className="text-[var(--color-gray-700)]">
-                          Employer CPF
+                          {t("payslips.employer_cpf")}
                         </span>
                         <span className="text-[var(--color-gray-600)] font-medium">
                           {formatCurrency(detail.employer_cpf)}
@@ -229,7 +237,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
                     {detail.employee_cpf > 0 && (
                       <div className="flex justify-between">
                         <span className="text-[var(--color-gray-700)]">
-                          Employee CPF
+                          {t("payslips.employee_cpf")}
                         </span>
                         <span className="text-red-600 font-medium">
                           -{formatCurrency(detail.employee_cpf)}
@@ -239,7 +247,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
                     {detail.sdl > 0 && (
                       <div className="flex justify-between">
                         <span className="text-[var(--color-gray-700)]">
-                          SDL
+                          {t("payslips.sdl")}
                         </span>
                         <span className="text-[var(--color-gray-600)] font-medium">
                           {formatCurrency(detail.sdl)}
@@ -249,7 +257,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
                     {detail.fwl > 0 && (
                       <div className="flex justify-between">
                         <span className="text-[var(--color-gray-700)]">
-                          FWL
+                          {t("payslips.fwl")}
                         </span>
                         <span className="text-[var(--color-gray-600)] font-medium">
                           {formatCurrency(detail.fwl)}
@@ -259,7 +267,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
                     {detail.shg_amount > 0 && (
                       <div className="flex justify-between">
                         <span className="text-[var(--color-gray-700)]">
-                          SHG ({detail.shg_fund})
+                          {t("payslips.shg")} ({detail.shg_fund})
                         </span>
                         <span className="text-[var(--color-gray-600)] font-medium">
                           {formatCurrency(detail.shg_amount)}
@@ -273,7 +281,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
               {/* Net summary */}
               <div className="pt-3 border-t border-[var(--color-gray-200)] flex justify-between">
                 <span className="text-sm font-semibold text-[var(--color-gray-900)]">
-                  Net Pay
+                  {t("payslips.net_pay")}
                 </span>
                 <span className="text-base font-bold text-[var(--color-gray-900)]">
                   {formatCurrency(detail.net_salary)}
@@ -291,9 +299,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
                     try {
                       await payrollApi.downloadMyPayslipPdf(payslip.payslip_id);
                     } catch {
-                      toast.error(
-                        "Failed to download payslip. Please try again.",
-                      );
+                      toast.error(t("payslips.download_failed"));
                     } finally {
                       setDownloadingPdf(false);
                     }
@@ -301,7 +307,9 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
                   disabled={downloadingPdf}
                 >
                   <Download className="h-4 w-4 mr-1" />
-                  {downloadingPdf ? "Downloading..." : "Download PDF"}
+                  {downloadingPdf
+                    ? t("common.downloading")
+                    : t("payslips.download_pdf")}
                 </AppButton>
               </div>
             </div>
@@ -310,7 +318,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-[var(--color-gray-700)]">
-                  Gross Salary
+                  {t("payslips.gross_salary")}
                 </span>
                 <span className="font-medium text-[var(--color-gray-900)]">
                   {formatCurrency(payslip.gross_salary)}
@@ -318,7 +326,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
               </div>
               <div className="flex justify-between">
                 <span className="text-[var(--color-gray-700)]">
-                  Employee CPF
+                  {t("payslips.employee_cpf")}
                 </span>
                 <span className="font-medium text-red-600">
                   -{formatCurrency(payslip.employee_cpf)}
@@ -326,7 +334,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
               </div>
               <div className="flex justify-between">
                 <span className="text-[var(--color-gray-700)]">
-                  Employer CPF
+                  {t("payslips.employer_cpf")}
                 </span>
                 <span className="font-medium text-[var(--color-gray-600)]">
                   {formatCurrency(payslip.employer_cpf)}
@@ -334,7 +342,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
               </div>
               <div className="pt-2 border-t border-[var(--color-gray-200)] flex justify-between">
                 <span className="font-semibold text-[var(--color-gray-900)]">
-                  Net Pay
+                  {t("payslips.net_pay")}
                 </span>
                 <span className="font-bold text-[var(--color-gray-900)]">
                   {formatCurrency(payslip.net_salary)}
@@ -351,6 +359,7 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
 /* ── Page ──────────────────────────────────────────────────── */
 
 export default function MyPayslipsPage() {
+  const { t } = useTranslation();
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -363,15 +372,13 @@ export default function MyPayslipsPage() {
       setPayslips(list);
     } catch (err: unknown) {
       const message =
-        err instanceof Error
-          ? err.message
-          : "Unable to load your payslips. Please try again.";
+        err instanceof Error ? err.message : t("payslips.load_error");
       setError(message);
       setPayslips([]);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchPayslips();
@@ -388,10 +395,10 @@ export default function MyPayslipsPage() {
           />
           <div>
             <h1 className="text-2xl font-bold text-[var(--color-gray-900)]">
-              My Payslips
+              {t("payslips.page_title")}
             </h1>
             <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-              View your salary history and payslip details
+              {t("payslips.page_description")}
             </p>
           </div>
         </div>
@@ -404,7 +411,7 @@ export default function MyPayslipsPage() {
           <RefreshCw
             className={`h-4 w-4 mr-1 ${isLoading ? "animate-spin" : ""}`}
           />
-          Refresh
+          {t("common.refresh")}
         </AppButton>
       </div>
 
@@ -416,15 +423,15 @@ export default function MyPayslipsPage() {
           <div className="py-8 text-center">
             <p className="text-sm text-[var(--color-error)] mb-3">{error}</p>
             <AppButton variant="outlined" size="sm" onClick={fetchPayslips}>
-              Try again
+              {t("common.retry")}
             </AppButton>
           </div>
         </AppCard>
       ) : payslips.length === 0 ? (
         <EmptyState
           icon={<Receipt className="h-12 w-12" aria-hidden="true" />}
-          message="No payslips yet"
-          description="Your payslips will appear here after payroll is processed."
+          message={t("payslips.empty_title")}
+          description={t("payslips.empty_description")}
         />
       ) : (
         <div className="space-y-3">

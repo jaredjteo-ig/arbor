@@ -33,14 +33,7 @@ ALLOWED_RECEIPT_TYPES = {
 }
 
 
-def _find_employee_for_user(user_id: int, company_id: int) -> dict | None:
-    """Look up the employee record for a given user in a company."""
-    records = dataflow_crud.list_records(
-        "Employee",
-        {"user_id": user_id, "company_id": company_id},
-        limit=1,
-    )
-    return records[0] if records else None
+from hr_advisory.api.routers._helpers import _find_employee_for_user  # noqa: E402
 
 
 def _audit_claim(
@@ -134,6 +127,13 @@ async def update_claim_category(
 ) -> dict:
     """Update a claim category."""
     company_id = get_current_company_id(current_user)
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"update_claim_category:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="update claim category",
+    )
     cat = dataflow_crud.read("ClaimCategory", category_id)
     if cat is None or cat.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Category not found.")
@@ -326,12 +326,18 @@ async def submit_claim(
 ) -> dict:
     """Submit a draft claim for approval."""
     company_id = get_current_company_id(current_user)
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"submit_claim:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="submit claim",
+    )
     claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
 
     # Only the claim owner can submit
-    user_id = int(current_user.get("sub", 0))
     emp = _find_employee_for_user(user_id, company_id)
     if emp is None or claim.get("employee_id") != emp["id"]:
         raise HTTPException(status_code=403, detail="Access denied.")
@@ -362,14 +368,19 @@ async def approve_claim(
 ) -> dict:
     """Approve a pending claim."""
     company_id = get_current_company_id(current_user)
+    actor_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"approve_claim:{actor_id}",
+        max_requests=60,
+        window_seconds=60,
+        action_name="approve claim",
+    )
     claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
 
     if claim.get("status") != "pending_approval":
         raise HTTPException(status_code=400, detail="Only pending claims can be approved.")
-
-    actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
     dataflow_crud.update(
@@ -394,6 +405,13 @@ async def reject_claim(
 ) -> dict:
     """Reject a pending claim. Reviewer remarks are required."""
     company_id = get_current_company_id(current_user)
+    actor_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"reject_claim:{actor_id}",
+        max_requests=60,
+        window_seconds=60,
+        action_name="reject claim",
+    )
     claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
@@ -530,12 +548,18 @@ async def upload_receipt(
 ) -> dict:
     """Upload a receipt for a claim item (multipart/form-data)."""
     company_id = get_current_company_id(current_user)
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"upload_receipt:{user_id}",
+        max_requests=20,
+        window_seconds=60,
+        action_name="upload receipt",
+    )
     claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
 
     # Only claim owner can upload receipts
-    user_id = int(current_user.get("sub", 0))
     emp = _find_employee_for_user(user_id, company_id)
     if emp is None or claim.get("employee_id") != emp["id"]:
         raise HTTPException(status_code=403, detail="Access denied.")
@@ -715,6 +739,13 @@ async def update_claim_group(
 ) -> dict:
     """Update a claim group (add/remove claims, rename)."""
     company_id = get_current_company_id(current_user)
+    user_id = current_user.get("sub")
+    check_rate_limit(
+        f"update_claim_group:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="update claim group",
+    )
     group = dataflow_crud.read("ClaimGroup", group_id)
     if group is None or group.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim group not found.")

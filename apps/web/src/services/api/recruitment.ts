@@ -396,6 +396,25 @@ export const recruitmentApi = {
       `/recruitment/candidates/${candidateId}/scorecard-entries`,
     ),
 
+  /* T-R054: AI-generated candidate scorecards */
+  generateAIScorecard: (candidateId: number, data: { template_id: number }) =>
+    apiClient.post<{
+      scorecard: {
+        template_id: number | null;
+        template_name: string;
+        overall_fit: number;
+        competency_ratings: Record<string, number>;
+        strengths: string[];
+        concerns: string[];
+        recommended_decision: "proceed" | "reject" | "further_interview";
+        narrative: string;
+        criteria: Array<{ name: string; weight: number }>;
+      };
+      generation_id: string;
+      degraded: boolean;
+      persisted_entry_id?: number | null;
+    }>(`/recruitment/candidates/${candidateId}/scorecard/generate`, data),
+
   /* Maintenance sweeps (admin/cron-callable, T-R020 / T-R030) */
   runDataRetentionSweep: () =>
     apiClient.post<{

@@ -8,66 +8,35 @@
 
 ## M22: Onboarding Data Models & API (Backend)
 
-### T193: Onboarding data models
+### ~~T193: Onboarding data models~~ ✅ DONE (cluster 5)
 
-Create DataFlow models in `src/hr_advisory/models/company_user.py`:
+Six models exist in `src/hr_advisory/models/company_user.py:2678-2799`:
+`OnboardingTemplate`, `OnboardingModule`, `OnboardingStep`,
+`OnboardingAssignment`, `OnboardingStepProgress`, `PreboardingTaskInstance`.
 
-- **OnboardingTemplate** — company_id, name, description, is_default, version (int, auto-increment on edit), created_by, created_at
-- **OnboardingModule** — template_id, company_id, name, description, phase (orientation/compliance/benefits/probation/custom), order, estimated_duration_minutes, is_mandatory, is_role_specific, role_filter (JSON array of designations/departments, null = all roles)
-- **OnboardingStep** — module_id, title, description, order, step_type (content/checklist/document_upload/policy_acknowledgment/form/approval), body_content, checklist_items (JSON), media_url, requires_completion, policy_id (optional FK to CompanyPolicy for acknowledgment steps), requires_previous_completion (bool, default false)
-- **OnboardingAssignment** — employee_id, template_id, template_version (int, snapshot at assignment time), company_id, assigned_by, assigned_at, due_date, status (in_progress/completed/overdue), completed_at, completion_percentage
-- **OnboardingStepProgress** — assignment_id, step_id, employee_id, status (pending/in_progress/completed/skipped), completed_at, completed_by (int, nullable — for approval steps), document_url, form_data (JSON, nullable — for form steps), notes, acknowledged_at
-- **PreboardingTaskInstance** — company_id, template_id, employee_id, task_name, owner_role (hr/manager/it/office_manager), trigger, deadline_date (absolute, calculated from employee start_date), status (pending/done), completed_at, completed_by, notes
+### ~~T194: Onboarding API endpoints~~ ✅ DONE (cluster 5)
 
-Add indexes on company_id, employee_id, status, template_id.
-
-Dependencies: None
-Files: `src/hr_advisory/models/company_user.py`, `src/hr_advisory/models/__init__.py`
+`src/hr_advisory/api/routers/onboarding.py` has 3,820 lines and 40 endpoints
+covering template/module/step CRUD, assignment, employee self-service, and
+pre-boarding flows. Already registered in `platform.py`.
 
 ---
 
-### T194: Onboarding API endpoints
+### ~~T195: Excel template import endpoint~~ ✅ DONE (cluster 10)
 
-Create `src/hr_advisory/api/routers/onboarding.py` with endpoints:
+`POST /onboarding/templates/import` exists at `routers/onboarding.py` with all
+12 sheets wired through `services/onboarding_parser.py`. Multipart upload,
+role guard, rate limit, tenant isolation enforced from auth context.
+4 unit tests in `tests/unit/test_onboarding_import.py`. See
+`workspaces/hr-ai-advisory/todos/completed/backlog-cluster-10-t195-excel-import.md`.
 
-**Template & Module Management (admin):**
-- `GET /onboarding/templates` — list templates for company
-- `POST /onboarding/templates` — create template
-- `GET /onboarding/templates/{id}` — get template with modules and steps
-- `PUT /onboarding/templates/{id}` — update template
-- `DELETE /onboarding/templates/{id}` — archive template
-- `POST /onboarding/templates/{id}/modules` — add module to template
-- `PUT /onboarding/modules/{id}` — update module
-- `DELETE /onboarding/modules/{id}` — remove module
-- `POST /onboarding/modules/{id}/steps` — add step to module
-- `PUT /onboarding/steps/{id}` — update step
-- `DELETE /onboarding/steps/{id}` — remove step
+### ~~T195 — original brief (kept for reference)~~
 
-**Assignment & Tracking (admin):**
-- `POST /onboarding/assign` — assign template to employee (auto on invite acceptance optional)
-- `GET /onboarding/assignments` — list all assignments (filterable by status)
-- `GET /onboarding/assignments/{id}` — get assignment with progress
-- `GET /employees/{id}/onboarding` — get employee's onboarding progress
+(Hidden, see completion record above.)
 
-**Employee Self-Service:**
-- `GET /onboarding/my-progress` — get current user's onboarding assignment + step statuses
-- `POST /onboarding/steps/{step_id}/complete` — mark step as completed
-- `POST /onboarding/steps/{step_id}/upload` — upload document for a step
-- `POST /onboarding/steps/{step_id}/acknowledge` — acknowledge policy step
+<!-- T195 brief preserved below for archive -->
 
-**Pre-boarding:**
-- `GET /onboarding/preboarding/{employee_id}` — pre-boarding checklist for upcoming hire
-- `PATCH /onboarding/preboarding/{task_id}` — mark pre-boarding task done
-
-All endpoints: `dataflow_crud`, tenant isolation, role-based access.
-Register in `platform.py`.
-
-Dependencies: T193
-Files: `src/hr_advisory/api/routers/onboarding.py`, `src/hr_advisory/api/platform.py`
-
----
-
-### T195: Excel template import endpoint
+#### T195: Excel template import endpoint (original)
 
 Add `POST /onboarding/import` endpoint that:
 
@@ -162,6 +131,7 @@ Create `/apps/web/src/services/api/onboarding.ts`:
 Types: OnboardingTemplate, OnboardingModule, OnboardingStep, OnboardingAssignment, OnboardingStepProgress, PreboardingTask, ImportResult
 
 Methods:
+
 - `listTemplates()`, `getTemplate(id)`, `createTemplate(data)`, `updateTemplate(id, data)`
 - `addModule(templateId, data)`, `updateModule(id, data)`, `deleteModule(id)`
 - `addStep(moduleId, data)`, `updateStep(id, data)`, `deleteStep(id)`
@@ -224,11 +194,13 @@ Files: `apps/web/src/app/(dashboard)/my-onboarding/page.tsx`
 ### T202: Add My Onboarding to employee navigation
 
 Add "My Onboarding" nav item to the employee sidebar in NavigationSidebar.tsx:
+
 - Show only when employee has an active onboarding assignment
 - Badge with "X remaining" count
 - Position after "My Dashboard" and before "My Profile"
 
 Also add onboarding progress card to `/my-dashboard`:
+
 - "Complete Your Onboarding" card with progress bar and "Continue" button
 - Show only when onboarding is in progress (not completed)
 
@@ -260,22 +232,26 @@ Files: `apps/web/src/components/onboarding/` (new directory for these components
 When a new company is created, seed a basic Singapore onboarding template:
 
 **Module 1: Welcome & Orientation** (3 steps)
+
 - Welcome message (content)
 - Company overview (content)
 - Organisation structure (content)
 
 **Module 2: Employment Documents** (4 steps)
+
 - Employment contract review (document upload)
 - NRIC/FIN copy (document upload)
 - Bank account details (form — links to employee profile)
 - Emergency contact form (form — links to employee profile)
 
 **Module 3: Policies & Compliance** (3 steps)
+
 - Employee handbook (policy acknowledgment — links to existing policies)
 - Leave policy (policy acknowledgment)
 - Code of conduct (policy acknowledgment)
 
 **Module 4: Probation & Goals** (2 steps)
+
 - Probation timeline (content — uses company's probation_months)
 - 30-60-90 day goals (checklist)
 
@@ -332,6 +308,7 @@ Files: `src/hr_advisory/api/routers/reports.py`, `apps/web/src/app/(dashboard)/r
 ### T208: Red team onboarding feature
 
 Full red team validation:
+
 - Test Excel import with valid/invalid/partial data
 - Test employee self-service flow end-to-end
 - Test role-based access (employee sees only their onboarding, admin sees all)
@@ -348,6 +325,7 @@ Files: Validation artifacts in `workspaces/hr-ai-advisory/04-validate/`
 ### T209: Deploy onboarding feature
 
 Deploy to production:
+
 - Build and deploy backend + frontend
 - Verify health
 - Test with demo accounts (create template, assign to employee, complete steps)
@@ -377,6 +355,7 @@ Files: `tests/unit/test_onboarding_parser.py`
 ### T211: Template clone and bulk assign endpoints
 
 Add:
+
 - `POST /onboarding/templates/{id}/duplicate` — clone template with all modules/steps, new name
 - `POST /onboarding/assign-bulk` — assign template to multiple employee IDs at once
 - `DELETE /onboarding/assignments/{id}` — cancel/revoke an assignment
@@ -390,12 +369,12 @@ Files: `src/hr_advisory/api/routers/onboarding.py`
 
 ## Summary
 
-| Milestone | Tasks | Scope |
-|-----------|-------|-------|
-| M22: Backend | T193-T196, T210-T211 | Models, API (30+ endpoints), Excel import, auto-assign, tests |
-| M23: Admin Frontend | T197-T200 | Tabs restructure, template builder, import UI, detail view |
-| M24: Employee Frontend | T201-T203 | My Onboarding page, nav integration, step modals |
-| M25: Integration | T204-T209 | Default seeding, notifications, pre-boarding, reports, red team, deploy |
+| Milestone              | Tasks                | Scope                                                                   |
+| ---------------------- | -------------------- | ----------------------------------------------------------------------- |
+| M22: Backend           | T193-T196, T210-T211 | Models, API (30+ endpoints), Excel import, auto-assign, tests           |
+| M23: Admin Frontend    | T197-T200            | Tabs restructure, template builder, import UI, detail view              |
+| M24: Employee Frontend | T201-T203            | My Onboarding page, nav integration, step modals                        |
+| M25: Integration       | T204-T209            | Default seeding, notifications, pre-boarding, reports, red team, deploy |
 
 **Total: 19 tasks (T193-T211)**
 

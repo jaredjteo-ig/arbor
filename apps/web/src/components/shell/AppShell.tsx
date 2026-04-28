@@ -36,7 +36,10 @@ export function AppShell({ children }: AppShellProps) {
     alertsApi
       .unreadCount()
       .then((data) => setNotificationCount(data.unread_count))
-      .catch(() => {}); // Graceful fallback to 0
+      .catch((err) => {
+        // Notification badge falls back to 0; log so we can diagnose if it stays stale.
+        console.warn("Could not fetch unread alert count:", err);
+      });
   }, []);
 
   /* Respond to resize: auto-collapse on tablet, expand on desktop */

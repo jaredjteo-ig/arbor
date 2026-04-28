@@ -2190,7 +2190,11 @@ class Candidate:
 
 @db.model
 class InterviewSchedule:
-    """Interview schedule for a candidate (T393)."""
+    """Interview schedule for a candidate (T393).
+
+    ``google_event_id`` (T-R055) links this row to a Google Calendar event
+    when the company has connected the Google Calendar integration.
+    """
 
     candidate_id: int
     company_id: int
@@ -2201,11 +2205,13 @@ class InterviewSchedule:
     interviewers: str = ""  # JSON array
     status: str = "scheduled"  # scheduled/completed/cancelled/no_show
     notes: str = ""
+    google_event_id: str = ""  # T-R055: Google Calendar event id (empty if not synced)
 
     __dataflow__ = {
         "indexes": [
             {"name": "idx_interview_candidate", "fields": ["candidate_id"]},
             {"name": "idx_interview_company", "fields": ["company_id"]},
+            {"name": "idx_interview_google_event", "fields": ["google_event_id"]},
         ],
     }
 

@@ -7,7 +7,7 @@ dict; designed to be replaced by a DataFlow persistence backend.
 
 import logging
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from threading import Lock
 from typing import Any, Dict, List, Optional
 
@@ -88,7 +88,7 @@ class LongTermMemory:
                 "query_summary": query_summary,
                 "domains": domains,
                 "risk_tier": risk_tier,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             self._store[company_id]["advisory_history"].append(record)
 

@@ -1326,6 +1326,42 @@ class ToolRegistry:
             )
         )
 
+        # ── Onboarding (T211) ─────────────────────────────────────────
+        # Personal onboarding progress + admin assignment listings.
+        self.register(
+            ToolDefinition(
+                module="onboarding",
+                action="my_progress",
+                method="GET",
+                path="/onboarding/my-progress",
+                params=[],
+                trust_level="autonomous",
+                description="Show the current user's active onboarding progress",
+            )
+        )
+        self.register(
+            ToolDefinition(
+                module="onboarding",
+                action="list_assignments",
+                method="GET",
+                path="/onboarding/assignments",
+                params=[],
+                trust_level="autonomous",
+                description="List onboarding assignments for the company",
+            )
+        )
+        self.register(
+            ToolDefinition(
+                module="onboarding",
+                action="list_templates",
+                method="GET",
+                path="/onboarding/templates",
+                params=[],
+                trust_level="autonomous",
+                description="List onboarding templates available in the company",
+            )
+        )
+
         # ── Navigation: All 33 routes ─────────────────────────────────
         _nav_routes = [
             ("dashboard", "/dashboard", "Main dashboard"),
@@ -1361,6 +1397,8 @@ class ToolRegistry:
             ("learning", "/learning", "Learning and training"),
             ("approvals", "/approvals", "Approval workflows"),
             ("policies", "/policies", "Company policies"),
+            ("onboarding", "/onboarding", "Onboarding admin"),
+            ("my_onboarding", "/my-onboarding", "My onboarding progress"),
         ]
         for nav_action, route, desc in _nav_routes:
             self.register(

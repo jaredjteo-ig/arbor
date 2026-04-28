@@ -18,10 +18,13 @@ export interface OnboardingTemplate {
 export interface OnboardingModule {
   id: number;
   template_id: number;
+  company_id?: number;
   name: string;
   description: string;
   phase: string;
-  order: number;
+  /** Server-side persisted ordering field. Older code may also see `order`. */
+  sort_order?: number;
+  order?: number;
   estimated_duration_minutes: number;
   is_mandatory: boolean;
   is_role_specific: boolean;
@@ -33,13 +36,30 @@ export interface OnboardingStep {
   module_id: number;
   title: string;
   description: string;
-  order: number;
+  /** Server-side persisted ordering field. Older code may also see `order`. */
+  sort_order?: number;
+  order?: number;
   step_type: string;
   body_content: string;
   checklist_items: string;
   media_url: string;
   requires_completion: boolean;
+  requires_previous_completion?: boolean;
   policy_id: number | null;
+}
+
+/** Module record with steps inlined, as returned by GET /onboarding/templates/{id}. */
+export interface OnboardingModuleWithSteps extends OnboardingModule {
+  steps: OnboardingStep[];
+  step_count: number;
+}
+
+/** Full template detail with nested modules + steps. */
+export interface OnboardingTemplateDetail extends OnboardingTemplate {
+  modules: OnboardingModuleWithSteps[];
+  module_count: number;
+  total_steps: number;
+  total_estimated_minutes: number;
 }
 
 export interface OnboardingAssignment {
@@ -383,6 +403,101 @@ export const onboardingApi = {
     );
   },
 
+  /* ── Admin: nested template detail (real response shape) ─ */
+
+  /**
+   * Get a template with its modules + steps inlined under `template.modules`.
+   * Use this in the admin template builder UI; it returns the actual backend
+   * shape (`{template: {...modules: [...]}}`), unlike the older `getTemplate`
+   * which assumed a flatter shape.
+   */
+  getTemplateAdmin(
+    id: number,
+  ): Promise<{ template: OnboardingTemplateDetail }> {
+    return apiClient.get<{ template: OnboardingTemplateDetail }>(
+      `/onboarding/templates/${id}`,
+    );
+  },
+
+  /** Create a new template (admin builder). Returns `{template}` envelope. */
+  createTemplateAdmin(data: {
+    name: string;
+    description?: string;
+    is_default?: boolean;
+  }): Promise<{ template: OnboardingTemplate }> {
+    return apiClient.post<{ template: OnboardingTemplate }>(
+      "/onboarding/templates",
+      data,
+    );
+  },
+
+  /** Update template metadata (admin builder). Returns `{template}` envelope. */
+  updateTemplateAdmin(
+    id: number,
+    data: Partial<OnboardingTemplate>,
+  ): Promise<{ template: OnboardingTemplate }> {
+    return apiClient.put<{ template: OnboardingTemplate }>(
+      `/onboarding/templates/${id}`,
+      data,
+    );
+  },
+
+  /** Add a module to a template (admin builder). Returns `{module}` envelope. */
+  addModuleAdmin(
+    templateId: number,
+    data: Partial<OnboardingModule>,
+  ): Promise<{ module: OnboardingModule }> {
+    return apiClient.post<{ module: OnboardingModule }>(
+      `/onboarding/templates/${templateId}/modules`,
+      data,
+    );
+  },
+
+  /** Update a module (admin builder). Returns `{module}` envelope. */
+  updateModuleAdmin(
+    moduleId: number,
+    data: Partial<OnboardingModule>,
+  ): Promise<{ module: OnboardingModule }> {
+    return apiClient.put<{ module: OnboardingModule }>(
+      `/onboarding/modules/${moduleId}`,
+      data,
+    );
+  },
+
+  /** Delete a module + cascade its steps. */
+  deleteModuleAdmin(moduleId: number): Promise<{ message: string }> {
+    return apiClient.delete<{ message: string }>(
+      `/onboarding/modules/${moduleId}`,
+    );
+  },
+
+  /** Add a step to a module (admin builder). Returns `{step}` envelope. */
+  addStepAdmin(
+    moduleId: number,
+    data: Partial<OnboardingStep>,
+  ): Promise<{ step: OnboardingStep }> {
+    return apiClient.post<{ step: OnboardingStep }>(
+      `/onboarding/modules/${moduleId}/steps`,
+      data,
+    );
+  },
+
+  /** Update a step (admin builder). Returns `{step}` envelope. */
+  updateStepAdmin(
+    stepId: number,
+    data: Partial<OnboardingStep>,
+  ): Promise<{ step: OnboardingStep }> {
+    return apiClient.put<{ step: OnboardingStep }>(
+      `/onboarding/steps/${stepId}`,
+      data,
+    );
+  },
+
+  /** Delete a step. */
+  deleteStepAdmin(stepId: number): Promise<{ message: string }> {
+    return apiClient.delete<{ message: string }>(`/onboarding/steps/${stepId}`);
+  },
+
   /* ── Assignments ────────────────────────────────────────── */
 
   /** Assign a template to an employee. */
@@ -678,5 +793,40 @@ export const onboardingApi = {
       survey: PulseSurvey;
       responses: PulseSurveyResponse[];
     }>(`/onboarding/surveys/${surveyId}/results`);
+  },
+
+  /* ── Reminders (T207) ───────────────────────────────────── */
+
+  /**
+   * Trigger overdue-step reminder emails for the current company.
+   *
+   * Heavily rate-limited (5 / hour / company) on the backend so a
+   * misbehaving cron or repeated clicks cannot spam employees.
+   * Owner / HR manager only.
+   */
+  sendOverdueReminders(): Promise<{
+    message: string;
+    company_id: number;
+    summary: {
+      assignments_scanned: number;
+      overdue_assignments: number;
+      employees_notified: number;
+      emails_sent: number;
+      skipped: number;
+      errors: number;
+    };
+  }> {
+    return apiClient.post<{
+      message: string;
+      company_id: number;
+      summary: {
+        assignments_scanned: number;
+        overdue_assignments: number;
+        employees_notified: number;
+        emails_sent: number;
+        skipped: number;
+        errors: number;
+      };
+    }>("/onboarding/reminders/send-overdue");
   },
 };

@@ -58,18 +58,13 @@ Remaining medium/low severity findings from red team round 1. Organized by effor
 
 ## Infrastructure Changes (Need planning)
 
-### T-RX07: Redis-based rate limiting for production
+### ~~T-RX07: Redis-based rate limiting~~ ✅ DONE (cluster 5)
 
-- **What**: Current in-memory rate limiter resets on server restart and doesn't work across multiple workers/containers. Public endpoints are effectively unprotected in production multi-worker deployments.
-- **Where**: `src/hr_advisory/api/middleware/rate_limit.py`
-- **Details**:
-  - Replace `OrderedDict` in-memory store with Redis `INCR` + `EXPIRE` pattern
-  - Use `REDIS_URL` from environment (already available — used by the platform)
-  - Fallback to in-memory if Redis is unavailable (graceful degradation)
-  - Key format: `rate:{action}:{identifier}` with TTL = window_seconds
-  - Each rate check: `INCR key`, if result > max_requests raise 429, `EXPIRE key window_seconds` (only on first INCR via `NX` flag)
-- **Depends on**: Redis connection available in the backend container (already configured in docker-compose)
-- **Severity**: MEDIUM (security — affects public endpoint protection in production)
+Rewritten in `src/hr_advisory/api/middleware/rate_limit.py` to Redis-primary
+with in-memory fallback. INCR + EXPIRE NX pipeline; 30s backoff after failure;
+`reset_rate_limit_state()` exposed for tests. See
+`workspaces/hr-ai-advisory/todos/completed/backlog-cluster-5-finishing.md`
+for details.
 
 ### T-RX08: Add composite index on Candidate(job_listing_id, email)
 
