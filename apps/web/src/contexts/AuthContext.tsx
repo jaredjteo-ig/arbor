@@ -161,7 +161,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         if (cancelled) return;
         clearTokens();
-        setState({ user: null, isAuthenticated: false, isLoading: false });
+        setState({
+          user: null,
+          isAuthenticated: false,
+          isLoading: false,
+          featureFlags: DEFAULT_FEATURE_FLAGS,
+          featureFlagsLoaded: false,
+        });
       }
     }
 
@@ -182,7 +188,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!accessToken) {
         if (!cancelled) {
-          setState({ user: null, isAuthenticated: false, isLoading: false });
+          setState({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            featureFlags: DEFAULT_FEATURE_FLAGS,
+            featureFlagsLoaded: false,
+          });
         }
         return;
       }

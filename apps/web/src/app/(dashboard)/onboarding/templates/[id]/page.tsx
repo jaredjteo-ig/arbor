@@ -175,7 +175,7 @@ function Builder({ templateId }: { templateId: number }) {
           <AppButton
             variant="text"
             size="sm"
-            onClick={() => router.push("/onboarding")}
+            onClick={() => router.push("/onboarding/admin")}
           >
             Back to templates
           </AppButton>
@@ -196,7 +196,7 @@ function Builder({ templateId }: { templateId: number }) {
         <div className="flex items-start gap-3">
           <button
             type="button"
-            onClick={() => router.push("/onboarding")}
+            onClick={() => router.push("/onboarding/admin")}
             className="p-1.5 rounded-lg hover:bg-[var(--color-gray-100)] transition-colors mt-1"
             title="Back to templates"
           >
