@@ -268,6 +268,10 @@ class Company:
     profile_completeness_score: float = 0.0
     monthly_llm_budget_usd: float = 5.00
     is_active: bool = True
+    # Server-side feature flags (round-13 S1-T2). Stored as JSON so admins
+    # can opt their company in/out of beta features without a code release.
+    # Allow-listed keys: "ai-scorecards", "tafep-ai", "chat-onboarding".
+    feature_flags: Optional[dict] = None
 
     __dataflow__ = {
         "multi_tenant": True,

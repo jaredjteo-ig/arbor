@@ -129,10 +129,15 @@ class TestExchangeCode:
 
         # The Flow had its code exchanged.
         fake_flow.fetch_token.assert_called_once_with(code="AUTH-CODE")
-        # The persisted record carries the right fields.
+        # The persisted record carries the right fields. Round-13 H1
+        # encrypts tokens at rest when SALARY_ENCRYPTION_KEY is set, so we
+        # compare via decrypt_field which is a no-op for plaintext (dev) and
+        # round-trips the Fernet ciphertext otherwise.
+        from hr_advisory.security.encryption import decrypt_field
+
         assert result["company_id"] == 99
-        assert result["access_token"] == "ACCESS-TOKEN"
-        assert result["refresh_token"] == "REFRESH-TOKEN"
+        assert decrypt_field(result["access_token"]) == "ACCESS-TOKEN"
+        assert decrypt_field(result["refresh_token"]) == "REFRESH-TOKEN"
         assert oauth.GOOGLE_CALENDAR_SCOPE in result["scope"]
         # The user that completed the callback is recorded as connected_by.
         assert result["connected_by"] == 5

@@ -95,19 +95,19 @@ const adminManagementNavItems: NavItem[] = [
     icon: Wallet,
     children: [
       {
-        labelKey: "nav.payroll.runs",
+        labelKey: "nav.payroll_runs",
         label: "Payroll Runs",
         href: "/payroll",
         icon: ListChecks,
       },
       {
-        labelKey: "nav.payroll.reports",
+        labelKey: "nav.payroll_reports",
         label: "Reports",
         href: "/payroll/accounting-sync",
         icon: FileBarChart,
       },
       {
-        labelKey: "nav.payroll.filings",
+        labelKey: "nav.payroll_filings",
         label: "Gov Filings",
         href: "/payroll/filings",
         icon: Building2,
@@ -121,7 +121,7 @@ const adminManagementNavItems: NavItem[] = [
     icon: CalendarDays,
     children: [
       {
-        labelKey: "nav.leave.applications",
+        labelKey: "nav.leave_applications",
         label: "Applications",
         href: "/leave",
         icon: CalendarDays,
@@ -189,31 +189,31 @@ const adminManagementNavItems: NavItem[] = [
     icon: UserPlus,
     children: [
       {
-        labelKey: "nav.recruitment.dashboard",
+        labelKey: "nav.recruitment_dashboard",
         label: "Dashboard",
         href: "/recruitment",
         icon: BarChart3,
       },
       {
-        labelKey: "nav.recruitment.jobs",
+        labelKey: "nav.recruitment_jobs",
         label: "Jobs",
         href: "/recruitment?tab=jobs",
         icon: Briefcase,
       },
       {
-        labelKey: "nav.recruitment.candidates",
+        labelKey: "nav.recruitment_candidates",
         label: "Candidates",
         href: "/recruitment?tab=candidates",
         icon: Users,
       },
       {
-        labelKey: "nav.recruitment.interviews",
+        labelKey: "nav.recruitment_interviews",
         label: "Interviews",
         href: "/recruitment?tab=interviews",
         icon: CalendarDays,
       },
       {
-        labelKey: "nav.recruitment.settings",
+        labelKey: "nav.recruitment_settings",
         label: "Settings",
         href: "/recruitment/settings",
         icon: Settings,

@@ -20,13 +20,22 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import random
 import sys
 import time
 from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
+
+try:
+    from dotenv import load_dotenv  # type: ignore
+
+    load_dotenv()
+except Exception:
+    pass
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -671,7 +680,10 @@ JOB_POSTING = {
     ],
 }
 
+# 20 candidates with source split: careers_page=6, jobstreet=6, referral=4, linkedin=4
+# All include pdpa_consent=True at create time (audit-fix for SG PDPA compliance).
 CANDIDATES = [
+    # --- linkedin (4) ---
     {
         "name": "Alex Tan Wei Ming",
         "email": "alex.tan.wm@gmail.com",
@@ -681,6 +693,31 @@ CANDIDATES = [
         "stage_target": "interview",
     },
     {
+        "name": "Vikram Patel",
+        "email": "vikram.p@protonmail.com",
+        "phone": "+65 9567 8901",
+        "source": "linkedin",
+        "notes": "Based in India, willing to relocate. Strong distributed systems background.",
+        "stage_target": "applied",
+    },
+    {
+        "name": "Hannah Lim Su-Min",
+        "email": "hannah.lim.sm@gmail.com",
+        "phone": "+65 8112 3344",
+        "source": "linkedin",
+        "notes": "Backend engineer at Carousell, 5 years. Strong Postgres and async Python.",
+        "stage_target": "interview",
+    },
+    {
+        "name": "Daniel Ho",
+        "email": "daniel.ho.eng@outlook.com",
+        "phone": "+65 8233 4455",
+        "source": "linkedin",
+        "notes": "Ex-Garena, specialises in observability and SRE practices.",
+        "stage_target": "applied",
+    },
+    # --- referral (4) ---
+    {
         "name": "Rachel Goh",
         "email": "rachel.goh.dev@gmail.com",
         "phone": "+65 8234 5678",
@@ -688,6 +725,31 @@ CANDIDATES = [
         "notes": "Referred by Chen Wei. Ex-Shopee, specializes in microservices.",
         "stage_target": "interview",
     },
+    {
+        "name": "Kavita Subramaniam",
+        "email": "kavita.subra@gmail.com",
+        "phone": "+65 9088 1122",
+        "source": "referral",
+        "notes": "Referred by Priya Nair. 4 yrs at Stripe. Distributed systems.",
+        "stage_target": "offered",
+    },
+    {
+        "name": "Marcus Yeo",
+        "email": "marcus.yeo.dev@protonmail.com",
+        "phone": "+65 8133 2244",
+        "source": "referral",
+        "notes": "Referred by Marcus Tan. Junior-mid backend, last role at SP Group.",
+        "stage_target": "applied",
+    },
+    {
+        "name": "Linh Nguyen",
+        "email": "linh.nguyen.swe@gmail.com",
+        "phone": "+65 9477 5566",
+        "source": "referral",
+        "notes": "Referred by Nguyen Thanh. Currently on LTVP, willing to switch employers.",
+        "stage_target": "applied",
+    },
+    # --- jobstreet (6) ---
     {
         "name": "James Fernandez",
         "email": "j.fernandez@outlook.com",
@@ -697,6 +759,47 @@ CANDIDATES = [
         "stage_target": "applied",
     },
     {
+        "name": "Aisha Binte Rahman",
+        "email": "aisha.rahman.sg@gmail.com",
+        "phone": "+65 8244 6677",
+        "source": "jobstreet",
+        "notes": "5 years at Razer, looking for hybrid role with growth path.",
+        "stage_target": "interview",
+    },
+    {
+        "name": "Wong Chun Kit",
+        "email": "ck.wong.dev@gmail.com",
+        "phone": "+65 9567 7788",
+        "source": "jobstreet",
+        "notes": "Hong Kong native on EP. Senior engineer at SCMP, 7 years experience.",
+        "stage_target": "applied",
+    },
+    {
+        "name": "Tan Sok Yee",
+        "email": "sokyee.tan@yahoo.com.sg",
+        "phone": "+65 8744 1188",
+        "source": "jobstreet",
+        "notes": "Returning Singaporean, 3 yrs in Sydney at Atlassian. Open to remote-first.",
+        "stage_target": "applied",
+    },
+    {
+        "name": "Pradeep Reddy",
+        "email": "pradeep.reddy.dev@gmail.com",
+        "phone": "+65 9011 2233",
+        "source": "jobstreet",
+        "notes": "Mid-level backend, 4 yrs at Indian fintech. EP-eligible by salary.",
+        "stage_target": "applied",
+    },
+    {
+        "name": "Lily Chua",
+        "email": "lily.chua.eng@outlook.com",
+        "phone": "+65 8255 7799",
+        "source": "jobstreet",
+        "notes": "Singaporean, ex-PropertyGuru, 4 yrs. Strong on data pipelines.",
+        "stage_target": "interview",
+    },
+    # --- careers_page (6) ---
+    {
         "name": "Michelle Lau",
         "email": "michelle.lau.sg@gmail.com",
         "phone": "+65 8456 7890",
@@ -705,11 +808,43 @@ CANDIDATES = [
         "stage_target": "offered",
     },
     {
-        "name": "Vikram Patel",
-        "email": "vikram.p@protonmail.com",
-        "phone": "+65 9567 8901",
-        "source": "linkedin",
-        "notes": "Based in India, willing to relocate. Strong distributed systems background.",
+        "name": "Bryan Khoo",
+        "email": "bryan.khoo.eng@gmail.com",
+        "phone": "+65 9311 2244",
+        "source": "careers_page",
+        "notes": "Recent NUS Computing graduate, internships at GovTech and Shopee.",
+        "stage_target": "applied",
+    },
+    {
+        "name": "Sophia Ng",
+        "email": "sophia.ng.dev@gmail.com",
+        "phone": "+65 8677 3366",
+        "source": "careers_page",
+        "notes": "5 yrs at SingTel, strong Java background, willing to retool to Python.",
+        "stage_target": "applied",
+    },
+    {
+        "name": "Farhan Ismail",
+        "email": "farhan.ismail.dev@gmail.com",
+        "phone": "+65 9122 8855",
+        "source": "careers_page",
+        "notes": "3 yrs at DBS, currently on probation, looking for product-led role.",
+        "stage_target": "applied",
+    },
+    {
+        "name": "Joel Chen",
+        "email": "joel.chen.eng@outlook.com",
+        "phone": "+65 8244 9911",
+        "source": "careers_page",
+        "notes": "Ex-AWS Singapore, 6 yrs. Cloud architecture and infra-as-code.",
+        "stage_target": "interview",
+    },
+    {
+        "name": "Eunice Wee",
+        "email": "eunice.wee.swe@gmail.com",
+        "phone": "+65 9088 4477",
+        "source": "careers_page",
+        "notes": "Returning Singaporean, 4 yrs in London at Monzo. Strong product sense.",
         "stage_target": "applied",
     },
 ]
@@ -803,12 +938,61 @@ def _fail(label: str, detail: str = "") -> None:
 
 
 def seed_auth(client: ArborClient, email: str, password: str) -> dict:
-    """Step 1: Register or log in the demo admin user."""
+    """Step 1: Register or log in the demo admin user (rate-limit aware)."""
     _print("\n--- Step 1: Authentication ---")
-    user = client.register(email, password, "Demo Admin")
+    user = _safe_register_or_login(client, email, password, "Demo Admin")
     user_id = user.get("user", {}).get("id") or user.get("id")
     _ok("Authenticated", f"user_id={user_id}, email={email}")
     return user
+
+
+def _safe_register_or_login(
+    client: ArborClient,
+    email: str,
+    password: str,
+    name: str,
+    max_retries: int = 4,
+) -> dict:
+    """Register-or-login with back-off when the 5/60s auth rate limit trips."""
+    for attempt in range(max_retries):
+        try:
+            return client.register(email, password, name)
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code if exc.response is not None else 0
+            if status == 429 and attempt < max_retries - 1:
+                wait = 65
+                _print(
+                    f"  [WARN] Auth rate-limited (429) on register; "
+                    f"waiting {wait}s for window to drain..."
+                )
+                time.sleep(wait)
+                continue
+            raise
+    raise RuntimeError("register exhausted retries")
+
+
+def _safe_login(client: ArborClient, email: str, password: str, max_retries: int = 4) -> None:
+    """Re-login as admin with back-off when the auth rate limit (5/60s) trips.
+
+    The seed flow does many sequential admin re-logins between sections.
+    On warm databases the in-memory rate limiter starts returning 429 mid-run.
+    This helper waits and retries instead of crashing the whole seed.
+    """
+    for attempt in range(max_retries):
+        try:
+            client.login(email, password)
+            return
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code if exc.response is not None else 0
+            if status == 429 and attempt < max_retries - 1:
+                wait = 65
+                _print(
+                    f"  [WARN] Login rate-limited (429); "
+                    f"waiting {wait}s for window to drain (attempt {attempt + 1})..."
+                )
+                time.sleep(wait)
+                continue
+            raise
 
 
 def seed_company(client: ArborClient, company_name: str) -> int:
@@ -1697,7 +1881,8 @@ def seed_recruitment(client: ArborClient) -> dict:
     if pub_resp.status_code in (200, 201):
         _ok("Job published")
 
-    # Add candidates
+    # Add candidates (PDPA consent always granted at create — recruitment in SG
+    # MUST capture explicit consent before processing personal data).
     for candidate in CANDIDATES:
         cand_resp = client.post(
             f"/recruitment/jobs/{job_id}/candidates",
@@ -1707,6 +1892,7 @@ def seed_recruitment(client: ArborClient) -> dict:
                 "phone": candidate.get("phone", ""),
                 "source": candidate.get("source", "direct"),
                 "notes": candidate.get("notes", ""),
+                "pdpa_consent": True,
             },
         )
 
@@ -1789,8 +1975,10 @@ def seed_onboarding(client: ArborClient, employees: list[dict]) -> None:
         _skip("Onboarding", "no templates found — create one first via the UI")
         return
 
-    template_id = templates[0].get("id")
-    template_name = templates[0].get("name", "Unknown")
+    # Prefer the company default template
+    template = next((t for t in templates if t.get("is_default")), templates[0])
+    template_id = template.get("id")
+    template_name = template.get("name", "Unknown")
     _ok("Onboarding template", f"using '{template_name}' (id={template_id})")
 
     # Assign to the last 5 employees (newest hires)
@@ -1822,6 +2010,635 @@ def seed_onboarding(client: ArborClient, employees: list[dict]) -> None:
             _fail(f"Onboarding {emp_name}", f"{assign_resp.status_code} — {assign_resp.text[:200]}")
 
     _ok("Onboarding", f"{assigned_count} assignments created")
+
+
+# ===========================================================================
+# Round-13 demo refresh: admin profile, scorecards, preboarding, candidate
+# PDPA backfill, varied assignment progress.
+#
+# These sections may use direct DB access (psycopg2) for fields the public
+# API does not expose (e.g. PATCH candidate.pdpa_consent, completion_percentage,
+# step status overrides). DB writes are guarded by company_id and gated on
+# DATABASE_URL availability.
+# ===========================================================================
+
+
+def _get_db_conn():
+    """Open a psycopg2 connection from DATABASE_URL.
+
+    Returns None if DATABASE_URL is not set or psycopg2 is not installed.
+    All DB-direct seed sections degrade gracefully when this returns None.
+    """
+    db_url = os.environ.get("DATABASE_URL", "")
+    if not db_url:
+        return None
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        _print("  [WARN] psycopg2 not installed — skipping DB-direct seed sections")
+        return None
+    try:
+        return psycopg2.connect(db_url)
+    except Exception as exc:
+        _print(f"  [WARN] Could not connect to DB: {exc}")
+        return None
+
+
+def seed_admin_employee_profile(client: ArborClient, company_id: int) -> None:
+    """Round-13 fix: ensure Demo Admin's Employee record is fully populated.
+
+    The owner's Employee record is auto-created on first /employees/me call
+    with empty department/start_date/designation. Round-12 audits flagged
+    this as a "lifeless" demo signal. This step:
+        1. GET /employees/me to ensure the record exists.
+        2. UPDATE it directly in the DB with realistic founder-level fields.
+
+    Direct DB write is preferred over PATCH /employees/{id} because the
+    seed flow runs after many other API calls that exhaust the backend's
+    DB connection pool — a final round of API PATCHes fails unreliably.
+    """
+    _print("\n--- Step 11a: Demo Admin Employee Profile ---")
+
+    # Step 1: ensure the Employee record exists by hitting /employees/me
+    # (admin has the auto-create path; first call writes the row).
+    emp_id_from_api = None
+    try:
+        me_resp = client.get("/employees/me")
+        if me_resp.status_code == 200:
+            emp_id_from_api = me_resp.json().get("id")
+    except Exception as exc:
+        _print(f"  [WARN] /employees/me lookup failed: {exc} — falling back to DB lookup")
+
+    # Step 2: locate the admin's Employee row directly and patch fields
+    conn = _get_db_conn()
+    if conn is None:
+        _skip("Admin profile", "DATABASE_URL unavailable — cannot patch admin Employee")
+        return
+
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                # Find admin user (owner role) for this company
+                cur.execute(
+                    "SELECT u.id FROM users u "
+                    "WHERE u.email = 'demo@central.kailash.ai' AND u.role = 'owner'",
+                )
+                user_row = cur.fetchone()
+                if not user_row:
+                    _skip("Admin profile", "demo admin user not found")
+                    return
+                admin_user_id = user_row[0]
+
+                cur.execute(
+                    "SELECT id, department, designation, start_date, confirmation_status "
+                    "FROM employees WHERE user_id = %s AND company_id = %s LIMIT 1",
+                    (admin_user_id, company_id),
+                )
+                emp_row = cur.fetchone()
+                if not emp_row:
+                    _skip(
+                        "Admin profile",
+                        "admin Employee row not found (call /employees/me first)",
+                    )
+                    return
+
+                emp_id, dept, designation, start_dt, conf_status = emp_row
+
+                # Idempotency: skip if already populated correctly
+                if (
+                    dept == "Operations"
+                    and designation == "Founder & CEO"
+                    and conf_status == "confirmed"
+                    and start_dt
+                ):
+                    _skip("Admin profile", f"already populated (id={emp_id})")
+                    return
+
+                six_months_ago = (date.today() - timedelta(days=180)).isoformat()
+                cur.execute(
+                    "UPDATE employees SET "
+                    "  department = %s, "
+                    "  designation = %s, "
+                    "  start_date = %s, "
+                    "  confirmation_status = %s, "
+                    "  employment_type = 'full_time' "
+                    "WHERE id = %s",
+                    (
+                        "Operations",
+                        "Founder & CEO",
+                        six_months_ago,
+                        "confirmed",
+                        emp_id,
+                    ),
+                )
+                _ok(
+                    "Admin profile",
+                    f"id={emp_id}, dept=Operations, start={six_months_ago}",
+                )
+    except Exception as exc:
+        _fail("Admin profile", f"DB error: {exc}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+# 5 scorecard templates covering common SG SME interview scenarios.
+# Weights are normalised to sum to 1.0 (router validates this).
+SCORECARD_TEMPLATES: list[dict[str, Any]] = [
+    {
+        "name": "Engineering — Senior Software Engineer",
+        "description": "Technical depth and engineering judgment for a senior IC role.",
+        "criteria": [
+            {"name": "Technical Depth", "weight": 0.40},
+            {"name": "System Design", "weight": 0.25},
+            {"name": "Code Quality", "weight": 0.20},
+            {"name": "Communication", "weight": 0.15},
+        ],
+    },
+    {
+        "name": "Sales — Account Executive",
+        "description": "Quota-carrying AE: hunt, close, and grow accounts.",
+        "criteria": [
+            {"name": "Pipeline Management", "weight": 0.35},
+            {"name": "Negotiation", "weight": 0.25},
+            {"name": "CRM Discipline", "weight": 0.20},
+            {"name": "Domain Knowledge", "weight": 0.20},
+        ],
+    },
+    {
+        "name": "F&B — Outlet Manager",
+        "description": "Day-to-day outlet leadership: ops, team, customers, P&L.",
+        "criteria": [
+            {"name": "Operations", "weight": 0.30},
+            {"name": "Team Leadership", "weight": 0.30},
+            {"name": "Customer Service", "weight": 0.20},
+            {"name": "Cost Discipline", "weight": 0.20},
+        ],
+    },
+    {
+        "name": "HR — People Specialist",
+        "description": "SG employment-law fluency and empathetic process delivery.",
+        "criteria": [
+            {"name": "Employment Law Knowledge", "weight": 0.30},
+            {"name": "Empathy", "weight": 0.25},
+            {"name": "Process Discipline", "weight": 0.25},
+            {"name": "Communication", "weight": 0.20},
+        ],
+    },
+    {
+        "name": "Customer Support — Tier 1",
+        "description": "Front-line CS: clear comms, calm under pressure, product mastery.",
+        "criteria": [
+            {"name": "Communication", "weight": 0.35},
+            {"name": "Patience", "weight": 0.25},
+            {"name": "Product Knowledge", "weight": 0.25},
+            {"name": "Tooling", "weight": 0.15},
+        ],
+    },
+]
+
+
+def seed_scorecard_templates(client: ArborClient, company_id: int = 1) -> None:
+    """Round-13 fix: create 5 starter scorecard templates.
+
+    Cluster 7a shipped the UI for selecting scorecard templates, but the demo
+    company had zero — buyers clicking the dropdown saw an empty list. This
+    creates a representative set covering Engineering, Sales, F&B, HR, and CS.
+
+    Uses direct DB writes — POST /recruitment/scorecard-templates is correct
+    but the seed flow runs after many earlier API calls that can exhaust the
+    backend's DB pool. Direct writes are reliable and bypass auth rate limits.
+    The criteria validation logic mirrors the router (sum to 1.0, weights in
+    [0,1], finite numbers).
+    """
+    _print("\n--- Step 11b: Scorecard Templates ---")
+
+    conn = _get_db_conn()
+    if conn is None:
+        _skip("Scorecard templates", "DATABASE_URL unavailable — cannot seed")
+        return
+
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                # Locate admin user_id for created_by (audit field)
+                cur.execute(
+                    "SELECT id FROM users WHERE email='demo@central.kailash.ai' "
+                    "AND role='owner' LIMIT 1",
+                )
+                admin_row = cur.fetchone()
+                admin_user_id = admin_row[0] if admin_row else 1
+
+                # Idempotency: which template names already exist?
+                cur.execute(
+                    "SELECT name FROM scorecard_templates WHERE company_id = %s",
+                    (company_id,),
+                )
+                existing = {r[0] for r in cur.fetchall()}
+
+                created = 0
+                skipped = 0
+                for tmpl in SCORECARD_TEMPLATES:
+                    if tmpl["name"] in existing:
+                        skipped += 1
+                        continue
+
+                    # Mirror router validation: weights sum ~1.0, in [0, 1].
+                    total = sum(c["weight"] for c in tmpl["criteria"])
+                    if abs(total - 1.0) > 0.01:
+                        _fail(
+                            f"Scorecard '{tmpl['name']}'",
+                            f"weights sum to {total:.3f}, expected ~1.0",
+                        )
+                        continue
+
+                    cur.execute(
+                        "INSERT INTO scorecard_templates "
+                        "(company_id, name, description, criteria, created_by, is_active) "
+                        "VALUES (%s, %s, %s, %s, %s, TRUE)",
+                        (
+                            company_id,
+                            tmpl["name"],
+                            tmpl["description"],
+                            json.dumps(tmpl["criteria"]),
+                            admin_user_id,
+                        ),
+                    )
+                    created += 1
+                    _ok(
+                        f"Scorecard '{tmpl['name']}'",
+                        f"{len(tmpl['criteria'])} criteria",
+                    )
+
+                _ok("Scorecard templates", f"{created} created, {skipped} skipped")
+    except Exception as exc:
+        _fail("Scorecard templates", f"DB error: {exc}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+# 5 preboarding tasks for the default template, ordered by relative day.
+# `notes` MUST contain the regex pattern `<n> days? (?:before|relative)`
+# so the assign-time deadline calculator can derive an absolute date.
+PREBOARDING_TEMPLATE_TASKS: list[dict[str, Any]] = [
+    {
+        "task_name": "Send signed offer letter",
+        "owner_role": "hr",
+        "trigger": "offer_accepted",
+        "rel_days": -14,
+        "notes_extra": "Use the standard offer template. Attach signed copy + CPF declaration.",
+    },
+    {
+        "task_name": "Collect ID + bank docs",
+        "owner_role": "hr",
+        "trigger": "offer_accepted",
+        "rel_days": -10,
+        "notes_extra": "NRIC/FIN copy, bank statement (account + bank code), tax-residency declaration.",
+    },
+    {
+        "task_name": "Send welcome email + first-day logistics",
+        "owner_role": "hr",
+        "trigger": "10_days_before_start",
+        "rel_days": -7,
+        "notes_extra": "Welcome message, dress code, first-day arrival time, parking, lunch arrangement.",
+    },
+    {
+        "task_name": "Set up workspace + access cards",
+        "owner_role": "office_manager",
+        "trigger": "7_days_before_start",
+        "rel_days": -5,
+        "notes_extra": "Desk allocation, access card, locker key, stationery starter pack.",
+    },
+    {
+        "task_name": "Verify IT account + laptop ready",
+        "owner_role": "it",
+        "trigger": "3_days_before_start",
+        "rel_days": -1,
+        "notes_extra": "Category: laptop | Email account, SSO, VPN profile, laptop image, MFA seed.",
+    },
+]
+
+
+def seed_preboarding_template_tasks(company_id: int) -> None:
+    """Round-13 fix: seed 5 preboarding tasks on the default onboarding template.
+
+    Creates template-level rows (employee_id=0) on the company's default
+    template. The /onboarding/assign endpoint copies these per-employee with
+    deadline_date computed from start_date.
+
+    Uses direct DB access — there is no admin endpoint to add individual
+    template-level preboarding tasks (existing flow only creates them as a
+    side-effect of /onboarding/templates/import which requires an xlsx).
+    """
+    _print("\n--- Step 11c: Preboarding Template Tasks ---")
+
+    conn = _get_db_conn()
+    if conn is None:
+        _skip("Preboarding tasks", "DATABASE_URL unavailable — skipping DB-direct seed")
+        return
+
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                # Find the company's default template
+                cur.execute(
+                    "SELECT id, name FROM onboarding_templates "
+                    "WHERE company_id = %s AND is_default = TRUE AND is_active = TRUE "
+                    "ORDER BY id LIMIT 1",
+                    (company_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    # Fall back to first active template
+                    cur.execute(
+                        "SELECT id, name FROM onboarding_templates "
+                        "WHERE company_id = %s AND is_active = TRUE "
+                        "ORDER BY id LIMIT 1",
+                        (company_id,),
+                    )
+                    row = cur.fetchone()
+                if not row:
+                    _skip("Preboarding tasks", "no onboarding template found")
+                    return
+                template_id, template_name = row[0], row[1]
+
+                # Idempotency: count existing template-level tasks
+                cur.execute(
+                    "SELECT task_name FROM preboarding_task_instances "
+                    "WHERE company_id = %s AND template_id = %s AND employee_id = 0",
+                    (company_id, template_id),
+                )
+                existing_names = {r[0] for r in cur.fetchall()}
+
+                created = 0
+                skipped = 0
+                for task in PREBOARDING_TEMPLATE_TASKS:
+                    if task["task_name"] in existing_names:
+                        skipped += 1
+                        continue
+                    rel_days = task["rel_days"]
+                    notes = (
+                        f"Relative deadline: {rel_days} days from start date | "
+                        f"{task['notes_extra']}"
+                    )
+                    cur.execute(
+                        "INSERT INTO preboarding_task_instances "
+                        "(company_id, template_id, employee_id, task_name, "
+                        " owner_role, trigger, deadline_date, status, notes) "
+                        "VALUES (%s, %s, 0, %s, %s, %s, NULL, 'pending', %s)",
+                        (
+                            company_id,
+                            template_id,
+                            task["task_name"],
+                            task["owner_role"],
+                            task["trigger"],
+                            notes,
+                        ),
+                    )
+                    created += 1
+
+                _ok(
+                    f"Preboarding tasks (template '{template_name}')",
+                    f"{created} created, {skipped} skipped",
+                )
+    except Exception as exc:
+        _fail("Preboarding tasks", f"DB error: {exc}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def backfill_candidate_pdpa(company_id: int) -> None:
+    """Round-13 fix: ensure ALL candidates have pdpa_consent=True.
+
+    The candidate POST endpoint accepts pdpa_consent in the body, but the
+    PATCH endpoint does not — so existing candidates created before this
+    seed change cannot be updated via API. This function patches them
+    directly in the DB.
+    """
+    _print("\n--- Step 11d: Candidate PDPA Backfill ---")
+
+    conn = _get_db_conn()
+    if conn is None:
+        _skip("Candidate PDPA", "DATABASE_URL unavailable — skipping backfill")
+        return
+
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                # Find candidates missing PDPA consent
+                cur.execute(
+                    "SELECT id, name FROM candidates "
+                    "WHERE company_id = %s AND pdpa_consent = FALSE",
+                    (company_id,),
+                )
+                rows = cur.fetchall()
+                if not rows:
+                    _skip("Candidate PDPA", "all candidates already have consent")
+                    return
+
+                # Set consent_date to a random point within the last 60 days,
+                # so the demo audit trail looks naturally distributed.
+                now = datetime.utcnow()
+                updated = 0
+                for cid, _name in rows:
+                    days_ago = random.randint(1, 60)
+                    consent_dt = now - timedelta(
+                        days=days_ago, hours=random.randint(0, 23),
+                    )
+                    cur.execute(
+                        "UPDATE candidates SET pdpa_consent = TRUE, "
+                        "pdpa_consent_date = %s WHERE id = %s",
+                        (consent_dt.isoformat(), cid),
+                    )
+                    updated += 1
+
+                _ok("Candidate PDPA", f"{updated} candidates updated")
+    except Exception as exc:
+        _fail("Candidate PDPA", f"DB error: {exc}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def vary_onboarding_progress(company_id: int) -> None:
+    """Round-13 fix: vary onboarding-assignment completion across 5 buckets.
+
+    Without variation, every assignment shows 0% complete and the demo looks
+    abandoned. This sets:
+        bucket 0 -> 100% complete (status=completed, all steps completed)
+        bucket 1 -> ~65% (8 of 13 steps completed, some in_progress)
+        bucket 2 -> ~30% (4 of 13 steps completed)
+        bucket 3 -> preboarding-only (per-employee preboarding tasks live, no step progress)
+        bucket 4 -> just-assigned (no step progress, assigned_at = today)
+
+    Direct DB only — there is no admin endpoint to mark steps complete on
+    behalf of another employee.
+    """
+    _print("\n--- Step 11e: Onboarding Progress Variation ---")
+
+    conn = _get_db_conn()
+    if conn is None:
+        _skip("Onboarding progress", "DATABASE_URL unavailable — skipping")
+        return
+
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                # Get all in_progress assignments for the company, oldest first
+                cur.execute(
+                    "SELECT id, employee_id, template_id FROM onboarding_assignments "
+                    "WHERE company_id = %s "
+                    "ORDER BY id ASC",
+                    (company_id,),
+                )
+                assignments = cur.fetchall()
+                if len(assignments) < 5:
+                    _skip(
+                        "Onboarding progress",
+                        f"need >=5 assignments, found {len(assignments)}",
+                    )
+                    return
+
+                # Idempotency: if assignment[0] is already 'completed', assume done
+                cur.execute(
+                    "SELECT status, completion_percentage FROM onboarding_assignments "
+                    "WHERE id = %s",
+                    (assignments[0][0],),
+                )
+                first_state = cur.fetchone()
+                if first_state and first_state[0] == "completed":
+                    _skip("Onboarding progress", "already varied (assignment[0]=completed)")
+                    return
+
+                now = datetime.utcnow()
+                three_days_ago = now - timedelta(days=3)
+
+                # Bucket 0: 100% complete
+                a0_id, _, _ = assignments[0]
+                cur.execute(
+                    "UPDATE onboarding_step_progress "
+                    "SET status='completed', completed_at=%s "
+                    "WHERE assignment_id = %s",
+                    (three_days_ago, a0_id),
+                )
+                cur.execute(
+                    "UPDATE onboarding_assignments "
+                    "SET status='completed', completion_percentage=100.0, completed_at=%s "
+                    "WHERE id = %s",
+                    (three_days_ago, a0_id),
+                )
+                _ok(f"Assignment {a0_id}", "100% completed")
+
+                # Bucket 1: ~65% (mark first 8 of 13 steps complete)
+                a1_id, _, _ = assignments[1]
+                cur.execute(
+                    "SELECT id FROM onboarding_step_progress "
+                    "WHERE assignment_id = %s ORDER BY id ASC",
+                    (a1_id,),
+                )
+                steps = [r[0] for r in cur.fetchall()]
+                target_done = max(1, int(round(len(steps) * 0.65)))
+                if steps:
+                    done_ids = steps[:target_done]
+                    cur.execute(
+                        "UPDATE onboarding_step_progress "
+                        "SET status='completed', completed_at=%s "
+                        "WHERE id = ANY(%s)",
+                        (now - timedelta(days=2), done_ids),
+                    )
+                    pct = round(target_done / len(steps) * 100, 1)
+                    cur.execute(
+                        "UPDATE onboarding_assignments "
+                        "SET status='in_progress', completion_percentage=%s "
+                        "WHERE id = %s",
+                        (pct, a1_id),
+                    )
+                    _ok(f"Assignment {a1_id}", f"{target_done}/{len(steps)} steps ({pct}%)")
+
+                # Bucket 2: ~30% (mark first 4 of 13 steps complete)
+                a2_id, _, _ = assignments[2]
+                cur.execute(
+                    "SELECT id FROM onboarding_step_progress "
+                    "WHERE assignment_id = %s ORDER BY id ASC",
+                    (a2_id,),
+                )
+                steps2 = [r[0] for r in cur.fetchall()]
+                target_done2 = max(1, int(round(len(steps2) * 0.30)))
+                if steps2:
+                    done_ids2 = steps2[:target_done2]
+                    cur.execute(
+                        "UPDATE onboarding_step_progress "
+                        "SET status='completed', completed_at=%s "
+                        "WHERE id = ANY(%s)",
+                        (now - timedelta(days=1), done_ids2),
+                    )
+                    pct2 = round(target_done2 / len(steps2) * 100, 1)
+                    cur.execute(
+                        "UPDATE onboarding_assignments "
+                        "SET status='in_progress', completion_percentage=%s "
+                        "WHERE id = %s",
+                        (pct2, a2_id),
+                    )
+                    _ok(
+                        f"Assignment {a2_id}",
+                        f"{target_done2}/{len(steps2)} steps ({pct2}%)",
+                    )
+
+                # Bucket 3: preboarding-only — leave step progress untouched (already pending)
+                # but ensure the preboarding tasks are present per-employee. The
+                # /onboarding/assign endpoint already copied template-level tasks
+                # at assign time, so this row exists. We zero out completion% as
+                # a guard.
+                a3_id, a3_emp, a3_tmpl = assignments[3]
+                cur.execute(
+                    "UPDATE onboarding_assignments "
+                    "SET status='in_progress', completion_percentage=0.0 "
+                    "WHERE id = %s",
+                    (a3_id,),
+                )
+                cur.execute(
+                    "SELECT COUNT(*) FROM preboarding_task_instances "
+                    "WHERE company_id = %s AND employee_id = %s",
+                    (company_id, a3_emp),
+                )
+                pb_count_row = cur.fetchone()
+                pb_count = pb_count_row[0] if pb_count_row else 0
+                _ok(f"Assignment {a3_id}", f"preboarding-only ({pb_count} preboarding tasks)")
+
+                # Bucket 4: just-assigned (assigned_at=today, no progress)
+                a4_id, _, _ = assignments[4]
+                cur.execute(
+                    "UPDATE onboarding_step_progress "
+                    "SET status='pending', completed_at=NULL "
+                    "WHERE assignment_id = %s",
+                    (a4_id,),
+                )
+                cur.execute(
+                    "UPDATE onboarding_assignments "
+                    "SET status='in_progress', completion_percentage=0.0, assigned_at=%s "
+                    "WHERE id = %s",
+                    (now, a4_id),
+                )
+                _ok(f"Assignment {a4_id}", "just-assigned (today, 0%)")
+
+                _ok("Onboarding progress", "5 buckets varied (100/65/30/preboarding/just)")
+    except Exception as exc:
+        _fail("Onboarding progress", f"DB error: {exc}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 # ===========================================================================
@@ -1866,6 +2683,15 @@ def main() -> None:
         default=DEFAULT_EMPLOYEE_COUNT,
         help=f"Number of employees to create (max {len(EMPLOYEE_PROFILES)}, default: {DEFAULT_EMPLOYEE_COUNT})",
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help=(
+            "Acknowledges that the seeder is being run against a freshly "
+            "reset database. The script is idempotent either way; this flag "
+            "currently records intent in the run header for ops audit."
+        ),
+    )
     args = parser.parse_args()
 
     # Clamp employee count
@@ -1878,6 +2704,7 @@ def main() -> None:
     _print(f"Admin:      {args.email}")
     _print(f"Company:    {args.company_name}")
     _print(f"Employees:  {max_employees}")
+    _print(f"Reset:      {args.reset}")
     _print(f"Timestamp:  {datetime.now().isoformat()}")
     _print("=" * 60)
 
@@ -1909,31 +2736,26 @@ def main() -> None:
         # Step 2: Company
         company_id = seed_company(client, args.company_name)
 
-        # Re-login to ensure token has company_id
-        client.login(args.email, args.password)
+        # Re-login so the new token carries company_id (only once — Steps
+        # 2b/3b/3c/4 all run against the admin token, no need to re-auth.)
+        _safe_login(client, args.email, args.password)
 
         # Step 2b: Leave types
         leave_types = seed_leave_types(client)
 
-        # Step 3: Employees
+        # Step 3: Employees (this section logs in as each new employee then
+        # restores the admin token in a try/finally, so a single re-login
+        # after the section is enough.)
         employees = seed_employees(client, company_id, max_employees)
+        _safe_login(client, args.email, args.password)
 
-        # Re-login as admin (employee creation may have switched tokens)
-        client.login(args.email, args.password)
-
-        # Step 3b: Enrich employee profiles
+        # Step 3b: Enrich employee profiles (admin only)
         seed_employee_profiles(client, employees)
 
-        # Re-login as admin
-        client.login(args.email, args.password)
-
-        # Step 3c: Role promotions
+        # Step 3c: Role promotions (admin only)
         seed_role_promotions(client, employees)
 
-        # Re-login as admin
-        client.login(args.email, args.password)
-
-        # Step 4: Salary components
+        # Step 4: Salary components (admin only)
         seed_salary_components(client, employees)
 
         # Step 5: Payroll (wrapped in try/except — payroll failures are non-fatal)
@@ -1941,35 +2763,62 @@ def main() -> None:
             seed_payroll(client)
         except Exception as payroll_exc:
             _print(f"  [WARN] Payroll seeding failed: {payroll_exc} — continuing")
-            client.login(args.email, args.password)
+            _safe_login(client, args.email, args.password)
 
-        # Step 6: Leave applications
+        # Step 6: Leave applications (logs in as employees; restore admin)
         seed_leave_applications(client, employees, leave_types)
+        _safe_login(client, args.email, args.password)
 
-        # Re-login as admin
-        client.login(args.email, args.password)
-
-        # Step 6b + 7: Claims
+        # Step 6b + 7: Claims (logs in as employees; restore admin after)
         category_lookup = seed_claim_categories(client)
         seed_claims(client, employees, category_lookup)
+        _safe_login(client, args.email, args.password)
 
-        # Re-login as admin
-        client.login(args.email, args.password)
-
-        # Step 8: Attendance
+        # Step 8: Attendance (logs in as employees; restore admin after)
         seed_attendance(client, employees)
+        _safe_login(client, args.email, args.password)
 
-        # Re-login as admin
-        client.login(args.email, args.password)
-
-        # Step 9: Recruitment
+        # Step 9: Recruitment (admin only — no re-login needed afterward)
         seed_recruitment(client)
 
-        # Re-login as admin
-        client.login(args.email, args.password)
+        # Step 9b: Round-13 — backfill PDPA consent on any pre-existing
+        # candidates whose row was created before pdpa_consent was seeded.
+        try:
+            backfill_candidate_pdpa(company_id)
+        except Exception as exc:
+            _print(f"  [WARN] PDPA backfill failed: {exc} — continuing")
+
+        # Step 9c: Round-13 — scorecard template library (5 starter templates).
+        try:
+            seed_scorecard_templates(client, company_id)
+        except Exception as exc:
+            _print(f"  [WARN] Scorecard templates failed: {exc} — continuing")
+
+        # Step 9d: Round-13 — preboarding tasks on the default onboarding
+        # template. MUST run BEFORE seed_onboarding so the assign endpoint
+        # copies them per-employee at assignment time.
+        try:
+            seed_preboarding_template_tasks(company_id)
+        except Exception as exc:
+            _print(f"  [WARN] Preboarding template tasks failed: {exc} — continuing")
 
         # Step 10: Onboarding assignments
         seed_onboarding(client, employees)
+
+        # Step 10b: Round-13 — admin Employee profile (must run AFTER any
+        # /employees/me hits to ensure the auto-created record exists).
+        try:
+            seed_admin_employee_profile(client, company_id)
+        except Exception as exc:
+            _print(f"  [WARN] Admin profile fix failed: {exc} — continuing")
+
+        # Step 10c: Round-13 — vary onboarding-assignment progress so the
+        # demo doesn't look like everyone is at 0% complete. Runs LAST so
+        # the assignments + step progress rows already exist.
+        try:
+            vary_onboarding_progress(company_id)
+        except Exception as exc:
+            _print(f"  [WARN] Onboarding progress variation failed: {exc} — continuing")
 
         # Summary
         _print("\n" + "=" * 60)

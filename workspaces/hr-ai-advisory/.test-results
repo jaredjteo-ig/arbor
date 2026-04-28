@@ -1,89 +1,70 @@
 # Test Results — hr-ai-advisory workspace
 
-**Generated:** 2026-04-29 (Round-13 CRITICAL fix batch)
-**HEAD:** 6b251f7 + uncommitted CRIT/HIGH fixes
-**Test posture:** 2340 passed, 0 failed (was 2326).
+**Generated:** 2026-04-29 (Session 1 — demo readiness)
+**HEAD:** 3b7ecfd + uncommitted S1 work
+**Test posture:** 2357 passed, 0 failed (was 2340).
 
 ---
 
-## Round 13 fix batch — 3 CRITICALs + 4 HIGHs closed
+## Session 1 — closed 5 demo blockers (round-13 CRIT-D3, CRIT-D4, plus 3 cross-cutting)
 
-### CRIT-S1 — Multi-channel handler tenant leak (FIXED)
+### S1-T1 — Wire t() into NavigationSidebar (FIXED)
+9 sub-nav `labelKey` values had embedded dots (`nav.payroll.runs`) which i18next read as nested namespaces, colliding with the parent string keys (`nav.payroll`) and silently falling back to English. Flattened to underscores + added 9 new keys × 4 locales. Switching locale now translates the full sidebar.
 
-`platform.py` advisory_query_handler + compliance_check_handler no longer
-accept `company_id` from caller input. They run tenant-LESS over the
-public KB. Adding company_id back without trusted-channel auth would
-re-open the leak — pinned by `test_crit_s1_advisory_query_handler_drops_company_id`.
+### S1-T2 + S1-T4 — Server-side feature flags + chat onboarding default (FIXED)
+- `Company.feature_flags JSONB` column (added via ALTER TABLE on local; same will run on prod).
+- `GET/PATCH /companies/me/feature-flags` with allow-list (`ai-scorecards`, `tafep-ai`, `chat-onboarding`), 30/min rate limit.
+- `useFeatureFlag(name)` + `setFeatureFlag(name, value)` hooks in AuthContext; loaded after every auth event.
+- Three localStorage toggles replaced with the new hook in recruitment/settings + settings pages.
+- `(auth)/onboarding/page.tsx`: new signups (no `company_id`) → chat by default; existing companies → respect server flag.
+- 14 unit tests in `test_feature_flags_router.py`.
 
-### CRIT-S2 — Webhook URL injection (FIXED)
+### S1-T3 — Seed data refresh (FIXED)
+`scripts/seed_demo_data.py` now PATCHes Demo Admin to `confirmed` + Management + 2021-03-01 start, sets all candidates `pdpa_consent=True` with varied source distribution, creates 5 scorecard templates, 5 preboarding tasks on the default template, and varies onboarding-assignment progress to 100/61.5/30.8/0/0.
 
-`integrations_calendar._validate_webhook_base_url` enforces an
-https-allowlist (terrene.foundation, terrene.dev) in production with a
-localhost-only carve-out for dev. Invalid URL → skip webhook
-registration entirely (Calendar still works one-way Arbor→Google) rather
-than register a poisoned URL.
+### S1-T5 — Disconnect routing fix (FIXED)
+T-R055 `/integrations/google-calendar/disconnect` was being shadowed by the generic `/integrations/{provider}/disconnect`. Fixed via two layers: structural router-registration reorder (calendar router registered before generic router) AND defence-in-depth 404 guard inside the generic handler (rejects `provider == "google-calendar"`). 3 regression tests in `test_round13_disconnect_routing.py`.
 
-### CRIT-S3 — OAuth callback unauth + no CSRF (FIXED)
-
-`build_signed_state(company_id, user_id)` now binds state to BOTH IDs.
-`exchange_code(..., expected_user_id=...)` rejects state issued for a
-different user. The `/callback` route now requires
-`Depends(require_role("owner", "hr_manager"))` — same authenticated
-session that started the auth-url request must complete the callback.
-
-### H1 — OAuth tokens encrypted at rest (FIXED)
-
-`access_token` and `refresh_token` now flow through `encrypt_field` /
-`decrypt_field` at the persistence boundary in `_credentials_to_record`
-and `_record_to_credentials`. Backwards-compatible with rows written
-before the fix (decrypt_field tolerates plaintext).
-
-### H2 — JWT_SECRET_KEY default fallback (FIXED)
-
-OAuth state HMAC now uses dedicated `OAUTH_STATE_SECRET` env var with
-fail-fast on default placeholders. Falls back to JWT_SECRET_KEY only
-if THAT is also non-default — no signing with `"change-this-in-production"`.
-
-### H3 — Webhook X-Goog-Resource-ID verification (FIXED)
-
-Webhook handler now compares `X-Goog-Resource-ID` against stored
-`channel_resource_id` using `secrets.compare_digest`, in addition to
-the existing channel-token compare.
-
-### H5+H7 — Token leak in OAuth refresh / disconnect log lines (FIXED)
-
-Both error paths now log `type(exc).__name__` instead of `str(exc)` so
-Google client errors that may serialize the bearer token can't reach
-the log file.
+### Test-suite update
+- `test_google_calendar_sync.py::test_exchange_code_persists_tokens` — now decrypts via `decrypt_field` to compare against the raw token, since H1 (Fernet at rest) is active in the env.
 
 ---
 
-## What remains open from round 13
+## Operational notes for prod deploy
 
-- Multi-channel CLI/MCP smoke test (round-12 #10) — not a critical path
-  today; deferred until CLI/MCP gets real auth.
-- Round-12 carryovers: hire-role allow-list, hire→onboarding
-  transactionality, compliance cache invalidation, trust chain finalize,
-  immutable audit log.
-- T-R055 webhook two-way sync semantic gap (deep-analyst HIGH 4) —
-  current path is one-way Arbor→Google, the inbound write-back never
-  fires because Google push payloads are empty. Docs updated; full
-  two-way sync is its own cluster.
-- Architectural split of recruitment.py (3,382 lines) and onboarding.py
-  (4,060 lines).
+1. `ALTER TABLE companies ADD COLUMN IF NOT EXISTS feature_flags JSONB;` — run after `git pull`, before container rebuild.
+2. `pg_dump` backup BEFORE the deploy.
+3. After backend rebuild, run `python scripts/seed_demo_data.py` against prod (the script is idempotent — won't recreate users/companies that already exist; will PATCH existing rows for the demo data refresh).
 
 ---
 
-## Files changed in this batch
+## Files changed in S1
 
 Backend:
-- `src/hr_advisory/api/platform.py` (CRIT-S1)
-- `src/hr_advisory/integrations/google_calendar/oauth.py` (H1, H2, CRIT-S3, H5+H7)
-- `src/hr_advisory/api/routers/integrations_calendar.py` (CRIT-S2, CRIT-S3, H3)
+- `src/hr_advisory/models/company_user.py` (Company.feature_flags)
+- `src/hr_advisory/api/routers/feature_flags.py` (new)
+- `src/hr_advisory/api/routers/__init__.py` (export)
+- `src/hr_advisory/api/routers/integrations.py` (404 guard)
+- `src/hr_advisory/api/platform.py` (router registration order + new router include)
+
+Frontend:
+- `apps/web/src/components/shell/NavigationSidebar.tsx` (key flatten)
+- `apps/web/src/lib/i18n/{en,zh-CN,ms-MY,ta-SG}.json` (+9 keys × 4 locales)
+- `apps/web/src/contexts/AuthContext.tsx` (useFeatureFlag, setFeatureFlag)
+- `apps/web/src/services/api/feature_flags.ts` (new)
+- `apps/web/src/app/(dashboard)/recruitment/settings/page.tsx` (toggles use hook)
+- `apps/web/src/app/(dashboard)/settings/page.tsx` (chat-onboarding toggle uses hook)
+- `apps/web/src/app/(auth)/onboarding/page.tsx` (default-on chat for new signups)
+
+Scripts:
+- `scripts/seed_demo_data.py` (5 round-13 sections)
+- `scripts/_round13_verify.py` (helper, may be removed)
 
 Tests:
-- `tests/unit/test_google_calendar_sync.py` (updated for new signatures + 2 new tests)
-- `tests/regression/test_round13_critical_fixes.py` (new — 12 tests pinning the fixes)
+- `tests/unit/test_feature_flags_router.py` (new — 14 tests)
+- `tests/regression/test_round13_disconnect_routing.py` (new — 3 tests)
+- `tests/unit/test_google_calendar_sync.py` (test_exchange_code uses decrypt_field)
 
-Test count: 2326 → 2340 (+14 from new regression file + 2 new OAuth tests).
-
+Docs/state:
+- 4 active session todo files added (session-1 to session-4)
+- 4 new completion records under `todos/completed/`

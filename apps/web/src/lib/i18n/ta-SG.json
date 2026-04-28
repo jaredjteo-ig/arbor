@@ -43,7 +43,16 @@
     "my-timesheets": "எனது பணி நேரத் தாள்கள்",
     "my-inventory": "எனது பொருள் பட்டியல்",
     "group_tools": "கருவிகள்",
-    "group_management": "மேலாண்மை"
+    "group_management": "மேலாண்மை",
+    "payroll_runs": "சம்பள செயலாக்கம்",
+    "payroll_reports": "சம்பள அறிக்கைகள்",
+    "payroll_filings": "அரசுக் கோப்புகள்",
+    "leave_applications": "விடுமுறை விண்ணப்பங்கள்",
+    "recruitment_dashboard": "ஆட்சேர்ப்பு முகப்பு",
+    "recruitment_jobs": "வேலை வாய்ப்புகள்",
+    "recruitment_candidates": "வேட்பாளர்கள்",
+    "recruitment_interviews": "நேர்காணல்கள்",
+    "recruitment_settings": "ஆட்சேர்ப்பு அமைப்புகள்"
   },
   "topbar": {
     "search_placeholder": "தேடு...",

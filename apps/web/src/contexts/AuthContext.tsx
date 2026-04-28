@@ -16,6 +16,12 @@ import {
   type RegisterData,
   type LoginData,
 } from "@/services/api/auth";
+import {
+  featureFlagsApi,
+  DEFAULT_FEATURE_FLAGS,
+  type FeatureFlags,
+  type FeatureFlagKey,
+} from "@/services/api/feature_flags";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -23,6 +29,10 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** Latest server-side feature flags for the user's company. */
+  featureFlags: FeatureFlags;
+  /** True until the first feature-flag fetch resolves (success or fail). */
+  featureFlagsLoaded: boolean;
 }
 
 interface AuthContextValue extends AuthState {
@@ -37,6 +47,13 @@ interface AuthContextValue extends AuthState {
     refreshToken: string,
     user: User,
   ) => void;
+  /** Refresh the cached feature-flag map from the server. */
+  refreshFeatureFlags: () => Promise<void>;
+  /**
+   * Persist a flag change to the backend (owner-only). Throws on failure
+   * so the caller can show a toast — we deliberately don't swallow.
+   */
+  setFeatureFlag: (name: FeatureFlagKey, value: boolean) => Promise<void>;
 }
 
 /* ── Context ──────────────────────────────────────────────── */
@@ -68,7 +85,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user: null,
     isAuthenticated: false,
     isLoading: true,
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS },
+    featureFlagsLoaded: false,
   });
+
+  /* Fetch feature flags from the backend and stash them in context.
+     We never fall back to localStorage — if the API is down, defaults
+     stay off. The first call after login/refresh sets featureFlagsLoaded
+     so callers can distinguish "not loaded yet" from "loaded, all off". */
+  const loadFeatureFlags = useCallback(async () => {
+    try {
+      const res = await featureFlagsApi.get();
+      setState((prev) => ({
+        ...prev,
+        featureFlags: { ...DEFAULT_FEATURE_FLAGS, ...res.flags },
+        featureFlagsLoaded: true,
+      }));
+    } catch {
+      // Network failure / 401 / 403 — leave flags at default (off) and
+      // mark as loaded so the UI renders rather than blocking forever.
+      setState((prev) => ({
+        ...prev,
+        featureFlags: { ...DEFAULT_FEATURE_FLAGS },
+        featureFlagsLoaded: true,
+      }));
+    }
+  }, []);
 
   /* Proactive token refresh — refresh 5 minutes before expiry.
      This prevents the "silent 401" problem where background requests
@@ -148,7 +190,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const user = await authApi.me(accessToken);
         if (!cancelled) {
-          setState({ user, isAuthenticated: true, isLoading: false });
+          setState((prev) => ({
+            ...prev,
+            user,
+            isAuthenticated: true,
+            isLoading: false,
+          }));
+          // Hydrate feature flags after auth resolves. Errors here are
+          // non-fatal — the loader catches and falls back to defaults.
+          loadFeatureFlags();
         }
       } catch (error) {
         /* If the access token is expired, try to refresh */
@@ -162,7 +212,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             storeTokens(tokens.access_token, tokens.refresh_token);
             const user = await authApi.me(tokens.access_token);
             if (!cancelled) {
-              setState({ user, isAuthenticated: true, isLoading: false });
+              setState((prev) => ({
+                ...prev,
+                user,
+                isAuthenticated: true,
+                isLoading: false,
+              }));
+              loadFeatureFlags();
             }
           } catch {
             /* Refresh also failed — clear everything */
@@ -172,13 +228,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 user: null,
                 isAuthenticated: false,
                 isLoading: false,
+                featureFlags: { ...DEFAULT_FEATURE_FLAGS },
+                featureFlagsLoaded: false,
               });
             }
           }
         } else {
           clearTokens();
           if (!cancelled) {
-            setState({ user: null, isAuthenticated: false, isLoading: false });
+            setState({
+              user: null,
+              isAuthenticated: false,
+              isLoading: false,
+              featureFlags: { ...DEFAULT_FEATURE_FLAGS },
+              featureFlagsLoaded: false,
+            });
           }
         }
       }
@@ -189,24 +253,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadFeatureFlags]);
 
   /* Login */
   const login = useCallback(
     async (data: LoginData) => {
       const response = await authApi.login(data);
       storeTokens(response.access_token, response.refresh_token);
-      setState({
+      setState((prev) => ({
+        ...prev,
         user: response.user,
         isAuthenticated: true,
         isLoading: false,
-      });
+      }));
+      // Pull the freshly-logged-in user's feature flags. Best-effort.
+      loadFeatureFlags();
       // Route employees to their personal dashboard; admins to the main dashboard
       const destination =
         response.user.role === "employee" ? "/my-dashboard" : "/dashboard";
       router.push(destination);
     },
-    [router],
+    [router, loadFeatureFlags],
   );
 
   /* Register */
@@ -214,20 +281,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (data: RegisterData) => {
       const response = await authApi.register(data);
       storeTokens(response.access_token, response.refresh_token);
-      setState({
+      setState((prev) => ({
+        ...prev,
         user: response.user,
         isAuthenticated: true,
         isLoading: false,
-      });
+      }));
+      // Fresh registration has no company yet — the API returns defaults
+      // and `defaulted: true`. The onboarding page reads `user.company_id`
+      // directly to decide chat-vs-form, so this is informational.
+      loadFeatureFlags();
       router.push("/onboarding");
     },
-    [router],
+    [router, loadFeatureFlags],
   );
 
   /* Logout */
   const logout = useCallback(() => {
     authApi.logout();
-    setState({ user: null, isAuthenticated: false, isLoading: false });
+    setState({
+      user: null,
+      isAuthenticated: false,
+      isLoading: false,
+      featureFlags: { ...DEFAULT_FEATURE_FLAGS },
+      featureFlagsLoaded: false,
+    });
     router.push("/login");
   }, [router]);
 
@@ -242,25 +320,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       storeTokens(tokens.access_token, tokens.refresh_token || refreshToken);
       // Fetch the full user profile with the new token
       const user = await authApi.me(tokens.access_token);
-      setState({ user, isAuthenticated: true, isLoading: false });
+      setState((prev) => ({
+        ...prev,
+        user,
+        isAuthenticated: true,
+        isLoading: false,
+      }));
+      // company_id may have just been populated (post-onboarding); reload flags.
+      loadFeatureFlags();
     } catch {
       // Fallback: try with existing access token
       const accessToken = getStoredToken("access_token");
       if (!accessToken) return;
       try {
         const user = await authApi.me(accessToken);
-        setState({ user, isAuthenticated: true, isLoading: false });
+        setState((prev) => ({
+          ...prev,
+          user,
+          isAuthenticated: true,
+          isLoading: false,
+        }));
+        loadFeatureFlags();
       } catch {
         /* Silently ignore — user stays as-is */
       }
     }
-  }, []);
+  }, [loadFeatureFlags]);
 
   /* Login with pre-obtained tokens (e.g. from employee invite signup) */
   const loginWithTokens = useCallback(
     (accessToken: string, refreshToken: string, user: User) => {
       storeTokens(accessToken, refreshToken);
-      setState({ user, isAuthenticated: true, isLoading: false });
+      setState((prev) => ({
+        ...prev,
+        user,
+        isAuthenticated: true,
+        isLoading: false,
+      }));
+      loadFeatureFlags();
+    },
+    [loadFeatureFlags],
+  );
+
+  /* Persist a flag change. Owner-only on the server side. */
+  const setFeatureFlag = useCallback(
+    async (name: FeatureFlagKey, value: boolean) => {
+      // Optimistic update so the UI feels responsive; reverted on failure.
+      setState((prev) => ({
+        ...prev,
+        featureFlags: { ...prev.featureFlags, [name]: value },
+      }));
+      try {
+        const res = await featureFlagsApi.update({ [name]: value });
+        setState((prev) => ({
+          ...prev,
+          featureFlags: { ...DEFAULT_FEATURE_FLAGS, ...res.flags },
+          featureFlagsLoaded: true,
+        }));
+      } catch (err) {
+        // Revert and bubble up so the caller can toast the user.
+        setState((prev) => ({
+          ...prev,
+          featureFlags: { ...prev.featureFlags, [name]: !value },
+        }));
+        throw err;
+      }
     },
     [],
   );
@@ -274,6 +398,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         refreshUser,
         loginWithTokens,
+        refreshFeatureFlags: loadFeatureFlags,
+        setFeatureFlag,
       }}
     >
       {children}
@@ -289,4 +415,14 @@ export function useAuth(): AuthContextValue {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
+}
+
+/**
+ * Read a single feature flag from auth context. Defaults to ``false`` when
+ * the flags haven't loaded yet or the API call failed — matching the
+ * server-side default. NEVER falls back to localStorage.
+ */
+export function useFeatureFlag(name: FeatureFlagKey): boolean {
+  const { featureFlags } = useAuth();
+  return Boolean(featureFlags[name]);
 }

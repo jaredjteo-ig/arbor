@@ -43,7 +43,16 @@
     "my-timesheets": "My Timesheets",
     "my-inventory": "My Inventory",
     "group_tools": "Tools",
-    "group_management": "Management"
+    "group_management": "Management",
+    "payroll_runs": "Payroll Runs",
+    "payroll_reports": "Reports",
+    "payroll_filings": "Gov Filings",
+    "leave_applications": "Applications",
+    "recruitment_dashboard": "Dashboard",
+    "recruitment_jobs": "Jobs",
+    "recruitment_candidates": "Candidates",
+    "recruitment_interviews": "Interviews",
+    "recruitment_settings": "Settings"
   },
   "topbar": {
     "search_placeholder": "Search...",

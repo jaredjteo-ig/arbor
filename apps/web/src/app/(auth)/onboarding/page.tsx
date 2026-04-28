@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { StepIndicator } from "@/components/design-system/StepIndicator";
 import {
@@ -11,35 +11,46 @@ import {
   ChatOnboarding,
 } from "@/components/onboarding";
 import type { CompanyProfileData } from "@/components/onboarding";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, useFeatureFlag } from "@/contexts/AuthContext";
 import { companyApi } from "@/services/api/company";
 
 const STEPS = ["Welcome", "Company", "Snapshot", "Ask"];
 
-/** Settings key for the T223 chat-onboarding (beta) toggle. Default: off. */
-const CHAT_ONBOARDING_FLAG = "arbor.chat-onboarding";
-
 export default function OnboardingPage() {
   const router = useRouter();
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, featureFlagsLoaded } = useAuth();
   const isLoggedIn = !!user;
+  const chatFlagEnabled = useFeatureFlag("chat-onboarding");
 
   const [currentStep, setCurrentStep] = useState(0);
   const [profileData, setProfileData] = useState<CompanyProfileData | null>(
     null,
   );
 
-  /* T223: read the chat-onboarding (beta) preference from localStorage.
-     We start with `null` so the form path stays the default during SSR. */
-  const [useChat, setUseChat] = useState<boolean | null>(null);
-  useEffect(() => {
-    try {
-      const flag = window.localStorage.getItem(CHAT_ONBOARDING_FLAG);
-      setUseChat(flag === "true");
-    } catch {
-      setUseChat(false);
-    }
-  }, []);
+  /* Round-13 S1-T4 (CRIT-D4): chat onboarding now defaults ON for new
+     signups (anyone whose JWT has no `company_id` yet). Existing companies
+     keep the form unless their owner explicitly enables chat onboarding
+     in Settings. The toggle truth lives in the company's `feature_flags`
+     map on the backend — never in localStorage.
+
+     Resolution rules:
+       - No company yet      -> chat (fresh signup default)
+       - Has company + flag  -> chat
+       - Has company, no flag-> form (existing behaviour preserved)
+       - Flags still loading -> form (safe fallback; SSR-friendly)
+  */
+  let useChat: boolean | null = null;
+  if (!user) {
+    // Not authenticated yet — wait for auth to resolve before deciding.
+    useChat = null;
+  } else if (user.company_id == null) {
+    // Fresh signup — default to chat regardless of any flag.
+    useChat = true;
+  } else if (featureFlagsLoaded) {
+    useChat = chatFlagEnabled;
+  } else {
+    useChat = null;
+  }
 
   const goNext = useCallback(() => {
     setCurrentStep((s) => Math.min(s + 1, STEPS.length - 1));

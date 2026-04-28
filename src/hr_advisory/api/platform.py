@@ -30,6 +30,7 @@ from hr_advisory.api.routers import (
     document_router,
     employees_router,
     emergency_router,
+    feature_flags_router,
     help_router,
     integrations_router,
     integrations_calendar_router,
@@ -176,6 +177,7 @@ def _register_routers(app: Nexus) -> None:
     api.include_router(document_router, prefix="/document", tags=["Document"])
     api.include_router(employees_router, prefix="/employees", tags=["Employees"])
     api.include_router(emergency_router, prefix="/emergency", tags=["Emergency"])
+    api.include_router(feature_flags_router, prefix="/companies", tags=["Feature Flags"])
     api.include_router(leave_router, prefix="/leave", tags=["Leave"])
     api.include_router(llm_config_router, prefix="/companies", tags=["LLM Config"])
     api.include_router(user_llm_router, prefix="/users", tags=["User LLM Config"])
@@ -192,12 +194,22 @@ def _register_routers(app: Nexus) -> None:
     api.include_router(shifts_router, prefix="/shifts", tags=["Shifts"])
     api.include_router(claims_router, prefix="/claims", tags=["Claims"])
     api.include_router(attendance_router, prefix="/attendance", tags=["Attendance"])
-    api.include_router(integrations_router, prefix="/integrations", tags=["Integrations"])
+    # Round-13 H — disconnect-route shadowing fix.
+    # The dedicated Google Calendar router (T-R055) MUST be registered BEFORE
+    # the generic ``integrations`` router. FastAPI matches routes in
+    # registration order, and the generic router defines a catch-all
+    # ``POST /{provider}/disconnect`` that would otherwise shadow the dedicated
+    # ``POST /integrations/google-calendar/disconnect`` — the dedicated handler
+    # actually revokes tokens at Google and deletes the GoogleCalendarConnection
+    # row, while the generic handler returns a fake-success response without
+    # touching either. Re-ordering here is the structural fix; the generic
+    # handler also carries a defence-in-depth 404 guard for ``google-calendar``.
     api.include_router(
         integrations_calendar_router,
         prefix="/integrations/google-calendar",
         tags=["Integrations - Google Calendar"],
     )
+    api.include_router(integrations_router, prefix="/integrations", tags=["Integrations"])
     api.include_router(appraisals_router, prefix="/appraisals", tags=["Appraisals"])
     api.include_router(approval_groups_router, prefix="/approval-groups", tags=["Approval Groups"])
     api.include_router(inventory_router, prefix="/inventory", tags=["Inventory"])

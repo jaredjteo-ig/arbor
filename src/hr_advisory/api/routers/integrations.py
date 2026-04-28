@@ -1017,6 +1017,29 @@ async def disconnect_provider_post(
     if not re.match(r"^[a-zA-Z0-9_-]+$", provider):
         raise HTTPException(status_code=400, detail="Invalid provider name.")
 
+    # Round-13 H: certain providers have dedicated disconnect handlers that
+    # perform real OAuth-token revocation and delete persisted connection
+    # rows (e.g. ``GoogleCalendarConnection``). FastAPI matches routes in
+    # registration order, and the generic ``/{provider}/disconnect`` route
+    # below is registered BEFORE provider-specific routers — so without
+    # this guard the generic handler shadows the dedicated one and returns
+    # a fake-success response without revoking anything.
+    #
+    # We refuse the request here so the dedicated route is the only way to
+    # disconnect these providers. The dedicated route lives at
+    # ``POST /integrations/google-calendar/disconnect`` (see
+    # ``integrations_calendar.py``). The 404 surfaces clearly in logs if
+    # router registration order ever regresses.
+    _DEDICATED_DISCONNECT_PROVIDERS = {"google-calendar"}
+    if provider in _DEDICATED_DISCONNECT_PROVIDERS:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Generic disconnect is not supported for '{provider}'. "
+                f"Use the dedicated /integrations/{provider}/disconnect route."
+            ),
+        )
+
     company_id = str(get_current_company_id(current_user) or "")
 
     # Remove from in-memory store

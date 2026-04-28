@@ -21,11 +21,9 @@ import type {
   ScorecardCriterion,
 } from "@/services/api/recruitment";
 import type { GoogleCalendarStatus } from "@/services/api/integrations";
+import { useAuth, useFeatureFlag } from "@/contexts/AuthContext";
 
 type CriterionDraft = { name: string; weight: number };
-
-const AI_TOGGLE_KEY = "recruitment.tafep.ai_check";
-const AI_SCORECARD_TOGGLE_KEY = "arbor.ai-scorecards";
 
 export default function RecruitmentSettingsPage() {
   return (
@@ -201,25 +199,31 @@ function GoogleCalendarConnect() {
 /* ── 1b. AI scorecards (beta) toggle ─────────────────────────── */
 
 function AiScorecardToggle() {
-  const [enabled, setEnabled] = useState(false);
+  // Server-side flag (round-13 S1-T2). The truth lives on the company
+  // record; we read it via context and persist via setFeatureFlag.
+  const enabled = useFeatureFlag("ai-scorecards");
+  const { setFeatureFlag, featureFlagsLoaded } = useAuth();
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    const v = window.localStorage.getItem(AI_SCORECARD_TOGGLE_KEY) === "1";
-    setEnabled(v);
-  }, []);
-
-  const handleToggle = useCallback((next: boolean) => {
-    setEnabled(next);
-    if (next) {
-      window.localStorage.setItem(AI_SCORECARD_TOGGLE_KEY, "1");
-      toast.success(
-        "AI scorecards (beta) enabled — interviewers will see the Generate AI Scorecard button",
-      );
-    } else {
-      window.localStorage.removeItem(AI_SCORECARD_TOGGLE_KEY);
-      toast.success("AI scorecards (beta) disabled");
-    }
-  }, []);
+  const handleToggle = useCallback(
+    async (next: boolean) => {
+      setBusy(true);
+      try {
+        await setFeatureFlag("ai-scorecards", next);
+        toast.success(
+          next
+            ? "AI scorecards (beta) enabled — interviewers will see the Generate AI Scorecard button"
+            : "AI scorecards (beta) disabled",
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to update";
+        toast.error(`Could not update AI scorecards setting: ${msg}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [setFeatureFlag],
+  );
 
   return (
     <section className="bg-white border border-[var(--color-gray-200)] rounded-lg p-6">
@@ -245,6 +249,7 @@ function AiScorecardToggle() {
             <input
               type="checkbox"
               checked={enabled}
+              disabled={busy || !featureFlagsLoaded}
               onChange={(e) => handleToggle(e.target.checked)}
               className="h-4 w-4 rounded border-[var(--color-gray-300)]"
             />
@@ -261,23 +266,32 @@ function AiScorecardToggle() {
 /* ── 1. AI scan toggle ──────────────────────────────────────── */
 
 function AiScanToggle() {
-  const [enabled, setEnabled] = useState(false);
+  // Server-side flag (round-13 S1-T2). Was previously
+  // `recruitment.tafep.ai_check` in localStorage; the canonical key is
+  // now `tafep-ai` in the company's feature_flags map.
+  const enabled = useFeatureFlag("tafep-ai");
+  const { setFeatureFlag, featureFlagsLoaded } = useAuth();
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    const v = window.localStorage.getItem(AI_TOGGLE_KEY) === "1";
-    setEnabled(v);
-  }, []);
-
-  const handleToggle = useCallback((next: boolean) => {
-    setEnabled(next);
-    if (next) {
-      window.localStorage.setItem(AI_TOGGLE_KEY, "1");
-      toast.success("AI compliance second-pass enabled for TAFEP scans");
-    } else {
-      window.localStorage.removeItem(AI_TOGGLE_KEY);
-      toast.success("AI compliance second-pass disabled (rule-based only)");
-    }
-  }, []);
+  const handleToggle = useCallback(
+    async (next: boolean) => {
+      setBusy(true);
+      try {
+        await setFeatureFlag("tafep-ai", next);
+        toast.success(
+          next
+            ? "AI compliance second-pass enabled for TAFEP scans"
+            : "AI compliance second-pass disabled (rule-based only)",
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to update";
+        toast.error(`Could not update TAFEP AI setting: ${msg}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [setFeatureFlag],
+  );
 
   return (
     <section className="bg-white border border-[var(--color-gray-200)] rounded-lg p-6">
@@ -299,6 +313,7 @@ function AiScanToggle() {
             <input
               type="checkbox"
               checked={enabled}
+              disabled={busy || !featureFlagsLoaded}
               onChange={(e) => handleToggle(e.target.checked)}
               className="h-4 w-4 rounded border-[var(--color-gray-300)]"
             />

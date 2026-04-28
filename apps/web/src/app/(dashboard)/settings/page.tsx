@@ -20,7 +20,7 @@ import { AppCard, AppButton, toast } from "@/components/design-system";
 import { settingsApi } from "@/services/api/settings";
 import { apiClient } from "@/services/api/client";
 import { useObservation } from "@/components/shadow-agent";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, useFeatureFlag } from "@/contexts/AuthContext";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { LocaleSwitcher } from "@/components/shell/LocaleSwitcher";
 
@@ -335,8 +335,11 @@ function AIMemorySection() {
 /* ── Page ─────────────────────────────────────────────────── */
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, setFeatureFlag } = useAuth();
   const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
+  // Round-13 S1-T2: chat-onboarding flag is now server-side. Owners only
+  // can flip it (the API enforces this).
+  const chatOnboardingEnabled = useFeatureFlag("chat-onboarding");
 
   /* Display state */
   const [display, setDisplay] = useState<DisplaySettings>(() => {
@@ -372,34 +375,25 @@ export default function SettingsPage() {
   /* Saving feedback */
   const [savingSection, setSavingSection] = useState<string | null>(null);
 
-  /* T223: chat-onboarding (beta) toggle — persisted in localStorage
-     so it survives auth round-trips. Default off. */
-  const [chatOnboardingEnabled, setChatOnboardingEnabled] = useState<boolean>(
-    () => {
-      if (typeof window === "undefined") return false;
+  /* Round-13 S1-T2: chat-onboarding is now a server-side feature flag.
+     The truth lives on the company record, not in localStorage; the
+     toggle persists across browsers and survives logout. */
+  const setChatOnboarding = useCallback(
+    async (value: boolean) => {
       try {
-        return window.localStorage.getItem("arbor.chat-onboarding") === "true";
-      } catch {
-        return false;
+        await setFeatureFlag("chat-onboarding", value);
+        toast.success(
+          value
+            ? "Chat onboarding enabled — new signups will use the conversational flow."
+            : "Chat onboarding disabled — using the standard form flow.",
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to update";
+        toast.error(`Could not update chat onboarding setting: ${msg}`);
       }
     },
+    [setFeatureFlag],
   );
-  const setChatOnboarding = useCallback((value: boolean) => {
-    setChatOnboardingEnabled(value);
-    try {
-      window.localStorage.setItem(
-        "arbor.chat-onboarding",
-        value ? "true" : "false",
-      );
-    } catch {
-      // localStorage may be disabled (private mode); the toggle is best-effort.
-    }
-    toast.success(
-      value
-        ? "Chat onboarding enabled — new signups will use the conversational flow."
-        : "Chat onboarding disabled — using the standard form flow.",
-    );
-  }, []);
 
   /* ── Apply stored theme and text size on mount ──────────── */
 

@@ -43,7 +43,16 @@
     "my-timesheets": "我的工时",
     "my-inventory": "我的物品",
     "group_tools": "工具",
-    "group_management": "管理"
+    "group_management": "管理",
+    "payroll_runs": "薪资发放",
+    "payroll_reports": "薪资报表",
+    "payroll_filings": "政府申报",
+    "leave_applications": "请假申请",
+    "recruitment_dashboard": "招聘概览",
+    "recruitment_jobs": "职位空缺",
+    "recruitment_candidates": "候选人",
+    "recruitment_interviews": "面试安排",
+    "recruitment_settings": "招聘设置"
   },
   "topbar": {
     "search_placeholder": "搜索…",

@@ -43,7 +43,16 @@
     "my-timesheets": "Lembaran Masa Saya",
     "my-inventory": "Inventori Saya",
     "group_tools": "Alat",
-    "group_management": "Pengurusan"
+    "group_management": "Pengurusan",
+    "payroll_runs": "Pemprosesan Gaji",
+    "payroll_reports": "Laporan Gaji",
+    "payroll_filings": "Pemfailan Kerajaan",
+    "leave_applications": "Permohonan Cuti",
+    "recruitment_dashboard": "Papan Pemuka",
+    "recruitment_jobs": "Jawatan Kosong",
+    "recruitment_candidates": "Calon",
+    "recruitment_interviews": "Temu Duga",
+    "recruitment_settings": "Tetapan Pengambilan"
   },
   "topbar": {
     "search_placeholder": "Cari...",
