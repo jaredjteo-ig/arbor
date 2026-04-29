@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.api.routers.compliance import invalidate_compliance_cache
 from hr_advisory.workflows.guardrails import check_rate_limit
 
 logger = logging.getLogger(__name__)
@@ -436,6 +437,11 @@ async def create_policy(
                 exc,
             )
 
+    # S2-T3: invalidate compliance cache so /compliance/status reflects
+    # the new policy on the next call rather than serving up to 5 minutes
+    # of stale data.
+    invalidate_compliance_cache(company_id)
+
     return {
         "policy": _strip_policy_internals(policy),
         "message": "Policy created successfully.",
@@ -675,6 +681,9 @@ async def upload_policy(
                 exc,
             )
 
+    # S2-T3: invalidate compliance cache (new policy may close domain gaps).
+    invalidate_compliance_cache(company_id)
+
     return {
         "policy": _strip_policy_internals(policy),
         "extraction_status": extraction_status,
@@ -890,6 +899,11 @@ async def update_policy(
         list(updates.keys()),
         company_id,
     )
+
+    # S2-T3: status changes (e.g., draft→active, active→archived) and
+    # category changes alter compliance domain coverage; invalidate cache.
+    invalidate_compliance_cache(company_id)
+
     return {
         "policy": _strip_policy_internals(updated_policy),
         "message": "Policy updated.",
@@ -954,6 +968,11 @@ async def update_policy_content(
         content_hash[:12],
         company_id,
     )
+
+    # S2-T3: content changes can move a policy from "exists but empty"
+    # (no domain coverage) to "exists with content" (covered).
+    invalidate_compliance_cache(company_id)
+
     return {
         "policy_id": policy_id,
         "content_hash": content_hash,
@@ -1000,6 +1019,11 @@ async def delete_policy(
     )
 
     logger.info("Policy archived: id=%s, company_id=%s", policy_id, company_id)
+
+    # S2-T3: archiving a policy removes domain coverage; invalidate cache
+    # so /compliance/status surfaces the new gap immediately.
+    invalidate_compliance_cache(company_id)
+
     return {"message": "Policy archived.", "policy_id": policy_id}
 
 

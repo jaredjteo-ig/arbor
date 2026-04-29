@@ -39,8 +39,12 @@ from hr_advisory.api.routers._helpers import _find_employee_for_user  # noqa: E4
 def _audit_claim(
     claim_id: int, company_id: int, action: str, actor_id: int, details: dict | None = None
 ) -> dict:
-    """Create a ClaimAuditEntry for a claim action."""
-    return dataflow_crud.create(
+    """Create a ClaimAuditEntry for a claim action.
+
+    S2-T5: also dual-writes to the immutable hash-chained AuditLogEntry
+    so a row-level rewrite of ClaimAuditEntry is independently detectable.
+    """
+    record = dataflow_crud.create(
         "ClaimAuditEntry",
         {
             "claim_id": claim_id,
@@ -50,6 +54,25 @@ def _audit_claim(
             "details": details,
         },
     )
+    try:
+        from hr_advisory.services import audit_log as _audit_log
+
+        _audit_log.record_event(
+            company_id=int(company_id),
+            actor_id=int(actor_id) if actor_id else 0,
+            event_type=f"claim.{action}",
+            payload={"claim_id": claim_id, "details": details or {}},
+        )
+    except Exception as exc:
+        import logging as _logging
+
+        _logging.getLogger(__name__).warning(
+            "AuditLogEntry append failed for claim %s action=%s: %s",
+            claim_id,
+            action,
+            exc,
+        )
+    return record
 
 
 def _recalculate_claim_total(claim_id: int) -> float:

@@ -278,8 +278,13 @@ def _persist_trust_chain(
     chain: TrustChain,
     user_id: int = 0,
     company_id: int = 0,
-) -> None:
-    """Persist trust chain to database (best-effort, logs on failure)."""
+) -> bool:
+    """Persist trust chain to database (best-effort, logs on failure).
+
+    Returns True if the DB write completed; False if persistence failed
+    (caller can surface this in the advisory response so the client knows
+    the audit trail is incomplete).
+    """
     import logging
     import math
 
@@ -330,8 +335,10 @@ def _persist_trust_chain(
         )
         runtime = LocalRuntime()
         runtime.execute(wf.build())
+        return True
     except Exception as exc:
         logger.warning("Failed to persist trust chain %s: %s", chain.genesis.session_id, exc)
+        return False
 
 
 def create_trust_chain(genesis: GenesisRecord) -> TrustChain:
@@ -354,8 +361,16 @@ def finalize_trust_chain(
     session_id: str,
     user_id: int = 0,
     company_id: int = 0,
-) -> None:
-    """Persist a completed trust chain to the database."""
+) -> bool:
+    """Persist a completed trust chain to the database.
+
+    Returns True if the chain was found in the cache and a persistence
+    attempt was made (the underlying _persist_trust_chain is best-effort
+    and logs on failure but does not raise). Returns False if no chain
+    matches the session_id — typical of a runaway request that finished
+    before the chain was registered.
+    """
     chain = _trust_cache.get(session_id)
-    if chain:
-        _persist_trust_chain(chain, user_id=user_id, company_id=company_id)
+    if chain is None:
+        return False
+    return _persist_trust_chain(chain, user_id=user_id, company_id=company_id)

@@ -1,70 +1,114 @@
 # Test Results — hr-ai-advisory workspace
 
-**Generated:** 2026-04-29 (Session 1 — demo readiness)
-**HEAD:** 3b7ecfd + uncommitted S1 work
-**Test posture:** 2357 passed, 0 failed (was 2340).
+**Generated:** 2026-04-29 (Session 2 — round-12 correctness carryovers)
+**HEAD:** 338658e + uncommitted S2 work
+**Test posture (unit + regression):** 2394 passed, 0 functional failures.
+**Baseline before S2:** 2357 passed (after S1).
+**S2 added:** 39 new regression tests across 5 files.
+
+The 2 transient failures observed in the bulk run
+(`test_mobile_policy_compat::test_new_policies_endpoint_also_returns_policy_type`
+and `test_t214_preboarding_auto_create::test_t214_auto_assign_creates_preboarding_tasks_with_deadline`)
+were both DataFlow pool saturation (`TooManyConnectionsError: sorry, too many
+clients already` — pool_size=70 + max_overflow=35 = 105 vs Postgres
+max_connections=100). After `pg_terminate_backend(...)` cleared the pool,
+both passed in isolation. NOT an S2 regression — same infrastructure
+gap flagged 4× today and queued for follow-up.
+
+Pre-existing collection errors removed:
+- `tests/integration/test_agent_orchestration.py`
+- `tests/integration/test_agent_team_integration.py`
+- `tests/integration/test_specialist_agents.py`
+All three failed at import (`OrchestratorAgent` removed during the
+round-12→13 advisory engine refactor; the test files were left behind).
 
 ---
 
-## Session 1 — closed 5 demo blockers (round-13 CRIT-D3, CRIT-D4, plus 3 cross-cutting)
+## Session 2 — closed 5 round-12 correctness carryovers
 
-### S1-T1 — Wire t() into NavigationSidebar (FIXED)
-9 sub-nav `labelKey` values had embedded dots (`nav.payroll.runs`) which i18next read as nested namespaces, colliding with the parent string keys (`nav.payroll`) and silently falling back to English. Flattened to underscores + added 9 new keys × 4 locales. Switching locale now translates the full sidebar.
+### S2-T1 — Hire-role allow-list (CRITICAL → CLOSED)
+- `recruitment.py`: `HIRABLE_ROLES = frozenset({"employee", "hr_manager"})` enforced at hire time. Owner/platform_admin/empty/anything else → 400.
+- `auth.py` register-employee: defense-in-depth `INVITATION_VALID_ROLES` clamps tampered Invitation rows to "employee" with a logged warning.
+- 10 regression tests in `test_s2_t1_hire_role_allowlist.py` (parametrized over 5 malicious roles + 2 valid roles + body-default + 2 source-level guards).
 
-### S1-T2 + S1-T4 — Server-side feature flags + chat onboarding default (FIXED)
-- `Company.feature_flags JSONB` column (added via ALTER TABLE on local; same will run on prod).
-- `GET/PATCH /companies/me/feature-flags` with allow-list (`ai-scorecards`, `tafep-ai`, `chat-onboarding`), 30/min rate limit.
-- `useFeatureFlag(name)` + `setFeatureFlag(name, value)` hooks in AuthContext; loaded after every auth event.
-- Three localStorage toggles replaced with the new hook in recruitment/settings + settings pages.
-- `(auth)/onboarding/page.tsx`: new signups (no `company_id`) → chat by default; existing companies → respect server flag.
-- 14 unit tests in `test_feature_flags_router.py`.
+### S2-T2 — Hire→onboarding transactional saga (HIGH → CLOSED)
+Three compensation paths in `auth.register_employee`:
+- User-create failure → revert Invitation (existing T280 behaviour preserved)
+- Employee-create failure → delete User + revert Invitation (NEW)
+- Onboarding-assign failure → delete Employee + delete User + revert Invitation, raise 500 (NEW)
+- Leave-balance failure remains intentionally non-fatal (companies without leave-types should still register).
+- Onboarding RETURNING None (no default template) is NOT compensated — only raised exceptions trigger the saga.
+- 5 regression tests in `test_s2_t2_hire_onboarding_saga.py` (covers all 4 compensation paths + non-fatal leave-balance + None-skip semantics).
 
-### S1-T3 — Seed data refresh (FIXED)
-`scripts/seed_demo_data.py` now PATCHes Demo Admin to `confirmed` + Management + 2021-03-01 start, sets all candidates `pdpa_consent=True` with varied source distribution, creates 5 scorecard templates, 5 preboarding tasks on the default template, and varies onboarding-assignment progress to 100/61.5/30.8/0/0.
+### S2-T3 — Compliance cache invalidation (HIGH → CLOSED)
+- `policies.py`: invalidates `_compliance_cache[company_id]` on every mutation (5 sites: create, upload, update metadata, update content, delete/archive).
+- `compliance.invalidate_compliance_cache(company_id)` already existed but had no callers — now wired.
+- 5 regression tests in `test_s2_t3_compliance_cache_invalidation.py` (verifies all 5 endpoint-call sites + tenant isolation + idempotent unknown-company invalidation).
 
-### S1-T5 — Disconnect routing fix (FIXED)
-T-R055 `/integrations/google-calendar/disconnect` was being shadowed by the generic `/integrations/{provider}/disconnect`. Fixed via two layers: structural router-registration reorder (calendar router registered before generic router) AND defence-in-depth 404 guard inside the generic handler (rejects `provider == "google-calendar"`). 3 regression tests in `test_round13_disconnect_routing.py`.
+### S2-T4 — finalize_trust_chain integration (HIGH → CLOSED)
+- `eatp_lineage.finalize_trust_chain` now returns `bool` (True on persist success, False on cache miss or DB write fail).
+- `eatp_lineage._persist_trust_chain` returns `bool` too — propagates DB-write success up the call chain.
+- `advisory.advisory_query` and `advisory.advisory_stream` both call `finalize_trust_chain(session_id, user_id, company_id)` after the final attestation; response includes `trust_chain.persisted: bool` and `trust_chain_id: str`.
+- 7 regression tests in `test_s2_t4_trust_chain_finalization.py` (return-type, missing-session=False, persist-success-True, persist-fail-False, query-wiring, query-response-shape, stream-wiring).
 
-### Test-suite update
-- `test_google_calendar_sync.py::test_exchange_code_persists_tokens` — now decrypts via `decrypt_field` to compare against the raw token, since H1 (Fernet at rest) is active in the env.
+### S2-T5 — Immutable hash-chained audit log (HIGH → CLOSED)
+- New DataFlow model `AuditLogEntry` in `models/company_user.py` with hash-chain fields: `prev_hash`, `entry_hash`, `created_at_iso`. Per-tenant indexed.
+- New service-level `audit_log.record_event(company_id, actor_id, event_type, payload)` and `audit_log.verify_chain_integrity(company_id)` in existing `services/audit_log.py` (extends the existing log-stream layer rather than creating a parallel module).
+- SHA-256 deterministic over fixed field order: `company_id|actor_id|event_type|payload_json|prev_hash|created_at_iso`.
+- Per-tenant `threading.Lock` serializes the read-prev-hash + insert sequence within a process to prevent intra-process forks.
+- Wired into `recruitment._log_candidate_activity` (covers hire, reject, stage-change, scorecard-generated, offer-generated) and `claims._audit_claim` (covers all 4 claim transitions). Calendar connect/disconnect + onboarding step-completion deferred to S3 (lower-leverage call sites; the chain infrastructure is what unblocks them).
+- 12 regression tests in `test_s2_t5_audit_log_chain_integrity.py` (hash determinism, every-field-changes-hash, chain construction, per-tenant isolation, tamper detection — payload rewrite + row deletion, empty-chain valid, input validation, source-level wiring guards).
+
+---
+
+## Files changed in S2
+
+Backend:
+- `src/hr_advisory/api/routers/recruitment.py` — `HIRABLE_ROLES` constant, hire-role guard, `_log_candidate_activity` dual-writes audit chain
+- `src/hr_advisory/api/routers/auth.py` — `INVITATION_VALID_ROLES` defense-in-depth, Employee-create + Onboarding-assign saga compensation
+- `src/hr_advisory/api/routers/policies.py` — invalidate compliance cache at 5 mutation sites
+- `src/hr_advisory/api/routers/compliance.py` — (no edits; existing `invalidate_compliance_cache` was already correct)
+- `src/hr_advisory/api/routers/advisory.py` — finalize trust chain in /query + /stream, surface `trust_chain.persisted` + `trust_chain_id`
+- `src/hr_advisory/api/routers/claims.py` — `_audit_claim` dual-writes audit chain
+- `src/hr_advisory/trust/eatp_lineage.py` — `finalize_trust_chain` returns bool, `_persist_trust_chain` returns bool
+- `src/hr_advisory/models/company_user.py` — new `AuditLogEntry` model
+- `src/hr_advisory/models/__init__.py` — export `AuditLogEntry`
+- `src/hr_advisory/services/audit_log.py` — `record_event`, `verify_chain_integrity`, `compute_entry_hash`, expanded `AuditAction` constants
+
+Tests (all new):
+- `tests/regression/test_s2_t1_hire_role_allowlist.py` (10 tests)
+- `tests/regression/test_s2_t2_hire_onboarding_saga.py` (5 tests)
+- `tests/regression/test_s2_t3_compliance_cache_invalidation.py` (5 tests)
+- `tests/regression/test_s2_t4_trust_chain_finalization.py` (7 tests)
+- `tests/regression/test_s2_t5_audit_log_chain_integrity.py` (12 tests)
+
+Tests deleted (pre-existing import errors):
+- `tests/integration/test_agent_orchestration.py`
+- `tests/integration/test_agent_team_integration.py`
+- `tests/integration/test_specialist_agents.py`
 
 ---
 
 ## Operational notes for prod deploy
 
-1. `ALTER TABLE companies ADD COLUMN IF NOT EXISTS feature_flags JSONB;` — run after `git pull`, before container rebuild.
-2. `pg_dump` backup BEFORE the deploy.
-3. After backend rebuild, run `python scripts/seed_demo_data.py` against prod (the script is idempotent — won't recreate users/companies that already exist; will PATCH existing rows for the demo data refresh).
-
----
-
-## Files changed in S1
-
-Backend:
-- `src/hr_advisory/models/company_user.py` (Company.feature_flags)
-- `src/hr_advisory/api/routers/feature_flags.py` (new)
-- `src/hr_advisory/api/routers/__init__.py` (export)
-- `src/hr_advisory/api/routers/integrations.py` (404 guard)
-- `src/hr_advisory/api/platform.py` (router registration order + new router include)
-
-Frontend:
-- `apps/web/src/components/shell/NavigationSidebar.tsx` (key flatten)
-- `apps/web/src/lib/i18n/{en,zh-CN,ms-MY,ta-SG}.json` (+9 keys × 4 locales)
-- `apps/web/src/contexts/AuthContext.tsx` (useFeatureFlag, setFeatureFlag)
-- `apps/web/src/services/api/feature_flags.ts` (new)
-- `apps/web/src/app/(dashboard)/recruitment/settings/page.tsx` (toggles use hook)
-- `apps/web/src/app/(dashboard)/settings/page.tsx` (chat-onboarding toggle uses hook)
-- `apps/web/src/app/(auth)/onboarding/page.tsx` (default-on chat for new signups)
-
-Scripts:
-- `scripts/seed_demo_data.py` (5 round-13 sections)
-- `scripts/_round13_verify.py` (helper, may be removed)
-
-Tests:
-- `tests/unit/test_feature_flags_router.py` (new — 14 tests)
-- `tests/regression/test_round13_disconnect_routing.py` (new — 3 tests)
-- `tests/unit/test_google_calendar_sync.py` (test_exchange_code uses decrypt_field)
-
-Docs/state:
-- 4 active session todo files added (session-1 to session-4)
-- 4 new completion records under `todos/completed/`
+1. New table required: run `python -c "from kailash import Nexus; from hr_advisory.api.platform import platform; platform.start()"` once with the new model loaded — DataFlow auto-creates the `audit_log_entries` table on init. OR explicitly:
+   ```sql
+   CREATE TABLE IF NOT EXISTS audit_log_entries (
+     id SERIAL PRIMARY KEY,
+     company_id INTEGER NOT NULL,
+     actor_id INTEGER NOT NULL,
+     event_type VARCHAR(255) NOT NULL,
+     payload_json TEXT,
+     prev_hash VARCHAR(64),
+     entry_hash VARCHAR(64),
+     created_at_iso VARCHAR(64),
+     created_at TIMESTAMP DEFAULT NOW(),
+     updated_at TIMESTAMP DEFAULT NOW()
+   );
+   CREATE INDEX IF NOT EXISTS idx_audit_company_id ON audit_log_entries(company_id, id);
+   CREATE INDEX IF NOT EXISTS idx_audit_event_type ON audit_log_entries(event_type);
+   CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log_entries(actor_id);
+   ```
+2. No env-var changes required.
+3. `pg_dump` backup BEFORE the deploy (standard).
+4. After backend rebuild, no seed/migration script needed for S2 — the audit chain starts empty and grows from the next event.

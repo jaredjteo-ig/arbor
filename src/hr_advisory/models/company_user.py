@@ -1241,6 +1241,43 @@ class ClaimAuditEntry:
     }
 
 
+@db.model
+class AuditLogEntry:
+    """Append-only, hash-chained immutable audit log (S2-T5).
+
+    Every security-relevant action (hire, scorecard generate, calendar
+    connect/disconnect, claim transitions, candidate activity, onboarding
+    step completion) writes a row here. The chain is per-tenant: each row's
+    `prev_hash` equals the previous row's `entry_hash` for the same
+    company_id. Tamper detection is O(N): walk the chain and recompute
+    `entry_hash` from the row's content + prev_hash; the first mismatch
+    points to the modified or deleted row.
+
+    Mutability: in storage terms the row is just a Postgres table — there
+    is nothing PG-side stopping a privileged user from issuing UPDATE or
+    DELETE. The "immutability" is enforced at the application layer by
+    the chain verifier: any rewrite breaks the chain and is detectable.
+    For true storage-level immutability, future work would add a per-row
+    Ed25519 signature anchored to the trust-plane (out of scope for S2-T5).
+    """
+
+    company_id: int
+    actor_id: int
+    event_type: str  # e.g., "candidate.hired", "claim.approved", "calendar.disconnected"
+    payload_json: str = ""  # JSON-encoded; the model stores str so we don't depend on JSONB
+    prev_hash: str = ""
+    entry_hash: str = ""
+    created_at_iso: str = ""  # ISO-8601 UTC; included in entry_hash for tamper detection
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_audit_company_id", "fields": ["company_id", "id"]},
+            {"name": "idx_audit_event_type", "fields": ["event_type"]},
+            {"name": "idx_audit_actor", "fields": ["actor_id"]},
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Attendance / Time-Tracking Models
 # ---------------------------------------------------------------------------

@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# Roles that may be assigned via the candidate→hire flow. Owners and platform
+# admins are intentionally excluded — those positions are not filled through
+# recruitment. Anything outside this set is rejected at hire time and again
+# defensively when the new hire accepts their invitation (auth.py).
+HIRABLE_ROLES: frozenset[str] = frozenset({"employee", "hr_manager"})
+
+
 # --------------------------------------------------------------------------
 # Recruitment email helper (T-R018)
 # --------------------------------------------------------------------------
@@ -193,6 +200,11 @@ def _log_candidate_activity(candidate_id: int, action: str, actor_id: int, detai
 
     T-R026: Each entry is timestamped and prepended to existing notes so the
     most recent activity appears first.
+
+    S2-T5: also append to the immutable hash-chained audit log so a
+    candidate-record rewrite (e.g., a buggy admin tool that overwrites
+    `notes`) is independently detectable. Failure to write the chain
+    entry is logged but does not block the mutable update.
     """
     candidate = dataflow_crud.read("Candidate", candidate_id)
     if not candidate:
@@ -204,6 +216,34 @@ def _log_candidate_activity(candidate_id: int, action: str, actor_id: int, detai
         entry += f" — {details}"
     new_notes = f"{entry}\n{existing_notes}" if existing_notes else entry
     dataflow_crud.update("Candidate", candidate_id, {"notes": new_notes})
+
+    # S2-T5: dual-write to the immutable audit log
+    try:
+        from hr_advisory.services import audit_log as _audit_log
+
+        company_id = candidate.get("company_id")
+        if company_id:
+            event_key = (
+                "candidate."
+                + action.lower().replace(" ", "_").replace("changed_to_", "stage_")
+            )
+            _audit_log.record_event(
+                company_id=int(company_id),
+                actor_id=int(actor_id) if actor_id else 0,
+                event_type=event_key,
+                payload={
+                    "candidate_id": candidate_id,
+                    "action": action,
+                    "details": details,
+                },
+            )
+    except Exception as exc:
+        logger.warning(
+            "AuditLogEntry append failed for candidate %s action=%s: %s",
+            candidate_id,
+            action,
+            exc,
+        )
 
 
 # --------------------------------------------------------------------------
@@ -1225,6 +1265,25 @@ async def hire_candidate(
     body = await request.json()
     actor_id = int(current_user.get("sub", 0))
 
+    # S2-T1: privilege-escalation guard. The body's role must be one of the
+    # explicitly hirable roles. Owner/platform_admin escalations are rejected
+    # here and again at invitation acceptance (auth.py) as defense-in-depth.
+    requested_role = body.get("role", "employee")
+    if requested_role not in HIRABLE_ROLES:
+        logger.warning(
+            "Hire role rejected: actor=%s candidate=%s requested_role=%s",
+            actor_id,
+            candidate_id,
+            requested_role,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid role '{requested_role}' for hire. "
+                f"Must be one of: {', '.join(sorted(HIRABLE_ROLES))}."
+            ),
+        )
+
     # T-R021: Fetch the latest offer for salary pre-fill
     offers = dataflow_crud.list_records("Offer", {"candidate_id": candidate_id, "company_id": company_id})
     latest_offer = offers[0] if offers else {}
@@ -1250,7 +1309,7 @@ async def hire_candidate(
             "department": department,
             "designation": designation,
             "salary": latest_offer.get("salary"),
-            "role": body.get("role", "employee"),
+            "role": requested_role,
             "token": token,
             "inviter_id": actor_id,
             "is_active": True,

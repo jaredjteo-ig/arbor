@@ -33,6 +33,7 @@ from hr_advisory.trust.eatp_lineage import (
     GenesisRecord,
     TrustLevel,
     create_trust_chain,
+    finalize_trust_chain,
     validate_constraint_envelope,
 )
 from hr_advisory.trust.learning_pipeline import record_query_pattern
@@ -567,6 +568,26 @@ async def advisory_query(
     )
     trust_chain.add_attestation(attestation)
 
+    # ── Step 12b: Finalize trust chain (S2-T4) ──────────────────
+    # Without this call the chain stays in the in-memory cache and is
+    # never persisted — auditors cannot retrieve the proof later. Best-
+    # effort: persistence failure does not block the response.
+    try:
+        _persist_uid_for_chain = int(user_id) if str(user_id).isdigit() else 0
+    except (TypeError, ValueError):
+        _persist_uid_for_chain = 0
+    try:
+        _persist_cid_for_chain = (
+            int(effective_company_id) if effective_company_id is not None else 0
+        )
+    except (TypeError, ValueError):
+        _persist_cid_for_chain = 0
+    trust_chain_persisted = finalize_trust_chain(
+        session_id=session_id,
+        user_id=_persist_uid_for_chain,
+        company_id=_persist_cid_for_chain,
+    )
+
     # ── Step 13: Learning pipeline recording ──────────────────
     pattern_id = f"{'_'.join(sorted(domains))}:{risk_tier}"
     record_query_pattern(
@@ -627,6 +648,13 @@ async def advisory_query(
         except Exception:
             logger.warning("Failed to record LLM usage", exc_info=True)
 
+    # S2-T4: surface the trust chain's persistence status + retrievable id
+    # so clients can verify the audit trail was committed before treating
+    # the response as binding.
+    trust_chain_payload = trust_chain.to_dict()
+    trust_chain_payload["persisted"] = trust_chain_persisted
+    trust_chain_payload["trust_chain_id"] = session_id
+
     advisory_response = {
         "query": query,
         "response": response_text,
@@ -639,7 +667,8 @@ async def advisory_query(
             "framing": disclaimer.framing_text,
             "professional_referral": disclaimer.show_professional_referral,
         },
-        "trust_chain": trust_chain.to_dict(),
+        "trust_chain": trust_chain_payload,
+        "trust_chain_id": session_id,
         "citation_warnings": citation_result.warnings,
         "company_id": company_id,
         "conversation_id": conversation_id,
@@ -963,7 +992,27 @@ async def advisory_stream(
         constraint_violations=violations,
     )
     trust_chain.add_attestation(attestation)
+
+    # ── Step 12b: Finalize trust chain (S2-T4) ──────────────────
+    # Persist the chain so the audit trail survives the streaming response.
+    try:
+        _stream_uid = int(user_id) if str(user_id).isdigit() else 0
+    except (TypeError, ValueError):
+        _stream_uid = 0
+    try:
+        _stream_cid = (
+            int(effective_company_id) if effective_company_id is not None else 0
+        )
+    except (TypeError, ValueError):
+        _stream_cid = 0
+    stream_trust_chain_persisted = finalize_trust_chain(
+        session_id=session_id,
+        user_id=_stream_uid,
+        company_id=_stream_cid,
+    )
     trust_chain_data = trust_chain.to_dict()
+    trust_chain_data["persisted"] = stream_trust_chain_persisted
+    trust_chain_data["trust_chain_id"] = session_id
 
     # ── Step 13: Learning pipeline recording ────────────────────
     pattern_id = f"{'_'.join(sorted(domains))}:{risk_tier}"

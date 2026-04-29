@@ -478,7 +478,26 @@ async def register_employee(
     # first one to mark the invitation will succeed. The second will find
     # accepted_at already set and fail at the top of this function.
     company_id = invitation.get("company_id")
-    invited_role = invitation.get("role", "employee")
+
+    # S2-T1: defense-in-depth role allow-list. The hire endpoint enforces
+    # HIRABLE_ROLES, but if an Invitation row was tampered with (or created
+    # by a future endpoint that forgets the check), clamp the role here so
+    # the user cannot be created with platform_admin / owner / arbitrary
+    # privileges. Anything outside the set falls back to "employee" with a
+    # logged warning so the audit trail captures the attempt.
+    INVITATION_VALID_ROLES: frozenset[str] = frozenset({"employee", "hr_manager"})
+    raw_role = invitation.get("role", "employee")
+    if raw_role in INVITATION_VALID_ROLES:
+        invited_role = raw_role
+    else:
+        logger.warning(
+            "Invitation role outside allow-list — clamping to 'employee'. "
+            "invitation_id=%s raw_role=%s email=%s",
+            invitation.get("id"),
+            raw_role,
+            email,
+        )
+        invited_role = "employee"
     accepted_at = datetime.now(timezone.utc).isoformat()
     _update_invitation(
         invitation["id"],
@@ -546,7 +565,41 @@ async def register_employee(
         emp_fields["salary_monthly"] = inv_salary
     wf.add_node("EmployeeCreateNode", "create_emp", emp_fields)
     runtime = LocalRuntime()
-    results, _ = runtime.execute(wf.build())
+    # S2-T2 saga: if Employee create fails the User row would be orphaned
+    # and the Invitation already burned. Compensate by deleting User and
+    # reverting the Invitation before re-raising as a 500.
+    try:
+        results, _ = runtime.execute(wf.build())
+    except Exception as emp_exc:
+        logger.error(
+            "Employee create failed — compensating saga "
+            "(deleting User, reverting Invitation): user_id=%s err=%s",
+            user_id,
+            emp_exc,
+        )
+        try:
+            from hr_advisory.services import dataflow_crud as _df
+
+            _df.delete("User", user_id)
+        except Exception as comp_exc:
+            logger.error(
+                "Saga compensation failed to delete User %s: %s", user_id, comp_exc
+            )
+        try:
+            _update_invitation(
+                invitation["id"],
+                {"accepted_at": "", "is_active": True},
+            )
+        except Exception as comp_exc:
+            logger.error(
+                "Saga compensation failed to revert Invitation %s: %s",
+                invitation["id"],
+                comp_exc,
+            )
+        raise HTTPException(
+            status_code=500,
+            detail="Registration failed during employee setup. Please retry.",
+        ) from emp_exc
     employee_result = results["create_emp"]
 
     # Retrieve the employee ID — CreateNode may not return it directly
@@ -580,6 +633,10 @@ async def register_employee(
     # T293: Use ensure_leave_balances instead of hardcoded values.
     # This creates balances for ALL configured leave types, respecting
     # gender, service-month rules, and pro-ration for mid-year joiners.
+    #
+    # Leave-balance failure is intentionally NON-FATAL: companies without
+    # a leave-type catalogue should still be able to register employees;
+    # balances can be re-seeded later via /leave/balances/seed.
     if employee_id and company_id:
         try:
             from hr_advisory.api.routers.leave import ensure_leave_balances
@@ -591,7 +648,17 @@ async def register_employee(
                 "Failed to create leave balances for employee %s: %s", employee_id, leave_exc
             )
 
-    # --- Auto-assign default onboarding template (T226) ---
+    # --- Auto-assign default onboarding template (T226 + S2-T2 saga) ---
+    # The hire chain is User → Employee → OnboardingAssignment. If the
+    # auto-assign step RAISES (vs returning None for "no default template"),
+    # we have a partial state — User and Employee exist but no onboarding
+    # plan. Compensate by deleting Employee + User and reverting the
+    # Invitation, so the new hire retries cleanly rather than logging in
+    # to a half-built account.
+    #
+    # Note: a None return is the legitimate "company has no default
+    # template" path and is NOT compensated — those companies just don't
+    # auto-assign and that's by design.
     if employee_id and company_id:
         try:
             from hr_advisory.api.routers.onboarding import auto_assign_default_onboarding
@@ -609,11 +676,49 @@ async def register_employee(
                     company_id,
                 )
         except Exception as onboard_exc:
-            logger.warning(
-                "Failed to auto-assign onboarding for employee %s: %s",
+            logger.error(
+                "Onboarding auto-assign failed — compensating saga "
+                "(deleting Employee + User, reverting Invitation): "
+                "employee_id=%s user_id=%s err=%s",
                 employee_id,
+                user_id,
                 onboard_exc,
             )
+            try:
+                from hr_advisory.services import dataflow_crud as _df
+
+                _df.delete("Employee", employee_id)
+            except Exception as comp_exc:
+                logger.error(
+                    "Saga compensation failed to delete Employee %s: %s",
+                    employee_id,
+                    comp_exc,
+                )
+            try:
+                from hr_advisory.services import dataflow_crud as _df
+
+                _df.delete("User", user_id)
+            except Exception as comp_exc:
+                logger.error(
+                    "Saga compensation failed to delete User %s: %s",
+                    user_id,
+                    comp_exc,
+                )
+            try:
+                _update_invitation(
+                    invitation["id"],
+                    {"accepted_at": "", "is_active": True},
+                )
+            except Exception as comp_exc:
+                logger.error(
+                    "Saga compensation failed to revert Invitation %s: %s",
+                    invitation["id"],
+                    comp_exc,
+                )
+            raise HTTPException(
+                status_code=500,
+                detail="Registration failed during onboarding setup. Please retry.",
+            ) from onboard_exc
 
     # Invitation was already marked as accepted before user creation
     # (see TOCTOU race condition prevention above)
