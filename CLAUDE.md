@@ -77,6 +77,7 @@ Phase commands replace the manual copy-paste workflow. Each loads the correspond
 | 3-tier testing strategy           | `rules/testing.md`              | `tests/**`, `**/*test*`, `**/*spec*`, `conftest.py`          |
 | Infrastructure SQL safety         | `rules/infrastructure-sql.md`   | Infrastructure database code                                 |
 | README & Sphinx docs maintenance  | `rules/documentation.md`        | `README.md`, `docs/**`, `CHANGELOG.md`                       |
+| Seed script structure             | `rules/seeding.md`              | `scripts/seed_*.py`                                          |
 | Auto-generated workflow instincts | `rules/learned-instincts.md`    | Global                                                       |
 
 **Note**: Rules with path scoping are loaded only when editing matching files. Global rules load every session.

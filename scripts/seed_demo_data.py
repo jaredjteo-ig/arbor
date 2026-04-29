@@ -8,13 +8,27 @@ attendance records, and recruitment pipeline data.
 Designed to be run before every demo. Idempotent — checks if resources
 exist before creating them.
 
-Usage:
+Usage (full seed, fresh DB):
     python scripts/seed_demo_data.py
-    python scripts/seed_demo_data.py --api-url http://localhost:8000
-    python scripts/seed_demo_data.py --employees 30 --company-name "Acme Pte Ltd"
+
+Usage (round-13 demo refresh against existing prod company):
+    ARBOR_API_URL=https://central.kailash.ai/api \\
+    ADMIN_EMAIL=demo@central.kailash.ai \\
+    ADMIN_PASSWORD='<actual prod password>' \\
+    python scripts/seed_demo_data.py --section demo-refresh
+
+Usage (list available sections):
+    python scripts/seed_demo_data.py --list-sections
+
+Usage (dry-run — show what would run, do not mutate):
+    python scripts/seed_demo_data.py --section demo-refresh --dry-run
 
 Environment:
-    ARBOR_API_URL — Base URL for the Arbor API (default: http://localhost:8000)
+    ARBOR_API_URL    — Base URL for the Arbor API (default: http://localhost:8000)
+    ADMIN_EMAIL      — Admin user email (default: demo@central.kailash.ai)
+    ADMIN_PASSWORD   — Admin user password (default: CentralDemo2026!)
+                       Required to differ from default for prod runs.
+    DATABASE_URL     — Postgres URL for direct-DB sections (round-13 refresh).
 """
 
 from __future__ import annotations
@@ -26,7 +40,7 @@ import random
 import sys
 import time
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -41,13 +55,20 @@ except Exception:
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEFAULT_API_URL = "http://localhost:8000"
-DEFAULT_EMAIL = "demo@central.kailash.ai"
-DEFAULT_PASSWORD = "CentralDemo2026!"
-DEFAULT_COMPANY = "Central Solutions Pte Ltd"
-DEFAULT_EMPLOYEE_COUNT = 28
+DEFAULT_API_URL = os.environ.get("ARBOR_API_URL", "http://localhost:8000")
+DEFAULT_EMAIL = os.environ.get("ADMIN_EMAIL", "demo@central.kailash.ai")
+DEFAULT_PASSWORD = os.environ.get("ADMIN_PASSWORD", "CentralDemo2026!")
+DEFAULT_COMPANY = os.environ.get("DEMO_COMPANY_NAME", "Central Solutions Pte Ltd")
+DEFAULT_EMPLOYEE_COUNT = int(os.environ.get("DEMO_EMPLOYEE_COUNT", "28"))
 
 REQUEST_TIMEOUT = 120.0
+
+# Retry configuration for transient connection issues. Connection-reset (ECONNRESET)
+# from the backend's saturated DataFlow pool was the #1 cause of seed failures
+# (observed 4× in a single session). Backoff is exponential, jittered.
+RETRY_MAX_ATTEMPTS = int(os.environ.get("SEED_RETRY_MAX_ATTEMPTS", "5"))
+RETRY_INITIAL_DELAY = float(os.environ.get("SEED_RETRY_INITIAL_DELAY", "2.0"))
+RETRY_MAX_DELAY = float(os.environ.get("SEED_RETRY_MAX_DELAY", "30.0"))
 
 # ---------------------------------------------------------------------------
 # Employee profiles — realistic Singapore SME workforce
@@ -855,6 +876,62 @@ CANDIDATES = [
 # ===========================================================================
 
 
+_TRANSIENT_HTTP_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    httpx.ReadError,
+    httpx.WriteError,
+    httpx.ConnectError,
+    httpx.RemoteProtocolError,
+    httpx.PoolTimeout,
+    httpx.ReadTimeout,
+)
+
+
+def _is_transient_status(resp: httpx.Response) -> bool:
+    """5xx and 429 are retryable; backend often emits 502/503 when DataFlow pool saturates."""
+    return resp.status_code in (429, 502, 503, 504)
+
+
+def _retry_http(call: Callable[[], httpx.Response]) -> httpx.Response:
+    """Run an HTTP call with exponential-backoff retry on transient failures.
+
+    Retries on connection-reset (ECONNRESET observed when the backend's DataFlow
+    pool — pool_size=70 + max_overflow=35 — exceeds Postgres max_connections=100)
+    and on 429/5xx responses.
+    """
+    last_exc: BaseException | None = None
+    delay = RETRY_INITIAL_DELAY
+    for attempt in range(1, RETRY_MAX_ATTEMPTS + 1):
+        try:
+            resp = call()
+        except _TRANSIENT_HTTP_EXCEPTIONS as exc:
+            last_exc = exc
+            if attempt == RETRY_MAX_ATTEMPTS:
+                raise
+            sleep_for = min(delay, RETRY_MAX_DELAY) + random.uniform(0, 0.5)
+            print(
+                f"  [RETRY] {type(exc).__name__} attempt {attempt}/{RETRY_MAX_ATTEMPTS} "
+                f"-- sleeping {sleep_for:.1f}s",
+                flush=True,
+            )
+            time.sleep(sleep_for)
+            delay = min(delay * 2, RETRY_MAX_DELAY)
+            continue
+        if _is_transient_status(resp) and attempt < RETRY_MAX_ATTEMPTS:
+            sleep_for = min(delay, RETRY_MAX_DELAY) + random.uniform(0, 0.5)
+            print(
+                f"  [RETRY] HTTP {resp.status_code} attempt {attempt}/{RETRY_MAX_ATTEMPTS} "
+                f"-- sleeping {sleep_for:.1f}s",
+                flush=True,
+            )
+            time.sleep(sleep_for)
+            delay = min(delay * 2, RETRY_MAX_DELAY)
+            continue
+        return resp
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("retry loop exited without response")
+
+
 class ArborClient:
     """HTTP client for the Arbor REST API with authentication."""
 
@@ -879,13 +956,19 @@ class ArborClient:
         return f"{self.base_url}{path}"
 
     def post(self, path: str, json: dict | None = None) -> httpx.Response:
-        return self._client.post(self._url(path), json=json, headers=self._headers)
+        return _retry_http(
+            lambda: self._client.post(self._url(path), json=json, headers=self._headers)
+        )
 
     def get(self, path: str, params: dict | None = None) -> httpx.Response:
-        return self._client.get(self._url(path), params=params, headers=self._headers)
+        return _retry_http(
+            lambda: self._client.get(self._url(path), params=params, headers=self._headers)
+        )
 
     def patch(self, path: str, json: dict | None = None) -> httpx.Response:
-        return self._client.patch(self._url(path), json=json, headers=self._headers)
+        return _retry_http(
+            lambda: self._client.patch(self._url(path), json=json, headers=self._headers)
+        )
 
     def close(self) -> None:
         self._client.close()
@@ -2200,7 +2283,7 @@ SCORECARD_TEMPLATES: list[dict[str, Any]] = [
 ]
 
 
-def seed_scorecard_templates(client: ArborClient, company_id: int = 1) -> None:
+def seed_scorecard_templates(client: ArborClient, company_id: int) -> None:
     """Round-13 fix: create 5 starter scorecard templates.
 
     Cluster 7a shipped the UI for selecting scorecard templates, but the demo
@@ -2642,8 +2725,315 @@ def vary_onboarding_progress(company_id: int) -> None:
 
 
 # ===========================================================================
+# Section registry
+# ===========================================================================
+#
+# Each section is a self-contained, idempotent unit. The runner:
+#   1. Resolves which sections to run from --section (or "all" by default)
+#   2. Skips sections whose required state (login, company_id, employees) is
+#      missing in the shared SectionContext
+#   3. Wraps every section in try/except so one failure does not kill the rest
+#   4. Emits a final summary listing OK / SKIP / FAIL per section
+#
+# To add a section: write a function and register it in CANONICAL_SECTIONS
+# below with its declared dependencies.
+
+
+class SectionContext:
+    """Shared mutable state passed between sections.
+
+    Sections that produce values (company_id, employees, leave_types,
+    category_lookup) write them here so later sections can consume them.
+    """
+
+    def __init__(self, client: ArborClient, args: argparse.Namespace) -> None:
+        self.client = client
+        self.args = args
+        self.email: str = args.email
+        self.password: str = args.password
+        self.company_name: str = args.company_name
+        self.max_employees: int = min(args.employees, len(EMPLOYEE_PROFILES))
+        # Produced state
+        self.logged_in: bool = False
+        self.company_id: int | None = None
+        self.employees: list[dict] | None = None
+        self.leave_types: list[dict] | None = None
+        self.category_lookup: dict[str, int] | None = None
+
+
+def _ensure_login(ctx: SectionContext) -> None:
+    """Re-establish admin auth on ctx.client. Idempotent — safe to call between sections."""
+    _safe_login(ctx.client, ctx.email, ctx.password)
+    ctx.logged_in = True
+
+
+def _lookup_company_id(ctx: SectionContext) -> int | None:
+    """Resolve the admin's company_id from /auth/me (no creation)."""
+    me_resp = ctx.client.get("/auth/me")
+    if me_resp.status_code != 200:
+        return None
+    return me_resp.json().get("company_id")
+
+
+# --- Section wrappers ------------------------------------------------------
+# Each wrapper has signature: (ctx) -> None. They translate the shared context
+# into the underlying seed function's argument shape.
+
+
+def _section_auth(ctx: SectionContext) -> None:
+    seed_auth(ctx.client, ctx.email, ctx.password)
+    ctx.logged_in = True
+
+
+def _section_company(ctx: SectionContext) -> None:
+    if not ctx.logged_in:
+        _ensure_login(ctx)
+    ctx.company_id = seed_company(ctx.client, ctx.company_name)
+    # Re-login so the token carries company_id
+    _ensure_login(ctx)
+
+
+def _section_lookup_company(ctx: SectionContext) -> None:
+    """For demo-refresh: resolve existing company_id without creating."""
+    if not ctx.logged_in:
+        _ensure_login(ctx)
+    cid = _lookup_company_id(ctx)
+    if cid is None:
+        _fail("Company lookup", "admin not linked to any company")
+        return
+    ctx.company_id = cid
+    _ok("Company lookup", f"company_id={cid}")
+
+
+def _section_leave_types(ctx: SectionContext) -> None:
+    ctx.leave_types = seed_leave_types(ctx.client)
+
+
+def _section_employees(ctx: SectionContext) -> None:
+    if ctx.company_id is None:
+        raise RuntimeError("employees section requires company_id (run 'company' or 'lookup-company' first)")
+    ctx.employees = seed_employees(ctx.client, ctx.company_id, ctx.max_employees)
+    _ensure_login(ctx)
+
+
+def _section_employee_profiles(ctx: SectionContext) -> None:
+    if not ctx.employees:
+        raise RuntimeError("employee-profiles requires employees (run 'employees' first)")
+    seed_employee_profiles(ctx.client, ctx.employees)
+
+
+def _section_role_promotions(ctx: SectionContext) -> None:
+    if not ctx.employees:
+        raise RuntimeError("role-promotions requires employees (run 'employees' first)")
+    seed_role_promotions(ctx.client, ctx.employees)
+
+
+def _section_salary_components(ctx: SectionContext) -> None:
+    if not ctx.employees:
+        raise RuntimeError("salary-components requires employees (run 'employees' first)")
+    seed_salary_components(ctx.client, ctx.employees)
+
+
+def _section_payroll(ctx: SectionContext) -> None:
+    seed_payroll(ctx.client)
+
+
+def _section_leave_applications(ctx: SectionContext) -> None:
+    if not ctx.employees:
+        raise RuntimeError("leave-applications requires employees")
+    if not ctx.leave_types:
+        raise RuntimeError("leave-applications requires leave_types")
+    seed_leave_applications(ctx.client, ctx.employees, ctx.leave_types)
+    _ensure_login(ctx)
+
+
+def _section_claim_categories(ctx: SectionContext) -> None:
+    ctx.category_lookup = seed_claim_categories(ctx.client)
+
+
+def _section_claims(ctx: SectionContext) -> None:
+    if not ctx.employees:
+        raise RuntimeError("claims requires employees")
+    if ctx.category_lookup is None:
+        raise RuntimeError("claims requires category_lookup (run 'claim-categories' first)")
+    seed_claims(ctx.client, ctx.employees, ctx.category_lookup)
+    _ensure_login(ctx)
+
+
+def _section_attendance(ctx: SectionContext) -> None:
+    if not ctx.employees:
+        raise RuntimeError("attendance requires employees")
+    seed_attendance(ctx.client, ctx.employees)
+    _ensure_login(ctx)
+
+
+def _section_recruitment(ctx: SectionContext) -> None:
+    seed_recruitment(ctx.client)
+
+
+def _section_candidate_pdpa(ctx: SectionContext) -> None:
+    if ctx.company_id is None:
+        raise RuntimeError("candidate-pdpa requires company_id")
+    backfill_candidate_pdpa(ctx.company_id)
+
+
+def _section_scorecard_templates(ctx: SectionContext) -> None:
+    if ctx.company_id is None:
+        raise RuntimeError("scorecard-templates requires company_id")
+    seed_scorecard_templates(ctx.client, ctx.company_id)
+
+
+def _section_preboarding_tasks(ctx: SectionContext) -> None:
+    if ctx.company_id is None:
+        raise RuntimeError("preboarding-tasks requires company_id")
+    seed_preboarding_template_tasks(ctx.company_id)
+
+
+def _section_onboarding(ctx: SectionContext) -> None:
+    if not ctx.employees:
+        raise RuntimeError("onboarding requires employees")
+    seed_onboarding(ctx.client, ctx.employees)
+
+
+def _section_admin_profile(ctx: SectionContext) -> None:
+    if ctx.company_id is None:
+        raise RuntimeError("admin-profile requires company_id")
+    seed_admin_employee_profile(ctx.client, ctx.company_id)
+
+
+def _section_onboarding_progress(ctx: SectionContext) -> None:
+    if ctx.company_id is None:
+        raise RuntimeError("onboarding-progress requires company_id")
+    vary_onboarding_progress(ctx.company_id)
+
+
+# Canonical section order — used when --section is omitted or "all" is given.
+# Names are stable: scripts and CI rely on them.
+CANONICAL_SECTIONS: list[tuple[str, Callable[[SectionContext], None], str]] = [
+    ("auth", _section_auth, "Register/login the admin user"),
+    ("company", _section_company, "Create demo company (or reuse existing)"),
+    ("leave-types", _section_leave_types, "Seed Singapore statutory leave types"),
+    ("employees", _section_employees, "Create employees via invitation flow"),
+    ("employee-profiles", _section_employee_profiles, "Enrich employee profile fields"),
+    ("role-promotions", _section_role_promotions, "Promote a few employees to HR/manager"),
+    ("salary-components", _section_salary_components, "Salary components per employee"),
+    ("payroll", _section_payroll, "Monthly payroll runs (non-fatal)"),
+    ("leave-applications", _section_leave_applications, "Leave applications (logs in as employees)"),
+    ("claim-categories", _section_claim_categories, "Claim category catalogue"),
+    ("claims", _section_claims, "Expense claims (logs in as employees)"),
+    ("attendance", _section_attendance, "Attendance records (logs in as employees)"),
+    ("recruitment", _section_recruitment, "Job posting + candidates + applications"),
+    ("candidate-pdpa", _section_candidate_pdpa, "Round-13: backfill PDPA consent (DB)"),
+    ("scorecard-templates", _section_scorecard_templates, "Round-13: 5 starter scorecards (DB)"),
+    ("preboarding-tasks", _section_preboarding_tasks, "Round-13: default-template preboarding (DB)"),
+    ("onboarding", _section_onboarding, "Onboarding assignments (per-employee)"),
+    ("admin-profile", _section_admin_profile, "Round-13: enrich Demo Admin's Employee record (DB)"),
+    ("onboarding-progress", _section_onboarding_progress, "Round-13: vary onboarding completion (DB)"),
+]
+
+
+# Section aliases — expanded into concrete section names.
+# 'demo-refresh' handles the round-13 demo data refresh against an EXISTING
+# prod company without recreating users or rerunning the heavy employee/payroll
+# flow. This is the safe path for prod — it never touches the auth, company,
+# employees, or payroll sections.
+SECTION_ALIASES: dict[str, list[str]] = {
+    "all": [name for name, _, _ in CANONICAL_SECTIONS],
+    "demo-refresh": [
+        "auth",
+        "lookup-company",
+        "candidate-pdpa",
+        "scorecard-templates",
+        "preboarding-tasks",
+        "admin-profile",
+        "onboarding-progress",
+    ],
+    # Round-13-only set without auth bootstrap — for callers that already
+    # have an authenticated client (CI, embedded use). Almost no one wants
+    # this; included for completeness.
+    "round13": [
+        "candidate-pdpa",
+        "scorecard-templates",
+        "preboarding-tasks",
+        "admin-profile",
+        "onboarding-progress",
+    ],
+}
+
+# 'lookup-company' is not in CANONICAL_SECTIONS because it is only meaningful
+# inside aliases like demo-refresh — it never appears in 'all'.
+ALIAS_ONLY_SECTIONS: dict[str, Callable[[SectionContext], None]] = {
+    "lookup-company": _section_lookup_company,
+}
+
+
+def _resolve_sections(requested: list[str]) -> list[str]:
+    """Expand aliases and validate names. Returns concrete section names in run order."""
+    known_names = {name for name, _, _ in CANONICAL_SECTIONS} | set(ALIAS_ONLY_SECTIONS) | set(SECTION_ALIASES)
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for raw in requested:
+        if raw in SECTION_ALIASES:
+            for name in SECTION_ALIASES[raw]:
+                if name not in seen:
+                    expanded.append(name)
+                    seen.add(name)
+        elif raw in known_names:
+            if raw not in seen:
+                expanded.append(raw)
+                seen.add(raw)
+        else:
+            raise ValueError(f"Unknown section '{raw}'. Use --list-sections to see valid names.")
+    return expanded
+
+
+def _section_callable(name: str) -> Callable[[SectionContext], None]:
+    for n, fn, _ in CANONICAL_SECTIONS:
+        if n == name:
+            return fn
+    if name in ALIAS_ONLY_SECTIONS:
+        return ALIAS_ONLY_SECTIONS[name]
+    raise KeyError(name)
+
+
+def _print_sections_table() -> None:
+    _print("Available sections:\n")
+    for name, _, desc in CANONICAL_SECTIONS:
+        _print(f"  {name:<22} {desc}")
+    _print("\nAlias-only sections:")
+    for name in ALIAS_ONLY_SECTIONS:
+        _print(f"  {name:<22} (alias bootstrap)")
+    _print("\nAliases (expand to multiple sections):")
+    for alias, members in SECTION_ALIASES.items():
+        _print(f"  {alias:<22} -> {', '.join(members)}")
+
+
+# ===========================================================================
 # Main
 # ===========================================================================
+
+
+def _validate_prod_password(api_url: str, password: str) -> None:
+    """Refuse to run against a non-localhost API with the default demo password.
+
+    The default password 'CentralDemo2026!' is the LOCAL dev seed value; running
+    with it against prod will either (a) fail because prod uses a different
+    password, or (b) succeed and overwrite production demo state with stale
+    fixtures. Both are bad. Force the operator to set ADMIN_PASSWORD explicitly.
+    """
+    is_local = (
+        "localhost" in api_url
+        or "127.0.0.1" in api_url
+        or "0.0.0.0" in api_url
+    )
+    if is_local:
+        return
+    if password == "CentralDemo2026!" and not os.environ.get("ADMIN_PASSWORD"):
+        _fail(
+            "Refusing to run against non-local API with default password",
+            "Set ADMIN_PASSWORD env var to the actual admin password",
+        )
+        sys.exit(2)
 
 
 def main() -> None:
@@ -2653,24 +3043,28 @@ def main() -> None:
         epilog=(
             "Examples:\n"
             "  python scripts/seed_demo_data.py\n"
-            "  python scripts/seed_demo_data.py --api-url http://localhost:8000\n"
-            "  python scripts/seed_demo_data.py --employees 30\n"
+            "  python scripts/seed_demo_data.py --list-sections\n"
+            "  python scripts/seed_demo_data.py --section demo-refresh\n"
+            "  python scripts/seed_demo_data.py --section auth --section company\n"
+            "  python scripts/seed_demo_data.py --section demo-refresh --dry-run\n"
+            "\n"
+            "Env vars: ARBOR_API_URL, ADMIN_EMAIL, ADMIN_PASSWORD, DATABASE_URL\n"
         ),
     )
     parser.add_argument(
         "--api-url",
-        default=os.environ.get("ARBOR_API_URL", DEFAULT_API_URL),
+        default=DEFAULT_API_URL,
         help=f"Arbor API base URL (default: $ARBOR_API_URL or {DEFAULT_API_URL})",
     )
     parser.add_argument(
         "--email",
         default=DEFAULT_EMAIL,
-        help=f"Admin user email (default: {DEFAULT_EMAIL})",
+        help=f"Admin user email (default: $ADMIN_EMAIL or {DEFAULT_EMAIL})",
     )
     parser.add_argument(
         "--password",
         default=DEFAULT_PASSWORD,
-        help="Admin user password",
+        help="Admin user password (default: $ADMIN_PASSWORD)",
     )
     parser.add_argument(
         "--company-name",
@@ -2684,17 +3078,50 @@ def main() -> None:
         help=f"Number of employees to create (max {len(EMPLOYEE_PROFILES)}, default: {DEFAULT_EMPLOYEE_COUNT})",
     )
     parser.add_argument(
+        "--section",
+        action="append",
+        default=None,
+        help=(
+            "Section name or alias to run. Can be repeated. Default: 'all'. "
+            "Use --list-sections to see options. Aliases: all, demo-refresh, round13."
+        ),
+    )
+    parser.add_argument(
+        "--list-sections",
+        action="store_true",
+        help="Print available sections and aliases, then exit.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show which sections would run without executing them.",
+    )
+    parser.add_argument(
         "--reset",
         action="store_true",
-        help=(
-            "Acknowledges that the seeder is being run against a freshly "
-            "reset database. The script is idempotent either way; this flag "
-            "currently records intent in the run header for ops audit."
-        ),
+        help="Records intent that the seeder is being run against a freshly reset database.",
     )
     args = parser.parse_args()
 
-    # Clamp employee count
+    if args.list_sections:
+        _print_sections_table()
+        return
+
+    # Resolve sections
+    requested = args.section if args.section else ["all"]
+    try:
+        sections = _resolve_sections(requested)
+    except ValueError as exc:
+        _fail("Section resolution", str(exc))
+        sys.exit(2)
+
+    if not sections:
+        _fail("No sections to run", "")
+        sys.exit(2)
+
+    # Production safety: refuse default password against non-localhost
+    _validate_prod_password(args.api_url, args.password)
+
     max_employees = min(args.employees, len(EMPLOYEE_PROFILES))
 
     _print("=" * 60)
@@ -2704,14 +3131,28 @@ def main() -> None:
     _print(f"Admin:      {args.email}")
     _print(f"Company:    {args.company_name}")
     _print(f"Employees:  {max_employees}")
+    _print(f"Sections:   {', '.join(sections)}")
+    _print(f"Dry run:    {args.dry_run}")
     _print(f"Reset:      {args.reset}")
     _print(f"Timestamp:  {datetime.now().isoformat()}")
     _print("=" * 60)
 
+    if args.dry_run:
+        _print("\nDRY RUN — would execute the following sections in order:")
+        for name in sections:
+            desc = next((d for n, _, d in CANONICAL_SECTIONS if n == name), "")
+            if not desc and name in ALIAS_ONLY_SECTIONS:
+                desc = "(alias bootstrap)"
+            _print(f"  - {name:<22} {desc}")
+        _print("\nNo changes made. Re-run without --dry-run to execute.")
+        return
+
     client = ArborClient(args.api_url)
+    ctx = SectionContext(client, args)
+    results: list[tuple[str, str, str]] = []  # (section, status, detail)
 
     try:
-        # Health check
+        # Health check (advisory; do not block — backend may be slow on cold start)
         _print("\nChecking API connectivity...")
         try:
             health_resp = client._client.get(
@@ -2728,113 +3169,54 @@ def main() -> None:
             _print("  python -m hr_advisory.api.main")
             sys.exit(1)
         except Exception as exc:
-            _print(f"  [WARN] Health check failed ({exc}) — proceeding anyway")
+            _print(f"  [WARN] Health check failed ({type(exc).__name__}) — proceeding anyway")
 
-        # Step 1: Auth
-        seed_auth(client, args.email, args.password)
-
-        # Step 2: Company
-        company_id = seed_company(client, args.company_name)
-
-        # Re-login so the new token carries company_id (only once — Steps
-        # 2b/3b/3c/4 all run against the admin token, no need to re-auth.)
-        _safe_login(client, args.email, args.password)
-
-        # Step 2b: Leave types
-        leave_types = seed_leave_types(client)
-
-        # Step 3: Employees (this section logs in as each new employee then
-        # restores the admin token in a try/finally, so a single re-login
-        # after the section is enough.)
-        employees = seed_employees(client, company_id, max_employees)
-        _safe_login(client, args.email, args.password)
-
-        # Step 3b: Enrich employee profiles (admin only)
-        seed_employee_profiles(client, employees)
-
-        # Step 3c: Role promotions (admin only)
-        seed_role_promotions(client, employees)
-
-        # Step 4: Salary components (admin only)
-        seed_salary_components(client, employees)
-
-        # Step 5: Payroll (wrapped in try/except — payroll failures are non-fatal)
-        try:
-            seed_payroll(client)
-        except Exception as payroll_exc:
-            _print(f"  [WARN] Payroll seeding failed: {payroll_exc} — continuing")
-            _safe_login(client, args.email, args.password)
-
-        # Step 6: Leave applications (logs in as employees; restore admin)
-        seed_leave_applications(client, employees, leave_types)
-        _safe_login(client, args.email, args.password)
-
-        # Step 6b + 7: Claims (logs in as employees; restore admin after)
-        category_lookup = seed_claim_categories(client)
-        seed_claims(client, employees, category_lookup)
-        _safe_login(client, args.email, args.password)
-
-        # Step 8: Attendance (logs in as employees; restore admin after)
-        seed_attendance(client, employees)
-        _safe_login(client, args.email, args.password)
-
-        # Step 9: Recruitment (admin only — no re-login needed afterward)
-        seed_recruitment(client)
-
-        # Step 9b: Round-13 — backfill PDPA consent on any pre-existing
-        # candidates whose row was created before pdpa_consent was seeded.
-        try:
-            backfill_candidate_pdpa(company_id)
-        except Exception as exc:
-            _print(f"  [WARN] PDPA backfill failed: {exc} — continuing")
-
-        # Step 9c: Round-13 — scorecard template library (5 starter templates).
-        try:
-            seed_scorecard_templates(client, company_id)
-        except Exception as exc:
-            _print(f"  [WARN] Scorecard templates failed: {exc} — continuing")
-
-        # Step 9d: Round-13 — preboarding tasks on the default onboarding
-        # template. MUST run BEFORE seed_onboarding so the assign endpoint
-        # copies them per-employee at assignment time.
-        try:
-            seed_preboarding_template_tasks(company_id)
-        except Exception as exc:
-            _print(f"  [WARN] Preboarding template tasks failed: {exc} — continuing")
-
-        # Step 10: Onboarding assignments
-        seed_onboarding(client, employees)
-
-        # Step 10b: Round-13 — admin Employee profile (must run AFTER any
-        # /employees/me hits to ensure the auto-created record exists).
-        try:
-            seed_admin_employee_profile(client, company_id)
-        except Exception as exc:
-            _print(f"  [WARN] Admin profile fix failed: {exc} — continuing")
-
-        # Step 10c: Round-13 — vary onboarding-assignment progress so the
-        # demo doesn't look like everyone is at 0% complete. Runs LAST so
-        # the assignments + step progress rows already exist.
-        try:
-            vary_onboarding_progress(company_id)
-        except Exception as exc:
-            _print(f"  [WARN] Onboarding progress variation failed: {exc} — continuing")
+        for name in sections:
+            try:
+                fn = _section_callable(name)
+            except KeyError:
+                results.append((name, "FAIL", "no such section"))
+                _fail(f"Section '{name}'", "no such section")
+                continue
+            try:
+                fn(ctx)
+                results.append((name, "OK", ""))
+            except KeyboardInterrupt:
+                results.append((name, "FAIL", "interrupted"))
+                raise
+            except httpx.HTTPStatusError as exc:
+                detail = f"HTTP {exc.response.status_code}: {exc.response.text[:200]}"
+                results.append((name, "FAIL", detail))
+                _print(f"  [WARN] Section '{name}' failed: {detail} — continuing")
+            except Exception as exc:
+                detail = f"{type(exc).__name__}: {str(exc)[:200]}"
+                results.append((name, "FAIL", detail))
+                _print(f"  [WARN] Section '{name}' failed: {detail} — continuing")
 
         # Summary
+        ok_count = sum(1 for _, s, _ in results if s == "OK")
+        fail_count = sum(1 for _, s, _ in results if s == "FAIL")
         _print("\n" + "=" * 60)
-        _print("Demo data seeding complete.")
+        _print(f"Demo data seeding finished: {ok_count} OK, {fail_count} FAIL")
         _print("=" * 60)
-        _print(f"\nDemo accounts:")
-        _print(f"  Owner:      {args.email} / {args.password}")
-        _print(f"  HR Manager: grace.koh@central-solutions.sg / Employee2026!")
-        _print(f"  Employee:   lily.phang@central-solutions.sg / Employee2026!")
-        _print(f"  Company:    {args.company_name}")
-        _print(f"  API URL:    {args.api_url}")
+        if fail_count:
+            _print("\nFailures:")
+            for name, status, detail in results:
+                if status == "FAIL":
+                    _print(f"  [FAIL] {name}: {detail}")
+        if "all" in requested or len(sections) > 5:
+            _print(f"\nDemo accounts:")
+            _print(f"  Owner:      {args.email} / {args.password}")
+            _print(f"  HR Manager: grace.koh@central-solutions.sg / Employee2026!")
+            _print(f"  Employee:   lily.phang@central-solutions.sg / Employee2026!")
+            _print(f"  Company:    {args.company_name}")
+            _print(f"  API URL:    {args.api_url}")
         _print("")
 
-    except httpx.HTTPStatusError as exc:
-        _print(f"\nHTTP error: {exc.response.status_code} — {exc.response.text[:300]}")
-        sys.exit(1)
+        # Exit non-zero if any section failed (lets CI catch silent breakage).
+        if fail_count:
+            sys.exit(1)
+
     except httpx.ConnectError:
         _print(f"\nConnection error: Could not reach {args.api_url}")
         sys.exit(1)
