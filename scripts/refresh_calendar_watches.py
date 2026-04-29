@@ -42,6 +42,19 @@ logger = logging.getLogger("refresh_calendar_watches")
 
 
 def main() -> int:
+    # Short-circuit on empty state BEFORE validating ARBOR_API_URL — that
+    # way the cron stays quiet on tenants with no Calendar connections,
+    # and stays silent until at least one tenant connects.
+    try:
+        rows = dataflow_crud.list_records("GoogleCalendarConnection", {})
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to list GoogleCalendarConnection rows: %s", exc, exc_info=True)
+        return 1
+
+    if not rows:
+        logger.info("No GoogleCalendarConnection rows — nothing to refresh.")
+        return 0
+
     raw_webhook_base = os.environ.get("ARBOR_API_URL", "")
     if not raw_webhook_base:
         logger.error("ARBOR_API_URL is not set — cannot register webhook URLs.")
@@ -54,12 +67,6 @@ def main() -> int:
         return 1
 
     webhook_url = f"{webhook_base}/integrations/google-calendar/webhook"
-
-    try:
-        rows = dataflow_crud.list_records("GoogleCalendarConnection", {})
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to list GoogleCalendarConnection rows: %s", exc, exc_info=True)
-        return 1
 
     refreshed = 0
     skipped = 0
