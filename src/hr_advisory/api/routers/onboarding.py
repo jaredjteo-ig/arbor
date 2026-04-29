@@ -9,11 +9,13 @@ Roles:
 """
 
 import csv
+import html
 import io
 import json
 import logging
 import os
 import re
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -27,6 +29,27 @@ from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# S3-T7: per-tenant lock guarding the "set is_default" sequence on
+# OnboardingTemplate. The clear-then-set pattern (unset every other
+# template, then set this one) is non-atomic; two concurrent POSTs
+# could each see only the OLD default, both un-set it, both set their
+# own template default → leaving two defaults. The lock serializes the
+# full sequence within a process. Multi-worker deploys should add a
+# DB-level partial unique index on (company_id) WHERE is_default=TRUE.
+_default_template_locks: dict[int, threading.Lock] = {}
+_default_template_locks_lock = threading.Lock()
+
+
+def _get_default_template_lock(company_id: int) -> threading.Lock:
+    with _default_template_locks_lock:
+        lock = _default_template_locks.get(company_id)
+        if lock is None:
+            lock = threading.Lock()
+            _default_template_locks[company_id] = lock
+        return lock
+
 
 # B19: shared MAX_TEXT_LENGTH, MAX_NAME_LENGTH, _validate_text_length come
 # from _helpers.py. Onboarding-specific limits stay local below.
@@ -165,12 +188,22 @@ def _get_modules_for_template(template_id: int) -> list[dict]:
     return sorted(modules, key=lambda m: m.get("sort_order", 0))
 
 
-def _get_steps_for_module(module_id: int) -> list[dict]:
-    """Fetch all steps for a module, sorted by order."""
+def _get_steps_for_module(module_id: int, include_archived: bool = False) -> list[dict]:
+    """Fetch all steps for a module, sorted by order.
+
+    S3-T5: by default, archived (`is_active=False`) steps are filtered out
+    so employees on a NEW assignment do not see soft-deleted steps. Pass
+    `include_archived=True` for admin views (template editor, audit) where
+    archived rows should still be visible. Existing OnboardingAssignments
+    keep their step progress regardless — assignments resolve steps from
+    their own `OnboardingStepProgress` rows, not from a fresh fetch here.
+    """
     steps = dataflow_crud.list_records(
         "OnboardingStep",
         {"module_id": module_id},
     )
+    if not include_archived:
+        steps = [s for s in steps if s.get("is_active", True)]
     return sorted(steps, key=lambda s: s.get("sort_order", 0))
 
 
@@ -550,30 +583,46 @@ async def create_template(
     actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
-    # If marked as default, unset existing defaults for this company
+    # If marked as default, unset existing defaults for this company.
+    # S3-T7: serialize the clear-then-set sequence under a per-tenant lock.
     is_default = body.get("is_default", False)
     if is_default:
-        existing = dataflow_crud.list_records(
+        with _get_default_template_lock(company_id):
+            existing = dataflow_crud.list_records(
+                "OnboardingTemplate",
+                {"company_id": company_id, "is_default": True},
+            )
+            for t in existing:
+                dataflow_crud.update("OnboardingTemplate", t["id"], {"is_default": False})
+            template = dataflow_crud.create(
+                "OnboardingTemplate",
+                {
+                    "company_id": company_id,
+                    "name": name,
+                    "description": body.get("description", ""),
+                    "is_default": True,
+                    "version": 1,
+                    "is_active": True,
+                    "created_by": actor_id,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+    else:
+        template = dataflow_crud.create(
             "OnboardingTemplate",
-            {"company_id": company_id, "is_default": True},
+            {
+                "company_id": company_id,
+                "name": name,
+                "description": body.get("description", ""),
+                "is_default": False,
+                "version": 1,
+                "is_active": True,
+                "created_by": actor_id,
+                "created_at": now,
+                "updated_at": now,
+            },
         )
-        for t in existing:
-            dataflow_crud.update("OnboardingTemplate", t["id"], {"is_default": False})
-
-    template = dataflow_crud.create(
-        "OnboardingTemplate",
-        {
-            "company_id": company_id,
-            "name": name,
-            "description": body.get("description", ""),
-            "is_default": is_default,
-            "version": 1,
-            "is_active": True,
-            "created_by": actor_id,
-            "created_at": now,
-            "updated_at": now,
-        },
-    )
     logger.info(
         "Onboarding template created: id=%s, company_id=%s, name=%s",
         template.get("id"),
@@ -596,12 +645,14 @@ async def get_template(
     template = _verify_template_ownership(template_id, company_id)
 
     # Build nested response: template -> modules -> steps
+    # S3-T5: this endpoint is admin-only (owner/hr_manager) — include archived
+    # steps so the template editor can show greyed-out soft-deleted rows.
     modules = _get_modules_for_template(template_id)
     modules_with_steps = []
     total_steps = 0
     total_estimated_minutes = 0
     for module in modules:
-        steps = _get_steps_for_module(module.get("id"))
+        steps = _get_steps_for_module(module.get("id"), include_archived=True)
         total_steps += len(steps)
         total_estimated_minutes += module.get("estimated_duration_minutes", 0)
         modules_with_steps.append({
@@ -648,17 +699,25 @@ async def update_template(
         _validate_text_length(body["description"], "description")
         updates["description"] = body["description"]
 
+    # S3-T7: serialize the clear-then-set under a per-tenant lock to
+    # prevent two concurrent updates from leaving two defaults.
     if "is_default" in body and body["is_default"]:
-        # Unset existing defaults
-        existing = dataflow_crud.list_records(
-            "OnboardingTemplate",
-            {"company_id": company_id, "is_default": True},
-        )
-        for t in existing:
-            if t["id"] != template_id:
-                dataflow_crud.update("OnboardingTemplate", t["id"], {"is_default": False})
-        updates["is_default"] = True
-    elif "is_default" in body:
+        with _get_default_template_lock(company_id):
+            existing = dataflow_crud.list_records(
+                "OnboardingTemplate",
+                {"company_id": company_id, "is_default": True},
+            )
+            for t in existing:
+                if t["id"] != template_id:
+                    dataflow_crud.update("OnboardingTemplate", t["id"], {"is_default": False})
+            updates["is_default"] = True
+            # Increment version (inside lock so version bump is also serialized)
+            updates["version"] = template.get("version", 1) + 1
+            result = dataflow_crud.update("OnboardingTemplate", template_id, updates)
+            logger.info("Onboarding template updated: id=%s, version=%s", template_id, updates["version"])
+            return {"template": result}
+
+    if "is_default" in body:
         updates["is_default"] = False
 
     # Increment version
@@ -1971,7 +2030,17 @@ async def delete_step(
     step_id: int,
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
-    """Delete a step."""
+    """Soft-delete a step (S3-T5).
+
+    A hard delete would orphan every `OnboardingStepProgress` row for
+    in-progress assignments — employees would see blanks and percentages
+    would skew. Soft-delete sets `is_active=False`: existing assignments
+    keep their progress, and the step is hidden from any new assignment.
+
+    Admins can still see and re-activate the step via the list endpoints
+    (which filter is_active=True for employee views but include archived
+    rows for admin views).
+    """
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
@@ -1983,7 +2052,11 @@ async def delete_step(
     # Verify parent module belongs to this company
     module = _verify_module_ownership(step.get("module_id"), company_id)
 
-    dataflow_crud.delete("OnboardingStep", step_id)
+    # S3-T5: idempotent soft-delete
+    if step.get("is_active") is False:
+        return {"message": "Step is already archived.", "step_id": step_id}
+
+    dataflow_crud.update("OnboardingStep", step_id, {"is_active": False})
 
     # Bump template updated_at
     dataflow_crud.update(
@@ -1992,8 +2065,8 @@ async def delete_step(
         {"updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()},
     )
 
-    logger.info("Onboarding step deleted: id=%s", step_id)
-    return {"message": "Step deleted.", "step_id": step_id}
+    logger.info("Onboarding step soft-deleted: id=%s", step_id)
+    return {"message": "Step archived.", "step_id": step_id}
 
 
 @router.patch("/modules/{module_id}/reorder-steps")
@@ -2702,12 +2775,18 @@ async def complete_step(
                         detail="Previous required steps must be completed first.",
                     )
 
-    # Optional notes from body
+    # Optional notes from body. We accept JSON or no-body POSTs; only
+    # JSONDecodeError / a missing-body Exception class should be swallowed
+    # silently. Any other exception (network blow-up, decoder corruption)
+    # surfaces in logs so we can debug.
     body = {}
     try:
         body = await request.json()
-    except Exception:
+    except (ValueError, json.JSONDecodeError):
+        # No body or malformed JSON — treat as empty and proceed.
         pass
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("complete_step body parse non-JSON failure: %s", exc)
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     updates = {
@@ -2905,14 +2984,16 @@ async def acknowledge_policy_step(
             limit=1,
         )
         if not existing_ack:
-            # Extract client IP for audit
+            # Extract client IP for audit. AttributeError covers the case
+            # where the test client doesn't expose .client.host; anything
+            # broader is a real bug we want to see in the logs.
             ip_address = ""
             try:
                 client = request.client
                 if client:
                     ip_address = client.host or ""
-            except Exception:
-                pass
+            except AttributeError as exc:
+                logger.debug("policy ack ip-extraction missing attr: %s", exc)
 
             dataflow_crud.create(
                 "PolicyAcknowledgment",
@@ -2993,12 +3074,14 @@ async def approve_step(
     if assignment.get("status") not in ("in_progress", "overdue"):
         raise HTTPException(status_code=400, detail="Assignment is not active.")
 
-    # Optional notes from body
+    # Optional notes from body. Same narrow-catch pattern as complete_step.
     body = {}
     try:
         body = await request.json()
-    except Exception:
+    except (ValueError, json.JSONDecodeError):
         pass
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("admin-complete-step body parse non-JSON failure: %s", exc)
 
     now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     updates = {
@@ -3846,13 +3929,18 @@ def _build_overdue_reminder_email(
     due_date: str | None,
     company_name: str,
 ) -> str:
-    """Render a simple HTML reminder body for overdue onboarding steps."""
-    safe_employee = (employee_name or "there").replace("<", "&lt;").replace(">", "&gt;")
-    safe_template = (template_name or "your onboarding").replace("<", "&lt;").replace(">", "&gt;")
-    safe_company = (company_name or "your company").replace("<", "&lt;").replace(">", "&gt;")
+    """Render a simple HTML reminder body for overdue onboarding steps.
+
+    S3-T8c: use html.escape() (covers `<`, `>`, `&`, `"`, `'`) instead of
+    manual `<>`-only replace which left ampersand+quote injection vectors
+    open. The reminder body is rendered into a Resend HTML email.
+    """
+    safe_employee = html.escape(employee_name or "there", quote=True)
+    safe_template = html.escape(template_name or "your onboarding", quote=True)
+    safe_company = html.escape(company_name or "your company", quote=True)
 
     items_html = "".join(
-        f"<li>{(s.get('title') or 'Untitled step').replace('<', '&lt;').replace('>', '&gt;')}</li>"
+        f"<li>{html.escape(s.get('title') or 'Untitled step', quote=True)}</li>"
         for s in overdue_steps
     )
     due_line = ""

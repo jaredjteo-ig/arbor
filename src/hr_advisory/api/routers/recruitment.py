@@ -21,6 +21,7 @@ from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 from hr_advisory.integrations.google_calendar import sync as gcal_sync
 from hr_advisory.mcp_servers.adapters.resend_email import ResendAdapter
+from hr_advisory.services import dataflow_crud
 from hr_advisory.templates.recruitment_emails import RECRUITMENT_TEMPLATES
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,66 @@ router = APIRouter()
 # recruitment. Anything outside this set is rejected at hire time and again
 # defensively when the new hire accepts their invitation (auth.py).
 HIRABLE_ROLES: frozenset[str] = frozenset({"employee", "hr_manager"})
+
+
+# S3-T4: per-company AI-scorecard quota. Counted per calendar month. The
+# soft cap surfaces a warning in the response so the customer sees the
+# upgrade tier; the hard cap returns 429 to protect platform cost.
+SCORECARD_SOFT_CAP: int = int(os.environ.get("SCORECARD_SOFT_CAP", "50"))
+SCORECARD_HARD_CAP: int = int(os.environ.get("SCORECARD_HARD_CAP", "500"))
+
+
+def _scorecard_quota_check(company_id: int) -> tuple[datetime, int, str]:
+    """Return (month_start, count_so_far, state) for the company's scorecard
+    quota in the current calendar month.
+
+    state is one of:
+      - "ok": below soft cap
+      - "soft_warning": ≥ soft cap, < hard cap (caller continues, response
+        gets a `quota_warning` field)
+      - "exhausted": ≥ hard cap (caller raises 429)
+
+    Counts use ScorecardEntry rows tagged is_ai_generated=True. Older
+    deployments without the is_ai_generated column degrade gracefully —
+    the count returns 0 (best-effort), which is the safe behaviour:
+    customers without the AI column are pre-feature-flag and shouldn't
+    be billed against the cap.
+    """
+    now = datetime.now(timezone.utc)
+    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    try:
+        rows = dataflow_crud.list_records(
+            "ScorecardEntry",
+            {"company_id": company_id, "is_ai_generated": True},
+            limit=10000,
+        )
+    except Exception as exc:  # noqa: BLE001 — schema may lack is_ai_generated
+        logger.debug(
+            "Scorecard quota count fell back to 0 (schema missing AI column): %s",
+            type(exc).__name__,
+        )
+        return month_start, 0, "ok"
+
+    count = 0
+    for row in rows:
+        created = row.get("created_at")
+        if isinstance(created, str):
+            try:
+                created = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+        if not isinstance(created, datetime):
+            continue
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if created >= month_start:
+            count += 1
+
+    if count >= SCORECARD_HARD_CAP:
+        return month_start, count, "exhausted"
+    if count >= SCORECARD_SOFT_CAP:
+        return month_start, count, "soft_warning"
+    return month_start, count, "ok"
 
 
 # --------------------------------------------------------------------------
@@ -122,8 +183,6 @@ from hr_advisory.api.routers._helpers import _validate_text_length  # noqa: E402
 # --------------------------------------------------------------------------
 # DataFlow helpers
 # --------------------------------------------------------------------------
-
-from hr_advisory.services import dataflow_crud
 
 
 def _verify_job_ownership(job_id: int, company_id: int) -> dict:
@@ -930,6 +989,52 @@ async def schedule_interview(
     scheduled_at = body.get("scheduled_at", "")
     if not scheduled_at:
         raise HTTPException(status_code=400, detail="scheduled_at is required.")
+
+    # S3-T6: idempotency guard — double-clicking "Schedule Interview" used to
+    # create two InterviewSchedule rows AND two Google Calendar events. Look
+    # for an existing row created within the last 30 seconds for this same
+    # (candidate_id, scheduled_at, company_id) and return it instead. The
+    # 30-second window is wider than any plausible network round-trip but
+    # narrow enough that two genuinely intentional rapid-fire schedules
+    # (with different times) are not collapsed.
+    existing_rows = dataflow_crud.list_records(
+        "InterviewSchedule",
+        {
+            "candidate_id": candidate_id,
+            "company_id": company_id,
+            "scheduled_at": scheduled_at,
+        },
+    )
+    if existing_rows:
+        now_dt = datetime.now(timezone.utc)
+        for row in existing_rows:
+            created_iso = row.get("created_at") or ""
+            if not created_iso:
+                continue
+            try:
+                # DataFlow returns created_at as ISO string OR datetime; normalize
+                if isinstance(created_iso, datetime):
+                    created_dt = created_iso
+                else:
+                    created_dt = datetime.fromisoformat(created_iso.replace("Z", "+00:00"))
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+                if (now_dt - created_dt).total_seconds() < 30:
+                    logger.info(
+                        "schedule_interview idempotent return: candidate_id=%s "
+                        "scheduled_at=%s existing_row=%s age_s=%.1f",
+                        candidate_id,
+                        scheduled_at,
+                        row.get("id"),
+                        (now_dt - created_dt).total_seconds(),
+                    )
+                    return {
+                        "interview": row,
+                        "detail": "Existing interview returned (idempotent within 30s window).",
+                    }
+            except (ValueError, TypeError):
+                # If we cannot parse the timestamp, fall through to create
+                continue
 
     interview = dataflow_crud.create(
         "InterviewSchedule",
@@ -3243,6 +3348,35 @@ async def create_scorecard_entry(
 # --------------------------------------------------------------------------
 
 
+@router.get("/scorecard/quota")
+async def scorecard_quota(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Return the current month's AI-scorecard quota state for the company.
+
+    Settings page renders this as "27 / 50 used (resets 2026-05-01)".
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    month_start, used, state = _scorecard_quota_check(company_id)
+    # Reset is the start of next month
+    if month_start.month == 12:
+        next_month = month_start.replace(year=month_start.year + 1, month=1)
+    else:
+        next_month = month_start.replace(month=month_start.month + 1)
+
+    return {
+        "used": used,
+        "soft_cap": SCORECARD_SOFT_CAP,
+        "hard_cap": SCORECARD_HARD_CAP,
+        "state": state,
+        "month_start": month_start.date().isoformat(),
+        "resets_on": next_month.date().isoformat(),
+    }
+
+
 @router.post("/candidates/{candidate_id}/scorecard/generate")
 async def generate_ai_scorecard(
     candidate_id: int,
@@ -3269,6 +3403,21 @@ async def generate_ai_scorecard(
         max_requests=10,
         window_seconds=60,
     )
+
+    # S3-T4: per-company monthly scorecard quota. Without this gate a 5-user
+    # company can sustain 3,000 scorecards/hour (50/min × 60min) and burn
+    # ~$720/day on GPT-4o. Soft cap = 50/month free, hard cap = 500/month.
+    # The 500 hard cap protects the platform; the 50 soft cap surfaces a
+    # warning in the response so the customer sees pricing tiers.
+    quota_now, quota_used, quota_state = _scorecard_quota_check(company_id)
+    if quota_state == "exhausted":
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Monthly AI-scorecard limit reached ({quota_used}/{SCORECARD_HARD_CAP}). "
+                f"Resets on the 1st of next month. Contact sales to upgrade."
+            ),
+        )
 
     candidate = _verify_candidate_ownership(candidate_id, company_id)
 
@@ -3401,6 +3550,12 @@ async def generate_ai_scorecard(
         },
     )
     generation_id = f"ai-scorecard-{candidate_id}-{uuid.uuid4().hex[:12]}"
+    # S3-T8b: narrow the catch — only schema-mismatch errors should be
+    # silently skipped (the AI columns may not yet exist on older
+    # deployments). Real DB failures (connection timeout, deadlock, etc.)
+    # MUST surface so we don't lose scorecards quietly. Postgres returns
+    # `column ... does not exist` (psycopg2 ProgrammingError, code 42703);
+    # SQLite returns OperationalError with "no such column".
     persisted_entry: dict | None = None
     try:
         persisted_entry = dataflow_crud.create(
@@ -3418,12 +3573,33 @@ async def generate_ai_scorecard(
                 "is_ai_generated": True,
             },
         )
-    except Exception as exc:  # noqa: BLE001 — schema may not have ai columns
-        logger.info(
-            "ScorecardEntry persistence skipped (schema may lack AI columns): %s",
-            exc,
+    except Exception as exc:  # noqa: BLE001
+        # Treat ONLY schema-mismatch as the no-op case.
+        msg = str(exc).lower()
+        is_schema_mismatch = (
+            "no such column" in msg
+            or "does not exist" in msg
+            or "undefinedcolumn" in msg
+            or "unknown column" in msg
         )
-        persisted_entry = None
+        if is_schema_mismatch:
+            logger.info(
+                "ScorecardEntry persistence skipped (schema lacks AI columns): %s",
+                type(exc).__name__,
+            )
+            persisted_entry = None
+        else:
+            # Real DB failure — log loudly, but still don't take down the
+            # whole scorecard generation. The scorecard is already
+            # returned to the caller; persistence is best-effort but the
+            # error is now visible in alerts.
+            logger.error(
+                "ScorecardEntry persistence FAILED (non-schema): %s — %s",
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
+            persisted_entry = None
 
     _log_candidate_activity(
         candidate_id,
@@ -3432,9 +3608,23 @@ async def generate_ai_scorecard(
         user_id,
     )
 
-    return {
+    response = {
         "scorecard": scorecard,
         "generation_id": generation_id,
         "degraded": degraded,
         "persisted_entry_id": (persisted_entry or {}).get("id"),
     }
+    # S3-T4: surface quota state so the UI can show usage / upgrade nudge.
+    response["quota"] = {
+        "used": quota_used + 1,  # this generation counts against the cap
+        "soft_cap": SCORECARD_SOFT_CAP,
+        "hard_cap": SCORECARD_HARD_CAP,
+        "state": quota_state,
+    }
+    if quota_state == "soft_warning":
+        response["quota_warning"] = (
+            f"You've used {quota_used + 1} of your {SCORECARD_SOFT_CAP} free "
+            f"AI scorecards this month. Hard cap is {SCORECARD_HARD_CAP}. "
+            f"Contact sales for the next tier."
+        )
+    return response

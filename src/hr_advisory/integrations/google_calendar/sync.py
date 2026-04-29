@@ -25,7 +25,14 @@ __all__ = [
     "delete_event",
     "fetch_event",
     "watch_events",
+    "list_changes_since",
 ]
+
+
+# S3-T1: returned by list_changes_since when Google reports the syncToken
+# is no longer valid (HTTP 410 Gone). Caller MUST drop its persisted
+# sync_token and trigger a full resync (fetch upcoming events from scratch).
+SYNC_TOKEN_INVALID = "__SYNC_TOKEN_INVALID__"
 
 
 def _arbor_base_url() -> str:
@@ -287,6 +294,83 @@ def fetch_event(company_id: int, google_event_id: str) -> Optional[dict[str, Any
             exc,
         )
         return None
+
+
+def list_changes_since(
+    company_id: int, sync_token: str = ""
+) -> tuple[list[dict[str, Any]], str]:
+    """Fetch the diff of events since the given syncToken.
+
+    Returns ``(events, new_sync_token)``:
+      - ``events`` is the list of changed event resources (incl. cancellations,
+        which arrive as ``status == "cancelled"``).
+      - ``new_sync_token`` is the token to persist for the next call. Empty
+        string means we couldn't fetch (no service / API error).
+      - If Google returns 410 Gone the syncToken is invalid; ``new_sync_token``
+        equals ``SYNC_TOKEN_INVALID`` so the caller knows to reset and full-
+        resync.
+
+    On the very first call (``sync_token=""``), Google returns the entire
+    upcoming-events list plus a fresh syncToken. Subsequent calls are
+    incremental and fast.
+    """
+
+    service = _build_service(company_id)
+    if service is None:
+        return [], ""
+
+    events: list[dict[str, Any]] = []
+    request_kwargs: dict[str, Any] = {"calendarId": _calendar_id()}
+    if sync_token:
+        request_kwargs["syncToken"] = sync_token
+    else:
+        # First-time fetch — bound the window so we don't pull all of
+        # the calendar's history. 30-day lookback is plenty for catching
+        # any in-flight interview Arbor has already created.
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+        request_kwargs["timeMin"] = (
+            _dt.now(_tz.utc) - _td(days=30)
+        ).isoformat()
+        request_kwargs["singleEvents"] = True
+        request_kwargs["orderBy"] = "updated"
+
+    next_page_token: Optional[str] = None
+    next_sync_token = ""
+    try:
+        while True:
+            if next_page_token:
+                request_kwargs["pageToken"] = next_page_token
+            response = service.events().list(**request_kwargs).execute()
+            page_items = response.get("items", []) or []
+            events.extend(page_items)
+            next_page_token = response.get("nextPageToken")
+            captured_sync_token = response.get("nextSyncToken")
+            if captured_sync_token:
+                next_sync_token = captured_sync_token
+            if not next_page_token:
+                break
+    except Exception as exc:  # noqa: BLE001
+        # Detect 410 Gone — Google's signal that the syncToken expired
+        # (typically after 7 days unused). The HttpError class carries
+        # `.resp.status`; we string-match defensively for resilience to
+        # client library refactors.
+        status_code = getattr(getattr(exc, "resp", None), "status", None)
+        msg = str(exc)
+        if status_code == 410 or "410" in msg or "Sync token is no longer valid" in msg:
+            logger.info(
+                "Google Calendar syncToken invalid for company %s — full resync required",
+                company_id,
+            )
+            return [], SYNC_TOKEN_INVALID
+        logger.warning(
+            "Google Calendar list_changes_since failed for company %s: %s",
+            company_id,
+            exc,
+        )
+        return [], ""
+
+    return events, next_sync_token
 
 
 def watch_events(company_id: int, channel_id: str, channel_token: str, webhook_url: str) -> Optional[dict[str, Any]]:

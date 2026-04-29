@@ -30,6 +30,11 @@ class GoogleCalendarConnection:
     last_synced_at: str = ""
     connected_by: int = 0  # user_id who connected
     status: str = "connected"  # connected | disconnected | error
+    # S3-T1: Google Calendar incremental sync token. Persisted from
+    # `events.list(syncToken=...)` after every webhook-driven diff fetch.
+    # On 410-Gone the token is reset to "" and the next webhook performs
+    # a full re-sync (fetching all upcoming events).
+    sync_token: str = ""
 
     __dataflow__ = {
         "indexes": [

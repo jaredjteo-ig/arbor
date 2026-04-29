@@ -292,6 +292,132 @@ async def google_calendar_disconnect(
 
 
 # --------------------------------------------------------------------------
+# Watch refresh (S3-T2)
+# --------------------------------------------------------------------------
+#
+# Google Calendar webhook channels expire after 7 days. Without an active
+# refresh, push notifications silently die a week after a customer first
+# connects. This endpoint re-watches every connection whose
+# `channel_expiration` is within 24 hours of expiry.
+#
+# Operationally this should be called by a cron job (or admin-triggered
+# manually). The endpoint is admin-protected; idempotent — running it
+# every 6 hours is safe.
+
+
+_WATCH_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000  # 24 hours in ms
+
+
+def _channel_expires_within(connection: dict, window_ms: int = _WATCH_REFRESH_WINDOW_MS) -> bool:
+    """Return True if `channel_expiration` is within `window_ms` of now.
+
+    Google returns `expiration` as a Unix-epoch millisecond integer (string-
+    serialized). Missing / unparseable values count as "expired" so the
+    refresh proactively re-watches dormant connections.
+    """
+    raw = connection.get("channel_expiration", "")
+    if not raw:
+        return True
+    try:
+        expiration_ms = int(raw)
+    except (TypeError, ValueError):
+        return True
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    return (expiration_ms - now_ms) <= window_ms
+
+
+@router.post("/refresh-watches")
+async def refresh_watches(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Re-watch any connection whose channel expires within 24 hours.
+
+    Owner / hr_manager scoped — refresh runs ONLY for the caller's company.
+    A platform-wide cron job should iterate companies separately.
+
+    Returns a summary of {refreshed, skipped, failed} counts so the
+    operator can see what happened.
+    """
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"gcal_refresh:{user_id}",
+        max_requests=20,
+        window_seconds=60,
+        action_name="refresh Calendar watches",
+    )
+
+    rows = dataflow_crud.list_records(
+        "GoogleCalendarConnection",
+        {"company_id": company_id},
+    )
+
+    raw_webhook_base = os.environ.get("ARBOR_API_URL", "http://localhost:8001")
+    try:
+        webhook_base = _validate_webhook_base_url(raw_webhook_base)
+    except ValueError as exc:
+        logger.warning(
+            "refresh_watches skipping all rows — ARBOR_API_URL invalid: %s", exc
+        )
+        return {"refreshed": 0, "skipped": 0, "failed": len(rows), "reason": "invalid_webhook_url"}
+
+    webhook_url = f"{webhook_base}/integrations/google-calendar/webhook"
+
+    refreshed = 0
+    skipped = 0
+    failed = 0
+    for row in rows:
+        if not _channel_expires_within(row):
+            skipped += 1
+            continue
+        new_channel_id = secrets.token_urlsafe(24)
+        new_channel_token = secrets.token_urlsafe(32)
+        watch_result = sync.watch_events(
+            company_id=int(row["company_id"]),
+            channel_id=new_channel_id,
+            channel_token=new_channel_token,
+            webhook_url=webhook_url,
+        )
+        if not watch_result:
+            failed += 1
+            logger.warning(
+                "refresh_watches failed for connection_id=%s company_id=%s",
+                row.get("id"),
+                row.get("company_id"),
+            )
+            continue
+        try:
+            dataflow_crud.update(
+                "GoogleCalendarConnection",
+                row.get("id"),
+                {
+                    "channel_id": new_channel_id,
+                    "channel_token": new_channel_token,
+                    "channel_resource_id": watch_result.get("resourceId", ""),
+                    "channel_expiration": watch_result.get("expiration", ""),
+                },
+            )
+            refreshed += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "refresh_watches persistence failed for connection_id=%s: %s",
+                row.get("id"),
+                exc,
+            )
+            failed += 1
+
+    return {
+        "refreshed": refreshed,
+        "skipped": skipped,
+        "failed": failed,
+    }
+
+
+# --------------------------------------------------------------------------
 # Webhook
 # --------------------------------------------------------------------------
 
@@ -346,6 +472,25 @@ async def google_calendar_webhook(request: Request):
     if not channel_id or not channel_token:
         raise HTTPException(status_code=400, detail="Missing channel headers.")
 
+    # S3-T8d: webhook body cap. Google Calendar push notifications are
+    # always tiny (an empty body or a few hundred bytes). Anything over
+    # 64 KB is either a misconfigured proxy or a hostile probe attempting
+    # to OOM the worker. Reject early to keep memory bounded.
+    _CALENDAR_WEBHOOK_MAX_BYTES = 64 * 1024
+    content_length_header = request.headers.get("content-length", "")
+    try:
+        declared_length = int(content_length_header)
+    except (TypeError, ValueError):
+        declared_length = 0
+    if declared_length and declared_length > _CALENDAR_WEBHOOK_MAX_BYTES:
+        logger.warning(
+            "Google Calendar webhook rejected — body exceeds 64KB cap "
+            "(declared=%s, channel=%s)",
+            declared_length,
+            channel_id,
+        )
+        raise HTTPException(status_code=413, detail="Webhook body too large.")
+
     rows = dataflow_crud.list_records(
         "GoogleCalendarConnection",
         {"channel_id": channel_id},
@@ -389,9 +534,16 @@ async def google_calendar_webhook(request: Request):
     # practice the ``X-Goog-Resource-ID`` is the resource being watched (the
     # whole calendar), and we discover changes through ``events.list``.
 
+    # Webhook body decode — Google may send empty bodies (the typical
+    # case) or malformed bytes if a downstream proxy mangled the request.
+    # Either way we proceed without a payload; surface unexpected
+    # exception classes in the debug log rather than swallow silently.
     try:
         body_text = (await request.body()).decode("utf-8", errors="replace")
-    except Exception:
+    except (UnicodeDecodeError, ConnectionError):
+        body_text = ""
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("calendar webhook body read non-decode failure: %s", type(exc).__name__)
         body_text = ""
     payload: dict[str, Any] = {}
     if body_text:
@@ -401,32 +553,73 @@ async def google_calendar_webhook(request: Request):
             payload = {}
 
     google_event_id = payload.get("id") or payload.get("eventId") or ""
-    if not google_event_id:
-        # No event id in the body — best we can do is mark the connection as
-        # touched so the next sync run will reconcile.
+
+    # S3-T1: Calendar push notifications are typically empty-bodied — we
+    # don't get the changed event id directly. Walk the diff via syncToken.
+    # On 410 Gone we drop the persisted token and the next webhook does a
+    # full re-fetch (paying the one-time cost so subsequent webhooks are
+    # incremental again).
+    persisted_sync_token = str(record.get("sync_token", "") or "")
+    events, new_sync_token = sync.list_changes_since(
+        company_id=company_id, sync_token=persisted_sync_token
+    )
+
+    if new_sync_token == sync.SYNC_TOKEN_INVALID:
+        # Reset the token so the NEXT webhook does a full resync.
         dataflow_crud.update(
             "GoogleCalendarConnection",
             record.get("id"),
-            {"last_synced_at": datetime.now(timezone.utc).isoformat()},
+            {
+                "sync_token": "",
+                "last_synced_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
-        return JSONResponse({"ok": True})
+        return JSONResponse({"ok": True, "sync_token_reset": True})
 
-    event = sync.fetch_event(company_id, google_event_id)
-    if not event:
-        return JSONResponse({"ok": True})
+    patched = 0
+    for event in events:
+        evt_id = event.get("id")
+        if not evt_id:
+            continue
+        interview = _interview_for_event(evt_id, company_id)
+        if not interview:
+            # The event isn't tied to an Arbor interview — could be a
+            # personal event on the same calendar; skip.
+            continue
+        updates = _patch_interview_from_event(interview, event)
+        if updates:
+            dataflow_crud.update("InterviewSchedule", interview.get("id"), updates)
+            patched += 1
 
-    interview = _interview_for_event(google_event_id, company_id)
-    if not interview:
-        return JSONResponse({"ok": True})
+    # If a single-event payload also arrived (some older Google clients
+    # emit one), preserve the legacy single-event patch path so behaviour
+    # doesn't regress.
+    if google_event_id and not events:
+        single_event = sync.fetch_event(company_id, google_event_id)
+        if single_event:
+            interview = _interview_for_event(google_event_id, company_id)
+            if interview:
+                updates = _patch_interview_from_event(interview, single_event)
+                if updates:
+                    dataflow_crud.update("InterviewSchedule", interview.get("id"), updates)
+                    patched += 1
 
-    updates = _patch_interview_from_event(interview, event)
-    if updates:
-        dataflow_crud.update("InterviewSchedule", interview.get("id"), updates)
-
+    persistence_updates: dict[str, Any] = {
+        "last_synced_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if new_sync_token:
+        persistence_updates["sync_token"] = new_sync_token
     dataflow_crud.update(
         "GoogleCalendarConnection",
         record.get("id"),
-        {"last_synced_at": datetime.now(timezone.utc).isoformat()},
+        persistence_updates,
     )
 
-    return JSONResponse({"ok": True, "resource_state": resource_state, "resource_id": resource_id})
+    return JSONResponse(
+        {
+            "ok": True,
+            "resource_state": resource_state,
+            "resource_id": resource_id,
+            "patched": patched,
+        }
+    )

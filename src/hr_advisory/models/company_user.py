@@ -2782,11 +2782,13 @@ class OnboardingStep:
     requires_completion: bool = True
     policy_id: Optional[int] = None  # FK to CompanyPolicy for acknowledgment steps
     requires_previous_completion: bool = False  # sequential enforcement
+    is_active: bool = True  # S3-T5: soft-delete support — False hides from new assignments
 
     __dataflow__ = {
         "indexes": [
             {"name": "idx_onbstep_module", "fields": ["module_id"]},
             {"name": "idx_onbstep_order", "fields": ["order"]},
+            {"name": "idx_onbstep_active", "fields": ["is_active"]},
         ],
     }
 

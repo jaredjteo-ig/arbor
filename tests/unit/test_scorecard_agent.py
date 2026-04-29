@@ -281,8 +281,10 @@ class TestGenerateHappyPath:
             ):
                 assert isinstance(kwargs[key], str)
             # Round-trip a couple to confirm valid JSON.
+            # S3-T3: candidate identity is redacted before reaching the LLM
+            # for name-blind scoring; the test now asserts the placeholder.
             import json
-            assert json.loads(kwargs["candidate_profile"])["name"] == "Alex Tan"
+            assert json.loads(kwargs["candidate_profile"])["name"] == "<CANDIDATE_NAME>"
             assert json.loads(kwargs["scorecard_template"])["criteria"][0][
                 "name"
             ] == "Technical depth"
