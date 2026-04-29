@@ -37,7 +37,27 @@ import {
   Upload,
   CheckCircle,
   FileSpreadsheet,
+  GripVertical,
 } from "lucide-react";
+
+// S4-T5: drag-and-drop reorder for modules + steps via @dnd-kit
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import { AdminGuard } from "@/components/auth/AdminGuard";
 import {
@@ -90,6 +110,251 @@ const PHASE_BADGE_STYLES: Record<string, string> = {
   custom:
     "bg-[var(--color-gray-100)] text-[var(--color-gray-600)] border-[var(--color-gray-200)]",
 };
+
+/* ── Sortable list wrappers (S4-T5) ──────────────────────── */
+
+/**
+ * Wraps the module list in a DndContext + SortableContext. On drop,
+ * computes the new ordering and persists via `onboardingApi.reorderModules`.
+ * Keeps optimistic UI: the visual move is instant; the API call runs
+ * in the background and falls back to `onChanged()` on failure to
+ * resync from server truth.
+ */
+function SortableModuleList({
+  modules,
+  templateId,
+  onChanged,
+}: {
+  modules: OnboardingModuleWithSteps[];
+  templateId: number;
+  onChanged: () => void;
+}) {
+  const [orderedIds, setOrderedIds] = useState<number[]>(
+    modules.map((m) => m.id),
+  );
+
+  // Re-sync local order when the parent re-fetches (e.g., after
+  // add/delete). Without this the local state would drift.
+  useEffect(() => {
+    setOrderedIds(modules.map((m) => m.id));
+  }, [modules]);
+
+  const moduleById = new Map(modules.map((m) => [m.id, m]));
+  const orderedModules = orderedIds
+    .map((id) => moduleById.get(id))
+    .filter((m): m is OnboardingModuleWithSteps => Boolean(m));
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = orderedIds.indexOf(Number(active.id));
+    const newIndex = orderedIds.indexOf(Number(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const next = arrayMove(orderedIds, oldIndex, newIndex);
+    setOrderedIds(next);
+
+    onboardingApi.reorderModules(templateId, next).catch((err) => {
+      toast.error("Failed to save module order — reverting.");
+      // Restore canonical order from server
+      onChanged();
+    });
+  };
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <SortableContext
+        items={orderedIds}
+        strategy={verticalListSortingStrategy}
+      >
+        <div className="space-y-3">
+          {orderedModules.map((mod) => (
+            <SortableModuleCard
+              key={mod.id}
+              module={mod}
+              onChanged={onChanged}
+            />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+/** Sortable wrapper around the existing ModuleCard. Adds a drag handle. */
+function SortableModuleCard({
+  module,
+  onChanged,
+}: {
+  module: OnboardingModuleWithSteps;
+  onChanged: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: module.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative">
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="absolute left-2 top-3 cursor-grab active:cursor-grabbing p-1 rounded hover:bg-[var(--color-gray-100)] text-[var(--color-gray-400)] hover:text-[var(--color-gray-700)] z-10"
+        title="Drag to reorder"
+        aria-label={`Drag to reorder module ${module.name}`}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <div className="pl-7">
+        <ModuleCard module={module} onChanged={onChanged} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Wraps a module's step list in DndContext + SortableContext so steps
+ * can be dragged within their parent module. On drop, calls
+ * `onboardingApi.reorderSteps(moduleId, newOrder)`.
+ */
+function SortableStepList({
+  steps,
+  templateId,
+  moduleId,
+  onChanged,
+  renderStep,
+}: {
+  steps: OnboardingStep[];
+  templateId: number;
+  moduleId: number;
+  onChanged: () => void;
+  renderStep: (step: OnboardingStep, idx: number) => React.ReactNode;
+}) {
+  const [orderedIds, setOrderedIds] = useState<number[]>(
+    steps.map((s) => s.id),
+  );
+
+  useEffect(() => {
+    setOrderedIds(steps.map((s) => s.id));
+  }, [steps]);
+
+  const stepById = new Map(steps.map((s) => [s.id, s]));
+  const orderedSteps = orderedIds
+    .map((id) => stepById.get(id))
+    .filter((s): s is OnboardingStep => Boolean(s));
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = orderedIds.indexOf(Number(active.id));
+    const newIndex = orderedIds.indexOf(Number(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const next = arrayMove(orderedIds, oldIndex, newIndex);
+    setOrderedIds(next);
+
+    onboardingApi.reorderSteps(templateId, moduleId, next).catch(() => {
+      toast.error("Failed to save step order — reverting.");
+      onChanged();
+    });
+  };
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <SortableContext
+        items={orderedIds}
+        strategy={verticalListSortingStrategy}
+      >
+        <>
+          {orderedSteps.map((step, idx) => (
+            <SortableStepRow key={step.id} stepId={step.id}>
+              {renderStep(step, idx)}
+            </SortableStepRow>
+          ))}
+        </>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+/** Wrapper that exposes drag handle + sortable behaviour to a step row. */
+function SortableStepRow({
+  stepId,
+  children,
+}: {
+  stepId: number;
+  children: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: stepId });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-1">
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-[var(--color-gray-100)] text-[var(--color-gray-400)] hover:text-[var(--color-gray-700)] flex-shrink-0"
+        title="Drag to reorder step"
+        aria-label="Drag to reorder step"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
 
 /* ── Page ────────────────────────────────────────────────── */
 
@@ -272,11 +537,11 @@ function Builder({ templateId }: { templateId: number }) {
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {template.modules.map((mod) => (
-              <ModuleCard key={mod.id} module={mod} onChanged={fetchTemplate} />
-            ))}
-          </div>
+          <SortableModuleList
+            modules={template.modules}
+            templateId={template.id}
+            onChanged={fetchTemplate}
+          />
         )}
       </section>
 
@@ -430,35 +695,38 @@ function ModuleCard({
                 No steps in this module yet.
               </p>
             ) : (
-              (module.steps ?? []).map((step, idx) => {
-                const Icon = STEP_TYPE_ICONS[step.step_type] || FileText;
-                return (
-                  <div
-                    key={step.id}
-                    className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--color-gray-50)] border border-transparent hover:border-[var(--color-gray-200)] transition-colors"
-                  >
-                    <span className="text-[10px] font-mono text-[var(--color-gray-400)] w-6 text-right flex-shrink-0">
-                      {idx + 1}.
-                    </span>
-                    <Icon className="h-3.5 w-3.5 text-[var(--color-gray-500)] flex-shrink-0" />
-                    <span className="text-sm text-[var(--color-gray-800)] flex-1 truncate">
-                      {step.title}
-                    </span>
-                    <span className="text-[10px] text-[var(--color-gray-500)]">
-                      {STEP_TYPES.find((t) => t.value === step.step_type)
-                        ?.label ?? step.step_type}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setEditingStep(step)}
-                      className="p-1 rounded hover:bg-[var(--color-gray-100)] transition-colors text-[var(--color-gray-500)]"
-                      title="Edit step"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                );
-              })
+              <SortableStepList
+                steps={module.steps ?? []}
+                templateId={module.template_id}
+                moduleId={module.id}
+                onChanged={onChanged}
+                renderStep={(step, idx) => {
+                  const Icon = STEP_TYPE_ICONS[step.step_type] || FileText;
+                  return (
+                    <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--color-gray-50)] border border-transparent hover:border-[var(--color-gray-200)] transition-colors">
+                      <span className="text-[10px] font-mono text-[var(--color-gray-400)] w-6 text-right flex-shrink-0">
+                        {idx + 1}.
+                      </span>
+                      <Icon className="h-3.5 w-3.5 text-[var(--color-gray-500)] flex-shrink-0" />
+                      <span className="text-sm text-[var(--color-gray-800)] flex-1 truncate">
+                        {step.title}
+                      </span>
+                      <span className="text-[10px] text-[var(--color-gray-500)]">
+                        {STEP_TYPES.find((t) => t.value === step.step_type)
+                          ?.label ?? step.step_type}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingStep(step)}
+                        className="p-1 rounded hover:bg-[var(--color-gray-100)] transition-colors text-[var(--color-gray-500)]"
+                        title="Edit step"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                }}
+              />
             )}
             <button
               type="button"
