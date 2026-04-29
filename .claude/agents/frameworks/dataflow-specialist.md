@@ -310,6 +310,47 @@ See: [`dataflow-nexus-integration`](../../skills/02-dataflow/dataflow-nexus-inte
 - **testing-specialist**: 3-tier testing with real database infrastructure
 - **deployment-specialist**: Database deployment and migration patterns
 
+## Field-Tested Failure Modes (Arbor production, 2026-04-29)
+
+Concrete patterns surfaced during S1–S4 work that aren't yet in the upstream skills.
+
+### Connection pool saturation (4× recurrence in one day)
+
+**Symptom:** `asyncpg.exceptions.TooManyConnectionsError: sorry, too many clients already` during long test runs or sequential script execution.
+
+**Math:** DataFlow defaults to `pool_size=70 + max_overflow=35 = 105` connections per process. Postgres defaults to `max_connections=100`. Even ONE worker can exhaust the server pool, and tests that import DataFlow multiple times stack pools.
+
+**Mitigation (in priority order):**
+
+1. **Cap DataFlow pool size below the Postgres limit.** Set `DATAFLOW_POOL_SIZE=70` in env when worker count is 1, OR reduce `pool_size` in the DataFlow constructor.
+2. **Kill accumulated connections between test sessions** — `docker exec arbor-postgres psql -U arbor -d arbor -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid <> pg_backend_pid();"`. The DataFlow `pool_validator` warns about this configuration but doesn't block.
+3. **Add retry+backoff on transient HTTP/DB errors** — Arbor's `scripts/seed_demo_data.py` uses an exponential-backoff helper that catches `httpx.ReadError`, `httpx.WriteError`, `httpx.ConnectError`, `httpx.RemoteProtocolError`, `httpx.PoolTimeout`, `httpx.ReadTimeout`, plus HTTP 429/502/503/504. Up to 5 attempts, capped 30s, jittered. Pattern is reusable for any cron/script that goes through DataFlow.
+
+**Per-test-run kill is required** when a previous run left orphan pools. Tests that fail with `TooManyConnectionsError` after passing in isolation are almost always the saturation symptom, not a real regression.
+
+### DataFlow auto-DDL on Postgres reserved keywords
+
+**Symptom:** `WARNING: Failed to create index for 'OnboardingStep': syntax error at or near "order"`
+
+**Cause:** `OnboardingStep` has a `sort_order` field, but the auto-generated index `idx_onbstep_order` references the (non-existent) field name `order` — `order` is a Postgres reserved keyword, so the CREATE INDEX SQL fails.
+
+**Status:** non-blocking (DataFlow continues after the warning, the index just doesn't exist), but logs noise. Filed as a follow-up. When you encounter this with a NEW field that overlaps a reserved keyword (`order`, `user`, `select`, etc.), either:
+
+- Rename the field (canonical fix)
+- Configure the index field name explicitly in `__dataflow__` to avoid the auto-derivation
+
+### Test pollution via env-var leak
+
+**Symptom:** Test passes in isolation but fails in bulk run with HMAC/signature errors.
+
+**Cause:** A test sets `os.environ["OAUTH_STATE_SECRET"] = "..."` directly, polluting subsequent tests that expected the autouse fixture's value.
+
+**Pattern:** ALWAYS use `monkeypatch.setenv(...)` (auto-reverts at test teardown) instead of direct `os.environ[...]` mutation. Pinned in S3-T8f regression test.
+
+## Related Skills
+
+For the saga-compensation, audit-chain, and idempotency patterns that interact with DataFlow models, see `.claude/skills/project/security-patterns.md` (Arbor-specific).
+
 ## Full Documentation
 
 When this guidance is insufficient, consult:

@@ -171,3 +171,35 @@ Handlers share logic with REST routers but use transport-level auth (not FastAPI
 - NEVER use `LocalRuntime` in containers — use `AsyncLocalRuntime`.
 - NEVER hardcode model strings — read from `.env`.
 - Rate limiting MUST be applied to all advisory and auth endpoints.
+
+## Codified patterns (round-12 / round-13 / round-14)
+
+When implementing a feature that fits one of these shapes, **use the codified pattern verbatim** from `skills/project/security-patterns.md`. These are not suggestions — they are post-audit closure forms with pinned regression tests:
+
+| Shape                                              | Pattern                                                                                             | Test pin                                                        |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Multi-step DB write where partial state is unsafe  | P1 saga compensation                                                                                | `test_s2_t2_hire_onboarding_saga.py`                            |
+| Security-relevant action that needs an audit trail | P2 hash-chained `AuditLogEntry`                                                                     | `test_s2_t5_audit_log_chain_integrity.py`                       |
+| Read cache for an expensive computation            | P3 invalidate-on-write per tenant                                                                   | `test_s2_t3_compliance_cache_invalidation.py`                   |
+| Trust-chain integration                            | P4 finalize_trust_chain returns bool                                                                | `test_s2_t4_trust_chain_finalization.py`                        |
+| Multi-channel `@app.handler`                       | P5 tenant-less invariant — no `company_id` parameter                                                | `test_cli_mcp_handlers.py`                                      |
+| Google OAuth flow                                  | P6 user_id-bound state, P7 strict URL validation, P8 resource-id verify, P9 Fernet token encryption | `test_round13_critical_fixes.py`, `test_s3_t8_polish_bundle.py` |
+| Read-modify-write on shared resource               | P10 per-tenant `threading.Lock` (single-worker today)                                               | `test_s3_t7_default_template_race.py`                           |
+| Write endpoint that could be double-clicked        | P11 30-second idempotency window                                                                    | `test_s3_t6_schedule_interview_idempotency.py`                  |
+| "Delete" on a row referenced elsewhere             | P12 soft-delete + admin-vs-employee filter                                                          | `test_s3_t5_onboarding_step_soft_delete.py`                     |
+| Per-tenant LLM/expensive feature                   | P13 monthly cost cap with soft+hard tiers                                                           | `test_s3_calendar_and_scorecard_hardening.py`                   |
+| User text → LLM                                    | P14 sanitize: redact identity + screen_injection on free-text                                       | (same file)                                                     |
+| Google Calendar sync                               | P15 syncToken + 410-Gone full-resync                                                                | (same file)                                                     |
+| Background maintenance work                        | P16 cron via `docker exec arbor-backend python /app/scripts/...` + empty-state short-circuit        | (operational)                                                   |
+| Body field that maps to `User.role`                | P17 hire-role allow-list + defense-in-depth clamp at acceptance                                     | `test_s2_t1_hire_role_allowlist.py`                             |
+
+Read the full pattern (problem → canonical impl → anti-pattern → carve-outs) in `skills/project/security-patterns.md` before implementing.
+
+### Cron operational state (live)
+
+```
+0 */6 * * * /opt/arbor/cron/refresh_calendar_watches.sh   # Calendar channel refresh
+0 1   * * * /opt/arbor/cron/send_overdue_reminders.sh     # Daily onboarding reminders
+```
+
+Both cron scripts run inside `arbor-backend` via `docker exec` — env inherits from `docker-compose.prod.yml`. New env vars MUST be added to the backend service env block, NOT just `.env.prod` (the script only sees what compose passes through).

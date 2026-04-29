@@ -96,6 +96,41 @@ Every advisory query passes through these steps in order. If any step blocks, th
 - Record in learning pipeline for feedback loop
 - File: `src/hr_advisory/trust/eatp_lineage.py`
 
+### Step 13b: Trust Chain Finalization (S2-T4 — closed 2026-04-29)
+
+After the final attestation, BOTH `/query` and `/stream` MUST call `finalize_trust_chain(session_id, user_id, company_id)` and surface `trust_chain.persisted: bool` + `trust_chain_id: str` in the response.
+
+Pre-S2-T4 the chain stayed in the in-memory `_trust_cache` and was never persisted. Auditors retrieving the chain by id later got nothing.
+
+```python
+# In advisory_query (and advisory_stream — same pattern):
+trust_chain.add_attestation(attestation)
+
+# Coerce ids defensively — the handler accepts string sub claims
+try:
+    _persist_uid = int(user_id) if str(user_id).isdigit() else 0
+except (TypeError, ValueError):
+    _persist_uid = 0
+try:
+    _persist_cid = int(effective_company_id) if effective_company_id is not None else 0
+except (TypeError, ValueError):
+    _persist_cid = 0
+
+trust_chain_persisted = finalize_trust_chain(
+    session_id=session_id,
+    user_id=_persist_uid,
+    company_id=_persist_cid,
+)
+
+trust_chain_payload = trust_chain.to_dict()
+trust_chain_payload["persisted"] = trust_chain_persisted
+trust_chain_payload["trust_chain_id"] = session_id
+```
+
+Both `finalize_trust_chain` and `_persist_trust_chain` return `bool` so callers can surface persistence status to clients (auditors should not treat a response as binding until `persisted: true` lands).
+
+Pinned by `tests/regression/test_s2_t4_trust_chain_finalization.py` (7 tests). Full pattern in `skills/project/security-patterns.md` P4.
+
 ## Conversation Management
 
 Tenant-isolated conversation endpoints in `advisory.py`:

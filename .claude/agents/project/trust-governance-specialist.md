@@ -177,3 +177,61 @@ Recommendation workflow: `proposed` -> `under_review` -> `approved` -> `implemen
 - Anti-amnesia constraints MUST be injected on every query turn.
 - Constraint envelope violations MUST be recorded, not silently ignored.
 - KB modifications require expert review per CARE governance.
+
+## Round-12 carryover closures (round-14 PASS)
+
+### Trust chain finalization (S2-T4 — closed 2026-04-29)
+
+`advisory.advisory_query` and `advisory.advisory_stream` MUST call `finalize_trust_chain(session_id, user_id, company_id)` after the final attestation. Pre-S2-T4 the chain stayed in the in-memory cache and was never persisted — the response said "trust chain captured" but auditors couldn't retrieve it later.
+
+API contract:
+
+- `finalize_trust_chain` returns `bool` (True = persisted, False = cache miss OR DB write failed)
+- `_persist_trust_chain` returns `bool` too — propagates DB-write success up the chain
+- Response includes `trust_chain.persisted: bool` and `trust_chain_id: str` so clients can verify before treating the response as binding
+
+Pinned by `tests/regression/test_s2_t4_trust_chain_finalization.py` (7 tests). Full pattern in `skills/project/security-patterns.md` P4.
+
+### Hash-chained immutable audit log (S2-T5 — closed 2026-04-29)
+
+New `AuditLogEntry` DataFlow model in `models/company_user.py` with per-tenant hash chaining. Each entry's `prev_hash` equals the previous entry's `entry_hash` for the same `company_id`. SHA-256 over a fixed field order:
+
+```
+company_id | actor_id | event_type | payload_json | prev_hash | created_at_iso
+```
+
+**DO NOT REORDER FIELDS** — invalidates every existing chain.
+
+- `audit_log.record_event(company_id, actor_id, event_type, payload)` — appends. Per-tenant `threading.Lock` serializes the read-prev-hash + insert window.
+- `audit_log.verify_chain_integrity(company_id) -> {valid, entry_count, broken_at_id, broken_reason}` — walks chain, recomputes hashes, returns first mismatch.
+
+Currently wired into `recruitment._log_candidate_activity` and `claims._audit_claim`. Calendar + onboarding step-completion call sites deferred (chain infra unblocks them when added).
+
+`AuditAction` constants for stable event_type strings:
+
+- Recruitment: CANDIDATE_HIRED, CANDIDATE_REJECTED, CANDIDATE_STAGE_CHANGED, CANDIDATE_OFFER_GENERATED, SCORECARD_GENERATED
+- Claims: CLAIM_CREATED, CLAIM_SUBMITTED, CLAIM_APPROVED, CLAIM_REJECTED
+- Calendar: CALENDAR_CONNECTED, CALENDAR_DISCONNECTED
+- Onboarding: ONBOARDING_STEP_COMPLETED
+- LLM key lifecycle: LLM_KEY_CREATED, LLM_KEY_VIEWED, LLM_KEY_DELETED, etc.
+
+Pinned by `tests/regression/test_s2_t5_audit_log_chain_integrity.py` (12 tests covering determinism, every-field-changes-hash, per-tenant isolation, payload tamper, row deletion). Full pattern in `skills/project/security-patterns.md` P2.
+
+### When extending the audit chain to new event sources
+
+1. Add a constant to `AuditAction` (`hr_advisory/services/audit_log.py`).
+2. At the existing log site (`_log_candidate_activity`, `_audit_claim`, etc.), add a `try/except` calling `audit_log.record_event(...)` AFTER the mutable persistence.
+3. Failure to write the chain MUST be logged but MUST NOT block the primary action — the chain is best-effort dual-write, not a transactional dependency. Pattern:
+
+```python
+try:
+    from hr_advisory.services import audit_log as _audit_log
+    _audit_log.record_event(
+        company_id=int(company_id),
+        actor_id=int(actor_id) if actor_id else 0,
+        event_type=AuditAction.WHATEVER,
+        payload={"id": entity_id, "details": details},
+    )
+except Exception as exc:
+    logger.warning("AuditLogEntry append failed: %s", exc)
+```

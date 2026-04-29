@@ -187,4 +187,4 @@ This repository is **Arbor** — an AI-powered HRIS (Human Resource Information 
 
 ### Project-Specific Skills (`skills/project/`)
 
-See `skills/project/SKILL.md` for the full index covering: HRIS engine (12 modules), platform architecture, employment law, advisory safety chain, trust governance, calculators, KB pipeline, auth/security, documents, company/user management, and MCP integrations.
+See `skills/project/SKILL.md` for the full index covering: HRIS engine (12 modules), platform architecture, employment law, advisory safety chain, trust governance, calculators, KB pipeline, auth/security, **security-patterns** (17 codified patterns from round-12/13/14 — saga compensation, hash-chained audit log, cache invalidation, per-tenant locks, idempotency, soft-delete, cost cap, prompt-injection sanitization, OAuth user_id binding, syncToken protocol, cron-via-docker-exec), documents, company/user management, and MCP integrations.
