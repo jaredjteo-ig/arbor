@@ -2808,6 +2808,12 @@ class OnboardingAssignment:
     completed_at: Optional[datetime] = None
     completion_percentage: float = 0.0
     buddy_employee_id: Optional[int] = None  # optional onboarding buddy
+    # S4-T4: 24-hour reminder debounce. Set whenever the daily cron sends
+    # an overdue reminder to the assignment's employee; the cron skips
+    # any assignment whose last_reminder_sent_at is < 24h old. Brief
+    # called for OnboardingStepProgress.last_reminded_at — moved here
+    # because debounce is per-employee, not per-step (cheaper + same UX).
+    last_reminder_sent_at: Optional[datetime] = None
 
     __dataflow__ = {
         "indexes": [

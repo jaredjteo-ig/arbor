@@ -4037,6 +4037,24 @@ async def _send_overdue_reminders_for_company(company_id: int) -> dict:
         if now_dt <= due_dt:
             continue  # not overdue yet
 
+        # S4-T4: 24-hour debounce. Skip if we already reminded this
+        # employee within the last 24 hours, so the daily cron can run
+        # safely without spamming employees.
+        last_reminder_str = assignment.get("last_reminder_sent_at")
+        if last_reminder_str:
+            try:
+                if isinstance(last_reminder_str, datetime):
+                    last_reminder_dt = last_reminder_str
+                else:
+                    last_reminder_dt = datetime.fromisoformat(str(last_reminder_str))
+                if last_reminder_dt.tzinfo:
+                    last_reminder_dt = last_reminder_dt.replace(tzinfo=None)
+                if (now_dt - last_reminder_dt) < timedelta(hours=24):
+                    summary["skipped"] += 1
+                    continue
+            except (ValueError, TypeError):
+                pass  # unparseable — fall through and remind anyway
+
         # Find pending step-progress rows for this assignment
         progress_rows = dataflow_crud.list_records(
             "OnboardingStepProgress",
@@ -4098,6 +4116,19 @@ async def _send_overdue_reminders_for_company(company_id: int) -> dict:
             )
             summary["emails_sent"] += 1
             summary["employees_notified"] += 1
+            # S4-T4: stamp the assignment so the next 24h of cron runs skip it.
+            try:
+                dataflow_crud.update(
+                    "OnboardingAssignment",
+                    assignment["id"],
+                    {"last_reminder_sent_at": now_dt},
+                )
+            except Exception as stamp_exc:
+                logger.warning(
+                    "Failed to stamp last_reminder_sent_at on assignment %s: %s",
+                    assignment.get("id"),
+                    stamp_exc,
+                )
             logger.info(
                 "Onboarding reminder sent: company_id=%s, employee_id=%s, steps=%d",
                 company_id,
