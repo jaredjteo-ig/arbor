@@ -52,6 +52,9 @@ from hr_advisory.api.routers import (
     search_router,
     settings_router,
     shadow_router,
+    exit_interviews_router,
+    goals_router,
+    recognition_router,
     shifts_router,
     strategy_router,
     training_router,
@@ -196,6 +199,15 @@ def _register_routers(app: Nexus) -> None:
     api.include_router(shifts_router, prefix="/shifts", tags=["Shifts"])
     api.include_router(strategy_router, prefix="/strategy", tags=["Strategy"])
     api.include_router(training_router, prefix="/training", tags=["Training"])
+    api.include_router(
+        recognition_router, prefix="/recognition", tags=["Recognition"]
+    )
+    api.include_router(goals_router, prefix="/goals", tags=["Goals"])
+    api.include_router(
+        exit_interviews_router,
+        prefix="/exit-interviews",
+        tags=["Exit Interview"],
+    )
     api.include_router(claims_router, prefix="/claims", tags=["Claims"])
     api.include_router(attendance_router, prefix="/attendance", tags=["Attendance"])
     # Round-13 H — disconnect-route shadowing fix.

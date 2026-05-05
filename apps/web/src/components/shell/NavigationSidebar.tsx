@@ -37,6 +37,7 @@ import {
   ClipboardCheck,
   Briefcase,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -178,6 +179,28 @@ const adminManagementNavItems: NavItem[] = [
     label: "Appraisals",
     href: "/appraisals",
     icon: Award,
+  },
+  {
+    // P2-GO (round-12 obayashi): Goals/OKR — in-cycle progression data.
+    labelKey: "nav.goals",
+    label: "Goals",
+    href: "/goals",
+    icon: TrendingUp,
+  },
+  {
+    // P2-RC (round-12 obayashi): Recognition page closes the missing
+    // leg of Reward / Recognition / Benefits.
+    labelKey: "nav.recognition",
+    label: "Recognition",
+    href: "/recognition",
+    icon: Award,
+  },
+  {
+    // P2-EX (round-12 obayashi): Exit interview workflow.
+    labelKey: "nav.exit_interviews",
+    label: "Exit interviews",
+    href: "/exit-interviews",
+    icon: ClipboardCheck,
   },
   {
     labelKey: "nav.projects",

@@ -3057,6 +3057,141 @@ class Certification:
 
 
 @db.model
+class Recognition:
+    """A peer/manager recognition event ('kudos').
+
+    Stage 6 of the Cox lifecycle bundles Reward / Recognition / Benefits
+    — without this model, Recognition is the missing third leg.
+    """
+
+    company_id: int
+    from_user_id: int
+    to_employee_id: int
+    category: str = "above_and_beyond"  # above_and_beyond/teamwork/customer/innovation/values
+    message: str = ""
+    is_public: bool = True
+    is_archived: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_reco_company", "fields": ["company_id"]},
+            {"name": "idx_reco_to", "fields": ["to_employee_id"]},
+            {"name": "idx_reco_from", "fields": ["from_user_id"]},
+        ],
+    }
+
+
+@db.model
+class PeerNomination:
+    """A nomination for a monthly award cycle (Employee/Team of the Month).
+
+    Distinct from Recognition: peer nominations roll up to a period,
+    Recognition is in-stream.
+    """
+
+    company_id: int
+    nominator_user_id: int
+    nominee_employee_id: int
+    period: str = ""  # YYYY-MM
+    category: str = "above_and_beyond"
+    rationale: str = ""
+    is_archived: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_pnom_company", "fields": ["company_id"]},
+            {"name": "idx_pnom_period", "fields": ["period"]},
+        ],
+    }
+
+
+@db.model
+class Goal:
+    """An employee or team goal (KR-style metric optional).
+
+    Lifecycle stage 7 — closes the in-cycle gap that appraisals alone
+    can't fill. Status state machine: draft → active → (at_risk ↔ active)
+    → done | cancelled.
+    """
+
+    company_id: int
+    employee_id: int
+    manager_id: int = 0
+    period_id: int = 0  # FK to AppraisalPeriod when applicable
+    title: str = ""
+    description: str = ""
+    metric: str = ""  # the KR — free text
+    target_value: str = ""
+    start_date: str = ""
+    due_date: str = ""
+    status: str = "draft"  # draft/active/at_risk/done/cancelled
+    progress_pct: int = 0
+    is_archived: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_goal_company", "fields": ["company_id"]},
+            {"name": "idx_goal_employee", "fields": ["employee_id"]},
+            {"name": "idx_goal_status", "fields": ["status"]},
+        ],
+    }
+
+
+@db.model
+class GoalCheckIn:
+    """A check-in event on a Goal — progress + free-text note."""
+
+    goal_id: int
+    company_id: int
+    actor_user_id: int
+    progress_pct: int = 0
+    note: str = ""
+    created_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_gci_goal", "fields": ["goal_id"]},
+            {"name": "idx_gci_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class ExitInterview:
+    """Survey + theme tagging triggered on RESIGNED/TERMINATED/RETRENCHED.
+
+    Lifecycle stage 8 — turns the existing termination flow into real
+    retention insight without touching it. Tokenized link sent to the
+    leaver; survey can be anonymous.
+    """
+
+    company_id: int
+    employee_id: int
+    triggered_at: Optional[datetime] = None
+    triggered_by_event_id: int = 0
+    survey_payload: str = ""  # JSON-as-text
+    themes: str = ""  # JSON list-as-text, derived after submit
+    is_anonymous: bool = False
+    submitted_at: Optional[datetime] = None
+    is_archived: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_exit_company", "fields": ["company_id"]},
+            {"name": "idx_exit_employee", "fields": ["employee_id"]},
+        ],
+    }
+
+
+@db.model
 class MandatoryTrainingRequirement:
     """A company-wide rule: 'every employee in dept X must hold cert Y'.
 
