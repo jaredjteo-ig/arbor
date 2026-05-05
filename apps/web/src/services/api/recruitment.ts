@@ -274,6 +274,12 @@ export const recruitmentApi = {
       `/recruitment/interviews/${id}`,
       { status: "cancelled" },
     ),
+  /** Generic update — pass any subset of mutable fields. */
+  updateInterview: (id: number, patch: Partial<InterviewSchedule>) =>
+    apiClient.patch<{ interview: InterviewSchedule }>(
+      `/recruitment/interviews/${id}`,
+      patch,
+    ),
 
   /* Feedback */
   submitFeedback: (interviewId: number, data: Partial<InterviewFeedback>) =>

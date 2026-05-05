@@ -334,7 +334,9 @@ async def list_jobs(
 ) -> dict:
     """List all job listings for the current company.
 
-    T-RX09: paginated. ``items`` contains the current page only.
+    T-RX09: paginated. ``items`` contains the current page only. Each row
+    is enriched with `candidate_count` (live count of candidates assigned
+    to that job) so the dashboard doesn't have to issue N+1 lookups.
     """
     company_id = get_current_company_id(current_user)
     if company_id is None:
@@ -345,7 +347,29 @@ async def list_jobs(
         filters["status"] = status
 
     jobs = dataflow_crud.list_records("JobListing", filters)
-    page_items, total = _paginate(jobs, page, page_size)
+
+    # Bulk-fetch candidates once per company, group by job_listing_id.
+    # Single query beats per-job lookups on the dashboard.
+    try:
+        all_candidates = dataflow_crud.list_records(
+            "Candidate", {"company_id": company_id}
+        )
+        count_by_job: dict[int, int] = {}
+        for cand in all_candidates:
+            jid = cand.get("job_listing_id")
+            if jid:
+                count_by_job[jid] = count_by_job.get(jid, 0) + 1
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Job candidate-count enrichment failed: %s", exc)
+        count_by_job = {}
+
+    enriched_jobs = []
+    for job in jobs:
+        out = dict(job)
+        out["candidate_count"] = count_by_job.get(job.get("id"), 0)
+        enriched_jobs.append(out)
+
+    page_items, total = _paginate(enriched_jobs, page, page_size)
     return {
         "jobs": page_items,
         "items": page_items,
@@ -813,6 +837,33 @@ async def list_all_interviews(
             except (json.JSONDecodeError, TypeError, ValueError):
                 pass
         out["interviewer_names"] = names
+
+        # Humanize the type for direct display: "in_person" → "In Person".
+        # Frontends shouldn't have to maintain their own enum→label map.
+        raw_type = str(iv.get("interview_type", "") or "")
+        out["display_type"] = (
+            raw_type.replace("_", " ").title() if raw_type else ""
+        )
+
+        # Derive is_overdue: any non-terminal interview whose scheduled_at
+        # is more than 24h in the past. UI renders an "Overdue" badge.
+        # Terminal statuses (completed, cancelled, no_show) never overdue.
+        out["is_overdue"] = False
+        if iv.get("status") in ("scheduled", "rescheduled"):
+            scheduled_str = iv.get("scheduled_at", "") or ""
+            if scheduled_str:
+                try:
+                    scheduled_dt = datetime.fromisoformat(
+                        str(scheduled_str).replace("Z", "+00:00")
+                    )
+                    now_dt = datetime.now(timezone.utc)
+                    if scheduled_dt.tzinfo is None:
+                        scheduled_dt = scheduled_dt.replace(tzinfo=timezone.utc)
+                    if (now_dt - scheduled_dt).total_seconds() > 24 * 3600:
+                        out["is_overdue"] = True
+                except (ValueError, TypeError):
+                    pass
+
         enriched.append(out)
 
     return {"interviews": enriched, "count": len(enriched)}
@@ -1257,7 +1308,12 @@ async def update_interview(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
-    existing = dataflow_crud.read("InterviewSchedule", interview_id)
+    # Use list_records — dataflow_crud.read returns None for valid integer
+    # PKs on PostgreSQL (DataFlow-layer bug). See _verify_job_ownership.
+    rows = dataflow_crud.list_records(
+        "InterviewSchedule", {"id": interview_id, "company_id": company_id}
+    )
+    existing = rows[0] if rows else None
     if not existing or existing.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Interview not found.")
 

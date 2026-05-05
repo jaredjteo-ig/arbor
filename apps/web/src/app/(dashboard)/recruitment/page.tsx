@@ -61,6 +61,15 @@ function formatDate(d: string): string {
   });
 }
 
+/** Convert backend enum strings ("in_person", "video", "panel") to
+ * human-readable labels ("In Person", "Video", "Panel"). The backend
+ * now returns `display_type` directly, but this remains a fallback for
+ * any code path or older response that lacks the enriched field. */
+function humanizeInterviewType(raw: string | undefined | null): string {
+  if (!raw) return "-";
+  return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /* ── Status styles ────────────────────────────────────────── */
 
 const JOB_STATUS_STYLES: Record<string, string> = {
@@ -4001,6 +4010,21 @@ function RecruitmentPageInner() {
   const [interviewView, setInterviewView] = useState<"list" | "calendar">(
     "list",
   );
+  // Interviews status filter (post-S4 polish): All / scheduled / completed /
+  // cancelled / overdue. The "overdue" pseudo-status filters by the
+  // backend-derived `is_overdue` flag on scheduled interviews.
+  const [interviewStatusFilter, setInterviewStatusFilter] =
+    useState<string>("all");
+
+  const filteredInterviews = useMemo(() => {
+    if (interviewStatusFilter === "all") return interviews;
+    if (interviewStatusFilter === "overdue") {
+      return interviews.filter(
+        (iv) => (iv as { is_overdue?: boolean }).is_overdue,
+      );
+    }
+    return interviews.filter((iv) => iv.status === interviewStatusFilter);
+  }, [interviews, interviewStatusFilter]);
 
   const filteredCandidates = useMemo(() => {
     let results = candidates;
@@ -4330,12 +4354,30 @@ function RecruitmentPageInner() {
                                   <AppButton
                                     variant="primary"
                                     size="sm"
+                                    disabled={!job.title?.trim()}
+                                    title={
+                                      !job.title?.trim()
+                                        ? "Add a title before publishing"
+                                        : undefined
+                                    }
                                     onClick={() => handlePublish(job.id)}
                                   >
                                     Publish
                                   </AppButton>
                                 </>
                               )}
+                              <AppButton
+                                variant="outlined"
+                                size="sm"
+                                onClick={() =>
+                                  router.push(
+                                    `/recruitment?tab=candidates&job=${job.id}`,
+                                  )
+                                }
+                                title="View candidates for this job"
+                              >
+                                View
+                              </AppButton>
                             </div>
                           </td>
                         </tr>
@@ -4454,35 +4496,56 @@ function RecruitmentPageInner() {
         {/* Interviews Tab */}
         {tab === "interviews" && (
           <>
-            {/* View toggle (T-R043) */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-[var(--color-gray-500)]">
-                View:
-              </span>
-              <div className="flex gap-1 p-1 rounded-lg bg-[var(--color-gray-100)]">
-                <button
-                  type="button"
-                  onClick={() => setInterviewView("list")}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                    interviewView === "list"
-                      ? "bg-[var(--color-primary)] text-white"
-                      : "text-[var(--color-gray-600)]"
-                  }`}
+            {/* View toggle (T-R043) + status filter */}
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[var(--color-gray-500)]">
+                  View:
+                </span>
+                <div className="flex gap-1 p-1 rounded-lg bg-[var(--color-gray-100)]">
+                  <button
+                    type="button"
+                    onClick={() => setInterviewView("list")}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      interviewView === "list"
+                        ? "bg-[var(--color-primary)] text-white"
+                        : "text-[var(--color-gray-600)]"
+                    }`}
+                  >
+                    List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInterviewView("calendar")}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      interviewView === "calendar"
+                        ? "bg-[var(--color-primary)] text-white"
+                        : "text-[var(--color-gray-600)]"
+                    }`}
+                  >
+                    <Calendar className="h-3 w-3 inline mr-1" />
+                    Calendar
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[var(--color-gray-500)]">
+                  Status:
+                </span>
+                <select
+                  value={interviewStatusFilter}
+                  onChange={(e) => setInterviewStatusFilter(e.target.value)}
+                  className="text-xs px-2 py-1 rounded-lg border border-[var(--color-gray-200)] bg-white text-[var(--color-gray-700)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                 >
-                  List
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInterviewView("calendar")}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                    interviewView === "calendar"
-                      ? "bg-[var(--color-primary)] text-white"
-                      : "text-[var(--color-gray-600)]"
-                  }`}
-                >
-                  <Calendar className="h-3 w-3 inline mr-1" />
-                  Calendar
-                </button>
+                  <option value="all">All</option>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="overdue">Overdue</option>
+                </select>
+                <span className="text-xs text-[var(--color-gray-500)]">
+                  ({filteredInterviews.length} of {interviews.length})
+                </span>
               </div>
             </div>
 
@@ -4500,7 +4563,7 @@ function RecruitmentPageInner() {
               />
             ) : interviewView === "calendar" ? (
               <InterviewCalendar
-                interviews={interviews}
+                interviews={filteredInterviews}
                 onSelectInterview={(iv) => {
                   if (iv.status === "completed") {
                     setFeedbackTarget({
@@ -4538,7 +4601,7 @@ function RecruitmentPageInner() {
                       </tr>
                     </thead>
                     <tbody>
-                      {interviews.map((iv) => (
+                      {filteredInterviews.map((iv) => (
                         <tr
                           key={iv.id}
                           className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
@@ -4563,9 +4626,15 @@ function RecruitmentPageInner() {
                           </td>
                           <td className="py-3 px-3 text-[var(--color-gray-600)]">
                             {formatDate(iv.scheduled_at)}
+                            {(iv as { is_overdue?: boolean }).is_overdue && (
+                              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-700 border border-red-200">
+                                Overdue
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-3 text-center text-[var(--color-gray-600)]">
-                            {iv.interview_type}
+                            {(iv as { display_type?: string }).display_type ||
+                              humanizeInterviewType(iv.interview_type)}
                           </td>
                           <td className="py-3 px-3 text-center">
                             <StatusBadge
@@ -4574,24 +4643,66 @@ function RecruitmentPageInner() {
                             />
                           </td>
                           <td className="py-3 px-5 text-center">
-                            {iv.status === "completed" && (
+                            <div className="flex items-center justify-center gap-2">
+                              {iv.status === "completed" && (
+                                <AppButton
+                                  variant="outlined"
+                                  size="sm"
+                                  onClick={() =>
+                                    setFeedbackTarget({
+                                      interviewId: iv.id,
+                                      candidateId: iv.candidate_id,
+                                      candidateName:
+                                        iv.candidate_name ||
+                                        `#${iv.candidate_id}`,
+                                    })
+                                  }
+                                >
+                                  <Star className="h-3.5 w-3.5 mr-1" />
+                                  Feedback
+                                </AppButton>
+                              )}
+                              {iv.status !== "completed" &&
+                                iv.status !== "cancelled" && (
+                                  <AppButton
+                                    variant="outlined"
+                                    size="sm"
+                                    onClick={async () => {
+                                      if (
+                                        !confirm(
+                                          `Cancel interview with ${iv.candidate_name || "this candidate"}?`,
+                                        )
+                                      )
+                                        return;
+                                      try {
+                                        await recruitmentApi.updateInterview(
+                                          iv.id,
+                                          { status: "cancelled" },
+                                        );
+                                        toast.success("Interview cancelled.");
+                                        await fetchData();
+                                      } catch {
+                                        toast.error(
+                                          "Failed to cancel interview.",
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    Cancel
+                                  </AppButton>
+                                )}
                               <AppButton
                                 variant="outlined"
                                 size="sm"
                                 onClick={() =>
-                                  setFeedbackTarget({
-                                    interviewId: iv.id,
-                                    candidateId: iv.candidate_id,
-                                    candidateName:
-                                      iv.candidate_name ||
-                                      `#${iv.candidate_id}`,
-                                  })
+                                  router.push(
+                                    `/recruitment/candidates/${iv.candidate_id}`,
+                                  )
                                 }
                               >
-                                <Star className="h-3.5 w-3.5 mr-1" />
-                                Submit Feedback
+                                View
                               </AppButton>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       ))}
