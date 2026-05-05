@@ -185,7 +185,7 @@ def _hero(company_id: int, employees: list[dict], jobs: list[dict]) -> dict:
         target = headcount_actual  # No plan; default to actual
 
     open_jobs_list = [j for j in jobs if j.get("status") in ("open", "published")]
-    stale_threshold = (datetime.utcnow() - timedelta(days=14)).isoformat()
+    stale_threshold = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=14)).isoformat()
     stale_jobs = [
         j
         for j in open_jobs_list
@@ -273,7 +273,7 @@ def _stages(  # noqa: PLR0915 — 8 stages each ~5 lines is intentional
 
     # ─ Recruit ──────────────────────────────────────────────────────
     open_jobs_list = [j for j in jobs if j.get("status") in ("open", "published")]
-    stale_threshold = (datetime.utcnow() - timedelta(days=14)).isoformat()
+    stale_threshold = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=14)).isoformat()
     stale_count = sum(
         1
         for j in open_jobs_list
@@ -489,7 +489,7 @@ def _di_snapshot(company_id: int, employees: list[dict]) -> dict:
 
 def _activity(company_id: int, employees: list[dict]) -> list[dict]:
     """Recent cross-stage activity — last 14 days, capped at 20."""
-    cutoff = (datetime.utcnow() - timedelta(days=14)).isoformat()
+    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=14)).isoformat()
     employees_by_id = {e.get("id"): e for e in employees}
 
     feed: list[dict] = []

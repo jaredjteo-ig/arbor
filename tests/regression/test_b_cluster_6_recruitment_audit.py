@@ -524,6 +524,8 @@ def test_t_rx10_update_candidate_blocks_invalid_stage_transition(owner_client) -
     candidate = _candidate(id=5, stage="hired")
 
     with patch("hr_advisory.api.routers.recruitment.dataflow_crud") as mock_crud:
+        # _verify_candidate_ownership uses list_records (not read).
+        mock_crud.list_records.return_value = [candidate]
         mock_crud.read.return_value = candidate
 
         resp = owner_client.patch(
@@ -544,6 +546,7 @@ def test_t_rx10_update_candidate_allows_valid_stage_transition(owner_client) -> 
     updated = _candidate(id=5, stage="interview")
 
     with patch("hr_advisory.api.routers.recruitment.dataflow_crud") as mock_crud:
+        mock_crud.list_records.return_value = [candidate]
         mock_crud.read.return_value = candidate
         mock_crud.update.return_value = updated
 
@@ -587,7 +590,10 @@ def test_t_rx11_close_job_withdraws_active_candidates_and_expires_offers(owner_c
 
     updates: list = []
 
-    def _list_records(model: str, filters: dict):
+    def _list_records(model: str, filters: dict, **kwargs):
+        # _verify_job_ownership uses list_records on JobListing.
+        if model == "JobListing" and filters.get("id") == 7:
+            return [job]
         if model == "Candidate":
             return candidates
         if model == "Offer":

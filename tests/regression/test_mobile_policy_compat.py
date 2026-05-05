@@ -24,6 +24,11 @@ import pytest
 from starlette.testclient import TestClient
 
 os.environ.setdefault("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
+# DataFlow defaults pool_size=70 + max_overflow=35 (105 connections per worker),
+# which exceeds Postgres max_connections=100 on a fresh local DB. Cap the pool
+# so the create_platform() fixture doesn't blow up the local instance.
+os.environ.setdefault("DATAFLOW_POOL_SIZE", "5")
+os.environ.setdefault("DATAFLOW_POOL_MAX_OVERFLOW", "2")
 
 from hr_advisory.config.settings import Settings, get_settings
 
