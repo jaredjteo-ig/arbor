@@ -465,7 +465,17 @@ class TestAddCandidateSendsEmail:
         """When a candidate is added with an email, application_received email is sent."""
         from fastapi.testclient import TestClient
 
-        mock_crud.list_records.return_value = []  # No duplicate
+        # _verify_job_ownership uses list_records on JobListing; the
+        # duplicate-candidate check uses list_records on Candidate.
+        job_row = {
+            "id": 1,
+            "company_id": 1,
+            "title": "Software Engineer",
+        }
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [job_row],
+            "Candidate": [],  # No duplicate
+        }.get(model, [])
         mock_crud.create.return_value = {
             "id": 42,
             "name": "Alice Tan",
@@ -473,11 +483,6 @@ class TestAddCandidateSendsEmail:
             "stage": "applied",
         }
         mock_crud.read.side_effect = lambda model, id: {
-            "JobListing": {
-                "id": 1,
-                "company_id": 1,
-                "title": "Software Engineer",
-            },
             "Company": {
                 "id": 1,
                 "name": "Acme Pte Ltd",
@@ -510,7 +515,17 @@ class TestAddCandidateSendsEmail:
         """Even if email sending fails, the candidate is still created successfully."""
         from fastapi.testclient import TestClient
 
-        mock_crud.list_records.return_value = []
+        # _verify_job_ownership uses list_records on JobListing; the
+        # duplicate-candidate check uses list_records on Candidate.
+        job_row = {
+            "id": 1,
+            "company_id": 1,
+            "title": "Designer",
+        }
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [job_row],
+            "Candidate": [],
+        }.get(model, [])
         mock_crud.create.return_value = {
             "id": 43,
             "name": "Bob",
@@ -518,11 +533,6 @@ class TestAddCandidateSendsEmail:
             "stage": "applied",
         }
         mock_crud.read.side_effect = lambda model, id: {
-            "JobListing": {
-                "id": 1,
-                "company_id": 1,
-                "title": "Designer",
-            },
             "Company": {
                 "id": 1,
                 "name": "Test Corp",

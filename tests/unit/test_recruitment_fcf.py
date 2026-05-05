@@ -119,11 +119,14 @@ class TestFCFCheck:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_exempt_fewer_than_10_employees(self, mock_crud, owner_client):
         """Company with fewer than 10 employees is exempt from FCF advertising."""
-        mock_crud.read.return_value = _job_record(salary_range_max=8000.0)
+        # _verify_job_ownership uses list_records (not read).
+        job_row = _job_record(salary_range_max=8000.0)
         # 5 employees — under the 10-employee threshold
-        mock_crud.list_records.return_value = [
-            _employee_record(i) for i in range(5)
-        ]
+        employees = [_employee_record(i) for i in range(5)]
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [job_row],
+            "Employee": employees,
+        }.get(model, [])
 
         resp = owner_client.get("/recruitment/jobs/1/fcf-check")
         assert resp.status_code == 200
@@ -136,11 +139,13 @@ class TestFCFCheck:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_exempt_salary_above_22500(self, mock_crud, owner_client):
         """Salary above $22,500/month is exempt from FCF advertising."""
-        mock_crud.read.return_value = _job_record(salary_range_max=25000.0)
+        job_row = _job_record(salary_range_max=25000.0)
         # 15 employees — above threshold
-        mock_crud.list_records.return_value = [
-            _employee_record(i) for i in range(15)
-        ]
+        employees = [_employee_record(i) for i in range(15)]
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [job_row],
+            "Employee": employees,
+        }.get(model, [])
 
         resp = owner_client.get("/recruitment/jobs/1/fcf-check")
         assert resp.status_code == 200
@@ -153,12 +158,12 @@ class TestFCFCheck:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_non_exempt_no_mcf_posting(self, mock_crud, owner_client):
         """Non-exempt company without MCF posting fails compliance."""
-        mock_crud.read.return_value = _job_record(
-            salary_range_max=8000.0, mcf_posted_date=""
-        )
-        mock_crud.list_records.return_value = [
-            _employee_record(i) for i in range(15)
-        ]
+        job_row = _job_record(salary_range_max=8000.0, mcf_posted_date="")
+        employees = [_employee_record(i) for i in range(15)]
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [job_row],
+            "Employee": employees,
+        }.get(model, [])
 
         resp = owner_client.get("/recruitment/jobs/1/fcf-check")
         assert resp.status_code == 200
@@ -173,12 +178,12 @@ class TestFCFCheck:
         """Non-exempt company with MCF posting under 14 days is not yet compliant."""
         # Posted 5 days ago
         posted_date = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
-        mock_crud.read.return_value = _job_record(
-            salary_range_max=8000.0, mcf_posted_date=posted_date
-        )
-        mock_crud.list_records.return_value = [
-            _employee_record(i) for i in range(15)
-        ]
+        job_row = _job_record(salary_range_max=8000.0, mcf_posted_date=posted_date)
+        employees = [_employee_record(i) for i in range(15)]
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [job_row],
+            "Employee": employees,
+        }.get(model, [])
 
         resp = owner_client.get("/recruitment/jobs/1/fcf-check")
         assert resp.status_code == 200
@@ -194,12 +199,12 @@ class TestFCFCheck:
         """Non-exempt company with MCF posting >=14 days is compliant."""
         # Posted 20 days ago
         posted_date = (datetime.now(timezone.utc) - timedelta(days=20)).isoformat()
-        mock_crud.read.return_value = _job_record(
-            salary_range_max=8000.0, mcf_posted_date=posted_date
-        )
-        mock_crud.list_records.return_value = [
-            _employee_record(i) for i in range(15)
-        ]
+        job_row = _job_record(salary_range_max=8000.0, mcf_posted_date=posted_date)
+        employees = [_employee_record(i) for i in range(15)]
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [job_row],
+            "Employee": employees,
+        }.get(model, [])
 
         resp = owner_client.get("/recruitment/jobs/1/fcf-check")
         assert resp.status_code == 200
@@ -213,7 +218,8 @@ class TestFCFCheck:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_job_not_found_returns_404(self, mock_crud, owner_client):
         """Non-existent job returns 404."""
-        mock_crud.read.return_value = None
+        # _verify_job_ownership uses list_records — empty result raises 404.
+        mock_crud.list_records.return_value = []
 
         resp = owner_client.get("/recruitment/jobs/999/fcf-check")
         assert resp.status_code == 404
@@ -221,7 +227,9 @@ class TestFCFCheck:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_tenant_isolation(self, mock_crud, owner_client):
         """Job belonging to a different company returns 404."""
-        mock_crud.read.return_value = _job_record(company_id=999)
+        # _verify_job_ownership filters by (id, company_id); a job belonging
+        # to company 999 won't match the filter so list_records returns [].
+        mock_crud.list_records.return_value = []
 
         resp = owner_client.get("/recruitment/jobs/1/fcf-check")
         assert resp.status_code == 404
@@ -243,7 +251,8 @@ class TestRecordMCFPosting:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_record_mcf_posting(self, mock_crud, owner_client):
         """Recording MCF posting sets mcf_posted_date on the job."""
-        mock_crud.read.return_value = _job_record()
+        # _verify_job_ownership uses list_records.
+        mock_crud.list_records.return_value = [_job_record()]
         mock_crud.update.return_value = {
             **_job_record(),
             "mcf_posted_date": "2026-04-16T00:00:00+00:00",
@@ -265,7 +274,8 @@ class TestRecordMCFPosting:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_mcf_posting_tenant_isolation(self, mock_crud, owner_client):
         """Cannot record MCF posting for another company's job."""
-        mock_crud.read.return_value = _job_record(company_id=999)
+        # Wrong-tenant lookup returns empty under list_records-based ownership.
+        mock_crud.list_records.return_value = []
 
         resp = owner_client.post("/recruitment/jobs/1/mcf-posted")
         assert resp.status_code == 404
@@ -273,7 +283,7 @@ class TestRecordMCFPosting:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_hr_manager_can_record_mcf(self, mock_crud, hr_manager_client):
         """HR managers can record MCF posting."""
-        mock_crud.read.return_value = _job_record()
+        mock_crud.list_records.return_value = [_job_record()]
         mock_crud.update.return_value = _job_record()
 
         resp = hr_manager_client.post("/recruitment/jobs/1/mcf-posted")

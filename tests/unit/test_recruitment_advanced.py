@@ -552,8 +552,9 @@ class TestCreateReferral:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_create_referral_success(self, mock_crud, employee_client):
         """Successfully creates a referral with all required fields."""
-        mock_crud.read.return_value = _job(job_id=100, company_id=1)
+        # _verify_job_ownership uses list_records (not read).
         mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [_job(job_id=100, company_id=1)],
             "Employee": [_employee(employee_id=50, user_id=20, company_id=1)],
         }.get(model, [])
         mock_crud.create.return_value = _referral()
@@ -598,7 +599,8 @@ class TestCreateReferral:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_create_referral_requires_name_and_email(self, mock_crud, employee_client):
         """Returns 400 when candidate name or email is missing."""
-        mock_crud.read.return_value = _job(job_id=100, company_id=1)
+        # _verify_job_ownership uses list_records.
+        mock_crud.list_records.return_value = [_job(job_id=100, company_id=1)]
 
         # Missing name
         resp = employee_client.post(
@@ -623,8 +625,11 @@ class TestCreateReferral:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_create_referral_requires_employee_record(self, mock_crud, employee_client):
         """Returns 400 when referrer has no employee record."""
-        mock_crud.read.return_value = _job(job_id=100, company_id=1)
-        mock_crud.list_records.return_value = []  # No employee record
+        # _verify_job_ownership succeeds (job exists), but no Employee record.
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [_job(job_id=100, company_id=1)],
+            "Employee": [],  # No employee record
+        }.get(model, [])
 
         resp = employee_client.post(
             "/recruitment/referrals",
@@ -640,7 +645,9 @@ class TestCreateReferral:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_create_referral_validates_job_ownership(self, mock_crud, employee_client):
         """Returns 404 when job belongs to a different company."""
-        mock_crud.read.return_value = _job(job_id=100, company_id=999)
+        # _verify_job_ownership filters by (id, company_id) — different
+        # tenant means the lookup returns empty, raising 404.
+        mock_crud.list_records.return_value = []
 
         resp = employee_client.post(
             "/recruitment/referrals",
@@ -655,8 +662,9 @@ class TestCreateReferral:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_owner_can_submit_referral(self, mock_crud, owner_client):
         """Owners can also submit referrals (any authenticated user)."""
-        mock_crud.read.return_value = _job(job_id=100, company_id=1)
+        # _verify_job_ownership uses list_records (not read).
         mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [_job(job_id=100, company_id=1)],
             "Employee": [_employee(employee_id=50, user_id=10, company_id=1)],
         }.get(model, [])
         mock_crud.create.return_value = _referral()
