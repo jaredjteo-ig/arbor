@@ -115,11 +115,28 @@ def _candidate(
 
 
 # Auto-rate-limit reset between tests so check_rate_limit doesn't bleed across.
+# Clears both the in-memory log AND the Redis-backed rate-limit keys we know
+# this module uses; if Redis is unavailable, the FLUSHDB is a no-op.
 @pytest.fixture(autouse=True)
 def _reset_rate_limit():
     from hr_advisory.api.middleware import rate_limit as rl
 
     rl._request_log.clear()
+    # Best-effort flush of the Redis-backed rate-limit keys for the keys
+    # exercised by these tests. The test suite must be deterministic across
+    # repeat runs, even when a Redis instance with persistent rate-limit
+    # state is bound to localhost.
+    try:
+        client = rl._get_redis_client()
+        if client is not None:
+            for key in client.keys("rate:*"):
+                try:
+                    client.delete(key)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     yield
     rl._request_log.clear()
 
@@ -351,7 +368,8 @@ class TestJobClosureCascade:
             "status": "sent",
         }
 
-        # mock_crud.read by (model, id)
+        # mock_crud.read by (model, id) — kept for any per-id lookup paths
+        # (e.g. _log_candidate_activity reads Candidate by id).
         candidate_lookup = {1: cand_active, 2: cand_interview, 3: cand_hired}
 
         def fake_read(model, record_id):
@@ -362,6 +380,9 @@ class TestJobClosureCascade:
             return {}
 
         def fake_list(model, filters, **kwargs):
+            # _verify_job_ownership uses list_records on JobListing.
+            if model == "JobListing":
+                return [job]
             if model == "Candidate":
                 return [cand_active, cand_interview, cand_hired]
             if model == "Offer":
@@ -407,7 +428,8 @@ class TestJobClosureCascade:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_close_already_closed_job_returns_400(self, mock_crud, owner_client):
         """Closing a job that is already closed is rejected with 400."""
-        mock_crud.read.return_value = _job(job_id=100, status="closed")
+        # _verify_job_ownership uses list_records (not read).
+        mock_crud.list_records.return_value = [_job(job_id=100, status="closed")]
         resp = owner_client.post("/recruitment/jobs/100/close")
         assert resp.status_code == 400
 

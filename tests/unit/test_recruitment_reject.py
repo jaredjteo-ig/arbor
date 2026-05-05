@@ -121,6 +121,14 @@ class TestRejectCandidate:
 
         mock_company_id.return_value = 1
 
+        # _verify_candidate_ownership uses list_records (not read) to
+        # sidestep the DataFlow integer-PK read bug. The rejection email
+        # path still uses read for JobListing + Company.
+        def list_side_effect(model, filters, **kwargs):
+            if model == "Candidate" and filters.get("id") == candidate["id"]:
+                return [candidate]
+            return []
+
         def read_side_effect(model, record_id):
             if model == "Candidate":
                 if record_id == candidate["id"]:
@@ -132,6 +140,7 @@ class TestRejectCandidate:
                 return company
             return None
 
+        mock_crud.list_records.side_effect = list_side_effect
         mock_crud.read.side_effect = read_side_effect
         mock_crud.update.return_value = {**candidate, "stage": "rejected", "rejection_reason": "Not a fit"}
 
@@ -322,7 +331,8 @@ class TestRejectCandidate:
         """Rejection of non-existent candidate returns 404."""
         from hr_advisory.api.middleware.auth_middleware import get_current_user
 
-        mock_crud.read.return_value = None  # Candidate not found
+        # _verify_candidate_ownership uses list_records — empty result raises 404.
+        mock_crud.list_records.return_value = []
 
         app = _make_app()
         app.dependency_overrides[get_current_user] = lambda: _fake_user()
@@ -508,7 +518,13 @@ class TestHireCandidateAuditTrail:
         }.get(model)
         mock_crud.create.return_value = {"id": 100, "token": "abc"}
         mock_crud.update.return_value = {**candidate, "stage": "hired"}
-        mock_crud.list_records.return_value = []
+
+        # _verify_candidate_ownership uses list_records on Candidate.
+        def list_side_effect(model, filters, **kwargs):
+            if model == "Candidate" and filters.get("id") == candidate["id"]:
+                return [candidate]
+            return []
+        mock_crud.list_records.side_effect = list_side_effect
 
         app = _make_app()
         app.dependency_overrides[get_current_user] = lambda: _fake_user()
@@ -603,7 +619,15 @@ class TestScheduleInterviewEmail:
                 return company
             return None
 
+        # _verify_candidate_ownership uses list_records on Candidate.
+        # InterviewSchedule list_records (idempotency check) returns empty.
+        def list_side_effect(model, filters, **kwargs):
+            if model == "Candidate" and filters.get("id") == candidate["id"]:
+                return [candidate]
+            return []
+
         mock_crud.read.side_effect = read_side_effect
+        mock_crud.list_records.side_effect = list_side_effect
         mock_crud.create.return_value = {"id": 50, "status": "scheduled"}
         mock_crud.update.return_value = {**candidate, "stage": "interview"}
         mock_send_email.return_value = True
@@ -645,6 +669,14 @@ class TestScheduleInterviewEmail:
 
         candidate = _candidate_record(email="")
         mock_crud.read.side_effect = lambda model, record_id: candidate if model == "Candidate" else None
+
+        # _verify_candidate_ownership uses list_records on Candidate.
+        def list_side_effect(model, filters, **kwargs):
+            if model == "Candidate" and filters.get("id") == candidate["id"]:
+                return [candidate]
+            return []
+        mock_crud.list_records.side_effect = list_side_effect
+
         mock_crud.create.return_value = {"id": 50, "status": "scheduled"}
         mock_crud.update.return_value = {**candidate, "stage": "interview"}
 
@@ -693,8 +725,17 @@ class TestHireCandidateDataPrefill:
                 return _company_record()
             return None
 
+        # _verify_candidate_ownership uses list_records on Candidate.
+        # The Offer lookup also uses list_records.
+        def list_side_effect(model, filters, **kwargs):
+            if model == "Candidate" and filters.get("id") == candidate["id"]:
+                return [candidate]
+            if model == "Offer":
+                return [offer]
+            return []
+
         mock_crud.read.side_effect = read_side_effect
-        mock_crud.list_records.return_value = [offer]
+        mock_crud.list_records.side_effect = list_side_effect
         mock_crud.create.return_value = {"id": 100, "token": "abc"}
         mock_crud.update.return_value = {**candidate, "stage": "hired"}
 
@@ -749,12 +790,29 @@ class TestHireCandidateJobLogging:
                 return _company_record()
             return None
 
-        mock_crud.read.side_effect = read_side_effect
-        # list_records called for offers first, then for all_candidates
-        mock_crud.list_records.side_effect = [
-            [],  # offers
-            [_candidate_record(stage="hired"), _candidate_record(candidate_id=2, stage="interview")],  # all candidates
+        # _verify_candidate_ownership uses list_records on Candidate.
+        # Then hire_candidate calls list_records on Offer (no offer here)
+        # and again on Candidate (filter by job_listing_id) for hired-count.
+        all_candidates = [
+            _candidate_record(stage="hired"),
+            _candidate_record(candidate_id=2, stage="interview"),
         ]
+
+        def list_side_effect(model, filters, **kwargs):
+            if model == "Candidate":
+                # _verify_candidate_ownership filters by id+company_id;
+                # hired-count call filters by job_listing_id+company_id.
+                if filters.get("id") == candidate["id"]:
+                    return [candidate]
+                if filters.get("job_listing_id"):
+                    return all_candidates
+                return []
+            if model == "Offer":
+                return []
+            return []
+
+        mock_crud.read.side_effect = read_side_effect
+        mock_crud.list_records.side_effect = list_side_effect
         mock_crud.create.return_value = {"id": 100, "token": "abc"}
         mock_crud.update.return_value = {**candidate, "stage": "hired"}
 
