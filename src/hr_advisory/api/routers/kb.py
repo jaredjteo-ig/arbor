@@ -43,6 +43,62 @@ def _extract_records(result) -> list[dict]:
     return []
 
 
+def _try_company_policy_lookup(reference: str, current_user: dict) -> dict | None:
+    """Resolve a `policy-{id}` reference to a CompanyPolicy row.
+
+    Advisory responses cite company policies as `policy-1`, `policy-2`,
+    etc. The KB provision lookup doesn't know about CompanyPolicy, so
+    these citations 404 unless we fall through here.
+
+    Returns a `ProvisionDetail`-shaped dict so the frontend modal renders
+    without needing a separate code path.
+
+    Tenant-scoped: only returns the policy if it belongs to the caller's
+    company. Anything else (cross-tenant ref, missing policy) returns None
+    so the parent endpoint raises 404 as usual.
+    """
+    import re as _re
+
+    from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+    from hr_advisory.services import dataflow_crud
+
+    # Accept "policy-1", "policy-1-something", or even "1" if prefixed elsewhere.
+    match = _re.match(r"^policy-(\d+)", reference, flags=_re.IGNORECASE)
+    if not match:
+        return None
+
+    try:
+        policy_id = int(match.group(1))
+    except ValueError:
+        return None
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        return None
+
+    rows = dataflow_crud.list_records(
+        "CompanyPolicy",
+        {"id": policy_id, "company_id": company_id},
+    )
+    if not rows:
+        return None
+    policy = rows[0]
+
+    return {
+        "id": policy.get("id"),
+        "section": f"policy-{policy.get('id')}",
+        "title": policy.get("title", ""),
+        "content": policy.get("content", "") or policy.get("description", ""),
+        "authority_level": "company-policy",
+        "domain_name": policy.get("category", "company-policy"),
+        "act_name": "Company Policy",
+        "cross_references": [],
+        "applicability_rules": [],
+        "practical_examples": [],
+        "is_company_policy": True,
+    }
+
+
 @router.get("/acts")
 async def list_acts(current_user: dict = Depends(get_current_user)) -> dict:
     """List all legislative acts in the knowledge base."""
@@ -135,6 +191,13 @@ async def get_provision_by_reference(
                 break
 
     if match is None:
+        # Fall back to CompanyPolicy lookup. Advisory responses cite
+        # company policies with `policy-{id}` references; the modal
+        # would otherwise 404 even though the policy exists.
+        company_policy_match = _try_company_policy_lookup(reference, current_user)
+        if company_policy_match is not None:
+            return company_policy_match
+
         raise HTTPException(
             status_code=404,
             detail=f"Provision with reference '{reference}' not found",
