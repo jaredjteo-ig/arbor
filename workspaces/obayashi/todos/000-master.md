@@ -13,13 +13,17 @@
 
 ---
 
-## Gate 1 — Round-12 redteam closure deploy
+## Gate 1 — Round-12 redteam closure deploy ✅ COMPLETED 2026-05-05
 
-The bundled commit is in (`92f4d32`). Only one todo: run the deploy.
+Shipped at `e837f7d`. Smoke probes 200; backfills applied; H2 sweep
+auto-cancelled 3 stale pending leaves on prod. See
+`todos/completed/G1-deploy-redteam-round-12.md` for full evidence and
+the 5 deploy-script issues encountered + fixed in passing.
 
-| ID   | Title                                       | Status |
-| ---- | ------------------------------------------- | ------ |
-| G1-1 | Run deploy/ship-redteam-round-12.sh on prod | active |
+| ID   | Title                                       | Status                        |
+| ---- | ------------------------------------------- | ----------------------------- |
+| G1-1 | Run deploy/ship-redteam-round-12.sh on prod | completed                     |
+| G1-2 | B1 LLM toggle (owner)                       | open — owner-side .env change |
 
 ---
 
