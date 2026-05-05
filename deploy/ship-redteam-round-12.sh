@@ -115,16 +115,22 @@ ok "Pushed to origin/main."
 # ── Step 3: Pull + rebuild on prod ───────────────────────────────────────
 log "Step 3 / 7  Pull + rebuild on ${INSTANCE_IP}"
 
+# The fork that this script ships from. The prod server pulls from this
+# repo (currently jaredjteo-ig/arbor — Jared's working fork). Override
+# with GITHUB_DEPLOY_REPO env var if/when commits move upstream.
+DEPLOY_REPO="${GITHUB_DEPLOY_REPO:-jaredjteo-ig/arbor}"
+COMPOSE_ARGS="-f docker-compose.prod.yml --env-file .env.prod"
+
 TOKEN=$(gh auth token 2>/dev/null || echo "")
 if [[ -n "$TOKEN" ]]; then
-  "${SSH_CMD[@]}" "cd ${REMOTE_DIR} && git remote set-url origin https://x-access-token:${TOKEN}@github.com/terrene-foundation/arbor.git && git fetch origin main && git reset --hard origin/main && git log --oneline -1"
+  "${SSH_CMD[@]}" "cd ${REMOTE_DIR} && git remote set-url origin https://x-access-token:${TOKEN}@github.com/${DEPLOY_REPO}.git && git fetch origin main && git reset --hard origin/main && git log --oneline -1"
 else
   "${SSH_CMD[@]}" "cd ${REMOTE_DIR} && git pull origin main && git log --oneline -1"
 fi
-ok "Remote checkout updated."
+ok "Remote checkout updated to ${DEPLOY_REPO}."
 
-"${SSH_CMD[@]}" "cd ${REMOTE_DIR}/deploy && docker compose build backend frontend"
-"${SSH_CMD[@]}" "cd ${REMOTE_DIR}/deploy && docker compose up -d backend frontend"
+"${SSH_CMD[@]}" "cd ${REMOTE_DIR}/deploy && docker compose ${COMPOSE_ARGS} build backend frontend"
+"${SSH_CMD[@]}" "cd ${REMOTE_DIR}/deploy && docker compose ${COMPOSE_ARGS} up -d backend frontend"
 ok "Containers rebuilt and restarted."
 
 # Give the backend a moment to come up before exec'ing the backfills.
