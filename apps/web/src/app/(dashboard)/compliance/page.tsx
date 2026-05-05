@@ -69,6 +69,7 @@ const DOMAIN_LABELS: Record<string, string> = {
   foreign_manpower: "Foreign Manpower (EFMA)",
   tax: "Tax / IRAS",
   wsh: "Workplace Safety and Health (WSH)",
+  fair_employment: "Fair Employment (TAFEP / WFA)",
 };
 
 function domainStatusToTier(status: string): RiskTierLevel {
@@ -689,6 +690,9 @@ function BackendStatusOverview({
   const coveredCount = domainEntries.filter(
     ([, d]) => d.status === "covered",
   ).length;
+  const reviewCount = domainEntries.filter(
+    ([, d]) => d.status === "review_needed" || d.status === "partial",
+  ).length;
   const totalDomains = domainEntries.length;
   const scorePercent =
     totalDomains > 0 ? Math.round((coveredCount / totalDomains) * 100) : 0;
@@ -710,10 +714,11 @@ function BackendStatusOverview({
             </p>
             <div className="flex items-center gap-3 mt-1">
               <span className="text-3xl font-bold text-[var(--color-gray-900)]">
-                {coveredCount}/{totalDomains}
+                {totalDomains}
               </span>
               <span className="text-sm text-[var(--color-gray-500)]">
-                domains covered
+                {totalDomains === 1 ? "domain checked" : "domains checked"}
+                {reviewCount > 0 && ` — ${reviewCount} need review`}
               </span>
               <RiskTierBadge tier={overallTier} />
             </div>

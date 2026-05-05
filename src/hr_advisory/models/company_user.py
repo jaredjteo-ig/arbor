@@ -488,6 +488,11 @@ class Employee:
     payment_frequency: str = "monthly"  # monthly/bi_weekly/weekly
     overtime_eligible: bool = True
     working_hours_type: str = "fixed"  # fixed/shift/flexible
+    # H4 redteam (round-12): only employees who actually clock in/out should
+    # show up on the daily Attendance status board. Salaried desk staff have
+    # no clock-in workflow, so listing them as "Absent" every day is noise.
+    # Default off; admins (or seed) opt employees in explicitly.
+    tracks_attendance: bool = False
 
     # Bank (extended)
     branch_code: str = ""

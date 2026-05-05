@@ -183,10 +183,32 @@ export default function PayrollPage() {
   const paidRuns = runs.filter((r) => r.status === "paid");
   const lastPaid = paidRuns.length > 0 ? paidRuns[0] : null;
 
-  const upcomingDraft = runs.find(
-    (r) => r.status === "draft" || r.status === "approved",
-  );
+  /* H3 redteam: "next pay date" must be in the future. Picking any
+     draft run regardless of its pay_date surfaced past-dated drafts
+     (e.g. an unfinished March run while April was already Paid). The
+     correct upcoming run is the latest-period draft/approved row whose
+     pay_date is today or later. */
+  const todayIso = new Date().toISOString().split("T")[0];
+  const upcomingDraft = runs
+    .filter(
+      (r) =>
+        (r.status === "draft" || r.status === "approved") &&
+        r.pay_date >= todayIso,
+    )
+    .sort((a, b) => b.period_end.localeCompare(a.period_end))[0];
   const nextPayDate = upcomingDraft ? upcomingDraft.pay_date : null;
+
+  /* H3 redteam (round-12): out-of-order Paid/Draft pairs are an
+     accounting smell. If there's any draft/approved run with an
+     earlier period_end than the most recent paid run, surface a
+     warning so the admin investigates before paying further. */
+  const stalePriorDraft =
+    lastPaid &&
+    runs.find(
+      (r) =>
+        (r.status === "draft" || r.status === "approved") &&
+        r.period_end < lastPaid.period_end,
+    );
 
   /* CPF submission is typically due on the 14th of the following month */
   const cpfDueDate = lastPaid
@@ -312,6 +334,22 @@ export default function PayrollPage() {
             </div>
           </div>
         </div>
+
+        {stalePriorDraft && (
+          <div
+            role="alert"
+            className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+          >
+            <p className="font-semibold">Out-of-order payroll detected</p>
+            <p className="mt-1">
+              A {stalePriorDraft.status} run for the period ending{" "}
+              {formatDate(stalePriorDraft.period_end)} sits behind a paid run
+              ending {formatDate(lastPaid!.period_end)}. Resolve the earlier run
+              before processing newer ones — paying out of sequence usually
+              means a missing month or a duplicate.
+            </p>
+          </div>
+        )}
 
         {/* Run Payroll Action Card */}
         {isAdmin && (
@@ -775,8 +813,28 @@ export default function PayrollPage() {
               )}
             </AppCard>
 
-            {/* CPF due */}
-            <AppCard variant="flat">
+            {/* CPF due. L3 redteam (round-12): clicking the tile now jumps
+                straight to the CPF e-Submit file generator for the most
+                recent paid run, so the obvious next step is one click away. */}
+            <AppCard
+              variant="flat"
+              className={
+                lastPaid
+                  ? "cursor-pointer hover:ring-2 hover:ring-[var(--color-primary-100)] transition-all"
+                  : undefined
+              }
+              onClick={
+                lastPaid
+                  ? () => router.push(`/payroll/${lastPaid.id}`)
+                  : undefined
+              }
+              role={lastPaid ? "button" : undefined}
+              aria-label={
+                lastPaid
+                  ? "Open the latest paid run to generate the CPF e-Submit file"
+                  : undefined
+              }
+            >
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp
                   className="h-4 w-4 text-[var(--color-gray-400)]"
@@ -794,7 +852,7 @@ export default function PayrollPage() {
                   {formatCurrency(
                     lastPaid.total_employer_cpf + lastPaid.total_employee_cpf,
                   )}{" "}
-                  total CPF
+                  total CPF — generate e-Submit
                 </p>
               )}
             </AppCard>

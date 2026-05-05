@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
 import {
@@ -26,6 +26,12 @@ export interface TopBarProps {
 
 export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  // L5 redteam (round-12): suppress the unread count when the user is
+  // already on the Alerts page — otherwise the badge persists alongside
+  // the very list that's resolving it, which reads as "click did nothing".
+  const onAlertsPage = pathname?.startsWith("/alerts") ?? false;
+  const visibleNotificationCount = onAlertsPage ? 0 : notificationCount;
   const { user, logout } = useAuth();
   const { t } = useTranslation();
   const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
@@ -286,13 +292,20 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
             "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
           )}
           aria-label={
-            notificationCount > 0
-              ? t("topbar.notifications_unread", { count: notificationCount })
+            visibleNotificationCount > 0
+              ? t("topbar.notifications_unread", {
+                  count: visibleNotificationCount,
+                })
               : t("topbar.notifications")
+          }
+          title={
+            visibleNotificationCount > 0
+              ? `${visibleNotificationCount} unread — click to view`
+              : "Open notifications"
           }
         >
           <Bell className="h-5 w-5" aria-hidden="true" />
-          {notificationCount > 0 && (
+          {visibleNotificationCount > 0 && (
             <span
               className={clsx(
                 "absolute top-1.5 right-1.5 flex items-center justify-center",
@@ -301,7 +314,7 @@ export function TopBar({ onMenuToggle, notificationCount = 0 }: TopBarProps) {
               )}
               aria-hidden="true"
             >
-              {notificationCount > 99 ? "99+" : notificationCount}
+              {visibleNotificationCount > 99 ? "99+" : visibleNotificationCount}
             </span>
           )}
         </button>

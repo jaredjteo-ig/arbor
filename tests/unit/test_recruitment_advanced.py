@@ -384,10 +384,18 @@ class TestReapplyCandidate:
     def test_reapply_creates_new_candidate(self, mock_crud, owner_client):
         """Creates a new candidate record for the target job."""
         original = _candidate(candidate_id=5, name="Alice Wong", email="alice@example.com")
-        mock_crud.read.side_effect = lambda model, record_id: {
-            ("Candidate", 5): original,
-            ("JobListing", 200): _job(job_id=200, company_id=1),
-        }.get((model, record_id))
+        target_job = _job(job_id=200, company_id=1)
+
+        # _verify_candidate_ownership and _verify_job_ownership both use
+        # list_records (not read) — see recruitment.py:200-228.
+        def _list(model, filt, **_kwargs):
+            if model == "Candidate" and filt.get("id") == 5:
+                return [original]
+            if model == "JobListing" and filt.get("id") == 200:
+                return [target_job]
+            return []
+
+        mock_crud.list_records.side_effect = _list
         mock_crud.create.return_value = {**original, "id": 99, "job_listing_id": 200, "source": "talent_pool"}
 
         resp = owner_client.post(
@@ -413,7 +421,7 @@ class TestReapplyCandidate:
     def test_reapply_requires_job_listing_id(self, mock_crud, owner_client):
         """Returns 400 when job_listing_id is not provided."""
         original = _candidate(candidate_id=5)
-        mock_crud.read.return_value = original
+        mock_crud.list_records.return_value = [original]
 
         resp = owner_client.post(
             "/recruitment/candidates/5/reapply",
@@ -425,7 +433,9 @@ class TestReapplyCandidate:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_reapply_validates_candidate_ownership(self, mock_crud, owner_client):
         """Returns 404 when candidate belongs to a different company."""
-        mock_crud.read.return_value = _candidate(company_id=999)
+        # _verify_candidate_ownership filters by (id, company_id) — when the
+        # candidate belongs to a different tenant the list returns empty.
+        mock_crud.list_records.return_value = []
 
         resp = owner_client.post(
             "/recruitment/candidates/5/reapply",
@@ -437,10 +447,15 @@ class TestReapplyCandidate:
     def test_reapply_validates_job_ownership(self, mock_crud, owner_client):
         """Returns 404 when target job belongs to a different company."""
         original = _candidate(candidate_id=5, company_id=1)
-        mock_crud.read.side_effect = lambda model, record_id: {
-            ("Candidate", 5): original,
-            ("JobListing", 200): _job(job_id=200, company_id=999),  # different company
-        }.get((model, record_id))
+
+        def _list(model, filt, **_kwargs):
+            if model == "Candidate" and filt.get("id") == 5:
+                return [original]
+            # JobListing filtered by (id=200, company_id=1) — different
+            # tenant means the lookup returns empty.
+            return []
+
+        mock_crud.list_records.side_effect = _list
 
         resp = owner_client.post(
             "/recruitment/candidates/5/reapply",
@@ -451,7 +466,7 @@ class TestReapplyCandidate:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_reapply_candidate_not_found(self, mock_crud, owner_client):
         """Returns 404 when candidate does not exist."""
-        mock_crud.read.return_value = None
+        mock_crud.list_records.return_value = []
 
         resp = owner_client.post(
             "/recruitment/candidates/999/reapply",

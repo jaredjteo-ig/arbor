@@ -443,9 +443,16 @@ function TodayOverview({
           </div>
         }
       >
+        <p className="text-xs text-[var(--color-gray-500)] mb-3 -mt-1">
+          Only shows employees with attendance tracking enabled. Salaried desk
+          staff don&apos;t clock in and aren&apos;t listed here. Toggle tracking
+          on an employee&apos;s profile if you need them on this list.
+        </p>
         {employees.length === 0 ? (
           <p className="text-sm text-[var(--color-gray-500)] text-center py-4">
-            No attendance data for today.
+            No employees are tracked for daily attendance yet. Open an
+            employee&apos;s profile and enable &quot;Track attendance&quot; to
+            add them here.
           </p>
         ) : (
           <div className="overflow-x-auto -mx-5 -my-4">

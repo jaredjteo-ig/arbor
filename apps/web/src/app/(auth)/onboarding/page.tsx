@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { StepIndicator } from "@/components/design-system/StepIndicator";
 import {
@@ -26,6 +26,16 @@ export default function OnboardingPage() {
   const [profileData, setProfileData] = useState<CompanyProfileData | null>(
     null,
   );
+
+  // Already-onboarded users (have a company_id) hitting this URL belong
+  // on the admin Employees ▸ Onboarding tab, not the new-user signup wizard.
+  // Exception: existing users who opted into the chat-onboarding beta flag
+  // are intentionally routed through ChatOnboarding below.
+  useEffect(() => {
+    if (user?.company_id != null && featureFlagsLoaded && !chatFlagEnabled) {
+      router.replace("/employees?tab=onboarding");
+    }
+  }, [user?.company_id, featureFlagsLoaded, chatFlagEnabled, router]);
 
   /* Round-13 S1-T4 (CRIT-D4): chat onboarding now defaults ON for new
      signups (anyone whose JWT has no `company_id` yet). Existing companies

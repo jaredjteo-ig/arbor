@@ -507,11 +507,31 @@ async def get_workforce_composition(
     if not result or result.get("error") or result.get("failed"):
         raise HTTPException(status_code=404, detail=f"Company with id={company_id} not found")
 
-    local = result.get("headcount_local", 0)
-    pr = result.get("headcount_pr", 0)
-    ep = result.get("headcount_ep", 0)
-    sp = result.get("headcount_sp", 0)
-    wp = result.get("headcount_wp", 0)
+    from hr_advisory.services import dataflow_crud
+
+    # NEW-3 redteam (round-12): the previous snapshot fields drift away from
+    # the live employee table because they are only set at signup. Compute
+    # the breakdown live from active Employees so this page matches the
+    # dashboard headcount tile. Empty pass_type defaults to "citizen" — same
+    # rule as the dashboard frontend (round-12 M1 fix).
+    employees = dataflow_crud.list_records(
+        "Employee",
+        {"company_id": company_id, "is_active": True},
+        cache_ttl=0,
+    )
+    bucket_counts: dict[str, int] = {"citizen": 0, "pr": 0, "ep": 0, "sp": 0, "wp": 0}
+    for emp in employees:
+        raw = (emp.get("pass_type") or "").strip().lower()
+        key = raw or "citizen"
+        if key not in bucket_counts:
+            bucket_counts[key] = 0
+        bucket_counts[key] += 1
+
+    local = bucket_counts.get("citizen", 0)
+    pr = bucket_counts.get("pr", 0)
+    ep = bucket_counts.get("ep", 0)
+    sp = bucket_counts.get("sp", 0)
+    wp = bucket_counts.get("wp", 0)
     total = local + pr + ep + sp + wp
     local_total = local + pr
     local_ratio = round(local_total / total, 2) if total > 0 else 0.0

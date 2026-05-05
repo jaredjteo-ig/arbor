@@ -371,10 +371,16 @@ function HeadcountAndAlerts({
   const activeEmployees = employees.filter((e) => e.status === "active");
   const totalHeadcount = activeEmployees.length;
 
-  /* Breakdown by pass type */
+  /* Breakdown by pass type. M1 redteam: an employee with no pass_type was
+     surfacing as "Unknown 1" — almost always an admin/owner row that was
+     created without immigration metadata. Default missing values to
+     `citizen` (the SG-SME baseline) so the headcount tile reads cleanly.
+     If a real Unknown ever appears, the audit trail in the employee
+     profile is the right place to flag it, not a top-level KPI tile. */
   const passBreakdown: Record<string, number> = {};
   for (const e of activeEmployees) {
-    const pt = (e.pass_type || "unknown").toLowerCase();
+    const raw = (e.pass_type || "").toLowerCase().trim();
+    const pt = raw || "citizen";
     passBreakdown[pt] = (passBreakdown[pt] || 0) + 1;
   }
 
@@ -422,22 +428,33 @@ function HeadcountAndAlerts({
               </div>
             );
           })}
-          {/* Other types not in the standard list */}
+          {/* Other types not in the standard list. L2 redteam (round-12):
+              show count + % so this row matches the formatting of the
+              standard pass-class rows above (was raw count only). */}
           {Object.entries(passBreakdown)
             .filter(([key]) => !PASS_TYPE_CONFIG.some((pt) => pt.key === key))
-            .map(([key, count]) => (
-              <div key={key} className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full shrink-0 bg-[var(--color-gray-400)]" />
-                <span className="text-xs text-[var(--color-gray-600)] flex-1">
-                  {key
-                    .replace(/_/g, " ")
-                    .replace(/\b\w/g, (c) => c.toUpperCase())}
-                </span>
-                <span className="text-xs font-medium text-[var(--color-gray-900)]">
-                  {count}
-                </span>
-              </div>
-            ))}
+            .map(([key, count]) => {
+              const pct =
+                totalHeadcount > 0
+                  ? Math.round((count / totalHeadcount) * 100)
+                  : 0;
+              return (
+                <div key={key} className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full shrink-0 bg-[var(--color-gray-400)]" />
+                  <span className="text-xs text-[var(--color-gray-600)] flex-1">
+                    {key
+                      .replace(/_/g, " ")
+                      .replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </span>
+                  <span className="text-xs font-medium text-[var(--color-gray-900)]">
+                    {count}
+                  </span>
+                  <span className="text-[10px] text-[var(--color-gray-400)] w-8 text-right">
+                    {pct}%
+                  </span>
+                </div>
+              );
+            })}
         </div>
       </AppCard>
 
@@ -661,12 +678,24 @@ export default function DashboardPage() {
       ([, d]) => d.status === "missing",
     ).length;
 
+    // L1 redteam (round-12): the previous "No critical items" subtext
+    // contradicted a non-zero count above ("1 pending action / No critical
+    // items" reads as a bug). Make the subtext consistent: when there's
+    // nothing pending, say so; when there's at least one, describe it.
+    const total = pendingActions.length;
+    let subtext: string;
+    if (total === 0) {
+      subtext = "All caught up";
+    } else if (criticalCount > 0) {
+      subtext = `${criticalCount} critical`;
+    } else {
+      subtext = total === 1 ? "1 to review" : `${total} to review`;
+    }
     metrics.push({
       label: "Pending Actions",
-      value: String(pendingActions.length),
+      value: String(total),
       icon: ClipboardCheck,
-      subtext:
-        criticalCount > 0 ? `${criticalCount} critical` : "No critical items",
+      subtext,
     });
   }
 

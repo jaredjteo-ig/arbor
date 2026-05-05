@@ -59,12 +59,16 @@ CRITICAL_DOMAINS = frozenset({"employment_act", "cpf"})
 HIGH_DOMAINS = frozenset({"foreign_manpower"})
 
 # The full set of core regulatory domains to check when none are specified.
+# M3 redteam (round-12): the original list omitted fair_employment, so the
+# Fair Employment (TAFEP / Workplace Fairness Act) domain never appeared on
+# the compliance dashboard despite being a regulatory area Arbor tracks.
 CORE_DOMAINS = [
     "employment_act",
     "cpf",
     "foreign_manpower",
     "tax",
     "wsh",
+    "fair_employment",
 ]
 
 # Minimum number of provisions to consider a domain adequately covered.

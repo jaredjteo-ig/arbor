@@ -35,12 +35,24 @@ function AdvisoryContent() {
     refreshConversations,
   } = useAdvisoryHistory(activeConversationId);
 
+  // M6 redteam (round-12): the conversation list preview otherwise
+  // surfaces the legacy "I'm having trouble processing your question
+  // right now" fallback line, advertising a transient failure that has
+  // long since resolved. Substitute a neutral marker so the list reads
+  // cleanly while preserving the conversation history itself.
+  const FALLBACK_PHRASE = "I'm having trouble processing your question";
+  const cleanPreview = (s: string | null | undefined): string => {
+    if (!s) return "";
+    if (s.includes(FALLBACK_PHRASE)) return "(earlier reply unavailable)";
+    return s;
+  };
+
   // Map API conversations to sidebar format
   const sidebarConversations: ConversationSummary[] = conversations.map(
     (c) => ({
       id: c.id,
       title: c.title,
-      lastMessage: c.last_message,
+      lastMessage: cleanPreview(c.last_message),
       timestamp: c.timestamp,
       riskTier: c.risk_tier,
     }),

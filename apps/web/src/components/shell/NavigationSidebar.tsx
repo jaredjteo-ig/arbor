@@ -158,12 +158,11 @@ const adminManagementNavItems: NavItem[] = [
     href: "/employees",
     icon: Users,
   },
-  {
-    labelKey: "nav.onboarding",
-    label: "Onboarding",
-    href: "/employees?tab=onboarding",
-    icon: ClipboardCheck,
-  },
+  // M8 redteam (round-12): the standalone Onboarding entry duplicated the
+  // Employees ▸ Onboarding tab, which is where the actual workflow lives.
+  // Removed from the top-level nav. Admins still reach it via the
+  // Employees tab strip; the deep link `/employees?tab=onboarding` keeps
+  // working for bookmarks and email reminders.
   {
     labelKey: "nav.appraisals",
     label: "Appraisals",

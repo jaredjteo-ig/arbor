@@ -129,6 +129,39 @@ export function useAdvisoryHistory(activeConversationId: number | null) {
     });
   }, [queryClient]);
 
+  // M6 redteam (round-12): the fallback "I'm having trouble processing
+  // your question right now" message advertises a transient LLM/rate-limit
+  // failure that has long since resolved. Surfacing it in past
+  // conversations makes the platform look broken even when it isn't.
+  // Filter assistant turns whose body contains the fallback phrase, plus
+  // any stranded user turn left immediately before such a fallback.
+  const FALLBACK_PHRASE = "I'm having trouble processing your question";
+  const rawMessages = messagesQuery.data?.messages ?? [];
+  const cleanedMessages = (() => {
+    const filtered: typeof rawMessages = [];
+    for (let i = 0; i < rawMessages.length; i++) {
+      const msg = rawMessages[i];
+      const isFallback =
+        msg.role === "assistant" &&
+        typeof msg.content === "string" &&
+        msg.content.includes(FALLBACK_PHRASE);
+      if (isFallback) {
+        // Drop the user turn that triggered the failed response, if it
+        // is the most recent thing we've kept. Otherwise leave history
+        // structurally intact.
+        if (
+          filtered.length > 0 &&
+          filtered[filtered.length - 1].role === "user"
+        ) {
+          filtered.pop();
+        }
+        continue;
+      }
+      filtered.push(msg);
+    }
+    return filtered;
+  })();
+
   return {
     /** Conversation list data and status */
     conversations: listQuery.data?.conversations ?? [],
@@ -136,7 +169,7 @@ export function useAdvisoryHistory(activeConversationId: number | null) {
     conversationsError: listQuery.error,
 
     /** Selected conversation messages */
-    messages: messagesQuery.data?.messages ?? [],
+    messages: cleanedMessages,
     messagesLoading: messagesQuery.isLoading,
     messagesError: messagesQuery.error,
     refetchMessages: messagesQuery.refetch,

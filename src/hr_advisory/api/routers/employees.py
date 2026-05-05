@@ -2374,6 +2374,10 @@ async def update_employee(
         "pmbs_enabled",
         "community_chest_amount",
         "shg_override_amount",
+        "tracks_attendance",
+        "working_hours_type",
+        "salary_type",
+        "overtime_eligible",
     }
 
     updates = {k: v for k, v in body.items() if k in allowed_fields}

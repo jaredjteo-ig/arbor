@@ -1791,3 +1791,110 @@ async def upload_leave_attachment(
         "file_size": len(content),
         "mime_type": content_type,
     }
+
+
+# ==========================================================================
+# H2 (round-12 redteam): daily sweep — auto-cancel stale pending applications
+# ==========================================================================
+#
+# Pending leave with a start_date already in the past is dead state — the
+# approver never acted on it and the requested date has already gone. Left
+# alone the balance keeps `pending_days` reserved against the employee's
+# entitlement, and the admin "Pending Approvals" tile shows requests for
+# dates in the past, which makes the platform look stale.
+#
+# This sweep marks every such application as `auto_cancelled`, restores the
+# reserved balance, and stamps `reviewer_remarks` so the audit trail is
+# clear. Heavily rate-limited so cron mistakes can't hammer the DB.
+
+
+def _sweep_stale_pending_applications_for_company(company_id: int) -> dict:
+    """Auto-cancel pending leave whose start_date is in the past.
+
+    Returns a small summary dict with the cancellation count.
+    """
+    today = date.today().isoformat()
+    pending = dataflow_crud.list_records(
+        "LeaveApplication",
+        {"company_id": company_id, "status": "pending"},
+        cache_ttl=0,
+    )
+    cancelled = 0
+    now = datetime.now(timezone.utc).isoformat()
+    for app in pending:
+        start = app.get("start_date") or ""
+        if not start or start >= today:
+            continue
+        application_id = app.get("id")
+        dataflow_crud.update(
+            "LeaveApplication",
+            application_id,
+            {
+                "status": "auto_cancelled",
+                "reviewed_at": now,
+                "reviewer_remarks": (
+                    "Auto-cancelled by daily sweep: start_date had "
+                    "already passed without approval/rejection."
+                ),
+            },
+        )
+        # Restore the reserved pending days on the matching balance.
+        total_days = app.get("total_days", 0.0)
+        leave_type_code = app.get("leave_type_code", "")
+        employee_id = app.get("employee_id")
+        try:
+            year = date.fromisoformat(start).year
+        except ValueError:
+            year = date.today().year
+        if employee_id and leave_type_code:
+            balance = _get_or_create_balance(
+                employee_id, company_id, leave_type_code, year
+            )
+            dataflow_crud.update(
+                "LeaveBalance",
+                balance["id"],
+                {
+                    "pending_days": max(
+                        0.0, balance.get("pending_days", 0.0) - total_days
+                    ),
+                },
+            )
+        cancelled += 1
+    return {"company_id": company_id, "cancelled": cancelled}
+
+
+@router.post("/applications/sweep-stale-pending")
+async def sweep_stale_pending_applications(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Auto-cancel pending leave applications whose start_date is in the past.
+
+    Designed for a daily cron call (mirrors the onboarding-reminders cron
+    pattern). Heavily rate-limited so a misbehaving scheduler can't loop.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"leave_sweep_stale:{company_id}",
+        max_requests=5,
+        window_seconds=3600,
+        action_name="stale leave sweep",
+    )
+
+    summary = _sweep_stale_pending_applications_for_company(company_id)
+    logger.info(
+        "Stale pending leave sweep: company=%s cancelled=%s actor_user=%s",
+        company_id,
+        summary["cancelled"],
+        user_id,
+    )
+    return {
+        "message": (
+            f"Auto-cancelled {summary['cancelled']} stale pending leave "
+            f"application(s)."
+        ),
+        **summary,
+    }

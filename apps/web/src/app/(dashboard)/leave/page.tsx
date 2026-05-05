@@ -41,15 +41,24 @@ const STATUS_STYLES: Record<string, string> = {
     "bg-[var(--color-gray-100)] text-[var(--color-gray-500)] border-[var(--color-gray-200)]",
   cancelled:
     "bg-[var(--color-gray-100)] text-[var(--color-gray-500)] border-[var(--color-gray-200)]",
+  auto_cancelled:
+    "bg-[var(--color-gray-100)] text-[var(--color-gray-500)] border-[var(--color-gray-200)]",
 };
 
 function StatusBadge({ status }: { status: string }) {
   const s = status || "pending";
+  // Humanize compound status keys like "auto_cancelled" -> "Auto-cancelled".
+  const label = s
+    .split("_")
+    .map((part, i) =>
+      i === 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part,
+    )
+    .join("-");
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[s] || STATUS_STYLES.draft}`}
     >
-      {s.charAt(0).toUpperCase() + s.slice(1)}
+      {label}
     </span>
   );
 }
@@ -593,14 +602,24 @@ function AdminQuickStats({
   applications: LeaveApplication[];
 }) {
   const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const todayStr = now.toISOString().split("T")[0];
+  // L4 redteam (round-12): "Approved This Month" reads as 0 for the
+  // entire first week of any new calendar month — a "fresh-month dead
+  // zone" that makes the tile look broken even when the previous 30
+  // days had plenty of approvals. Use a rolling 30-day window instead.
+  const ROLLING_DAYS = 30;
+  const rollingCutoff = new Date(now.getTime() - ROLLING_DAYS * 86400_000)
+    .toISOString()
+    .split("T")[0];
 
   const totalPending = applications.filter(
     (a) => a.status === "pending",
   ).length;
-  const approvedThisMonth = applications.filter(
-    (a) => a.status === "approved" && a.approved_at?.startsWith(currentMonth),
+  const approvedRecent = applications.filter(
+    (a) =>
+      a.status === "approved" &&
+      typeof a.approved_at === "string" &&
+      a.approved_at >= rollingCutoff,
   ).length;
   const onLeaveToday = applications.filter(
     (a) =>
@@ -617,8 +636,8 @@ function AdminQuickStats({
       bg: "bg-amber-50",
     },
     {
-      label: "Approved This Month",
-      value: approvedThisMonth,
+      label: "Approved (last 30 days)",
+      value: approvedRecent,
       color: "text-emerald-600",
       bg: "bg-emerald-50",
     },

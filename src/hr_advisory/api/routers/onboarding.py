@@ -163,6 +163,61 @@ def _verify_template_ownership(template_id: int, company_id: int) -> dict:
     return template
 
 
+def _ensure_unique_template_name(
+    company_id: int,
+    name: str,
+    *,
+    exclude_template_id: int | None = None,
+) -> None:
+    """Reject the request if another active template in the company has this name.
+
+    Round-12 redteam H4: prod had three active templates named
+    'HR Technology / SaaS Onboarding'. Admins couldn't tell which one
+    new hires would actually be assigned to. Names are now unique per
+    (company_id, active) — case-insensitive, whitespace-collapsed.
+    """
+    normalized = " ".join(name.split()).casefold()
+    existing = dataflow_crud.list_records(
+        "OnboardingTemplate",
+        {"company_id": company_id, "is_active": True},
+        cache_ttl=0,
+    )
+    for t in existing:
+        if exclude_template_id is not None and t.get("id") == exclude_template_id:
+            continue
+        other = " ".join((t.get("name") or "").split()).casefold()
+        if other == normalized:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "An active onboarding template with this name already exists. "
+                    "Pick a different name or archive the existing one first."
+                ),
+            )
+
+
+def _next_available_template_name(company_id: int, base_name: str) -> str:
+    """Return `base_name`, or `base_name (Copy 2)`, etc. if it collides.
+
+    Used by the duplicate endpoint so repeated duplications don't crash.
+    """
+    candidate = base_name
+    suffix = 2
+    while True:
+        try:
+            _ensure_unique_template_name(company_id, candidate)
+            return candidate
+        except HTTPException:
+            candidate = f"{base_name} {suffix}"
+            suffix += 1
+            if suffix > 100:
+                # Pathological case — surface as 409 rather than spin forever.
+                raise HTTPException(
+                    status_code=409,
+                    detail="Too many duplicate templates with this base name.",
+                )
+
+
 def _verify_module_ownership(module_id: int, company_id: int) -> dict:
     """Load an onboarding module and verify tenant ownership."""
     module = dataflow_crud.read("OnboardingModule", module_id)
@@ -580,6 +635,9 @@ async def create_template(
     _validate_text_length(name, "name", MAX_NAME_LENGTH)
     _validate_text_length(body.get("description", ""), "description")
 
+    # H4: reject creates that collide with an existing active template name.
+    _ensure_unique_template_name(company_id, name)
+
     actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
@@ -693,6 +751,10 @@ async def update_template(
         if not name:
             raise HTTPException(status_code=400, detail="Template name cannot be empty.")
         _validate_text_length(name, "name", MAX_NAME_LENGTH)
+        # H4: a rename collides with another active template -> 409.
+        _ensure_unique_template_name(
+            company_id, name, exclude_template_id=template_id
+        )
         updates["name"] = name
 
     if "description" in body:
@@ -786,6 +848,13 @@ async def duplicate_template(
 
     new_name = body.get("name", f"{template.get('name', '')} (Copy)").strip()
     _validate_text_length(new_name, "name", MAX_NAME_LENGTH)
+    # H4: when the user supplied a name, surface the collision as a 409 so
+    # they can pick another. When we generated the "(Copy)" suffix, append
+    # an integer suffix until it's unique rather than failing.
+    if "name" in body:
+        _ensure_unique_template_name(company_id, new_name)
+    else:
+        new_name = _next_available_template_name(company_id, new_name)
 
     # Create the new template
     new_template = dataflow_crud.create(

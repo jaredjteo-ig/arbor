@@ -831,10 +831,18 @@ async def today_dashboard(
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # Fetch all active employees
+    # H1 redteam (round-12): only employees who actually clock in/out should
+    # appear on the daily status board. Salaried desk staff don't have a
+    # clock-in workflow, so listing them as "Absent" every day was misleading.
+    # The frontend Attendance page consumes this list — filtering at the
+    # source keeps the page honest without a UI-side workaround.
     employees = dataflow_crud.list_records(
         "Employee",
-        {"company_id": company_id, "is_active": True},
+        {
+            "company_id": company_id,
+            "is_active": True,
+            "tracks_attendance": True,
+        },
     )
 
     # Fetch today's attendance records for the company

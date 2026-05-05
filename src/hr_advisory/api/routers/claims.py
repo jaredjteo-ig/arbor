@@ -76,8 +76,16 @@ def _audit_claim(
 
 
 def _recalculate_claim_total(claim_id: int) -> float:
-    """Sum all item amounts for a claim and update the total_amount."""
-    items = dataflow_crud.list_records("ClaimItem", {"claim_id": claim_id})
+    """Sum all item amounts for a claim and update the total_amount.
+
+    Bypasses the list cache (cache_ttl=0): a recalculation triggered
+    immediately after an item insert MUST see the just-written row, or
+    total_amount lags one item behind and ends up equal to the last item
+    instead of the sum.
+    """
+    items = dataflow_crud.list_records(
+        "ClaimItem", {"claim_id": claim_id}, cache_ttl=0
+    )
     total = sum(item.get("amount", 0.0) for item in items)
     dataflow_crud.update("Claim", claim_id, {"total_amount": round(total, 2)})
     return round(total, 2)

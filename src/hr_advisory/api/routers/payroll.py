@@ -520,6 +520,39 @@ async def mark_payroll_paid(
     if run.get("status") != "approved":
         raise HTTPException(status_code=400, detail="Only approved runs can be marked as paid.")
 
+    # H3 redteam (round-12): block paying a later month when an earlier
+    # one is still draft/approved. Pay-out-of-sequence almost always means
+    # a missed month or a duplicate, and downstream CPF/IR8A reporting
+    # depends on chronological ordering.
+    period_end = run.get("period_end") or ""
+    if period_end:
+        siblings = dataflow_crud.list_records(
+            "PayrollRun",
+            {"company_id": company_id},
+            cache_ttl=0,
+        )
+        earlier_pending = [
+            s
+            for s in siblings
+            if s.get("id") != run_id
+            and s.get("status") in ("draft", "approved")
+            and (s.get("period_end") or "") < period_end
+        ]
+        if earlier_pending:
+            blocker = sorted(
+                earlier_pending,
+                key=lambda s: s.get("period_end") or "",
+            )[0]
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Earlier payroll run for period ending "
+                    f"{blocker.get('period_end')} is still "
+                    f"{blocker.get('status')}. Resolve it before paying "
+                    f"a later run."
+                ),
+            )
+
     dataflow_crud.update("PayrollRun", run_id, {"status": "paid"})
 
     # Update all payslips in this run to paid
