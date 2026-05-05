@@ -50,16 +50,20 @@ def run() -> None:
 
     try:
         with conn, conn.cursor() as cur:
+            # Use the PayrollRun.total_gross snapshot directly. The earlier
+            # version SUM-joined payslips on a column name (`gross_pay`)
+            # that doesn't exist in the prod schema (the column is
+            # `gross_salary` on payslips). Run-level total is what the
+            # frontend reads anyway, so use it as the source of truth.
             cur.execute(
                 """
                 SELECT pr.id, pr.period_end,
-                       COALESCE(SUM(ps.gross_pay), 0)::numeric(14,2) AS total_gross,
-                       COUNT(ps.id) AS payslip_count
+                       COALESCE(pr.total_gross, 0)::numeric(14,2) AS total_gross,
+                       (SELECT COUNT(*) FROM payslips ps
+                         WHERE ps.payroll_run_id = pr.id) AS payslip_count
                   FROM payroll_runs pr
-                  LEFT JOIN payslips ps ON ps.payroll_run_id = pr.id
                  WHERE pr.status = 'draft'
-                 GROUP BY pr.id, pr.period_end
-                HAVING COALESCE(SUM(ps.gross_pay), 0) = 0
+                   AND COALESCE(pr.total_gross, 0) = 0
                 """
             )
             empty = cur.fetchall()
