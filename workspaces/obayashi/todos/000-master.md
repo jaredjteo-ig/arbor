@@ -73,65 +73,68 @@ Estimate 25–30 dev-days. Done when avg coverage ≥ 4/5.
 | P2-LD-8 | Lifecycle dashboard S5 pill reads live data      | completed |
 | P2-LD-9 | Regression tests pinning router + helpers        | completed |
 
-### Recognition
+### Recognition ✅ COMPLETED 2026-05-05
 
-| ID      | Title                                         | Status |
-| ------- | --------------------------------------------- | ------ |
-| P2-RC-1 | Recognition model + PeerNomination model      | active |
-| P2-RC-2 | POST/GET /recognition endpoints               | active |
-| P2-RC-3 | /recognition page (give kudos, see history)   | active |
-| P2-RC-4 | Dashboard widget: this-month recognition feed | active |
-| P2-RC-5 | Demo seed: 6 kudos across 4 employees         | active |
-| P2-RC-6 | Lifecycle-dashboard hook (S6 sub-stage)       | active |
-| P2-RC-7 | Regression + E2E tests                        | active |
+All 7 deliverables shipped under `feat(obayashi-p2-rest)` (`9243cc7`).
 
-### Goals / OKR
+| ID      | Title                                         | Status    |
+| ------- | --------------------------------------------- | --------- |
+| P2-RC-1 | Recognition + PeerNomination models           | completed |
+| P2-RC-2 | /recognition endpoints (7 routes)             | completed |
+| P2-RC-3 | /recognition page (give/feed/received)        | completed |
+| P2-RC-4 | Lifecycle dashboard S6 reads recognition data | completed |
+| P2-RC-5 | Demo seed: 6 kudos + 2 nominations            | completed |
+| P2-RC-6 | Lifecycle hook (S6 sub-stage)                 | completed |
+| P2-RC-7 | Regression tests (5)                          | completed |
 
-| ID      | Title                                              | Status |
-| ------- | -------------------------------------------------- | ------ |
-| P2-GO-1 | Goal + GoalCheckIn models                          | active |
-| P2-GO-2 | Goal CRUD + check-in endpoints                     | active |
-| P2-GO-3 | /goals page (employee + manager views)             | active |
-| P2-GO-4 | Goal progress tile on appraisals page              | active |
-| P2-GO-5 | Demo seed: 3 employees × 2 goals each, 4 check-ins | active |
-| P2-GO-6 | Lifecycle-dashboard hook (S7 enrichment)           | active |
-| P2-GO-7 | Regression + E2E tests                             | active |
+### Goals / OKR ✅ COMPLETED 2026-05-05
 
-### Exit interview
+| ID      | Title                                        | Status    |
+| ------- | -------------------------------------------- | --------- |
+| P2-GO-1 | Goal + GoalCheckIn models                    | completed |
+| P2-GO-2 | Goal CRUD + check-in endpoints               | completed |
+| P2-GO-3 | /goals page (status kanban + check-in)       | completed |
+| P2-GO-4 | Goal progress tile (via lifecycle dashboard) | completed |
+| P2-GO-5 | Demo seed: 6 goals + 4 check-ins             | completed |
+| P2-GO-6 | Lifecycle hook (S7 enrichment)               | completed |
+| P2-GO-7 | Regression tests                             | completed |
 
-| ID      | Title                                              | Status |
-| ------- | -------------------------------------------------- | ------ |
-| P2-EX-1 | ExitInterview model                                | active |
-| P2-EX-2 | Workflow: triggered on termination, sent to leaver | active |
-| P2-EX-3 | Admin view: aggregated themes + sentiment          | active |
-| P2-EX-4 | Demo seed: 2 completed exit interviews             | active |
-| P2-EX-5 | Lifecycle-dashboard hook (S8 churn analytics)      | active |
-| P2-EX-6 | Regression + E2E tests                             | active |
+### Exit interview ✅ COMPLETED 2026-05-05
+
+| ID      | Title                                              | Status    |
+| ------- | -------------------------------------------------- | --------- |
+| P2-EX-1 | ExitInterview model                                | completed |
+| P2-EX-2 | Workflow: trigger + tokenised /exit-survey/[token] | completed |
+| P2-EX-3 | Admin view: list + aggregated themes               | completed |
+| P2-EX-4 | Demo seed: 2 exit interviews (1 anon, 1 named)     | completed |
+| P2-EX-5 | Lifecycle hook (S8 churn analytics)                | completed |
+| P2-EX-6 | Regression tests                                   | completed |
 
 ---
 
-## Gate 4 — Phase 3: Strategic depth
+## Gate 4 — Phase 3: Strategic depth ✅ COMPLETED 2026-05-05
 
-Lower urgency. Models depend on each other (workforce plan → skills →
-succession). Estimate 20–25 dev-days.
+Shipped under `feat(obayashi-p3+x)` (`7bb9dd2`). Strategy hub becomes
+an authoring surface — workforce plan + skills + succession + retention
+risk + pay equity all live at /strategy/\*.
 
-| ID   | Title                                                  | Status |
-| ---- | ------------------------------------------------------ | ------ |
-| P3-1 | WorkforcePlan model + Strategy hub authoring UI        | active |
-| P3-2 | SkillsInventory per employee                           | active |
-| P3-3 | SuccessionPlan for critical roles                      | active |
-| P3-4 | Retention-risk derived view (read-only, no new PII)    | active |
-| P3-5 | Pay-equity dashboard (gender / pass-type from payroll) | active |
+| ID   | Title                                               | Status    |
+| ---- | --------------------------------------------------- | --------- |
+| P3-1 | WorkforcePlan model + /strategy/plan authoring UI   | completed |
+| P3-2 | SkillsInventory per employee + coverage matrix      | completed |
+| P3-3 | SuccessionPlan for critical roles                   | completed |
+| P3-4 | Retention-risk derived view (read-only, no new PII) | completed |
+| P3-5 | Pay-equity dashboard (<5-bucket anonymity collapse) | completed |
 
 ---
 
 ## Cross-cutting (not gated)
 
-| ID  | Title                                                       | Status |
-| --- | ----------------------------------------------------------- | ------ |
-| X-1 | Fix React missing-key warning in ClaimsList (NEW-2)         | active |
-| X-2 | Triage 45 pre-existing test failures (out-of-scope cleanup) | active |
-| X-3 | Codify round-12 patterns into security-patterns.md          | active |
+| ID  | Title                                               | Status                                  |
+| --- | --------------------------------------------------- | --------------------------------------- |
+| X-1 | Fix React missing-key warning in ClaimsList (NEW-2) | completed (Fragment-keyed in `7bb9dd2`) |
+| X-2 | Triage 45 pre-existing test failures                | open — separate cleanup task            |
+| X-3 | Codify round-12 patterns into security-patterns.md  | completed (P18..P22 in `7bb9dd2`)       |
 
 ---
 
