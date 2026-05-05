@@ -639,8 +639,12 @@ class TestAddCandidateEmailValidation:
     @patch("hr_advisory.api.routers.recruitment._send_recruitment_email", new_callable=AsyncMock)
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_rejects_malformed_email_in_add_candidate(self, mock_crud, mock_email, owner_client):
-        mock_crud.read.return_value = _job_record()
-        mock_crud.list_records.return_value = []
+        # _verify_job_ownership uses list_records on JobListing; the
+        # duplicate-candidate check uses list_records on Candidate.
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [_job_record()],
+            "Candidate": [],
+        }.get(model, [])
 
         resp = owner_client.post(
             "/recruitment/jobs/1/candidates",
@@ -652,8 +656,10 @@ class TestAddCandidateEmailValidation:
     @patch("hr_advisory.api.routers.recruitment._send_recruitment_email", new_callable=AsyncMock)
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_accepts_valid_email_in_add_candidate(self, mock_crud, mock_email, owner_client):
-        mock_crud.read.return_value = _job_record()
-        mock_crud.list_records.return_value = []
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [_job_record()],
+            "Candidate": [],
+        }.get(model, [])
         mock_crud.create.return_value = _candidate_record()
         mock_email.return_value = True
 

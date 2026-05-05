@@ -110,8 +110,12 @@ class TestListScreeningQuestions:
 
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_list_empty_when_no_questions(self, mock_crud, client):
-        mock_crud.read.return_value = _job_record()
-        mock_crud.list_records.return_value = []
+        # _verify_job_ownership uses list_records on JobListing; the
+        # screening-question list query uses list_records on ScreeningQuestion.
+        mock_crud.list_records.side_effect = lambda model, filters, **kw: {
+            "JobListing": [_job_record()],
+            "ScreeningQuestion": [],
+        }.get(model, [])
 
         resp = client.get("/recruitment/jobs/1/questions")
 
@@ -123,7 +127,9 @@ class TestListScreeningQuestions:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_list_rejects_wrong_company_job(self, mock_crud, client):
         """Job belongs to company_id=999 but caller is company_id=1."""
-        mock_crud.read.return_value = _job_record(company_id=999)
+        # _verify_job_ownership filters by (id, company_id); cross-tenant
+        # lookup returns empty under list_records.
+        mock_crud.list_records.return_value = []
 
         resp = client.get("/recruitment/jobs/1/questions")
 
@@ -195,7 +201,9 @@ class TestCreateScreeningQuestion:
 
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_create_rejects_wrong_company_job(self, mock_crud, client):
-        mock_crud.read.return_value = _job_record(company_id=999)
+        # _verify_job_ownership filters by (id, company_id); cross-tenant
+        # lookup returns empty under list_records.
+        mock_crud.list_records.return_value = []
 
         resp = client.post(
             "/recruitment/jobs/1/questions",

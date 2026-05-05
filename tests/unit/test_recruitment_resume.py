@@ -76,6 +76,29 @@ def client():
     app.dependency_overrides.clear()
 
 
+# Reset both in-memory and Redis-backed rate-limit state so resume upload
+# tests don't inherit a 429 from a previous run that already burned through
+# the 30/3600s allowance.
+@pytest.fixture(autouse=True)
+def _reset_rate_limit():
+    from hr_advisory.api.middleware import rate_limit as rl
+
+    rl._request_log.clear()
+    try:
+        client = rl._get_redis_client()
+        if client is not None:
+            for key in client.keys("rate:*"):
+                try:
+                    client.delete(key)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    yield
+    rl._request_log.clear()
+
+
 def _pdf_bytes() -> bytes:
     """Minimal valid PDF magic bytes."""
     return b"%PDF-1.4 minimal content"
@@ -208,7 +231,8 @@ class TestResumeUpload:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_candidate_not_found_returns_404(self, mock_crud, client):
         """Uploading to a non-existent candidate returns 404."""
-        mock_crud.read.return_value = None
+        # _verify_candidate_ownership uses list_records; empty -> 404.
+        mock_crud.list_records.return_value = []
 
         resp = client.post(
             "/recruitment/candidates/999/resume",
@@ -221,7 +245,9 @@ class TestResumeUpload:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_wrong_company_returns_404(self, mock_crud, client):
         """Uploading to a candidate from another company returns 404 (tenant isolation)."""
-        mock_crud.read.return_value = _candidate_record(company_id=999)
+        # _verify_candidate_ownership filters by (id, company_id); a
+        # candidate belonging to company 999 won't match for company 1.
+        mock_crud.list_records.return_value = []
 
         resp = client.post(
             "/recruitment/candidates/1/resume",
@@ -355,7 +381,8 @@ class TestResumeDownload:
         """Downloading a stored PDF resume returns the file with correct headers."""
         stored_name = f"{uuid.uuid4()}.pdf"
         candidate = _candidate_record(resume_url=stored_name)
-        mock_crud.read.return_value = candidate
+        # _verify_candidate_ownership uses list_records (not read).
+        mock_crud.list_records.return_value = [candidate]
 
         # Write a real file
         company_dir = tmp_path / "1"
@@ -373,7 +400,7 @@ class TestResumeDownload:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_candidate_not_found_returns_404(self, mock_crud, client):
         """Downloading resume for non-existent candidate returns 404."""
-        mock_crud.read.return_value = None
+        mock_crud.list_records.return_value = []
 
         resp = client.get("/recruitment/candidates/999/resume")
 
@@ -383,7 +410,8 @@ class TestResumeDownload:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_wrong_company_returns_404(self, mock_crud, client):
         """Downloading resume from another company's candidate returns 404."""
-        mock_crud.read.return_value = _candidate_record(company_id=999)
+        # Wrong-tenant lookup returns empty (filtered by company_id).
+        mock_crud.list_records.return_value = []
 
         resp = client.get("/recruitment/candidates/1/resume")
 
@@ -392,7 +420,7 @@ class TestResumeDownload:
     @patch("hr_advisory.api.routers.recruitment.dataflow_crud")
     def test_no_resume_returns_404(self, mock_crud, client):
         """Downloading when candidate has no resume_url returns 404."""
-        mock_crud.read.return_value = _candidate_record(resume_url="")
+        mock_crud.list_records.return_value = [_candidate_record(resume_url="")]
 
         resp = client.get("/recruitment/candidates/1/resume")
 
@@ -403,7 +431,7 @@ class TestResumeDownload:
     def test_file_missing_on_disk_returns_404(self, mock_crud, client, tmp_path):
         """When resume_url references a file that doesn't exist on disk, returns 404."""
         stored_name = f"{uuid.uuid4()}.pdf"
-        mock_crud.read.return_value = _candidate_record(resume_url=stored_name)
+        mock_crud.list_records.return_value = [_candidate_record(resume_url=stored_name)]
 
         with patch("hr_advisory.api.routers.recruitment.RECRUITMENT_UPLOAD_DIR", str(tmp_path)):
             resp = client.get("/recruitment/candidates/1/resume")
@@ -415,7 +443,7 @@ class TestResumeDownload:
     def test_docx_download_correct_media_type(self, mock_crud, client, tmp_path):
         """DOCX files are served with the correct MIME type."""
         stored_name = f"{uuid.uuid4()}.docx"
-        mock_crud.read.return_value = _candidate_record(resume_url=stored_name)
+        mock_crud.list_records.return_value = [_candidate_record(resume_url=stored_name)]
 
         company_dir = tmp_path / "1"
         company_dir.mkdir(parents=True)
@@ -433,7 +461,7 @@ class TestResumeDownload:
     def test_jpeg_download_correct_media_type(self, mock_crud, client, tmp_path):
         """JPEG files are served with image/jpeg MIME type."""
         stored_name = f"{uuid.uuid4()}.jpg"
-        mock_crud.read.return_value = _candidate_record(resume_url=stored_name)
+        mock_crud.list_records.return_value = [_candidate_record(resume_url=stored_name)]
 
         company_dir = tmp_path / "1"
         company_dir.mkdir(parents=True)
