@@ -29,6 +29,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _now_for_db() -> datetime:
+    """Return a NAIVE UTC datetime for writing to TIMESTAMP columns.
+
+    DataFlow's async layer (asyncpg) rejects ISO-format strings for
+    `timestamp without time zone` columns — it needs a real datetime
+    instance. Tz-aware datetimes also fail asyncpg's strict check
+    against this column type. Use this helper everywhere a write
+    targets `updated_at`, `created_at`, `accepted_at`, etc.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 # Roles that may be assigned via the candidate→hire flow. Owners and platform
 # admins are intentionally excluded — those positions are not filled through
 # recruitment. Anything outside this set is rejected at hire time and again
@@ -488,7 +500,7 @@ async def update_job(
         if updates["salary_range_min"] > updates["salary_range_max"]:
             raise HTTPException(status_code=400, detail="salary_range_min cannot exceed salary_range_max.")
 
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updates["updated_at"] = _now_for_db()
     result = dataflow_crud.update("JobListing", job_id, updates)
     return {"job": result}
 
@@ -542,13 +554,14 @@ async def close_job(
 
     actor_id = int(current_user.get("sub", 0))
     now_iso = datetime.now(timezone.utc).isoformat()
+    now_dt = _now_for_db()
 
     result = dataflow_crud.update(
         "JobListing",
         job_id,
         {
             "status": "closed",
-            "closed_at": now_iso,
+            "closed_at": now_iso,  # TEXT column — ISO string ok
         },
     )
 
@@ -574,7 +587,7 @@ async def close_job(
                     {
                         "stage": "withdrawn",
                         "rejection_reason": "job_closed",
-                        "updated_at": now_iso,
+                        "updated_at": now_dt,  # TIMESTAMP — must be datetime
                     },
                 )
                 _log_candidate_activity(
@@ -1043,7 +1056,7 @@ async def update_candidate(
             str(updates["stage"]),
         )
 
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updates["updated_at"] = _now_for_db()
     result = dataflow_crud.update("Candidate", candidate_id, updates)
 
     # T-R026: Log stage transitions for audit trail
@@ -1087,7 +1100,7 @@ async def reject_candidate(
     updates: dict = {
         "stage": "rejected",
         "rejection_reason": reason,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": _now_for_db(),
     }
     if notes:
         updates["notes"] = notes
@@ -1222,7 +1235,7 @@ async def schedule_interview(
                 candidate_id,
                 {
                     "stage": next_stage,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": _now_for_db(),
                 },
             )
 
@@ -1331,7 +1344,7 @@ async def update_interview(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updates["updated_at"] = _now_for_db()
     result = dataflow_crud.update("InterviewSchedule", interview_id, updates)
 
     # T-R055: keep Google Calendar in sync.  Cancellations delete the event;
@@ -1493,7 +1506,7 @@ async def generate_offer(
     dataflow_crud.update(
         "Candidate",
         candidate_id,
-        {"stage": "offered", "updated_at": datetime.now(timezone.utc).isoformat()},
+        {"stage": "offered", "updated_at": _now_for_db()},
     )
 
     return {"offer": offer, "detail": "Offer generated."}
@@ -1583,7 +1596,7 @@ async def hire_candidate(
         {
             "stage": "hired",
             "hired_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": _now_for_db(),
         },
     )
 
@@ -1695,7 +1708,7 @@ async def upload_resume(
     dataflow_crud.update(
         "Candidate",
         candidate_id,
-        {"resume_url": stored_name, "updated_at": datetime.now(timezone.utc).isoformat()},
+        {"resume_url": stored_name, "updated_at": _now_for_db()},
     )
 
     logger.info(
@@ -1961,7 +1974,7 @@ async def send_offer(
             offer["candidate_id"],
             {
                 "stage": "offered",
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": _now_for_db(),
             },
         )
 
