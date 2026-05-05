@@ -130,11 +130,11 @@ risk + pay equity all live at /strategy/\*.
 
 ## Cross-cutting (not gated)
 
-| ID  | Title                                               | Status                                  |
-| --- | --------------------------------------------------- | --------------------------------------- |
-| X-1 | Fix React missing-key warning in ClaimsList (NEW-2) | completed (Fragment-keyed in `7bb9dd2`) |
-| X-2 | Triage 45 pre-existing test failures                | open — separate cleanup task            |
-| X-3 | Codify round-12 patterns into security-patterns.md  | completed (P18..P22 in `7bb9dd2`)       |
+| ID  | Title                                               | Status                                                                                                    |
+| --- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| X-1 | Fix React missing-key warning in ClaimsList (NEW-2) | completed (Fragment-keyed in `7bb9dd2`)                                                                   |
+| X-2 | Triage 45 pre-existing test failures                | completed — 46 → 0 across 5 batches (`cf84255`, `5ddbc67`, `d662798`, `4990852`, `a63e02a`); 2503 passing |
+| X-3 | Codify round-12 patterns into security-patterns.md  | completed (P18..P22 in `7bb9dd2`)                                                                         |
 
 ---
 
