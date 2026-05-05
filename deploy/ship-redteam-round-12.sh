@@ -147,6 +147,11 @@ if [[ -n "$DETECTED" ]]; then
 fi
 ok "Backend container: ${BACKEND_CONTAINER}"
 
+# The backend image doesn't bake scripts/ into /app, so copy them into the
+# running container once. Idempotent — overwrites any older copy.
+"${SSH_CMD[@]}" "docker cp ${REMOTE_DIR}/scripts ${BACKEND_CONTAINER}:/app/scripts"
+ok "Scripts copied into container."
+
 for entry in "${BACKFILL_SCRIPTS[@]}"; do
   script="${entry%%:*}"
   reason="${entry##*:}"
