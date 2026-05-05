@@ -270,8 +270,19 @@ class Company:
     is_active: bool = True
     # Server-side feature flags (round-13 S1-T2). Stored as JSON so admins
     # can opt their company in/out of beta features without a code release.
-    # Allow-listed keys: "ai-scorecards", "tafep-ai", "chat-onboarding".
+    # Allow-listed keys: "ai-scorecards", "tafep-ai", "chat-onboarding",
+    # "seen_lifecycle_tour" (round-12 P1-9).
     feature_flags: Optional[dict] = None
+    # P1-7 (round-12 obayashi): employer-brand fields surfaced on the public
+    # careers page and read by the Lifecycle Dashboard's Attract stage.
+    # Defaults to empty so the Brand-new-company empty-state stays clean.
+    mission: str = ""
+    tagline: str = ""
+    benefits_summary: str = ""
+    culture_pillars: str = ""  # JSON-array-as-text; stored as a string to
+    # match DataFlow's lack of native JSON arrays.
+    team_photos_url: str = ""
+    glassdoor_url: str = ""
 
     __dataflow__ = {
         "multi_tenant": True,

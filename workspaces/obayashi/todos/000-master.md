@@ -27,10 +27,12 @@ the 5 deploy-script issues encountered + fixed in passing.
 
 ---
 
-## Gate 2 — Phase 1: Lifecycle dashboard (12 deliverables)
+## Gate 2 — Phase 1: Lifecycle dashboard (12 deliverables) ✅ COMPLETED 2026-05-05
 
-Ship all 12 together. Estimate 10–12 dev-days. Average target lift:
-SG-SME buyer can land on `/strategy/lifecycle` and walk all 8 stages.
+All 12 deliverables shipped together as bundled commit. Page live at
+`/strategy/lifecycle` with 8 stage cards, detail panels, D&I tile, and
+activity feed. 36 P1 regression tests pin the health-pill thresholds.
+See `todos/completed/P1-lifecycle-dashboard.md` for full evidence.
 
 | ID    | Title                                            | Status |
 | ----- | ------------------------------------------------ | ------ |

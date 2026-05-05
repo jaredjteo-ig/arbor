@@ -1,4 +1,27 @@
-# Phase 1 — Lifecycle Dashboard (Gate 2, ship 12 deliverables together)
+# Phase 1 — Lifecycle Dashboard (Gate 2) ✅ COMPLETED 2026-05-05
+
+All 12 deliverables shipped (P1-1..P1-12). Single bundled commit. Page
+live at `/strategy/lifecycle`. 36 P1 regression tests + 3 Playwright
+E2E tests pin the contract. README updated.
+
+**Evidence:**
+
+| ID                 | Artefact                                                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| P1-1 aggregator    | `src/hr_advisory/api/routers/strategy.py::lifecycle_dashboard` returns hero + 8 stages + di_snapshot + activity in one round-trip |
+| P1-2 page          | `apps/web/src/app/(dashboard)/strategy/lifecycle/page.tsx`                                                                        |
+| P1-3 detail panels | `components/lifecycle/StageDetailPanel.tsx` — 8 panels with KPIs + quick-action deep links                                        |
+| P1-4 health pills  | 8 `_pill_*` helpers + 28 parametrized regression tests                                                                            |
+| P1-5 D&I tile      | `components/lifecycle/DiSnapshotTile.tsx` — gender + pass_type composition + 4-field completeness                                 |
+| P1-6 activity feed | `components/lifecycle/ActivityFeed.tsx` — last 14 days                                                                            |
+| P1-7 ALTER TABLE   | `scripts/migrate_company_employer_brand.py` — 6 employer-brand columns; `Company` dataclass updated                               |
+| P1-8 sidebar       | `Lifecycle` entry above `Dashboard` in `NavigationSidebar.tsx`                                                                    |
+| P1-9 tour          | `LifecycleTour.tsx` + `POST /strategy/lifecycle-tour/dismiss`                                                                     |
+| P1-10 regression   | `tests/regression/test_p1_lifecycle_dashboard.py` — 36 tests                                                                      |
+| P1-11 E2E          | `apps/web/tests/e2e-live/10-lifecycle-walk.spec.ts` — 3 tests                                                                     |
+| P1-12 docs         | README "Strategy Hub" section                                                                                                     |
+
+**Original brief:**
 
 **Source plans:** `02-plans/02-lifecycle-dashboard-spec.md` (UI spec), `02-plans/03-post-redteam-plan.md` Gate 2.
 **Estimate:** 10–12 dev-days.

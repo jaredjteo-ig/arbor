@@ -36,6 +36,7 @@ import {
   Timer,
   ClipboardCheck,
   Briefcase,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -51,6 +52,15 @@ interface NavItem {
 /* ── Admin nav groups ─────────────────────────────────────── */
 
 const adminCoreNavItems: NavItem[] = [
+  // P1-8 (round-12 obayashi): the Strategy / Lifecycle hub is the new
+  // organising surface for the platform — sits ABOVE the operational
+  // Dashboard so buyers land here first.
+  {
+    labelKey: "nav.strategy",
+    label: "Lifecycle",
+    href: "/strategy/lifecycle",
+    icon: Sparkles,
+  },
   {
     labelKey: "nav.dashboard",
     label: "Dashboard",

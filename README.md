@@ -24,14 +24,14 @@ Arbor is a complete, open-source HRIS (Human Resource Information System) with a
 
 ### Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| **Backend** | Python, Kailash SDK (Core + DataFlow + Nexus + Kaizen) |
-| **Frontend (Web)** | Next.js 16, React, Tailwind v4, TanStack Query |
-| **Frontend (Mobile)** | Flutter, Riverpod 3, GoRouter |
-| **Database** | PostgreSQL 16 + pgvector, Redis |
-| **AI** | OpenAI / Ollama (configurable via `.env`) |
-| **Auth** | JWT + bcrypt, Google OAuth |
+| Layer                 | Technology                                             |
+| --------------------- | ------------------------------------------------------ |
+| **Backend**           | Python, Kailash SDK (Core + DataFlow + Nexus + Kaizen) |
+| **Frontend (Web)**    | Next.js 16, React, Tailwind v4, TanStack Query         |
+| **Frontend (Mobile)** | Flutter, Riverpod 3, GoRouter                          |
+| **Database**          | PostgreSQL 16 + pgvector, Redis                        |
+| **AI**                | OpenAI / Ollama (configurable via `.env`)              |
+| **Auth**              | JWT + bcrypt, Google OAuth                             |
 
 ---
 
@@ -85,7 +85,17 @@ tests/               3-tier testing (unit, integration, E2E)
 
 ## Modules
 
+### Strategy Hub — Cox 8-stage Employee Lifecycle (`/strategy/lifecycle`)
+
+- Single page that walks Strategy → Attract → Recruit → Onboard → Learning → Reward → Progression → Retain
+- Health-pill per stage (Healthy / Attention / Action) with thresholds defined in `routers/strategy.py`
+- Hero band: headcount actual vs target, open roles, churn YTD vs YoY
+- Stage detail panels with KPIs + quick-action deep links into each module
+- D&I cross-cutting tile (gender / pass-type composition + completeness metrics)
+- Cross-stage activity feed (last 14 days)
+
 ### HRIS Engine (Deterministic -- Zero LLM)
+
 - **Payroll** -- Gross-to-net with CPF, SDL, FWL, SHG. Statutory file generation (CPF e-Submit, IR8A, IR21)
 - **Leave** -- 13 leave types, gender-aware, service-year progression, pro-ration, carry-forward
 - **Claims** -- 6 categories, receipt validation, monthly caps, approval workflow
@@ -94,12 +104,14 @@ tests/               3-tier testing (unit, integration, E2E)
 - **Employee Lifecycle** -- Onboarding, probation, confirmation, termination, work pass tracking
 
 ### AI Advisory Engine
+
 - **13-step safety chain** -- Query analysis, KB retrieval, compliance gate, response synthesis, citation validation
 - **6 domain specialists** -- Employment Act, CPF, Foreign Manpower, TAFEP, WSH, Tax/IRAS
 - **Knowledge base** -- 8 regulatory domains with provision-level granularity
 - **Trust lineage** -- EATP attestation on every advisory response
 
 ### MCP Integration Layer
+
 - **arbor-government** -- MOM, IRAS, CPF Board, data.gov.sg, SkillsFuture
 - **arbor-accounting** -- Xero, QuickBooks, Financio, and SG HRIS platforms
 - **arbor-banking** -- PayNow, GIRO, Wise, Aspire
