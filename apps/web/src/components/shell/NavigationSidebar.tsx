@@ -258,9 +258,12 @@ const adminBottomNavItems: NavItem[] = [
     iconClassName: "text-[var(--color-risk-amber)]",
   },
   {
+    // P2-LD-4 (round-12 obayashi): Training is no longer SkillsFuture-only —
+    // Records, Certifications, Mandatory, and the SkillsFuture catalogue all
+    // sit under /training/* with a tab strip. Default to the records page.
     labelKey: "nav.training",
     label: "Training",
-    href: "/training/skillsfuture",
+    href: "/training/records",
     icon: GraduationCap,
   },
   {

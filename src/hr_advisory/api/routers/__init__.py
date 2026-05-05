@@ -39,6 +39,7 @@ from hr_advisory.api.routers.settings import router as settings_router
 from hr_advisory.api.routers.shadow import router as shadow_router
 from hr_advisory.api.routers.shifts import router as shifts_router
 from hr_advisory.api.routers.strategy import router as strategy_router
+from hr_advisory.api.routers.training import router as training_router
 from hr_advisory.api.routers.claims import router as claims_router
 from hr_advisory.api.routers.attendance import router as attendance_router
 from hr_advisory.api.routers.integrations import router as integrations_router
@@ -82,6 +83,7 @@ __all__ = [
     "shadow_router",
     "shifts_router",
     "strategy_router",
+    "training_router",
     "integrations_router",
     "integrations_calendar_router",
 ]

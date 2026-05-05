@@ -2984,3 +2984,100 @@ class PushSubscription:
             {"name": "idx_pushsub_active", "fields": ["is_active"]},
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Learning & Development (P2-LD)
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class TrainingRecord:
+    """A logged training event for an employee.
+
+    Sources include internal courses, external providers, and SkillsFuture
+    grants. The Lifecycle Dashboard L&D stage reads avg hours/employee/year
+    from this model. Soft-archive via is_archived rather than DELETE so
+    historical records survive employee churn.
+    """
+
+    company_id: int
+    employee_id: int
+    course_name: str
+    course_provider: str = ""
+    course_type: str = "internal"  # internal/external/skillsfuture
+    start_date: str = ""  # ISO date
+    completion_date: str = ""  # ISO date; empty until completed
+    hours: float = 0.0
+    cost: float = 0.0
+    funding_source: str = "employer"  # self/employer/skillsfuture_credit
+    certificate_url: str = ""
+    notes: str = ""
+    is_archived: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_training_company", "fields": ["company_id"]},
+            {"name": "idx_training_employee", "fields": ["employee_id"]},
+            {"name": "idx_training_archived", "fields": ["is_archived"]},
+        ],
+    }
+
+
+@db.model
+class Certification:
+    """A professional certification held by an employee.
+
+    Powers the certifications page + 'expiring soon' alerts.
+    expires_at is nullable for non-expiring certs (e.g., a degree).
+    """
+
+    company_id: int
+    employee_id: int
+    certification_name: str
+    issuing_body: str = ""
+    issued_date: str = ""  # ISO date
+    expires_at: str = ""  # ISO date; empty for non-expiring certs
+    cert_number: str = ""
+    attachment_url: str = ""
+    notes: str = ""
+    is_archived: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_cert_company", "fields": ["company_id"]},
+            {"name": "idx_cert_employee", "fields": ["employee_id"]},
+            {"name": "idx_cert_expires", "fields": ["expires_at"]},
+        ],
+    }
+
+
+@db.model
+class MandatoryTrainingRequirement:
+    """A company-wide rule: 'every employee in dept X must hold cert Y'.
+
+    Used for WSH compliance, sector-specific demands, and onboarding-
+    triggered cert checks. due_within_days_of_hire is the grace period
+    counted from Employee.start_date.
+    """
+
+    company_id: int
+    requirement_name: str
+    applicable_to: str = "all"  # all/department:NAME/pass_type:NAME/role:NAME
+    required_certification_name: str = ""  # Free-text match against Certification.certification_name
+    due_within_days_of_hire: int = 90
+    is_active: bool = True
+    notes: str = ""
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_mtr_company", "fields": ["company_id"]},
+            {"name": "idx_mtr_active", "fields": ["is_active"]},
+        ],
+    }

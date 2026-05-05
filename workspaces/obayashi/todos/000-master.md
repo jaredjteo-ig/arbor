@@ -59,19 +59,19 @@ hook into the Gate 2 lifecycle dashboard so Strategy reflects coverage.
 
 Estimate 25–30 dev-days. Done when avg coverage ≥ 4/5.
 
-### L&D foundations
+### L&D foundations ✅ COMPLETED 2026-05-05
 
-| ID      | Title                                                   | Status |
-| ------- | ------------------------------------------------------- | ------ |
-| P2-LD-1 | TrainingRecord model + CRUD endpoints                   | active |
-| P2-LD-2 | Certification model with expiry tracking                | active |
-| P2-LD-3 | MandatoryTrainingRequirement model                      | active |
-| P2-LD-4 | /training/records page (admin + employee views)         | active |
-| P2-LD-5 | /training/certifications page with expiry alerts        | active |
-| P2-LD-6 | Mandatory-training tracker dashboard tile               | active |
-| P2-LD-7 | Demo seed: 3 training records, 2 certs, 1 expiring soon | active |
-| P2-LD-8 | Lifecycle-dashboard hook (S5 health-pill data)          | active |
-| P2-LD-9 | Regression + E2E tests                                  | active |
+| ID      | Title                                            | Status    |
+| ------- | ------------------------------------------------ | --------- |
+| P2-LD-1 | TrainingRecord model + CRUD endpoints            | completed |
+| P2-LD-2 | Certification model with expiry tracking         | completed |
+| P2-LD-3 | MandatoryTrainingRequirement model               | completed |
+| P2-LD-4 | /training/records page (admin + employee views)  | completed |
+| P2-LD-5 | /training/certifications page with expiry alerts | completed |
+| P2-LD-6 | Mandatory-training tracker page                  | completed |
+| P2-LD-7 | Demo seed: 3 records, 2 certs, 1 expiring soon   | completed |
+| P2-LD-8 | Lifecycle dashboard S5 pill reads live data      | completed |
+| P2-LD-9 | Regression tests pinning router + helpers        | completed |
 
 ### Recognition
 
