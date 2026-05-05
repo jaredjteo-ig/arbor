@@ -588,5 +588,120 @@ Reach for this skill when:
 - Adding Google Calendar sync → P15 (syncToken)
 - Adding background maintenance work → P16 (cron pattern)
 - Adding a body field that maps to a User.role → P17 (allow-list)
+- Reading then writing the same aggregate → P18 (cache-bypass-on-recalc)
+- Auth-route group with a `(auth)` segment → P19 (defensive route guard)
+- Sequencing-sensitive workflow (publish/pay/finalize) → P20 (chronological-ordering guard)
+- Any user-named active resource → P21 (unique-name helper + auto-suffix)
+- Dashboard tile fed by a snapshot field → P22 (live-vs-snapshot drift)
 
 Each pattern has a regression test pinning the invariant; refer to those tests for executable examples.
+
+## P18 — Cache-bypass-on-recalc (round-12 B3)
+
+Any function that READs then WRITES a derived aggregate (claim totals,
+leave balances, headcount) must pass `cache_ttl=0` to the read.
+Otherwise a write triggered immediately after an insert reads a stale
+list and the aggregate lags one event behind. Symptom: `total_amount`
+ends up equal to the last-inserted item only.
+
+```python
+def _recalculate_claim_total(claim_id: int) -> float:
+    items = dataflow_crud.list_records(
+        "ClaimItem", {"claim_id": claim_id}, cache_ttl=0  # MUST be 0
+    )
+    total = sum(item.get("amount", 0.0) for item in items)
+    dataflow_crud.update("Claim", claim_id, {"total_amount": round(total, 2)})
+    return round(total, 2)
+```
+
+Pinned by `tests/regression/test_b3_claim_total_recalc.py`.
+
+## P19 — Defensive route guard for `(auth)` group leakage (round-12 B2)
+
+Next.js App Router's `(auth)` and `(dashboard)` route groups don't appear
+in URLs. An `(auth)/X/page.tsx` is therefore reachable at `/X` for any
+user, including already-onboarded admins who hit it via a stale bookmark
+or browser back-button. Defence: `useEffect` redirect on the auth-only
+page that bounces logged-in users with the relevant resolved state.
+
+```tsx
+useEffect(() => {
+  if (user?.company_id != null && featureFlagsLoaded && !chatFlagEnabled) {
+    router.replace("/employees?tab=onboarding");
+  }
+}, [user?.company_id, featureFlagsLoaded, chatFlagEnabled, router]);
+```
+
+Don't rely on the sidebar `href` alone — assume bookmarks reach any URL.
+
+## P20 — Chronological-ordering guard for publish/pay/finalize (round-12 H3)
+
+Any "mark paid" / "publish" / "finalize" workflow must reject the action
+when an earlier-period sibling is still draft/approved. CPF / IR8A /
+payroll sequencing depends on it. Pattern: load all siblings,
+`cache_ttl=0`, filter for `period_end < this_one.period_end AND
+status ∈ {draft, approved}`. If any → 409.
+
+```python
+earlier_pending = [
+    s for s in siblings
+    if s.get("id") != run_id
+    and s.get("status") in ("draft", "approved")
+    and (s.get("period_end") or "") < period_end
+]
+if earlier_pending:
+    raise HTTPException(409, detail=f"Earlier run for period ending …")
+```
+
+Pinned by `tests/regression/test_h3_payroll_ordering.py`.
+
+## P21 — Unique-name helper + auto-suffix (round-12 H4)
+
+Any user-named resource (templates, plans, jobs) needs a uniqueness
+check. The shape that works: case-insensitive, whitespace-collapsed,
+scoped by company_id + active flag. Plus an auto-suffix variant for
+"duplicate" endpoints so repeated duplications don't collide.
+
+```python
+def _ensure_unique_name(company_id: int, name: str, *, exclude_id: int | None = None) -> None:
+    normalized = " ".join(name.split()).casefold()
+    existing = dataflow_crud.list_records(
+        "OnboardingTemplate",
+        {"company_id": company_id, "is_active": True},
+        cache_ttl=0,
+    )
+    for t in existing:
+        if exclude_id is not None and t.get("id") == exclude_id:
+            continue
+        other = " ".join((t.get("name") or "").split()).casefold()
+        if other == normalized:
+            raise HTTPException(409, detail="Name already in use.")
+```
+
+Pinned by `tests/regression/test_h4_unique_template_names.py`.
+
+## P22 — Live-vs-snapshot drift on user-facing tiles (round-12 NEW-3)
+
+Company-level snapshot fields (`headcount_local`, etc.) are set at
+signup and rarely refreshed. Any user-facing tile or report that reads
+those will drift from live state and look broken when compared to the
+employee directory. Rule: dashboards compute live (with `cache_ttl=0`),
+not from snapshots. Snapshots are fine for the WorkforcePlan target
+("we want 32") but never for the actual count ("we have 28").
+
+```python
+employees = dataflow_crud.list_records(
+    "Employee",
+    {"company_id": company_id, "is_active": True},
+    cache_ttl=0,
+)
+bucket_counts: dict[str, int] = {}
+for emp in employees:
+    raw = (emp.get("pass_type") or "").strip().lower()
+    key = raw or "citizen"
+    bucket_counts[key] = bucket_counts.get(key, 0) + 1
+```
+
+Companion rule: empty values default to a sensible domain default
+(`citizen` for SG-SME) instead of being shown as "Unknown 1" — that
+re-introduces the same drift as a tile-level bug (round-12 M1).

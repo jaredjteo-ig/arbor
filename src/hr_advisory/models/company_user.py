@@ -3110,6 +3110,95 @@ class PeerNomination:
 
 
 @db.model
+class WorkforcePlan:
+    """A periodic workforce plan — headcount targets, skills priorities, retention focus.
+
+    Phase 3 P3-1 (obayashi). The Strategy hub becomes an authoring
+    surface once an admin can write a plan; the Lifecycle Dashboard's
+    Hero band reads `headcount_target` from the published plan.
+    """
+
+    company_id: int
+    period_start: str = ""  # ISO date
+    period_end: str = ""
+    name: str = ""
+    status: str = "draft"  # draft / published / archived
+    headcount_targets: str = ""  # JSON-as-text
+    skills_priorities: str = ""
+    retention_focus: str = ""
+    narrative: str = ""
+    created_by: int = 0
+    approved_by: int = 0
+    approved_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_wfp_company", "fields": ["company_id"]},
+            {"name": "idx_wfp_status", "fields": ["status"]},
+        ],
+    }
+
+
+@db.model
+class SkillsInventoryEntry:
+    """A skill held by an employee — derived from training records,
+    appraisals, or directly entered.
+
+    Phase 3 P3-2 (obayashi). Skills feed P3-3 succession planning.
+    """
+
+    company_id: int
+    employee_id: int
+    skill_name: str
+    proficiency: int = 3  # 1..5 scale
+    years_experience: float = 0.0
+    last_used_date: str = ""
+    verified_by_user_id: int = 0
+    notes: str = ""
+    is_archived: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_skill_company", "fields": ["company_id"]},
+            {"name": "idx_skill_employee", "fields": ["employee_id"]},
+            {"name": "idx_skill_name", "fields": ["skill_name"]},
+        ],
+    }
+
+
+@db.model
+class SuccessionPlan:
+    """A succession plan for a critical role.
+
+    Phase 3 P3-3 (obayashi). `successors` JSON list of objects:
+    [{ employee_id, readiness_months, gaps: [...] }]. Computed
+    against SkillsInventoryEntry on demand.
+    """
+
+    company_id: int
+    role_title: str
+    incumbent_employee_id: int = 0
+    criticality: str = "medium"  # low/medium/high
+    successors: str = ""  # JSON-as-text
+    notes: str = ""
+    last_reviewed_at: Optional[datetime] = None
+    is_archived: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_succ_company", "fields": ["company_id"]},
+            {"name": "idx_succ_critical", "fields": ["criticality"]},
+        ],
+    }
+
+
+@db.model
 class Goal:
     """An employee or team goal (KR-style metric optional).
 

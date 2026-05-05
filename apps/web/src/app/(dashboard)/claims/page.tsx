@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback } from "react";
 import {
   AppCard,
   AppButton,
@@ -673,9 +673,11 @@ function ClaimsList({
           </thead>
           <tbody>
             {claims.map((claim) => (
-              <>
+              // X-1 (round-12 obayashi): React Fragment now keyed; the
+              // inner <tr> "key" never reached the array element so React
+              // logged a warning on every render of the claims page.
+              <Fragment key={claim.id}>
                 <tr
-                  key={claim.id}
                   onClick={() =>
                     setExpandedId(expandedId === claim.id ? null : claim.id)
                   }
@@ -770,7 +772,7 @@ function ClaimsList({
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

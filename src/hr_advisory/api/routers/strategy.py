@@ -633,3 +633,442 @@ async def dismiss_lifecycle_tour(
         "Company", company_id, {"feature_flags": json.dumps(flags)}
     )
     return {"ok": True, "feature_flags": flags}
+
+
+# ===========================================================================
+# Phase 3 — Strategic depth (P3 obayashi)
+# ===========================================================================
+
+
+def _now_dt() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+#
+# WorkforcePlan + SkillsInventory + SuccessionPlan + retention-risk
+# derived view + pay-equity dashboard. Each section is small and
+# read-mostly except WorkforcePlan, which is the authoring surface.
+
+
+# ---------------------------------------------------------------------------
+# P3-1 — WorkforcePlan
+# ---------------------------------------------------------------------------
+
+
+@router.get("/workforce-plan")
+async def list_workforce_plans(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    company_id = get_current_company_id(current_user)
+    rows = dataflow_crud.list_records(
+        "WorkforcePlan", {"company_id": company_id}, cache_ttl=0
+    )
+    rows = [r for r in rows if r.get("status") != "archived"]
+    rows.sort(key=lambda r: r.get("period_start") or "", reverse=True)
+    return {"plans": rows, "count": len(rows)}
+
+
+@router.post("/workforce-plan")
+async def create_workforce_plan(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    period_start = body.get("period_start") or ""
+    period_end = body.get("period_end") or ""
+    if not name or not period_start or not period_end:
+        raise HTTPException(
+            status_code=400,
+            detail="name, period_start, period_end are required.",
+        )
+
+    now = _now_dt()
+    record = dataflow_crud.create(
+        "WorkforcePlan",
+        {
+            "company_id": company_id,
+            "period_start": period_start,
+            "period_end": period_end,
+            "name": name,
+            "status": body.get("status", "draft"),
+            "headcount_targets": json.dumps(body.get("headcount_targets") or {}),
+            "skills_priorities": json.dumps(
+                body.get("skills_priorities") or []
+            ),
+            "retention_focus": json.dumps(body.get("retention_focus") or []),
+            "narrative": body.get("narrative") or "",
+            "created_by": user_id,
+            "approved_by": 0,
+            "approved_at": None,
+            "created_at": now,
+            "updated_at": now,
+        },
+    )
+    return {"plan": record}
+
+
+@router.patch("/workforce-plan/{plan_id}")
+async def update_workforce_plan(
+    plan_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    company_id = get_current_company_id(current_user)
+    rows = dataflow_crud.list_records(
+        "WorkforcePlan",
+        {"id": plan_id, "company_id": company_id},
+        cache_ttl=0,
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+    body = await request.json()
+    user_id = int(current_user.get("sub", 0))
+    updates: dict[str, Any] = {}
+    for k in ("name", "period_start", "period_end", "narrative", "status"):
+        if k in body:
+            updates[k] = body[k]
+    for k in ("headcount_targets", "skills_priorities", "retention_focus"):
+        if k in body:
+            updates[k] = json.dumps(body[k])
+    if updates.get("status") == "published":
+        updates["approved_by"] = user_id
+        updates["approved_at"] = _now_dt()
+    updates["updated_at"] = _now_dt()
+    dataflow_crud.update("WorkforcePlan", plan_id, updates)
+    return {"plan": dataflow_crud.read("WorkforcePlan", plan_id)}
+
+
+# ---------------------------------------------------------------------------
+# P3-2 — SkillsInventory
+# ---------------------------------------------------------------------------
+
+
+@router.get("/skills")
+async def list_skills(
+    employee_id: int | None = None,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+    rows = dataflow_crud.list_records(
+        "SkillsInventoryEntry", {"company_id": company_id}, cache_ttl=0
+    )
+    rows = [r for r in rows if not r.get("is_archived")]
+    if employee_id is not None:
+        rows = [r for r in rows if r.get("employee_id") == employee_id]
+    return {"skills": rows, "count": len(rows)}
+
+
+@router.get("/skills/coverage")
+async def skills_coverage(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    company_id = get_current_company_id(current_user)
+    rows = dataflow_crud.list_records(
+        "SkillsInventoryEntry", {"company_id": company_id}, cache_ttl=0
+    )
+    rows = [r for r in rows if not r.get("is_archived")]
+    coverage: dict[str, int] = {}
+    for r in rows:
+        name = (r.get("skill_name") or "").strip()
+        if name:
+            coverage[name] = coverage.get(name, 0) + 1
+    return {
+        "coverage": [
+            {"skill": k, "count": v}
+            for k, v in sorted(coverage.items(), key=lambda x: x[1], reverse=True)
+        ],
+        "total_entries": len(rows),
+    }
+
+
+@router.post("/skills")
+async def create_skill(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+    body = await request.json()
+    employee_id = body.get("employee_id")
+    skill_name = (body.get("skill_name") or "").strip()
+    if not employee_id or not skill_name:
+        raise HTTPException(
+            status_code=400,
+            detail="employee_id and skill_name are required.",
+        )
+    proficiency = int(body.get("proficiency") or 3)
+    if proficiency < 1 or proficiency > 5:
+        raise HTTPException(
+            status_code=400, detail="proficiency must be 1..5"
+        )
+    now = _now_dt()
+    record = dataflow_crud.create(
+        "SkillsInventoryEntry",
+        {
+            "company_id": company_id,
+            "employee_id": int(employee_id),
+            "skill_name": skill_name,
+            "proficiency": proficiency,
+            "years_experience": float(body.get("years_experience") or 0.0),
+            "last_used_date": body.get("last_used_date") or "",
+            "verified_by_user_id": int(
+                body.get("verified_by_user_id") or 0
+            ),
+            "notes": body.get("notes") or "",
+            "is_archived": False,
+            "created_at": now,
+            "updated_at": now,
+        },
+    )
+    return {"skill": record}
+
+
+# ---------------------------------------------------------------------------
+# P3-3 — SuccessionPlan
+# ---------------------------------------------------------------------------
+
+
+@router.get("/succession")
+async def list_succession(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    company_id = get_current_company_id(current_user)
+    rows = dataflow_crud.list_records(
+        "SuccessionPlan", {"company_id": company_id}, cache_ttl=0
+    )
+    rows = [r for r in rows if not r.get("is_archived")]
+    return {"plans": rows, "count": len(rows)}
+
+
+@router.post("/succession")
+async def create_succession(
+    request: Request,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    company_id = get_current_company_id(current_user)
+    body = await request.json()
+    role = (body.get("role_title") or "").strip()
+    if not role:
+        raise HTTPException(status_code=400, detail="role_title is required.")
+    now = _now_dt()
+    record = dataflow_crud.create(
+        "SuccessionPlan",
+        {
+            "company_id": company_id,
+            "role_title": role,
+            "incumbent_employee_id": int(
+                body.get("incumbent_employee_id") or 0
+            ),
+            "criticality": body.get("criticality", "medium"),
+            "successors": json.dumps(body.get("successors") or []),
+            "notes": body.get("notes") or "",
+            "last_reviewed_at": now,
+            "is_archived": False,
+            "created_at": now,
+            "updated_at": now,
+        },
+    )
+    return {"plan": record}
+
+
+# ---------------------------------------------------------------------------
+# P3-4 — Retention risk derived view (read-only, no new PII)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/retention-risk")
+async def retention_risk(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Compute a simple risk score (0..100) per active employee.
+
+    Inputs (all from existing fields, no new PII):
+      - tenure_months  (lower → higher risk; 0..6 spike, 6..24 mid, 24+ low)
+      - PROMOTED count YTD (positive signal)
+      - SALARY_REVISION count YTD (positive signal)
+      - leave usage trend (high → ambiguous; we treat very-high as risk)
+      - latest appraisal score (low → risk)
+
+    Output: for each employee, a {score, drivers, recommendation} object.
+    Bucket counts < 5 are not redacted (we expose individual scores to
+    HR). Per spec: never persisted, always recomputed.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    employees = _employees_for_company(company_id)
+    events = _events_for_company(company_id)
+    appraisals = dataflow_crud.list_records(
+        "Appraisal", {"company_id": company_id}, cache_ttl=0
+    )
+    leaves = dataflow_crud.list_records(
+        "LeaveApplication", {"company_id": company_id}, cache_ttl=0
+    )
+
+    today = date.today()
+    year_start = date(today.year, 1, 1).isoformat()
+
+    risk_rows = []
+    for emp in employees:
+        emp_id = emp.get("id")
+        score = 50  # baseline
+        drivers: list[str] = []
+
+        # Tenure
+        start_iso = emp.get("start_date") or ""
+        if start_iso:
+            try:
+                start = date.fromisoformat(start_iso)
+                tenure_months = (
+                    (today.year - start.year) * 12 + today.month - start.month
+                )
+                if tenure_months < 6:
+                    score += 15
+                    drivers.append(f"Short tenure ({tenure_months} months)")
+                elif tenure_months > 36:
+                    score -= 5
+            except (ValueError, TypeError):
+                pass
+
+        # Promotions / salary revisions YTD = positive signals.
+        ytd_events = [
+            e
+            for e in events
+            if e.get("employee_id") == emp_id
+            and (e.get("created_at") or "") >= year_start
+        ]
+        promo_count = sum(
+            1 for e in ytd_events if e.get("event_type") == "PROMOTED"
+        )
+        rev_count = sum(
+            1 for e in ytd_events if e.get("event_type") == "SALARY_REVISION"
+        )
+        if promo_count > 0:
+            score -= 10
+            drivers.append(f"{promo_count} promotion this year")
+        if rev_count > 0:
+            score -= 5
+
+        # Latest appraisal score.
+        my_apps = [
+            a for a in appraisals if a.get("employee_id") == emp_id
+        ]
+        if my_apps:
+            latest = max(my_apps, key=lambda a: a.get("updated_at") or "")
+            overall = float(latest.get("overall_score") or 0.0)
+            if overall and overall < 3.0:
+                score += 15
+                drivers.append("Recent appraisal score low (< 3.0/5)")
+            elif overall >= 4.5:
+                score -= 5
+
+        # Leave usage YTD — very high → risk.
+        my_leaves_days = sum(
+            float(la.get("total_days") or 0.0)
+            for la in leaves
+            if la.get("employee_id") == emp_id
+            and la.get("status") == "approved"
+            and (la.get("start_date") or "") >= year_start
+        )
+        if my_leaves_days > 20:
+            score += 10
+            drivers.append(f"Very high leave usage ({int(my_leaves_days)} days YTD)")
+
+        score = max(0, min(100, score))
+        if score >= 70:
+            recommendation = "High risk — schedule a stay-interview this month."
+        elif score >= 50:
+            recommendation = "Watchlist — monitor signals, ensure recent 1:1."
+        else:
+            recommendation = "Low risk — keep doing what's working."
+
+        risk_rows.append(
+            {
+                "employee_id": emp_id,
+                "score": score,
+                "drivers": drivers,
+                "recommendation": recommendation,
+            }
+        )
+
+    risk_rows.sort(key=lambda r: r["score"], reverse=True)
+    return {
+        "rows": risk_rows,
+        "top_at_risk": risk_rows[:5],
+        "headcount": len(employees),
+    }
+
+
+# ---------------------------------------------------------------------------
+# P3-5 — Pay-equity dashboard
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pay-equity")
+async def pay_equity(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Pay gap by gender + pass-type cohort.
+
+    Bucket counts < 5 collapse to '—' to prevent re-identification.
+    Reads from Employee.salary_monthly only — no payslip-level PII.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    employees = _employees_for_company(company_id)
+
+    def _bucket_avg(field: str) -> list[dict]:
+        buckets: dict[str, list[float]] = {}
+        for emp in employees:
+            raw = (emp.get(field) or "").strip().lower() or "unknown"
+            sal = float(emp.get("salary_monthly") or 0.0)
+            buckets.setdefault(raw, []).append(sal)
+        out = []
+        all_avg = (
+            sum(s for vals in buckets.values() for s in vals) / max(1, sum(len(v) for v in buckets.values()))
+            if buckets
+            else 0.0
+        )
+        for k, vals in buckets.items():
+            if len(vals) < 5:
+                out.append(
+                    {
+                        "bucket": k,
+                        "count": "—",
+                        "avg_salary": "—",
+                        "gap_vs_overall_pct": "—",
+                    }
+                )
+                continue
+            avg = sum(vals) / len(vals)
+            gap = (avg - all_avg) / all_avg * 100 if all_avg > 0 else 0
+            out.append(
+                {
+                    "bucket": k,
+                    "count": len(vals),
+                    "avg_salary": round(avg, 2),
+                    "gap_vs_overall_pct": round(gap, 1),
+                }
+            )
+        return out
+
+    return {
+        "by_gender": _bucket_avg("gender"),
+        "by_pass_type": _bucket_avg("pass_type"),
+        "headcount": len(employees),
+        "note": (
+            "Buckets with fewer than 5 employees are collapsed to '—' to "
+            "prevent individual re-identification."
+        ),
+    }
