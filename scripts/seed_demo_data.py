@@ -701,6 +701,10 @@ JOB_POSTING = {
     ],
 }
 
+# Section-local cache for cross-iteration lookups (e.g., interviewer employee
+# ids resolved once, reused across all interview-creating candidates).
+CANDIDATES_LOCAL_CACHE: dict[str, Any] = {}
+
 # 20 candidates with source split: careers_page=6, jobstreet=6, referral=4, linkedin=4
 # All include pdpa_consent=True at create time (audit-fix for SG PDPA compliance).
 CANDIDATES = [
@@ -1939,7 +1943,11 @@ def seed_recruitment(client: ArborClient) -> dict:
     """Step 9: Create a job posting with candidates at different stages."""
     _print("\n--- Step 9: Recruitment Pipeline ---")
 
-    # Check existing jobs
+    # Check existing jobs — reuse if found, create if not. EITHER WAY we
+    # proceed to candidate seeding so that an existing-but-empty job gets
+    # populated. The candidate-create check below skips by email so this
+    # is idempotent.
+    job_id = None
     resp = client.get("/recruitment/jobs")
     if resp.status_code == 200:
         existing_jobs = resp.json().get("jobs", [])
@@ -1947,22 +1955,22 @@ def seed_recruitment(client: ArborClient) -> dict:
         if matching:
             job_id = matching[0].get("id")
             _skip("Job posting", f"'{JOB_POSTING['title']}' already exists (id={job_id})")
-            return {"job_id": job_id}
 
-    # Create job posting
-    resp = client.post("/recruitment/jobs", JOB_POSTING)
-    if resp.status_code not in (200, 201):
-        _fail("Job posting", f"{resp.status_code} — {resp.text[:200]}")
-        return {}
+    if job_id is None:
+        # Create job posting
+        resp = client.post("/recruitment/jobs", JOB_POSTING)
+        if resp.status_code not in (200, 201):
+            _fail("Job posting", f"{resp.status_code} — {resp.text[:200]}")
+            return {}
 
-    job_data = resp.json()
-    job_id = job_data.get("job", {}).get("id")
-    _ok("Job posting created", f"id={job_id}, title={JOB_POSTING['title']}")
+        job_data = resp.json()
+        job_id = job_data.get("job", {}).get("id")
+        _ok("Job posting created", f"id={job_id}, title={JOB_POSTING['title']}")
 
-    # Publish the job
-    pub_resp = client.post(f"/recruitment/jobs/{job_id}/publish")
-    if pub_resp.status_code in (200, 201):
-        _ok("Job published")
+        # Publish the job (only the first time)
+        pub_resp = client.post(f"/recruitment/jobs/{job_id}/publish")
+        if pub_resp.status_code in (200, 201):
+            _ok("Job published")
 
     # Add candidates (PDPA consent always granted at create — recruitment in SG
     # MUST capture explicit consent before processing personal data).
@@ -1990,6 +1998,29 @@ def seed_recruitment(client: ArborClient) -> dict:
         cand_id = cand_data.get("candidate", {}).get("id")
         stage = candidate.get("stage_target", "applied")
 
+        # Resolve a couple of interviewer employee IDs from the admin's
+        # company so seeded interviews don't render "#undefined" in the
+        # UI. Lookup is best-effort — seeded interviews still work
+        # without interviewers if /employees can't be reached.
+        if "_interviewer_ids" not in CANDIDATES_LOCAL_CACHE:
+            CANDIDATES_LOCAL_CACHE["_interviewer_ids"] = []
+            try:
+                emp_resp = client.get("/employees", params={"limit": 50})
+                if emp_resp.status_code == 200:
+                    body = emp_resp.json()
+                    emp_rows = (
+                        body.get("employees")
+                        or body.get("items")
+                        or (body if isinstance(body, list) else [])
+                    )
+                    # Pick the first 3 active employees (covers panel-style interviews)
+                    CANDIDATES_LOCAL_CACHE["_interviewer_ids"] = [
+                        e["id"] for e in emp_rows[:3] if e.get("id") and e.get("is_active", True)
+                    ]
+            except Exception:
+                pass
+        interviewer_ids = CANDIDATES_LOCAL_CACHE["_interviewer_ids"]
+
         # Advance candidate through stages
         if stage == "interview" and cand_id:
             # Schedule an interview
@@ -2001,6 +2032,7 @@ def seed_recruitment(client: ArborClient) -> dict:
                     "duration_minutes": 60,
                     "interview_type": "in_person",
                     "location": "Central Solutions — Meeting Room A",
+                    "interviewers": interviewer_ids[:2],  # 2-person panel
                     "notes": "First-round technical interview",
                 },
             )
@@ -2017,6 +2049,7 @@ def seed_recruitment(client: ArborClient) -> dict:
                     "scheduled_at": f"{interview_date}T14:00:00+08:00",
                     "duration_minutes": 45,
                     "interview_type": "video",
+                    "interviewers": interviewer_ids[:1],  # 1-on-1 screening
                     "notes": "Screening interview",
                 },
             )

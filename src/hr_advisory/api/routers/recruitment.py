@@ -706,7 +706,12 @@ async def list_all_interviews(
     status: str | None = Query(None),
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
-    """List ALL interviews across all candidates for the company."""
+    """List ALL interviews across all candidates for the company.
+
+    Enriches each row with `candidate_name` and `interviewer_names`
+    so the frontend doesn't have to issue N+1 lookups (and doesn't
+    fall back to rendering raw IDs like "#1" / "#undefined").
+    """
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
@@ -716,7 +721,86 @@ async def list_all_interviews(
         filters["status"] = status
 
     interviews = dataflow_crud.list_records("InterviewSchedule", filters)
-    return {"interviews": interviews, "count": len(interviews)}
+
+    # Bulk-fetch the related candidates so we can join names without N+1.
+    # Use list_records (matches the rest of recruitment.py) — the per-id
+    # read() variant returned None for valid ids in local testing.
+    candidate_ids = {iv.get("candidate_id") for iv in interviews if iv.get("candidate_id")}
+    candidate_map: dict[int, str] = {}
+    if candidate_ids:
+        try:
+            cand_rows = dataflow_crud.list_records(
+                "Candidate", {"company_id": company_id}
+            )
+            for cand in cand_rows:
+                cid = cand.get("id")
+                if cid in candidate_ids:
+                    candidate_map[cid] = cand.get("name", "")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Candidate name enrichment failed: %s", exc)
+
+    # Resolve interviewer names. The `interviewers` field is a JSON-encoded
+    # list of either employee IDs (preferred) or free-text names. Look up
+    # employee names when given IDs; pass strings through as-is.
+    enriched: list[dict] = []
+    for iv in interviews:
+        out = dict(iv)
+        out["candidate_name"] = candidate_map.get(iv.get("candidate_id", 0), "")
+
+        names: list[str] = []
+        raw_interviewers = iv.get("interviewers", "")
+        if raw_interviewers:
+            try:
+                parsed = (
+                    json.loads(raw_interviewers)
+                    if isinstance(raw_interviewers, str)
+                    else raw_interviewers
+                )
+                if isinstance(parsed, list):
+                    # Bulk-fetch all employees + users once for the company,
+                    # then join in-memory to avoid N+1 reads.
+                    if "_emp_user_map" not in locals():
+                        try:
+                            emp_rows = dataflow_crud.list_records(
+                                "Employee", {"company_id": company_id}
+                            )
+                            user_rows = dataflow_crud.list_records(
+                                "User", {"company_id": company_id}
+                            )
+                            user_by_id = {u.get("id"): u for u in user_rows}
+                            _emp_user_map: dict[int, str] = {}
+                            for e in emp_rows:
+                                eid = e.get("id")
+                                if eid is None:
+                                    continue
+                                user = user_by_id.get(e.get("user_id"))
+                                if user and user.get("name"):
+                                    _emp_user_map[eid] = user["name"]
+                                else:
+                                    _emp_user_map[eid] = e.get("designation") or f"Employee #{eid}"
+                        except Exception:  # noqa: BLE001
+                            _emp_user_map = {}
+                    for entry in parsed:
+                        if isinstance(entry, int) or (
+                            isinstance(entry, str) and entry.isdigit()
+                        ):
+                            eid = int(entry)
+                            if eid in _emp_user_map:
+                                names.append(_emp_user_map[eid])
+                            else:
+                                names.append(f"Employee #{eid}")
+                        elif isinstance(entry, str) and entry.strip():
+                            names.append(entry.strip())
+                        elif isinstance(entry, dict):
+                            n = entry.get("name") or entry.get("email")
+                            if n:
+                                names.append(str(n))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+        out["interviewer_names"] = names
+        enriched.append(out)
+
+    return {"interviews": enriched, "count": len(enriched)}
 
 
 # --------------------------------------------------------------------------

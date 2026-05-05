@@ -4547,7 +4547,19 @@ function RecruitmentPageInner() {
                             {iv.candidate_name || `#${iv.candidate_id}`}
                           </td>
                           <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                            {iv.interviewer_name || `#${iv.interviewer_id}`}
+                            {(() => {
+                              const names = (
+                                iv as { interviewer_names?: string[] }
+                              ).interviewer_names;
+                              if (Array.isArray(names) && names.length > 0) {
+                                return names.join(", ");
+                              }
+                              return (
+                                <span className="text-[var(--color-gray-400)] italic">
+                                  Not assigned
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="py-3 px-3 text-[var(--color-gray-600)]">
                             {formatDate(iv.scheduled_at)}
