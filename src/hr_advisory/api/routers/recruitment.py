@@ -186,19 +186,34 @@ from hr_advisory.api.routers._helpers import _validate_text_length  # noqa: E402
 
 
 def _verify_job_ownership(job_id: int, company_id: int) -> dict:
-    """Load a job listing and verify tenant ownership. Raises 404 on failure."""
-    job = dataflow_crud.read("JobListing", job_id)
-    if not job or job.get("company_id") != company_id:
+    """Load a job listing and verify tenant ownership. Raises 404 on failure.
+
+    Uses list_records + filter rather than dataflow_crud.read() because
+    the underlying express_sync.read() returns None for valid integer-PK
+    rows on PostgreSQL — a DataFlow-layer bug that historically caused
+    every recruitment endpoint depending on this helper to 404. The
+    list_records path is consistent with the rest of recruitment.py.
+    """
+    rows = dataflow_crud.list_records(
+        "JobListing", {"id": job_id, "company_id": company_id}
+    )
+    if not rows:
         raise HTTPException(status_code=404, detail="Job listing not found.")
-    return job
+    return rows[0]
 
 
 def _verify_candidate_ownership(candidate_id: int, company_id: int) -> dict:
-    """Load a candidate and verify tenant ownership. Raises 404 on failure."""
-    candidate = dataflow_crud.read("Candidate", candidate_id)
-    if not candidate or candidate.get("company_id") != company_id:
+    """Load a candidate and verify tenant ownership. Raises 404 on failure.
+
+    Same workaround as _verify_job_ownership — list_records sidesteps
+    the broken dataflow_crud.read().
+    """
+    rows = dataflow_crud.list_records(
+        "Candidate", {"id": candidate_id, "company_id": company_id}
+    )
+    if not rows:
         raise HTTPException(status_code=404, detail="Candidate not found.")
-    return candidate
+    return rows[0]
 
 
 # T-RX10: Allowed candidate stage transitions.
