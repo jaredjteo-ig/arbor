@@ -15,6 +15,14 @@ def pytest_configure(config):
     if env_path.exists():
         _load_env(env_path)
 
+    # DataFlow defaults pool_size=70 + max_overflow=35 (105 conns/worker), which
+    # exceeds Postgres max_connections=100 on a fresh local instance. Tests that
+    # spin up a real platform consequently fail with "sorry, too many clients
+    # already". Cap the pool *before any DataFlow engine is constructed* — most
+    # tests use mocks, integration tests open small pools, no one needs 70.
+    os.environ.setdefault("DATAFLOW_POOL_SIZE", "5")
+    os.environ.setdefault("DATAFLOW_POOL_MAX_OVERFLOW", "2")
+
 
 def _load_env(env_path: Path):
     """Parse .env and inject into os.environ (lightweight, no dependencies)."""

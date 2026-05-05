@@ -94,7 +94,10 @@ def test_s2_t1_hire_rejects_role_outside_allowlist(owner_client, malicious_role)
             return {"id": 1, "department": "Engineering", "title": "SWE"}
         return None
 
-    def _list_records(model: str, filters: dict):
+    def _list_records(model: str, filters: dict, **kwargs):
+        # _verify_candidate_ownership uses list_records on Candidate.
+        if model == "Candidate" and filters.get("id") == candidate["id"]:
+            return [candidate]
         return []
 
     def _create(model: str, fields: dict):
@@ -138,7 +141,10 @@ def test_s2_t1_hire_accepts_hirable_roles(owner_client, valid_role):
             return {"id": 1, "department": "Engineering", "title": "SWE"}
         return None
 
-    def _list_records(model: str, filters: dict):
+    def _list_records(model: str, filters: dict, **kwargs):
+        # _verify_candidate_ownership uses list_records on Candidate.
+        if model == "Candidate" and filters.get("id") == candidate["id"]:
+            return [candidate]
         return []
 
     def _create(model: str, fields: dict):
@@ -182,7 +188,10 @@ def test_s2_t1_hire_default_role_is_employee(owner_client):
             return {"id": 1, "department": "Engineering", "title": "SWE"}
         return None
 
-    def _list_records(model: str, filters: dict):
+    def _list_records(model: str, filters: dict, **kwargs):
+        # _verify_candidate_ownership uses list_records on Candidate.
+        if model == "Candidate" and filters.get("id") == candidate["id"]:
+            return [candidate]
         return []
 
     def _create(model: str, fields: dict):

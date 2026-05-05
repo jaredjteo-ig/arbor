@@ -25,11 +25,15 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://arbor:arbor@localhost:5432/arbor")
+# DataFlow defaults pool_size=70 + max_overflow=35 (105 connections per worker),
+# which exceeds Postgres max_connections=100 on a fresh local DB.
+os.environ.setdefault("DATAFLOW_POOL_SIZE", "5")
+os.environ.setdefault("DATAFLOW_POOL_MAX_OVERFLOW", "2")
 
 
 @pytest.mark.regression
@@ -78,7 +82,7 @@ def test_t214_auto_assign_creates_preboarding_tasks_with_deadline():
     employee_id = employee["id"]
 
     # ── Default template + template-level pre-boarding tasks ────────────
-    now_naive = datetime.utcnow().isoformat()
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     template = dataflow_crud.create(
         "OnboardingTemplate",
         {
