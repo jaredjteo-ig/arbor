@@ -5,6 +5,7 @@
    + Appraisal in the strategy router.
 */
 
+import Link from "next/link";
 import {
   Calendar,
   UserPlus,
@@ -16,6 +17,19 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ActivityRow } from "@/services/api/strategy";
+
+/** Map a feed entry to a deep-link route, if one is reachable. */
+function routeFor(row: ActivityRow): string | null {
+  const t = row.entity_type;
+  const id = row.entity_id;
+  if (t === "employee" && id) return `/employees/${id}`;
+  if (t === "candidate" && id) return `/recruitment/candidates/${id}`;
+  // Appraisals don't have a per-record page yet — drop into the My Appraisals tab.
+  if (t === "appraisal") return `/appraisals`;
+  if (t === "recognition") return `/recognition`;
+  if (t === "exit_interview") return `/exit-interviews`;
+  return null;
+}
 
 const STAGE_ICON: Record<string, LucideIcon> = {
   strategy: Calendar,
@@ -79,23 +93,41 @@ export function ActivityFeed({ activity }: Props) {
         <ul className="space-y-3">
           {activity.map((row, idx) => {
             const Icon = STAGE_ICON[row.stage] ?? Calendar;
-            return (
-              <li
-                key={`${row.ts}-${idx}`}
-                className="flex items-start gap-3 text-xs"
-              >
+            const href = routeFor(row);
+            const Inner = (
+              <>
                 <Icon
                   className="h-3.5 w-3.5 mt-0.5 text-[var(--color-gray-400)] shrink-0"
                   aria-hidden="true"
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[var(--color-gray-700)] truncate">
+                  <p
+                    className={`truncate ${
+                      href
+                        ? "text-[var(--color-gray-700)] group-hover:text-[var(--color-primary)] group-hover:underline"
+                        : "text-[var(--color-gray-700)]"
+                    }`}
+                  >
                     {row.summary}
                   </p>
                   <p className="text-[10px] text-[var(--color-gray-400)] mt-0.5">
                     {formatTime(row.ts)} · {row.stage}
                   </p>
                 </div>
+              </>
+            );
+            return (
+              <li key={`${row.ts}-${idx}`} className="text-xs">
+                {href ? (
+                  <Link
+                    href={href}
+                    className="flex items-start gap-3 group rounded-md -mx-1 px-1 py-0.5 hover:bg-[var(--color-gray-50)]"
+                  >
+                    {Inner}
+                  </Link>
+                ) : (
+                  <div className="flex items-start gap-3">{Inner}</div>
+                )}
               </li>
             );
           })}

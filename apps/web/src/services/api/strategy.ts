@@ -46,6 +46,13 @@ export interface ActivityRow {
   kind: string;
   ts: string | null;
   summary: string;
+  entity_type?:
+    | "employee"
+    | "candidate"
+    | "appraisal"
+    | "recognition"
+    | "exit_interview";
+  entity_id?: number | null;
 }
 
 export interface LifecycleDashboardResponse {

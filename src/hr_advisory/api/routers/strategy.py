@@ -606,6 +606,8 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                 "kind": et_raw,
                 "ts": ev.get("created_at"),
                 "summary": f"{verb}: {_emp_name(ev.get('employee_id'))}",
+                "entity_type": "employee",
+                "entity_id": ev.get("employee_id"),
             }
         )
 
@@ -625,6 +627,8 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                 "kind": "INTERVIEW",
                 "ts": iv.get("created_at"),
                 "summary": f"Interview {iv.get('status')}: {cand_name}",
+                "entity_type": "candidate",
+                "entity_id": iv.get("candidate_id"),
             }
         )
 
@@ -655,6 +659,8 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                 "kind": "STEP_COMPLETE",
                 "ts": p.get("completed_at"),
                 "summary": f"Onboarding progress: {_emp_name(assignment_emp_id.get(aid))}",
+                "entity_type": "employee",
+                "entity_id": assignment_emp_id.get(aid),
             }
         )
 
@@ -672,6 +678,8 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                 "kind": "APPRAISAL",
                 "ts": ts,
                 "summary": f"Appraisal {ap.get('status')}: {_emp_name(ap.get('employee_id'))}",
+                "entity_type": "appraisal",
+                "entity_id": ap.get("id"),
             }
         )
 
@@ -693,6 +701,8 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                     f"Kudos for {_emp_name(r.get('to_employee_id'))} "
                     f"({_kudos_label(r.get('category'))})"
                 ),
+                "entity_type": "recognition",
+                "entity_id": r.get("id"),
             }
         )
 
@@ -716,6 +726,8 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                 "summary": (
                     f"Exit interview {'submitted' if ei.get('submitted_at') else 'triggered'}: {emp_label}"
                 ),
+                "entity_type": "exit_interview",
+                "entity_id": ei.get("id"),
             }
         )
 

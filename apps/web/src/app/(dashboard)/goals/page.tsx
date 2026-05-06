@@ -3,9 +3,20 @@
 /* P2-GO-3 (obayashi): Goals page — kanban-by-status with in-line check-in. */
 
 import { useEffect, useMemo, useState } from "react";
-import { TrendingUp, Plus, Loader2, MessageCircle } from "lucide-react";
+import {
+  TrendingUp,
+  Plus,
+  Loader2,
+  MessageCircle,
+  History,
+} from "lucide-react";
 import { AdminGuard } from "@/components/auth/AdminGuard";
-import { goalsApi, type Goal, type GoalStatus } from "@/services/api/goals";
+import {
+  goalsApi,
+  type Goal,
+  type GoalCheckIn,
+  type GoalStatus,
+} from "@/services/api/goals";
 import { employeesApi, type Employee } from "@/services/api/employees";
 
 const STATUS_ORDER: GoalStatus[] = [
@@ -47,6 +58,12 @@ export default function GoalsPage() {
   const [checkinFor, setCheckinFor] = useState<number | null>(null);
   const [checkinPct, setCheckinPct] = useState<number>(0);
   const [checkinNote, setCheckinNote] = useState("");
+
+  const [historyFor, setHistoryFor] = useState<number | null>(null);
+  const [historyByGoal, setHistoryByGoal] = useState<
+    Record<number, GoalCheckIn[]>
+  >({});
+  const [historyLoading, setHistoryLoading] = useState<number | null>(null);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -119,11 +136,37 @@ export default function GoalsPage() {
       setCheckinFor(null);
       setCheckinPct(0);
       setCheckinNote("");
+      // Invalidate cached history so the new check-in shows up next time.
+      setHistoryByGoal((prev) => {
+        const next = { ...prev };
+        delete next[goalId];
+        return next;
+      });
       await fetchAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save check-in.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const toggleHistory = async (goalId: number) => {
+    if (historyFor === goalId) {
+      setHistoryFor(null);
+      return;
+    }
+    setHistoryFor(goalId);
+    if (historyByGoal[goalId]) return; // cached
+    setHistoryLoading(goalId);
+    try {
+      const resp = await goalsApi.listCheckins(goalId);
+      setHistoryByGoal((prev) => ({ ...prev, [goalId]: resp.checkins }));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not load check-in history.",
+      );
+    } finally {
+      setHistoryLoading(null);
     }
   };
 
@@ -292,24 +335,81 @@ export default function GoalsPage() {
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-[var(--color-gray-500)] tabular-nums">
                         <span>{g.progress_pct}% progress</span>
-                        {g.status !== "done" && g.status !== "cancelled" && (
+                        <div className="flex items-center gap-3">
                           <button
                             type="button"
-                            onClick={() => {
-                              setCheckinFor(g.id);
-                              setCheckinPct(g.progress_pct);
-                              setCheckinNote("");
-                            }}
-                            className="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline"
+                            onClick={() => toggleHistory(g.id)}
+                            className="inline-flex items-center gap-1 text-[var(--color-gray-600)] hover:text-[var(--color-gray-900)] hover:underline"
                           >
-                            <MessageCircle
-                              className="h-3 w-3"
-                              aria-hidden="true"
-                            />
-                            Check in
+                            <History className="h-3 w-3" aria-hidden="true" />
+                            {historyFor === g.id ? "Hide history" : "History"}
                           </button>
-                        )}
+                          {g.status !== "done" && g.status !== "cancelled" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCheckinFor(g.id);
+                                setCheckinPct(g.progress_pct);
+                                setCheckinNote("");
+                              }}
+                              className="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline"
+                            >
+                              <MessageCircle
+                                className="h-3 w-3"
+                                aria-hidden="true"
+                              />
+                              Check in
+                            </button>
+                          )}
+                        </div>
                       </div>
+                      {historyFor === g.id && (
+                        <div className="border-t border-[var(--color-gray-100)] pt-2 space-y-2">
+                          {historyLoading === g.id ? (
+                            <p className="text-[10px] text-[var(--color-gray-500)] italic">
+                              Loading history…
+                            </p>
+                          ) : (historyByGoal[g.id] ?? []).length === 0 ? (
+                            <p className="text-[10px] text-[var(--color-gray-500)] italic">
+                              No check-ins recorded yet.
+                            </p>
+                          ) : (
+                            <ul className="space-y-2">
+                              {(historyByGoal[g.id] ?? []).map((c) => (
+                                <li
+                                  key={c.id}
+                                  className="text-[11px] text-[var(--color-gray-700)] border-l-2 border-[var(--color-primary)]/30 pl-2"
+                                >
+                                  <div className="flex items-baseline justify-between gap-2">
+                                    <span className="font-medium tabular-nums">
+                                      {c.progress_pct}% ·{" "}
+                                      <span className="font-normal text-[var(--color-gray-600)]">
+                                        {c.actor_name || "—"}
+                                      </span>
+                                    </span>
+                                    <span className="text-[10px] text-[var(--color-gray-400)]">
+                                      {c.created_at
+                                        ? new Date(
+                                            c.created_at,
+                                          ).toLocaleDateString("en-SG", {
+                                            day: "2-digit",
+                                            month: "short",
+                                            year: "numeric",
+                                          })
+                                        : "—"}
+                                    </span>
+                                  </div>
+                                  {c.note && (
+                                    <p className="mt-0.5 text-[var(--color-gray-700)] whitespace-pre-wrap">
+                                      {c.note}
+                                    </p>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
                       {checkinFor === g.id && (
                         <div className="border-t border-[var(--color-gray-100)] pt-2 space-y-2">
                           <label className="text-[10px] text-[var(--color-gray-600)]">

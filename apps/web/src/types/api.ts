@@ -399,12 +399,19 @@ export interface ComplianceGapAnalysisRequest {
   domains?: string[];
 }
 
+export interface ComplianceProvisionSample {
+  section: string;
+  title: string;
+  plain_summary: string;
+}
+
 export interface ComplianceGap {
   domain: string;
   severity: string;
   provisions_found: number;
   reason: string;
   remediation: string;
+  provisions_sample?: ComplianceProvisionSample[];
 }
 
 export interface ComplianceGapAnalysisResponse {

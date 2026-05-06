@@ -30,6 +30,7 @@ from hr_advisory.api.middleware.auth_middleware import (
 )
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
+from hr_advisory.api.routers._helpers import _resolve_user_names
 from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
@@ -304,6 +305,15 @@ async def list_checkins(
         cache_ttl=0,
     )
     rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+
+    # Resolve actor_user_id → User.name so the timeline never says "User #N".
+    actor_ids = {
+        r.get("actor_user_id") for r in rows if r.get("actor_user_id")
+    }
+    name_map = _resolve_user_names(actor_ids, company_id)
+    for r in rows:
+        r["actor_name"] = name_map.get(r.get("actor_user_id"), "")
+
     return {"checkins": rows, "count": len(rows)}
 
 

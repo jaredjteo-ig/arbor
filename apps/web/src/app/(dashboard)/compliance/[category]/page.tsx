@@ -9,6 +9,8 @@ import {
   AlertTriangle,
   ArrowLeft,
   MessageSquare,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   AppCard,
@@ -117,6 +119,7 @@ export default function ComplianceCategoryPage({
   const [domainStatus, setDomainStatus] =
     useState<ComplianceDomainStatus | null>(null);
   const [gaps, setGaps] = useState<ComplianceGap[]>([]);
+  const [expandedGap, setExpandedGap] = useState<number | null>(null);
   const [overallStatus, setOverallStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -280,36 +283,80 @@ export default function ComplianceCategoryPage({
           <h2 className="text-base font-semibold text-[var(--color-gray-900)]">
             Findings ({gaps.length})
           </h2>
-          {gaps.map((gap, idx) => (
-            <AppCard key={idx} variant="standard">
-              <div className="flex items-start gap-3">
-                <div
-                  className="px-2 py-0.5 rounded text-xs font-semibold uppercase shrink-0"
-                  style={{
-                    backgroundColor:
-                      severityBg[gap.severity] || severityBg.medium,
-                    color: severityColor[gap.severity] || severityColor.medium,
-                  }}
-                >
-                  {gap.severity}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[var(--color-gray-900)]">
-                    {gap.reason}
-                  </p>
-                  <p className="text-xs text-[var(--color-gray-600)] mt-1">
-                    {gap.remediation}
-                  </p>
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs text-[var(--color-gray-400)]">
-                      {gap.provisions_found} provision
-                      {gap.provisions_found !== 1 ? "s" : ""} found
-                    </span>
+          {gaps.map((gap, idx) => {
+            const isOpen = expandedGap === idx;
+            const sample = gap.provisions_sample ?? [];
+            const canExpand = sample.length > 0;
+            return (
+              <AppCard key={idx} variant="standard">
+                <div className="flex items-start gap-3">
+                  <div
+                    className="px-2 py-0.5 rounded text-xs font-semibold uppercase shrink-0"
+                    style={{
+                      backgroundColor:
+                        severityBg[gap.severity] || severityBg.medium,
+                      color:
+                        severityColor[gap.severity] || severityColor.medium,
+                    }}
+                  >
+                    {gap.severity}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-[var(--color-gray-900)]">
+                      {gap.reason}
+                    </p>
+                    <p className="text-xs text-[var(--color-gray-600)] mt-1">
+                      {gap.remediation}
+                    </p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="text-xs text-[var(--color-gray-400)]">
+                        {gap.provisions_found} provision
+                        {gap.provisions_found !== 1 ? "s" : ""} found
+                      </span>
+                      {canExpand && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedGap(isOpen ? null : idx)}
+                          className="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+                        >
+                          {isOpen ? (
+                            <>
+                              <ChevronUp className="h-3 w-3" /> Hide provisions
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="h-3 w-3" /> Show
+                              provisions
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                    {isOpen && sample.length > 0 && (
+                      <ul className="mt-3 space-y-2 border-t border-[var(--color-gray-100)] pt-3">
+                        {sample.map((p, pIdx) => (
+                          <li
+                            key={pIdx}
+                            className="border-l-2 border-[var(--color-primary)]/30 pl-3"
+                          >
+                            <p className="text-xs font-medium text-[var(--color-gray-800)]">
+                              {p.section ? `${p.section} — ` : ""}
+                              {p.title || "Untitled provision"}
+                            </p>
+                            {p.plain_summary && (
+                              <p className="text-xs text-[var(--color-gray-600)] mt-0.5 leading-relaxed">
+                                {p.plain_summary}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </div>
-              </div>
-            </AppCard>
-          ))}
+              </AppCard>
+            );
+          })}
         </div>
       ) : (
         <AppCard variant="standard">

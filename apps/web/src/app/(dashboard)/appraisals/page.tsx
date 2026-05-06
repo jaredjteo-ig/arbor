@@ -31,6 +31,154 @@ import {
 
 /* ── Helpers ──────────────────────────────────────────────── */
 
+/**
+ * Parse a JSON-as-text column without throwing.
+ * Returns null on empty / invalid / non-object.
+ */
+function parseJsonObject(
+  raw: string | null | undefined,
+): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" && !Array.isArray(obj)
+      ? (obj as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+interface TemplateSection {
+  title?: string;
+  weight?: number;
+  questions?: Array<{
+    id?: string;
+    key?: string;
+    text?: string;
+    type?: string;
+  }>;
+}
+
+function parseTemplateSections(
+  raw: string | null | undefined,
+): TemplateSection[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? (arr as TemplateSection[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Resolve a response key (e.g. "q1") to the question text from the template. */
+function questionLabelFor(
+  key: string,
+  sections: TemplateSection[],
+): string | null {
+  for (const s of sections) {
+    for (const q of s.questions ?? []) {
+      if ((q.id ?? q.key) === key && q.text) return q.text;
+    }
+  }
+  return null;
+}
+
+/** 5-cell rating bar (mirrors the exit-interviews ScoreBar). */
+function ScoreBar({ score }: { score: number }) {
+  const cells = [1, 2, 3, 4, 5];
+  return (
+    <div className="flex items-center gap-1">
+      {cells.map((n) => (
+        <div
+          key={n}
+          className={`h-2 w-6 rounded-full ${
+            n <= score
+              ? "bg-[var(--color-primary)]"
+              : "bg-[var(--color-gray-200)]"
+          }`}
+        />
+      ))}
+      <span className="ml-1 text-xs tabular-nums text-[var(--color-gray-600)]">
+        {score}/5
+      </span>
+    </div>
+  );
+}
+
+function AppraisalDetailRead({
+  appraisal,
+  templateSections,
+}: {
+  appraisal: Appraisal;
+  templateSections: TemplateSection[];
+}) {
+  const responses = parseJsonObject(appraisal.responses);
+  const scores = parseJsonObject(appraisal.scores);
+
+  const responseEntries = responses
+    ? Object.entries(responses).filter(([_, v]) => v !== null && v !== "")
+    : [];
+  const scoreEntries = scores
+    ? Object.entries(scores).filter(
+        ([_, v]) => typeof v === "number" && Number.isFinite(v),
+      )
+    : [];
+
+  if (responseEntries.length === 0 && scoreEntries.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-4 rounded-lg border border-[var(--color-gray-200)] bg-[var(--color-surface-page)] p-4">
+      {scoreEntries.length > 0 && (
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-gray-500)] mb-2">
+            Per-criterion ratings
+          </p>
+          <div className="space-y-2">
+            {scoreEntries.map(([criterion, score]) => (
+              <div
+                key={criterion}
+                className="flex items-center justify-between gap-3"
+              >
+                <span className="text-sm text-[var(--color-gray-700)] capitalize">
+                  {criterion.replace(/_/g, " ")}
+                </span>
+                <ScoreBar score={Number(score)} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {responseEntries.length > 0 && (
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-gray-500)] mb-2">
+            Responses
+          </p>
+          <div className="space-y-3">
+            {responseEntries.map(([key, value]) => {
+              const label = questionLabelFor(key, templateSections) ?? key;
+              return (
+                <div key={key}>
+                  <p className="text-xs font-medium text-[var(--color-gray-600)] mb-1">
+                    {label}
+                  </p>
+                  <p className="text-sm text-[var(--color-gray-800)] whitespace-pre-wrap leading-relaxed">
+                    {String(value)}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatDate(d: string): string {
   if (!d) return "-";
   return new Date(d).toLocaleDateString("en-SG", {
@@ -928,6 +1076,13 @@ export default function AppraisalsPage() {
 
                       {isExpanded && (
                         <div className="mt-4 pt-4 border-t border-[var(--color-gray-100)] space-y-4">
+                          <AppraisalDetailRead
+                            appraisal={a}
+                            templateSections={parseTemplateSections(
+                              templates.find((t) => t.id === a.template_id)
+                                ?.sections,
+                            )}
+                          />
                           <div>
                             <label className="block text-sm font-medium text-[var(--color-gray-700)] mb-1">
                               Overall Score (1-5)

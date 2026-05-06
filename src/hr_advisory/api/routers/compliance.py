@@ -488,6 +488,16 @@ async def gap_analysis(
                 "provisions_found": count,
                 "reason": f"Sparse coverage for {_domain_label(domain)} -- only {count} provision(s)",
                 "remediation": _remediation_for_domain(domain, count),
+                # Surface the actual provisions so HR can see what the system
+                # has for the domain instead of just a count.
+                "provisions_sample": [
+                    {
+                        "section": p.get("section", ""),
+                        "title": p.get("title", ""),
+                        "plain_summary": (p.get("plain_summary") or "")[:400],
+                    }
+                    for p in provisions[:10]
+                ],
             }
             gaps.append(gap_entry)
             total_gaps += 1

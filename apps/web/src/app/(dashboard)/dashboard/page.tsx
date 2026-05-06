@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AppCard,
@@ -53,6 +54,8 @@ interface MetricCard {
   value: string;
   icon: typeof ShieldCheck;
   subtext?: string;
+  /** When present the entire tile becomes a link to this route. */
+  href?: string;
 }
 
 interface ActionItem {
@@ -667,6 +670,7 @@ export default function DashboardPage() {
         needsAttention > 0
           ? `${needsAttention} domain${needsAttention > 1 ? "s" : ""} need${needsAttention === 1 ? "s" : ""} attention`
           : "All domains covered",
+      href: "/compliance",
     });
   }
 
@@ -696,6 +700,7 @@ export default function DashboardPage() {
       value: String(total),
       icon: ClipboardCheck,
       subtext,
+      href: "/compliance",
     });
   }
 
@@ -705,6 +710,7 @@ export default function DashboardPage() {
       value: String(metricsData.queries_tracked),
       icon: Calendar,
       subtext: `${metricsData.kb_provisions} provisions in KB`,
+      href: "/advisory",
     });
   }
 
@@ -824,26 +830,37 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {metrics.map((metric) => {
               const Icon = metric.icon;
-              return (
-                <AppCard key={metric.label} variant="flat">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
-                        {metric.label}
+              const inner = (
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+                      {metric.label}
+                    </p>
+                    <p className="text-2xl font-bold text-[var(--color-gray-900)] mt-1">
+                      {metric.value}
+                    </p>
+                    {metric.subtext && (
+                      <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                        {metric.subtext}
                       </p>
-                      <p className="text-2xl font-bold text-[var(--color-gray-900)] mt-1">
-                        {metric.value}
-                      </p>
-                      {metric.subtext && (
-                        <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-                          {metric.subtext}
-                        </p>
-                      )}
-                    </div>
-                    <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
-                      <Icon className="h-5 w-5 text-[var(--color-primary)]" />
-                    </div>
+                    )}
                   </div>
+                  <div className="p-2 rounded-lg bg-[var(--color-primary-bg)]">
+                    <Icon className="h-5 w-5 text-[var(--color-primary)]" />
+                  </div>
+                </div>
+              );
+              return metric.href ? (
+                <Link
+                  key={metric.label}
+                  href={metric.href}
+                  className="block transition-shadow hover:shadow-md rounded-[12px]"
+                >
+                  <AppCard variant="flat">{inner}</AppCard>
+                </Link>
+              ) : (
+                <AppCard key={metric.label} variant="flat">
+                  {inner}
                 </AppCard>
               );
             })}

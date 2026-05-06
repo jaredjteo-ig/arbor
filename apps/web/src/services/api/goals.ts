@@ -28,6 +28,7 @@ export interface GoalCheckIn {
   goal_id: number;
   company_id: number;
   actor_user_id: number;
+  actor_name?: string;
   progress_pct: number;
   note: string;
   created_at: string;
