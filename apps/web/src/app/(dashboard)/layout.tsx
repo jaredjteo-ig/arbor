@@ -5,6 +5,7 @@ import { AppShell } from "@/components/shell";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useState, useEffect } from "react";
 import { getLocale } from "@/lib/i18n";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   ShadowAgentProvider,
   ShadowWidget,
@@ -43,11 +44,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <ShadowAgentProvider>
           <div className="animate-fade-in">{children}</div>
           <ShadowAgentUI />
-          <ShadowMarginWrapper />
+          <RoleGatedShadowMargin />
         </ShadowAgentProvider>
       </AppShell>
     </ProtectedRoute>
   );
+}
+
+/**
+ * The shadow margin surfaces compliance gaps, regulatory updates, and KB
+ * deadlines — all of which are HR-admin actionable. Render only for
+ * owner / hr_manager. Employees see the rest of the shell without the
+ * compliance-warning rail.
+ */
+function RoleGatedShadowMargin() {
+  const { user } = useAuth();
+  const role = user?.role;
+  if (role !== "owner" && role !== "hr_manager") return null;
+  return <ShadowMarginWrapper />;
 }
 
 /** Inner component that uses the shadow agent context */

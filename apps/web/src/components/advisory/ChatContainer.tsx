@@ -73,12 +73,23 @@ function generateFollowUps(riskTier?: string, content?: string): string[] {
 
 /* ── Initial Suggestions ────────────────────────────────────── */
 
-const INITIAL_SUGGESTIONS = [
+/* HR-manager / owner suggestions — for users who run the HR function. */
+const ADMIN_SUGGESTIONS = [
   "What leave entitlements do my employees have?",
   "How do I calculate CPF contributions?",
   "Am I compliant with the Employment Act?",
   "What are the foreign worker quota limits for my sector?",
   "How do I handle a resignation properly?",
+];
+
+/* Employee suggestions — for individual contributors asking about their
+   own situation, not the company's compliance. */
+const EMPLOYEE_SUGGESTIONS = [
+  "How much annual leave am I entitled to?",
+  "Can my employer change my notice period?",
+  "What happens to my CPF if I take unpaid leave?",
+  "How does maternity leave work in Singapore?",
+  "What can I claim under Childcare Leave?",
 ];
 
 const ONBOARDING_SUGGESTIONS = [
@@ -623,7 +634,9 @@ export function ChatContainer({
               isEmpty
                 ? hasActiveOnboarding
                   ? ONBOARDING_SUGGESTIONS
-                  : INITIAL_SUGGESTIONS
+                  : user?.role === "employee"
+                    ? EMPLOYEE_SUGGESTIONS
+                    : ADMIN_SUGGESTIONS
                 : undefined
             }
             onSuggestionClick={sendMessage}

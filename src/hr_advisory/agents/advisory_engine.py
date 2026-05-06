@@ -991,11 +991,35 @@ class AdvisoryEngine:
 
         except Exception as exc:
             logger.error("Advisory engine failed: %s", exc, exc_info=True)
+            # Translate the most common transient failure modes into copy
+            # the user can act on instead of a flat "try again later".
+            msg = str(exc).lower()
+            if "503" in msg or "unavailable" in msg or "overloaded" in msg:
+                response_text = (
+                    "The advisory model is temporarily overloaded — usually "
+                    "clears in 30-60 seconds. Please try the question again. "
+                    "If it keeps failing, ask your HR admin to check the LLM "
+                    "provider status."
+                )
+            elif "429" in msg or "rate" in msg or "quota" in msg:
+                response_text = (
+                    "We've hit the company's advisory rate limit for the "
+                    "moment. Try again in a minute or contact your HR admin "
+                    "to review the budget."
+                )
+            elif "timeout" in msg or "timed out" in msg:
+                response_text = (
+                    "The advisory engine took too long to respond. Try a "
+                    "shorter or more specific question, or retry in a moment."
+                )
+            else:
+                response_text = (
+                    "I couldn't generate a grounded answer for this question "
+                    "right now. Please try rewording it, or escalate to an "
+                    "Employment Law Specialist using the link below."
+                )
             return {
-                "response_text": (
-                    "I'm having trouble processing your question right now. "
-                    "Please try again in a moment."
-                ),
+                "response_text": response_text,
                 "risk_tier": "amber",
                 "confidence": 0.3,
                 "domains": [],

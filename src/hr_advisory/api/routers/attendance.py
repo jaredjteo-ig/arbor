@@ -58,19 +58,38 @@ def _parse_time(time_str: str) -> tuple[int, int]:
 
 
 def _determine_status(clock_in_time: str, settings: dict) -> str:
-    """Determine attendance status based on clock-in time vs settings."""
+    """Determine attendance status based on clock-in time vs settings.
+
+    The clock-in timestamp is recorded in UTC; the configured work-start
+    time is the company's local time (Singapore SGT, UTC+8 by default).
+    Convert before comparing — otherwise a clock-in at 9:30am SGT (which
+    is 1:30am UTC) is incorrectly compared against 9:00am UTC and the
+    employee gets stamped "late". (Round-7 redteam M10.)
+    """
     from hr_advisory.models.company_user import AttendanceStatus
 
     try:
         work_start_h, work_start_m = _parse_time(settings.get("work_start_time", "09:00"))
         grace = settings.get("grace_period_minutes", 15)
 
-        # Extract HH:MM from ISO datetime
+        # Convert the ISO clock-in to SGT (UTC+8). Falls back to raw HH:MM
+        # if the string is already a wall-clock time without a TZ offset.
+        clock_h: int
+        clock_m: int
         if "T" in clock_in_time:
-            time_part = clock_in_time.split("T")[1][:5]
+            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+            try:
+                dt = _dt.fromisoformat(clock_in_time.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=_tz.utc)
+                local = dt.astimezone(_tz(_td(hours=8)))  # SGT default
+                clock_h, clock_m = local.hour, local.minute
+            except ValueError:
+                time_part = clock_in_time.split("T")[1][:5]
+                clock_h, clock_m = _parse_time(time_part)
         else:
-            time_part = clock_in_time[:5]
-        clock_h, clock_m = _parse_time(time_part)
+            clock_h, clock_m = _parse_time(clock_in_time[:5])
 
         # Convert to minutes since midnight for comparison
         start_minutes = work_start_h * 60 + work_start_m

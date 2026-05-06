@@ -1176,9 +1176,13 @@ async def list_conversations(
         if not turns:
             continue
 
-        # Tenant isolation: skip conversations that don't belong to this user
+        # Tenant isolation: skip conversations that don't belong to this
+        # user. Round-7 redteam M6 found that Lily was seeing Grace's
+        # admin-style queries because owner-less in-memory entries were
+        # being shown to everyone. Default-deny: skip when ownership is
+        # not explicitly recorded.
         conv_owner = _conversation_owners.get(conv_key, "")
-        if conv_owner and conv_owner != user_id:
+        if not conv_owner or conv_owner != user_id:
             continue
 
         # Auto-generate title from first user message (first 60 chars)

@@ -88,6 +88,25 @@ async def get_current_user(
     return payload
 
 
+async def get_current_user_optional(
+    request: Request,
+    auth_service: AuthService = Depends(_get_auth_service),
+) -> dict | None:
+    """Like get_current_user but returns None for unauthenticated requests.
+
+    Used by routes that change behaviour based on role but still serve a
+    sensible default to anonymous callers (e.g. role-aware help content).
+    Any token-validation failure is also treated as anonymous rather than
+    401 so the endpoint stays public.
+    """
+    if not request.headers.get("Authorization"):
+        return None
+    try:
+        return await get_current_user(request, auth_service=auth_service)
+    except HTTPException:
+        return None
+
+
 def require_role(*allowed_roles: str) -> Callable:
     """Role-based access control dependency factory.
 

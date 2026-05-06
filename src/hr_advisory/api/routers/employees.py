@@ -1925,9 +1925,9 @@ async def update_my_profile(
 
     body = await request.json()
 
-    # Fields employees can update themselves
-    SELF_SERVICE_FIELDS = {
-        "name",
+    # Fields that live on the Employee table — these go through
+    # EmployeeUpdateNode below.
+    EMPLOYEE_SELF_SERVICE_FIELDS = {
         "alias",
         "date_of_birth",
         "gender",
@@ -1950,9 +1950,21 @@ async def update_my_profile(
         "bank_code",
         "branch_code",
     }
+    # Fields that live on the User table (not Employee). The H2 redteam
+    # finding was that `name` was in the Employee accept-list but the
+    # column doesn't exist — DataFlow silently rejected the update yet
+    # the response claimed `{updated: true, fields: ["name", ...]}`.
+    USER_SELF_SERVICE_FIELDS = {"name"}
 
-    updates = {k: v for k, v in body.items() if k in SELF_SERVICE_FIELDS}
-    if not updates:
+    updates = {
+        k: v for k, v in body.items() if k in EMPLOYEE_SELF_SERVICE_FIELDS
+    }
+    user_updates = {
+        k: v.strip() if isinstance(v, str) else v
+        for k, v in body.items()
+        if k in USER_SELF_SERVICE_FIELDS and (isinstance(v, str) and v.strip())
+    }
+    if not updates and not user_updates:
         raise HTTPException(status_code=400, detail="No valid fields to update.")
 
     # Encrypt sensitive PII fields (same pattern as admin PATCH endpoint).
@@ -1975,21 +1987,39 @@ async def update_my_profile(
             updates["bank_account_number"] = encrypt_field(updates["bank_account_number"])
 
     # After stripping masked values, re-check that there are still fields to update
-    if not updates:
+    if not updates and not user_updates:
         return {"updated": True, "fields": [], "note": "No changes (masked values were skipped)."}
 
-    from kailash.runtime import LocalRuntime
-    from kailash.workflow.builder import WorkflowBuilder
-    import hr_advisory.models  # noqa: F401
+    persisted_fields: list[str] = []
 
-    wf = WorkflowBuilder()
-    wf.add_node(
-        "EmployeeUpdateNode",
-        "update_me",
-        {"filter": {"id": employee["id"]}, "fields": updates},
-    )
-    runtime = LocalRuntime()
-    runtime.execute(wf.build())
+    if updates:
+        from kailash.runtime import LocalRuntime
+        from kailash.workflow.builder import WorkflowBuilder
+        import hr_advisory.models  # noqa: F401
+
+        wf = WorkflowBuilder()
+        wf.add_node(
+            "EmployeeUpdateNode",
+            "update_me",
+            {"filter": {"id": employee["id"]}, "fields": updates},
+        )
+        runtime = LocalRuntime()
+        runtime.execute(wf.build())
+        persisted_fields.extend(updates.keys())
+
+    # `name` lives on the linked User row, not the Employee row. Update
+    # via dataflow_crud.update so the response can honestly say
+    # `{updated: true, fields: ["name"]}`.
+    if user_updates:
+        try:
+            dataflow_crud.update("User", user_id, user_updates)
+            persisted_fields.extend(user_updates.keys())
+        except Exception as exc:
+            logger.warning(
+                "Failed to update User row for self-service profile edit user_id=%s: %s",
+                user_id,
+                exc,
+            )
 
     # PDPA audit log for sensitive field access
     sensitive_accessed = {"nric_fin", "bank_account_number"} & set(updates.keys())
@@ -2002,7 +2032,7 @@ async def update_my_profile(
             action="self_service_update",
         )
 
-    return {"updated": True, "fields": list(updates.keys())}
+    return {"updated": True, "fields": persisted_fields}
 
 
 # --------------------------------------------------------------------------

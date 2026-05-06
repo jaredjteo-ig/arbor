@@ -657,6 +657,13 @@ async def get_my_payslips(
     visible = [ps for ps in payslips if ps.get("status") in ("confirmed", "paid")]
     visible.sort(key=lambda ps: ps.get("period_start", ""), reverse=True)
 
+    # The run-detail endpoint exposes the primary key as `payslip_id`; the
+    # /my-payslips list previously returned the raw row which has only
+    # `id`, causing the frontend to fetch `/my-payslips/undefined` (422)
+    # when the user expanded a card. Mirror the run-detail contract.
+    for ps in visible:
+        ps.setdefault("payslip_id", ps.get("id"))
+
     return {"payslips": visible}
 
 

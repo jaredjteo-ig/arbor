@@ -6,8 +6,10 @@ for Singapore SME HR compliance and advisory.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+
+from hr_advisory.api.middleware.auth_middleware import get_current_user_optional
 
 
 router = APIRouter(tags=["help"])
@@ -362,10 +364,93 @@ async def list_help_articles(
     )
 
 
-@router.get("/getting-started", response_model=GettingStartedResponse)
-async def getting_started_guide() -> GettingStartedResponse:
-    """Return the getting-started guide content.
+_GETTING_STARTED_EMPLOYEE: GettingStartedResponse = GettingStartedResponse(
+    title="Get started with Arbor",
+    introduction=(
+        "Arbor is your everyday HR portal. Apply for leave, submit expense "
+        "claims, view your payslips, and ask any HR question in plain English. "
+        "Here is how to get the most out of it."
+    ),
+    steps=[
+        GettingStartedStep(
+            step_number=1,
+            title="Complete your profile",
+            description=(
+                "Fill in your personal details, address, and bank account so "
+                "payroll can run cleanly. Sensitive fields like NRIC and bank "
+                "details are encrypted at rest."
+            ),
+            action_label="Open My Profile",
+            action_path="/my-profile",
+        ),
+        GettingStartedStep(
+            step_number=2,
+            title="Apply for leave",
+            description=(
+                "Pick a leave type, choose your dates, and add a reason. "
+                "Your manager will see the request the moment you submit."
+            ),
+            action_label="Apply for Leave",
+            action_path="/my-leave",
+        ),
+        GettingStartedStep(
+            step_number=3,
+            title="Submit an expense claim",
+            description=(
+                "Itemise each expense with category, amount, and a receipt "
+                "date. Receipts can be uploaded after the claim is created."
+            ),
+            action_label="New Claim",
+            action_path="/my-claims",
+        ),
+        GettingStartedStep(
+            step_number=4,
+            title="View your payslips",
+            description=(
+                "Check your monthly gross-to-net breakdown including CPF "
+                "contributions. Click any month to expand the detail view."
+            ),
+            action_label="My Payslips",
+            action_path="/my-payslips",
+        ),
+        GettingStartedStep(
+            step_number=5,
+            title="Ask the AI advisor",
+            description=(
+                "Got a question about your leave entitlement, CPF, or notice "
+                "period? Ask Central in plain English — answers are grounded "
+                "in Singapore employment law with citations."
+            ),
+            action_label="Open Advisory",
+            action_path="/advisory",
+        ),
+        GettingStartedStep(
+            step_number=6,
+            title="Adjust your preferences",
+            description=(
+                "Change language, theme, text size, and notification "
+                "frequency from Settings. You can also export your personal "
+                "data under PDPA at any time."
+            ),
+            action_label="Open Settings",
+            action_path="/settings",
+        ),
+    ],
+)
 
-    No authentication required -- onboarding content is publicly accessible.
+
+@router.get("/getting-started", response_model=GettingStartedResponse)
+async def getting_started_guide(
+    current_user: dict | None = Depends(get_current_user_optional),
+) -> GettingStartedResponse:
+    """Return the getting-started guide content, branched by role.
+
+    Employees see an employee-oriented walkthrough (apply leave, submit
+    claims, view payslips, ask the advisor, edit settings). Owners and
+    HR managers see the admin-oriented guide (set up company, run
+    compliance check, calculators, regulatory alerts, emergency hub).
     """
+    role = (current_user or {}).get("role", "")
+    if role == "employee":
+        return _GETTING_STARTED_EMPLOYEE
     return _GETTING_STARTED

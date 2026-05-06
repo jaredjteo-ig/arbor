@@ -335,11 +335,28 @@ export default function MyTimesheetsPage() {
           variant="primary"
           size="sm"
           onClick={() => setShowModal(true)}
+          disabled={projects.length === 0}
+          title={
+            projects.length === 0
+              ? "You need to be assigned to a project before you can log time. Ask your manager to add you."
+              : undefined
+          }
         >
           <Plus className="h-4 w-4 mr-1" />
           Log Time
         </AppButton>
       </div>
+
+      {projects.length === 0 && !isLoading && (
+        <AppCard variant="flat">
+          <p className="text-sm text-[var(--color-gray-700)]">
+            You aren&apos;t assigned to any project yet, so there&apos;s nothing
+            to log time against. Ask your manager to add you to a project — once
+            you&apos;re on one, the <strong>Log Time</strong> button will
+            activate.
+          </p>
+        </AppCard>
+      )}
 
       {/* Weekly summary */}
       <AppCard variant="flat">

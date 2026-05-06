@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { NavigationSidebar } from "./NavigationSidebar";
 import { TopBar } from "./TopBar";
 import { alertsApi } from "@/services/api/alerts";
+import { useAuth } from "@/contexts/AuthContext";
 
 const STORAGE_KEY = "arbor-sidebar-collapsed";
 
@@ -31,8 +32,12 @@ export function AppShell({ children }: AppShellProps) {
     setMounted(true);
   }, []);
 
-  /* Fetch unread notification count */
+  /* Fetch unread notification count — admin endpoint, gated by role to
+     avoid the 403 console error employees were seeing on every page. */
+  const { user } = useAuth();
+  const canSeeAlerts = user?.role === "owner" || user?.role === "hr_manager";
   useEffect(() => {
+    if (!canSeeAlerts) return;
     alertsApi
       .unreadCount()
       .then((data) => setNotificationCount(data.unread_count))
@@ -40,7 +45,7 @@ export function AppShell({ children }: AppShellProps) {
         // Notification badge falls back to 0; log so we can diagnose if it stays stale.
         console.warn("Could not fetch unread alert count:", err);
       });
-  }, []);
+  }, [canSeeAlerts]);
 
   /* Respond to resize: auto-collapse on tablet, expand on desktop */
   useEffect(() => {

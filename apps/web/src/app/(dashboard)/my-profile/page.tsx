@@ -647,13 +647,28 @@ export default function MyProfilePage() {
           />
           <Field
             label="Employment Type"
-            value={profile.employment_type || "—"}
+            value={
+              profile.employment_type
+                ? profile.employment_type
+                    .split("_")
+                    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                    .join("-")
+                : "—"
+            }
             onChange={() => {}}
             readOnly
           />
           <Field
             label="Start Date"
-            value={profile.start_date || "—"}
+            value={
+              profile.start_date
+                ? new Date(profile.start_date).toLocaleDateString("en-SG", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })
+                : "—"
+            }
             onChange={() => {}}
             readOnly
           />

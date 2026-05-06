@@ -2739,13 +2739,24 @@ async def get_my_progress(
         {"employee_id": employee_id, "company_id": company_id},
     )
 
-    # Find active assignment
+    # Prefer an active (in_progress/overdue) assignment so the user lands
+    # on the work-to-do view. If there's none, fall back to the most
+    # recent completed assignment so the page can show "all done!" — the
+    # round-7 redteam M1 finding was that Lily had a 100%-complete
+    # assignment but her own page said "no tasks assigned" because the
+    # query filtered completion out entirely.
     active = [a for a in assignments if a.get("status") in ("in_progress", "overdue")]
-    if not active:
+    if active:
+        active.sort(key=lambda a: a.get("assigned_at", ""), reverse=True)
+        assignment = active[0]
+    elif assignments:
+        completed = [a for a in assignments if a.get("status") == "completed"]
+        if not completed:
+            return {"assignment": None, "message": "No active onboarding."}
+        completed.sort(key=lambda a: a.get("completed_at") or a.get("assigned_at", ""), reverse=True)
+        assignment = completed[0]
+    else:
         return {"assignment": None, "message": "No active onboarding."}
-
-    active.sort(key=lambda a: a.get("assigned_at", ""), reverse=True)
-    assignment = active[0]
     assignment = _enrich_assignment(assignment)
 
     # Fetch step progress with step details (bypass cache for fresh status)

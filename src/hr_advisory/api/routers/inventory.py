@@ -515,7 +515,13 @@ async def create_item_request(
     request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Employee requests an item."""
+    """Employee requests an item.
+
+    The InventoryRequest model has no `item_name`/`quantity`/`created_by`
+    columns; the user's free-text description is stored on `reason`.
+    `category_id` defaults to 0 (general request) so the employee form can
+    submit a single textarea without forcing a category picker.
+    """
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
@@ -526,24 +532,25 @@ async def create_item_request(
         raise HTTPException(status_code=403, detail="Employee record not found.")
 
     body = await request.json()
-    item_name = body.get("item_name", "").strip()
-    if not item_name:
-        raise HTTPException(status_code=400, detail="item_name is required.")
-
-    _validate_text_length(item_name, "item_name", MAX_NAME_LENGTH)
-    _validate_text_length(body.get("reason", ""), "reason")
+    # Frontend sends item_name (legacy) or description; both end up in reason.
+    description = (
+        body.get("item_name") or body.get("description") or body.get("reason") or ""
+    ).strip()
+    if not description:
+        raise HTTPException(
+            status_code=400, detail="A description of the item is required.",
+        )
+    _validate_text_length(description, "description")
 
     req = dataflow_crud.create(
         "InventoryRequest",
         {
             "company_id": company_id,
             "employee_id": emp.get("id"),
-            "item_name": item_name,
-            "category_id": body.get("category_id"),
-            "reason": body.get("reason", ""),
-            "quantity": body.get("quantity", 1),
+            "category_id": int(body.get("category_id") or 0),
+            "item_id": int(body.get("item_id") or 0),
+            "reason": description,
             "status": "pending",
-            "created_by": user_id,
         },
     )
     return {"request": req}

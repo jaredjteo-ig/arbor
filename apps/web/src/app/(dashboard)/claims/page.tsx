@@ -184,7 +184,8 @@ function AddItemRow({
         onClick={handleAdd}
         disabled={!categoryId || !description.trim() || !amount || !receiptDate}
       >
-        <Plus className="h-4 w-4" />
+        <Plus className="h-4 w-4 mr-1" />
+        Add item
       </AppButton>
     </div>
   );
@@ -314,6 +315,12 @@ function NewClaimModal({
             <label className="block text-sm font-medium text-[var(--color-gray-700)] mb-2">
               Expense Items
             </label>
+            {items.length === 0 && (
+              <p className="text-xs text-[var(--color-gray-500)] mb-2">
+                Fill in the row below and click <strong>Add item</strong> to
+                attach it. You need at least one item before you can submit.
+              </p>
+            )}
 
             {items.length > 0 && (
               <div className="space-y-2 mb-3">
