@@ -70,6 +70,41 @@ def _employee_for_user(user_id: int, company_id: int) -> dict | None:
     return rows[0] if rows else None
 
 
+def _verify_goal_in_scope(goal_id: int, current_user: dict) -> dict:
+    """Round-12 redteam H1: get/patch/checkin must enforce the same scope
+    filter as list — admin sees all, manager sees own + direct reports,
+    employee sees only own. Without this guard, a non-admin employee
+    could read or write any goal in their company by guessing the ID.
+
+    404 (not 403) on out-of-scope to avoid ID enumeration.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+    goal = _verify_goal(goal_id, company_id)
+
+    if _is_admin(current_user):
+        return goal
+
+    user_id = int(current_user.get("sub", 0))
+    my_emp = _employee_for_user(user_id, company_id)
+    my_emp_id = my_emp.get("id") if my_emp else None
+    if goal.get("employee_id") == my_emp_id:
+        return goal
+    # Direct reports — manager scope.
+    if my_emp_id:
+        reports = dataflow_crud.list_records(
+            "Employee",
+            {"company_id": company_id, "reporting_manager_id": my_emp_id},
+            cache_ttl=0,
+        )
+        report_ids = {r.get("id") for r in reports if r.get("id")}
+        if goal.get("employee_id") in report_ids:
+            return goal
+
+    raise HTTPException(status_code=404, detail="Goal not found.")
+
+
 @router.get("")
 async def list_goals(
     employee_id: int | None = None,
@@ -189,8 +224,7 @@ async def get_goal(
     goal_id: int,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    company_id = get_current_company_id(current_user)
-    goal = _verify_goal(goal_id, company_id)
+    goal = _verify_goal_in_scope(goal_id, current_user)
     return {"goal": goal}
 
 
@@ -200,8 +234,7 @@ async def update_goal(
     request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    company_id = get_current_company_id(current_user)
-    goal = _verify_goal(goal_id, company_id)
+    goal = _verify_goal_in_scope(goal_id, current_user)
 
     body = await request.json()
     allowed = {
@@ -263,8 +296,8 @@ async def list_checkins(
     goal_id: int,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
+    _verify_goal_in_scope(goal_id, current_user)
     company_id = get_current_company_id(current_user)
-    _verify_goal(goal_id, company_id)
     rows = dataflow_crud.list_records(
         "GoalCheckIn",
         {"goal_id": goal_id, "company_id": company_id},
@@ -280,8 +313,8 @@ async def add_checkin(
     request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
+    goal = _verify_goal_in_scope(goal_id, current_user)
     company_id = get_current_company_id(current_user)
-    goal = _verify_goal(goal_id, company_id)
 
     user_id = int(current_user.get("sub", 0))
     check_rate_limit(

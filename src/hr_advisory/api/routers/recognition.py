@@ -189,6 +189,13 @@ async def give_recognition(
     )
     if not target:
         raise HTTPException(status_code=404, detail="Recipient not found.")
+    # M2 redteam: block self-kudos. Not a tenant boundary issue, but
+    # gaming risk for tallies and feed clutter.
+    if target[0].get("user_id") == user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot give recognition to yourself.",
+        )
 
     now = _now()
     record = dataflow_crud.create(
@@ -244,6 +251,12 @@ async def nominate(
     )
     if not target:
         raise HTTPException(status_code=404, detail="Nominee not found.")
+    # M2 redteam: block self-nomination — same gaming concern as kudos.
+    if target[0].get("user_id") == user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot nominate yourself.",
+        )
 
     now = _now()
     record = dataflow_crud.create(

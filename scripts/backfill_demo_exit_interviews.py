@@ -136,6 +136,51 @@ def run() -> None:
                     ),
                 )
             logger.info("Seeded 2 exit interviews (one anonymous, one named).")
+
+            # Round-2 redteam H4: seed matching EmploymentEvent rows so the
+            # Lifecycle dashboard's S8 panel shows non-zero churn YTD instead
+            # of contradicting the visible exit interviews. Use RESIGNED for
+            # the negative-sentiment leaver and RETIRED for the positive one.
+            cur.execute(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'employment_events'"
+            )
+            if cur.fetchone():
+                cur.execute(
+                    "SELECT COUNT(*) FROM employment_events "
+                    "WHERE company_id = %s AND event_type IN ('RESIGNED', 'RETIRED', 'TERMINATED', 'RETRENCHED')",
+                    (company_id,),
+                )
+                (existing_exits,) = cur.fetchone()
+                if existing_exits == 0:
+                    for s in seeds:
+                        triggered = now - timedelta(
+                            days=s["submitted_offset_days"] + 7
+                        )
+                        event_type = (
+                            "RETIRED"
+                            if "retirement" in s["themes"]
+                            else "RESIGNED"
+                        )
+                        cur.execute(
+                            "INSERT INTO employment_events "
+                            "(company_id, employee_id, event_type, "
+                            " event_date, effective_date, description, "
+                            " old_value, new_value, approved_by, notes, "
+                            " created_at, updated_at) "
+                            "VALUES (%s,%s,%s,%s,%s,%s,'{}','{}',0,'',%s,%s)",
+                            (
+                                company_id,
+                                s["employee_id"],
+                                event_type,
+                                triggered.date().isoformat(),
+                                triggered.date().isoformat(),
+                                f"Demo exit ({event_type.lower()}) seeded for lifecycle dashboard.",
+                                triggered,
+                                triggered,
+                            ),
+                        )
+                    logger.info("Seeded 2 EmploymentEvent exits (RESIGNED + RETIRED).")
     finally:
         conn.close()
 

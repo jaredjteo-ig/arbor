@@ -374,12 +374,21 @@ def _stages(  # noqa: PLR0915 — 8 stages each ~5 lines is intentional
     in_flight = [a for a in appraisals if a.get("status") in ("draft", "submitted")]
     completed = [a for a in appraisals if a.get("status") == "signed_off"]
     due_total = len(in_flight) + len(completed)
+    # Round-2 redteam H5: include Goals/OKR signal — appraisals alone
+    # are once-a-year; goals are the in-cycle data this stage needs.
+    goals = _safe_list("Goal", {"company_id": company_id})
+    goals_active = sum(
+        1 for g in goals if g.get("status") in ("active", "at_risk")
+    )
+    goals_at_risk = sum(1 for g in goals if g.get("status") == "at_risk")
     progression = {
         "health": _pill_progression(due_total, len(completed)),
         "kpi": {
             "due_reviews": len(in_flight),
             "completed": len(completed),
             "in_flight": len(in_flight),
+            "active_goals": goals_active,
+            "at_risk_goals": goals_at_risk,
         },
     }
 
@@ -412,12 +421,25 @@ def _stages(  # noqa: PLR0915 — 8 stages each ~5 lines is intentional
         else 0.0
     )
     yoy_delta_ppt = churn_ytd_pct - churn_last_year_pct
+    # Round-2 redteam H4: include ExitInterview signal so the panel
+    # doesn't read churn=0 while showing 2 completed exit interviews.
+    exit_interviews_all = _safe_list("ExitInterview", {"company_id": company_id})
+    submitted_interviews = [
+        ei for ei in exit_interviews_all if ei.get("submitted_at")
+    ]
+    response_rate = (
+        len(submitted_interviews) / len(exit_interviews_all)
+        if exit_interviews_all
+        else 0.0
+    )
     retain = {
         "health": _pill_retain(yoy_delta_ppt),
         "kpi": {
             "churn_ytd": round(churn_ytd_pct, 1),
             "yoy_delta_ppt": round(yoy_delta_ppt, 1),
             "exits_ytd": len(exits_ytd),
+            "exit_interviews_total": len(exit_interviews_all),
+            "exit_response_rate": round(response_rate, 2),
         },
     }
 
@@ -526,21 +548,41 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
             }
         )
 
-    # OnboardingStepProgress — onboard
+    # OnboardingStepProgress — onboard. Round-2 redteam B1: roll up to
+    # one entry PER ASSIGNMENT (highest-watermark step), not one entry
+    # per step, and scope to this company's assignments. Otherwise the
+    # feed reads as 7 duplicates of the same employee finishing 7 steps.
+    company_assignments = dataflow_crud.list_records(
+        "OnboardingAssignment",
+        {"company_id": company_id},
+        cache_ttl=0,
+    )
+    company_assignment_ids = {
+        a.get("id") for a in company_assignments if a.get("id")
+    }
     progresses = dataflow_crud.list_records(
         "OnboardingStepProgress", {}, cache_ttl=0
     )
+    latest_per_assignment: dict[int, dict] = {}
     for p in progresses:
-        if (p.get("completed_at") or "") < cutoff:
-            continue
         if p.get("status") != "completed":
             continue
+        ts = p.get("completed_at") or ""
+        if ts < cutoff:
+            continue
+        aid = p.get("assignment_id")
+        if aid not in company_assignment_ids:
+            continue
+        prev = latest_per_assignment.get(aid)
+        if prev is None or (prev.get("completed_at") or "") < ts:
+            latest_per_assignment[aid] = p
+    for aid, p in latest_per_assignment.items():
         feed.append(
             {
                 "stage": "onboard",
                 "kind": "STEP_COMPLETE",
                 "ts": p.get("completed_at"),
-                "summary": f"Onboarding step completed for assignment #{p.get('assignment_id')}",
+                "summary": f"Onboarding progress on assignment #{aid}",
             }
         )
 
@@ -558,6 +600,50 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                 "kind": "APPRAISAL",
                 "ts": ts,
                 "summary": f"Appraisal {ap.get('status')} for employee #{ap.get('employee_id')}",
+            }
+        )
+
+    # Recognition — reward
+    for r in _safe_list("Recognition", {"company_id": company_id}):
+        ts = r.get("created_at") or ""
+        if not ts or ts < cutoff:
+            continue
+        if r.get("is_archived"):
+            continue
+        if not r.get("is_public", True):
+            continue
+        feed.append(
+            {
+                "stage": "reward",
+                "kind": "KUDOS",
+                "ts": ts,
+                "summary": (
+                    f"Kudos for employee #{r.get('to_employee_id')} "
+                    f"({r.get('category', 'recognition')})"
+                ),
+            }
+        )
+
+    # ExitInterview — retain
+    for ei in _safe_list("ExitInterview", {"company_id": company_id}):
+        ts = ei.get("submitted_at") or ei.get("triggered_at") or ""
+        if not ts or ts < cutoff:
+            continue
+        if ei.get("is_archived"):
+            continue
+        emp_label = (
+            "anonymous leaver"
+            if ei.get("is_anonymous")
+            else f"employee #{ei.get('employee_id')}"
+        )
+        feed.append(
+            {
+                "stage": "retain",
+                "kind": "EXIT_INTERVIEW",
+                "ts": ts,
+                "summary": (
+                    f"Exit interview {'submitted' if ei.get('submitted_at') else 'triggered'} for {emp_label}"
+                ),
             }
         )
 
@@ -913,9 +999,13 @@ async def retention_risk(
     leaves = dataflow_crud.list_records(
         "LeaveApplication", {"company_id": company_id}, cache_ttl=0
     )
+    goals = _safe_list("Goal", {"company_id": company_id})
+    recognitions = _safe_list("Recognition", {"company_id": company_id})
 
     today = date.today()
     year_start = date(today.year, 1, 1).isoformat()
+    cutoff_90d = (today - timedelta(days=90)).isoformat()
+    cutoff_30d = (today - timedelta(days=30)).isoformat()
 
     risk_rows = []
     for emp in employees:
@@ -923,8 +1013,11 @@ async def retention_risk(
         score = 50  # baseline
         drivers: list[str] = []
 
-        # Tenure
+        # Tenure — Round-2 redteam H3: widened so every active employee
+        # produces at least one driver. The previous bands left 26/28
+        # employees with empty drivers, which read as a placeholder.
         start_iso = emp.get("start_date") or ""
+        tenure_months: int | None = None
         if start_iso:
             try:
                 start = date.fromisoformat(start_iso)
@@ -934,10 +1027,26 @@ async def retention_risk(
                 if tenure_months < 6:
                     score += 15
                     drivers.append(f"Short tenure ({tenure_months} months)")
+                elif tenure_months < 18:
+                    score += 5
+                    drivers.append(f"Building tenure ({tenure_months} months)")
                 elif tenure_months > 36:
                     score -= 5
+                    drivers.append(f"Long tenure ({tenure_months} months) — flight risk if stagnant")
             except (ValueError, TypeError):
                 pass
+
+        # Pass class — work-pass holders carry visa-renewal risk.
+        pass_type = (emp.get("pass_type") or "").strip().lower()
+        if pass_type in ("ep", "sp", "wp"):
+            score += 5
+            drivers.append(f"Foreign worker ({pass_type.upper()}) — pass renewal cycle")
+
+        # Confirmation status — unconfirmed = probation = elevated risk.
+        confirmation = (emp.get("confirmation_status") or "").strip().lower()
+        if confirmation == "probation":
+            score += 10
+            drivers.append("On probation")
 
         # Promotions / salary revisions YTD = positive signals.
         ytd_events = [
@@ -957,6 +1066,12 @@ async def retention_risk(
             drivers.append(f"{promo_count} promotion this year")
         if rev_count > 0:
             score -= 5
+            drivers.append(f"{rev_count} salary revision this year")
+
+        # No promotion + no salary revision in 18+ months → stagnation risk.
+        if tenure_months and tenure_months >= 18 and promo_count == 0 and rev_count == 0:
+            score += 5
+            drivers.append("No promotion or revision in 18+ months")
 
         # Latest appraisal score.
         my_apps = [
@@ -970,6 +1085,10 @@ async def retention_risk(
                 drivers.append("Recent appraisal score low (< 3.0/5)")
             elif overall >= 4.5:
                 score -= 5
+                drivers.append(f"Recent appraisal strong ({overall:.1f}/5)")
+        else:
+            # Round-2 redteam H3: no appraisal on file is itself a signal.
+            drivers.append("No appraisal on file")
 
         # Leave usage YTD — very high → risk.
         my_leaves_days = sum(
@@ -982,14 +1101,42 @@ async def retention_risk(
         if my_leaves_days > 20:
             score += 10
             drivers.append(f"Very high leave usage ({int(my_leaves_days)} days YTD)")
+        elif my_leaves_days == 0 and tenure_months and tenure_months > 6:
+            # Zero leave is itself amber — burnout proxy.
+            score += 5
+            drivers.append("No leave taken this year (burnout risk)")
+
+        # Goals at risk — direct progression signal.
+        my_goals_at_risk = sum(
+            1
+            for g in goals
+            if g.get("employee_id") == emp_id and g.get("status") == "at_risk"
+        )
+        if my_goals_at_risk > 0:
+            score += 8
+            drivers.append(f"{my_goals_at_risk} goal at risk")
+
+        # Recognition received in 30d — positive signal.
+        my_kudos_30d = sum(
+            1
+            for r in recognitions
+            if r.get("to_employee_id") == emp_id
+            and (r.get("created_at") or "") >= cutoff_30d
+            and not r.get("is_archived")
+        )
+        if my_kudos_30d > 0:
+            score -= 5
+            drivers.append(f"{my_kudos_30d} kudos in last 30 days")
 
         score = max(0, min(100, score))
         if score >= 70:
             recommendation = "High risk — schedule a stay-interview this month."
-        elif score >= 50:
-            recommendation = "Watchlist — monitor signals, ensure recent 1:1."
+        elif score >= 55:
+            recommendation = "Watchlist — ensure recent 1:1, address any goals at risk."
+        elif score >= 40:
+            recommendation = "Stable — quarterly check-in is sufficient."
         else:
-            recommendation = "Low risk — keep doing what's working."
+            recommendation = "Low risk — engaged + supported. Keep doing what's working."
 
         risk_rows.append(
             {

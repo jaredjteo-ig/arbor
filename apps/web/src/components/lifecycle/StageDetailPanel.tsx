@@ -135,8 +135,9 @@ function buildSpec(
           },
         ],
         actions: [
-          { label: "Onboarding tab", href: "/employees?tab=onboarding" },
-          { label: "Templates", href: "/employees?tab=onboarding" },
+          { label: "Active assignments", href: "/employees?tab=onboarding" },
+          { label: "Invite an employee", href: "/employees?tab=invitations" },
+          { label: "All employees", href: "/employees" },
         ],
       };
 
@@ -144,7 +145,7 @@ function buildSpec(
       return {
         title: "Learning & Development",
         blurb:
-          "Training records and certifications. Foundation lands in Phase 2 (P2-LD); this card shows current state plus the SkillsFuture catalogue link.",
+          "Training records and certifications across the team. Avg hrs/employee/year sums all completed records over the last 12 months.",
         kpis: [
           {
             label: "Records",
@@ -160,6 +161,9 @@ function buildSpec(
           },
         ],
         actions: [
+          { label: "Training records", href: "/training/records" },
+          { label: "Certifications", href: "/training/certifications" },
+          { label: "Mandatory tracker", href: "/training/mandatory" },
           { label: "SkillsFuture catalogue", href: "/training/skillsfuture" },
         ],
       };
@@ -168,7 +172,7 @@ function buildSpec(
       return {
         title: "Reward · Recognition · Benefits",
         blurb:
-          "Payroll on time + recognition signal in the last 30d. Recognition module ships in P2-RC; until then 'kudos 30d' will read 0.",
+          "Payroll on time + recognition signal in the last 30d + benefits (claims, leave) flowing through.",
         kpis: [
           {
             label: "Last payroll",
@@ -185,6 +189,7 @@ function buildSpec(
         ],
         actions: [
           { label: "Payroll", href: "/payroll" },
+          { label: "Recognition", href: "/recognition" },
           { label: "Claims", href: "/claims" },
           { label: "Leave", href: "/leave" },
         ],
@@ -194,29 +199,32 @@ function buildSpec(
       return {
         title: "Progression & Performance",
         blurb:
-          "In-flight appraisal reviews vs signed-off. Goals/OKR layer arrives in P2-GO; for now this is appraisal-only.",
+          "Appraisal cycle status + in-flight goals. Goals provide the in-cycle signal between annual reviews.",
         kpis: [
           {
-            label: "In flight",
+            label: "In-flight reviews",
             value: String(kpi.in_flight ?? 0),
           },
           {
-            label: "Signed off",
-            value: String(kpi.completed ?? 0),
+            label: "Active goals",
+            value: String(kpi.active_goals ?? 0),
           },
           {
-            label: "Due",
-            value: String(kpi.due_reviews ?? 0),
+            label: "Goals at risk",
+            value: String(kpi.at_risk_goals ?? 0),
           },
         ],
-        actions: [{ label: "Appraisals", href: "/appraisals" }],
+        actions: [
+          { label: "Appraisals", href: "/appraisals" },
+          { label: "Goals", href: "/goals" },
+        ],
       };
 
     case "retain":
       return {
         title: "Retain · Exit",
         blurb:
-          "YTD churn vs same period last year. Exit interview workflow arrives in P2-EX; this card uses EmploymentEvent only for now.",
+          "YTD churn + YoY delta + exit-interview signal. Triggered exit interviews capture the why behind departures.",
         kpis: [
           {
             label: "Churn YTD",
@@ -232,8 +240,9 @@ function buildSpec(
           },
         ],
         actions: [
+          { label: "Exit interviews", href: "/exit-interviews" },
+          { label: "Retention risk", href: "/strategy/retention" },
           { label: "Employees", href: "/employees" },
-          { label: "Reports", href: "/reports" },
         ],
       };
   }
