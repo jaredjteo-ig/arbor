@@ -66,12 +66,7 @@ def run() -> None:
                 "SELECT 1 FROM exit_interviews WHERE company_id = %s LIMIT 1",
                 (company_id,),
             )
-            if cur.fetchone():
-                logger.info(
-                    "Exit interviews already seeded for company %s — skipping.",
-                    company_id,
-                )
-                return
+            interviews_already_seeded = bool(cur.fetchone())
 
             cur.execute(
                 "SELECT id FROM employees WHERE company_id = %s "
@@ -113,29 +108,37 @@ def run() -> None:
                     "themes": ["retirement"],
                 },
             ]
-            for s in seeds:
-                triggered = now - timedelta(days=s["submitted_offset_days"] + 7)
-                submitted = now - timedelta(days=s["submitted_offset_days"])
-                cur.execute(
-                    "INSERT INTO exit_interviews "
-                    "(company_id, employee_id, triggered_at, "
-                    " triggered_by_event_id, survey_payload, themes, "
-                    " is_anonymous, submitted_at, is_archived, "
-                    " created_at, updated_at) "
-                    "VALUES (%s,%s,%s,0,%s,%s,%s,%s,false,%s,%s)",
-                    (
-                        company_id,
-                        s["employee_id"],
-                        triggered,
-                        json.dumps(s["payload"]),
-                        json.dumps(s["themes"]),
-                        s["is_anonymous"],
-                        submitted,
-                        triggered,
-                        submitted,
-                    ),
+            if not interviews_already_seeded:
+                for s in seeds:
+                    triggered = now - timedelta(days=s["submitted_offset_days"] + 7)
+                    submitted = now - timedelta(days=s["submitted_offset_days"])
+                    cur.execute(
+                        "INSERT INTO exit_interviews "
+                        "(company_id, employee_id, triggered_at, "
+                        " triggered_by_event_id, survey_payload, themes, "
+                        " is_anonymous, submitted_at, is_archived, "
+                        " created_at, updated_at) "
+                        "VALUES (%s,%s,%s,0,%s,%s,%s,%s,false,%s,%s)",
+                        (
+                            company_id,
+                            s["employee_id"],
+                            triggered,
+                            json.dumps(s["payload"]),
+                            json.dumps(s["themes"]),
+                            s["is_anonymous"],
+                            submitted,
+                            triggered,
+                            submitted,
+                        ),
+                    )
+                logger.info("Seeded 2 exit interviews (one anonymous, one named).")
+            else:
+                logger.info(
+                    "Exit interviews already seeded for company %s — "
+                    "skipping interview rows but still checking the "
+                    "EmploymentEvent backfill below.",
+                    company_id,
                 )
-            logger.info("Seeded 2 exit interviews (one anonymous, one named).")
 
             # Round-2 redteam H4: seed matching EmploymentEvent rows so the
             # Lifecycle dashboard's S8 panel shows non-zero churn YTD instead
