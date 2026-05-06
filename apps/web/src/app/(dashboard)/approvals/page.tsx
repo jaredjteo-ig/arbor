@@ -375,10 +375,10 @@ function TimesheetApprovalsTab() {
                     />
                   </td>
                   <td className="py-3 px-3 font-medium text-[var(--color-gray-900)]">
-                    {entry.employee_name || `Employee #${entry.employee_id}`}
+                    {entry.employee_name || "—"}
                   </td>
                   <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                    {entry.project_name || `Project #${entry.project_id}`}
+                    {entry.project_name || "—"}
                   </td>
                   <td className="py-3 px-3 text-[var(--color-gray-600)]">
                     {formatDate(entry.entry_date)}
@@ -576,7 +576,7 @@ function InventoryRequestsTab() {
                   className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
                 >
                   <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                    {req.employee_name || `Employee #${req.employee_id}`}
+                    {req.employee_name || "—"}
                   </td>
                   <td className="py-3 px-3 text-[var(--color-gray-600)]">
                     {req.category_name || "-"}

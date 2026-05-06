@@ -2379,12 +2379,10 @@ function OnboardingTab({
                   {/* Employee name + template */}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-[var(--color-gray-900)] truncate">
-                      {assignment.employee_name ||
-                        `Employee #${assignment.employee_id}`}
+                      {assignment.employee_name || "—"}
                     </p>
                     <p className="text-xs text-[var(--color-gray-500)] truncate">
-                      {assignment.template_name ||
-                        `Template #${assignment.template_id}`}
+                      {assignment.template_name || "—"}
                       {assignment.due_date
                         ? ` \u00B7 Due ${formatDate(assignment.due_date)}`
                         : ""}

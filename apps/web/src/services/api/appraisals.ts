@@ -74,6 +74,12 @@ export const appraisalsApi = {
     apiClient.post<AppraisalPeriod>("/appraisals/periods", data),
   launchPeriod: (id: number) =>
     apiClient.post<{ message: string }>(`/appraisals/periods/${id}/launch`),
+  updatePeriod: (id: number, data: Partial<AppraisalPeriod>) =>
+    apiClient.patch<AppraisalPeriod>(`/appraisals/periods/${id}`, data),
+  closePeriod: (id: number) =>
+    apiClient.post<{ period: AppraisalPeriod }>(
+      `/appraisals/periods/${id}/close`,
+    ),
 
   /* Appraisals */
   listAppraisals: (periodId?: number) =>

@@ -3116,7 +3116,7 @@ function InterviewCalendar({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-[var(--color-gray-900)]">
-                          {iv.candidate_name || `Candidate #${iv.candidate_id}`}
+                          {iv.candidate_name || "—"}
                         </span>
                         <span className="text-xs text-[var(--color-gray-500)]">
                           {time}
@@ -4569,7 +4569,7 @@ function RecruitmentPageInner() {
                     setFeedbackTarget({
                       interviewId: iv.id,
                       candidateId: iv.candidate_id,
-                      candidateName: iv.candidate_name || `#${iv.candidate_id}`,
+                      candidateName: iv.candidate_name || "—",
                     });
                   }
                 }}
@@ -4607,7 +4607,7 @@ function RecruitmentPageInner() {
                           className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
                         >
                           <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                            {iv.candidate_name || `#${iv.candidate_id}`}
+                            {iv.candidate_name || "—"}
                           </td>
                           <td className="py-3 px-3 text-[var(--color-gray-600)]">
                             {(() => {
@@ -4652,9 +4652,7 @@ function RecruitmentPageInner() {
                                     setFeedbackTarget({
                                       interviewId: iv.id,
                                       candidateId: iv.candidate_id,
-                                      candidateName:
-                                        iv.candidate_name ||
-                                        `#${iv.candidate_id}`,
+                                      candidateName: iv.candidate_name || "—",
                                     })
                                   }
                                 >

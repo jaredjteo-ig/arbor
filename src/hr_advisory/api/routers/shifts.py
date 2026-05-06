@@ -201,10 +201,29 @@ async def get_weekly_schedule(
             "colour": tmpl.get("colour", ""),
         }
 
+    # Build a flat assignments list (with employee_name + template_name)
+    # so the weekly grid in the web app can render directly.
+    flat_assignments: list[dict] = []
+    emp_name_map = {row["employee_id"]: row.get("name", "") for row in grid.values()}
+    for assignment in all_assignments:
+        emp_id = assignment.get("employee_id")
+        if emp_id not in emp_ids:
+            continue
+        tmpl = template_map.get(assignment.get("shift_template_id"), {})
+        flat_assignments.append(
+            {
+                **assignment,
+                "employee_name": emp_name_map.get(emp_id, ""),
+                "template_name": tmpl.get("name", ""),
+                "template_colour": tmpl.get("colour", ""),
+            }
+        )
+
     return {
         "week_start": week_start,
         "dates": dates,
         "schedule": list(grid.values()),
+        "assignments": flat_assignments,
     }
 
 

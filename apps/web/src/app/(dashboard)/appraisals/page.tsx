@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   Save,
+  CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { AdminGuard } from "@/components/auth/AdminGuard";
@@ -441,6 +442,24 @@ export default function AppraisalsPage() {
     }
   }
 
+  async function handleClose(periodId: number) {
+    if (
+      !confirm(
+        "Close this review cycle? Appraisals already submitted are kept; pending ones can no longer be edited.",
+      )
+    )
+      return;
+    try {
+      await appraisalsApi.closePeriod(periodId);
+      toast.success("Review period closed");
+      fetchData();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to close period";
+      toast.error(message);
+    }
+  }
+
   async function handleSubmit(appraisalId: number) {
     try {
       await appraisalsApi.submitAppraisal(appraisalId);
@@ -783,35 +802,68 @@ export default function AppraisalsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {periods.map((p) => (
-                        <tr
-                          key={p.id}
-                          className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
-                        >
-                          <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                            {p.name}
-                          </td>
-                          <td className="py-3 px-3 text-[var(--color-gray-600)]">
-                            {formatDate(p.start_date)} -{" "}
-                            {formatDate(p.end_date)}
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            <StatusBadge status={p.status} />
-                          </td>
-                          <td className="py-3 px-5 text-center">
-                            {p.status === "draft" && (
-                              <AppButton
-                                variant="primary"
-                                size="sm"
-                                onClick={() => handleLaunch(p.id)}
-                              >
-                                <Play className="h-3.5 w-3.5 mr-1" />
-                                Launch
-                              </AppButton>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {periods.map((p) => {
+                        const inFlight =
+                          p.status === "in_progress" || p.status === "active";
+                        const periodAppraisals = appraisals.filter(
+                          (a) => a.period_id === p.id,
+                        );
+                        const submittedCount = periodAppraisals.filter((a) =>
+                          ["submitted", "signed_off", "completed"].includes(
+                            a.status,
+                          ),
+                        ).length;
+                        return (
+                          <tr
+                            key={p.id}
+                            className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
+                          >
+                            <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
+                              {p.name}
+                            </td>
+                            <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                              {formatDate(p.start_date)} -{" "}
+                              {formatDate(p.end_date)}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <StatusBadge status={p.status} />
+                            </td>
+                            <td className="py-3 px-5 text-center">
+                              {p.status === "draft" && (
+                                <AppButton
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => handleLaunch(p.id)}
+                                >
+                                  <Play className="h-3.5 w-3.5 mr-1" />
+                                  Launch
+                                </AppButton>
+                              )}
+                              {inFlight && (
+                                <div className="flex items-center justify-center gap-3">
+                                  <span className="text-xs text-[var(--color-gray-500)]">
+                                    {submittedCount}/{periodAppraisals.length}{" "}
+                                    submitted
+                                  </span>
+                                  <AppButton
+                                    variant="outlined"
+                                    size="sm"
+                                    onClick={() => handleClose(p.id)}
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                                    Close cycle
+                                  </AppButton>
+                                </div>
+                              )}
+                              {p.status === "completed" && (
+                                <span className="text-xs text-[var(--color-gray-400)]">
+                                  Closed
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -854,8 +906,7 @@ export default function AppraisalsPage() {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 mb-1">
                               <p className="text-sm font-medium text-[var(--color-gray-900)]">
-                                {a.employee_name ||
-                                  `Employee #${a.employee_id}`}
+                                {a.employee_name || "—"}
                               </p>
                               <StatusBadge status={a.status} />
                             </div>

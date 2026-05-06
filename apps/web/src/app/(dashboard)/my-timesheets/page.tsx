@@ -421,7 +421,7 @@ export default function MyTimesheetsPage() {
                       className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
                     >
                       <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                        {entry.project_name || `Project #${entry.project_id}`}
+                        {entry.project_name || "—"}
                       </td>
                       <td className="py-3 px-3 text-[var(--color-gray-600)]">
                         {formatDate(entry.entry_date)}

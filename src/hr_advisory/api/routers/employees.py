@@ -30,7 +30,10 @@ from hr_advisory.security.encryption import (
     mask_nric,
     mask_bank_account,
 )
-from hr_advisory.api.routers._helpers import _validate_text_length
+from hr_advisory.api.routers._helpers import (
+    _validate_text_length,
+    _resolve_user_names,
+)
 from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
@@ -3823,6 +3826,15 @@ async def list_employee_notes_endpoint(
 
     # Sort by created_at descending
     visible_notes.sort(key=lambda n: n.get("created_at", ""), reverse=True)
+
+    # Enrich each note with the creator's display name so the UI never
+    # has to render "Created by #N".
+    name_map = _resolve_user_names(
+        {n.get("created_by") for n in visible_notes if n.get("created_by")},
+        company_id,
+    )
+    for n in visible_notes:
+        n["created_by_name"] = name_map.get(n.get("created_by"), "")
 
     return {"notes": visible_notes, "count": len(visible_notes)}
 

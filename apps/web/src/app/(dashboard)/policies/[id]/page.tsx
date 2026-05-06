@@ -497,6 +497,8 @@ function VersionsTab({ policyId }: { policyId: number }) {
 
 interface AcknowledgedItem {
   employee_id: number;
+  full_name: string;
+  email: string;
   acknowledged_at: string;
   ip_address?: string;
 }
@@ -604,7 +606,7 @@ function AcknowledgmentsTab({ policyId }: { policyId: number }) {
                     className="border-b border-[var(--color-gray-100)] last:border-0"
                   >
                     <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                      {emp.full_name || `Employee #${emp.employee_id}`}
+                      {emp.full_name || "—"}
                     </td>
                     <td className="py-3 px-3 text-[var(--color-gray-600)]">
                       {emp.email || "-"}
@@ -635,7 +637,10 @@ function AcknowledgmentsTab({ policyId }: { policyId: number }) {
               <thead>
                 <tr className="border-b border-[var(--color-gray-200)]">
                   <th className="text-left py-3 px-5 font-medium text-[var(--color-gray-500)]">
-                    Employee ID
+                    Employee
+                  </th>
+                  <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
+                    Email
                   </th>
                   <th className="text-left py-3 px-3 font-medium text-[var(--color-gray-500)]">
                     Acknowledged At
@@ -652,7 +657,10 @@ function AcknowledgmentsTab({ policyId }: { policyId: number }) {
                     className="border-b border-[var(--color-gray-100)] last:border-0"
                   >
                     <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                      Employee #{ack.employee_id}
+                      {ack.full_name || "—"}
+                    </td>
+                    <td className="py-3 px-3 text-[var(--color-gray-600)]">
+                      {ack.email || "-"}
                     </td>
                     <td className="py-3 px-3 text-[var(--color-gray-600)]">
                       {formatDateTime(ack.acknowledged_at)}

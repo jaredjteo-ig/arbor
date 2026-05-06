@@ -23,6 +23,7 @@ from hr_advisory.api.routers._helpers import (  # noqa: E402
     MAX_TEXT_LENGTH,
     MAX_NAME_LENGTH,
     _validate_text_length,
+    _resolve_employee_names,
 )
 
 
@@ -575,6 +576,12 @@ async def list_item_requests(
         filters["status"] = status
 
     requests = dataflow_crud.list_records("InventoryRequest", filters)
+    name_map = _resolve_employee_names(
+        {r.get("employee_id") for r in requests if r.get("employee_id")},
+        company_id,
+    )
+    for r in requests:
+        r["employee_name"] = name_map.get(r.get("employee_id"), "")
     return {"requests": requests, "count": len(requests)}
 
 

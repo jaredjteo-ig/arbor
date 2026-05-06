@@ -3333,7 +3333,7 @@ function NotesTab({
                     {note.content}
                   </p>
                   <p className="text-xs text-[var(--color-gray-400)] mt-2">
-                    Created by #{note.created_by}
+                    Created by {note.created_by_name || "—"}
                     {note.created_at && ` on ${note.created_at.split("T")[0]}`}
                   </p>
                 </div>

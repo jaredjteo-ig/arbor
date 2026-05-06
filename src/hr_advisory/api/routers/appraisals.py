@@ -43,6 +43,49 @@ def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
     return records[0] if records else None
 
 
+def _enrich_appraisals(appraisals: list, company_id: int) -> list:
+    """Enrich appraisal records with employee_name (resolved via Employee.user_id → User.name).
+
+    Mirrors the bulk-lookup pattern from leave.py to avoid N+1 queries.
+    """
+    if not appraisals:
+        return appraisals
+
+    employee_ids = {
+        a.get("employee_id") for a in appraisals if a.get("employee_id")
+    }
+
+    emp_name_map: dict[int, str] = {}
+    if employee_ids:
+        employees = dataflow_crud.list_records(
+            "Employee",
+            {"company_id": company_id},
+        )
+        # Build employee_id -> user_id and reverse-lookup names from User
+        uid_to_eids: dict[int, list[int]] = {}
+        for emp in employees:
+            eid = emp.get("id")
+            if eid in employee_ids:
+                uid = emp.get("user_id")
+                if uid:
+                    uid_to_eids.setdefault(uid, []).append(eid)
+        if uid_to_eids:
+            users = dataflow_crud.list_records(
+                "User", {"company_id": company_id}
+            )
+            for user in users:
+                uid = user.get("id")
+                if uid in uid_to_eids:
+                    name = user.get("name", "")
+                    for eid in uid_to_eids[uid]:
+                        emp_name_map[eid] = name
+
+    for a in appraisals:
+        a["employee_name"] = emp_name_map.get(a.get("employee_id"), "")
+
+    return appraisals
+
+
 # --------------------------------------------------------------------------
 # Templates
 # --------------------------------------------------------------------------
@@ -311,13 +354,48 @@ async def launch_period(
         )
         created.append(appraisal)
 
-    # Move period to active
-    dataflow_crud.update("AppraisalPeriod", period_id, {"status": "active"})
+    # Move period to in_progress (matches seed + UI badge label)
+    dataflow_crud.update("AppraisalPeriod", period_id, {"status": "in_progress"})
 
     return {
         "detail": f"Launched {len(created)} appraisals.",
         "appraisals_created": len(created),
     }
+
+
+@router.post("/periods/{period_id}/close")
+async def close_period(
+    period_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Close an in-progress appraisal period (mark it completed)."""
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"close_appraisal_period:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="close appraisal period",
+    )
+
+    period = dataflow_crud.read("AppraisalPeriod", period_id)
+    if not period or period.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Period not found.")
+
+    if period.get("status") not in ("in_progress", "active"):
+        raise HTTPException(
+            status_code=400,
+            detail="Period must be in progress to close.",
+        )
+
+    result = dataflow_crud.update(
+        "AppraisalPeriod",
+        period_id,
+        {"status": "completed"},
+    )
+    return {"period": result}
 
 
 # --------------------------------------------------------------------------
@@ -353,6 +431,7 @@ async def list_my_appraisals(
             return {"appraisals": [], "count": 0}
 
     appraisals = dataflow_crud.list_records("Appraisal", filters)
+    appraisals = _enrich_appraisals(appraisals, company_id)
     return {"appraisals": appraisals, "count": len(appraisals)}
 
 

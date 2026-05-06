@@ -195,6 +195,7 @@ export interface EmployeeNote {
   note_type: string;
   content: string;
   created_by: number;
+  created_by_name?: string;
   is_confidential: boolean;
   created_at?: string;
 }

@@ -24,6 +24,7 @@ from hr_advisory.api.routers._helpers import (  # noqa: E402
     MAX_TEXT_LENGTH,
     MAX_NAME_LENGTH,
     _validate_text_length,
+    _resolve_employee_names,
 )
 
 
@@ -152,6 +153,12 @@ async def list_assignments(
         "ProjectAssignment",
         {"project_id": project_id},
     )
+    name_map = _resolve_employee_names(
+        {a.get("employee_id") for a in assignments if a.get("employee_id")},
+        company_id,
+    )
+    for a in assignments:
+        a["employee_name"] = name_map.get(a.get("employee_id"), "")
     return {"assignments": assignments, "count": len(assignments)}
 
 
@@ -531,6 +538,27 @@ async def list_timesheet_entries(
         entries = [e for e in entries if e.get("entry_date", "") >= date_from]
     if date_to:
         entries = [e for e in entries if e.get("entry_date", "") <= date_to]
+
+    # Enrich with employee_name + project_name so the approvals + project
+    # detail tables never fall back to raw IDs.
+    name_map = _resolve_employee_names(
+        {e.get("employee_id") for e in entries if e.get("employee_id")},
+        company_id,
+    )
+    project_ids = {e.get("project_id") for e in entries if e.get("project_id")}
+    project_name_map: dict[int, str] = {}
+    if project_ids:
+        projects = dataflow_crud.list_records(
+            "Project", {"company_id": company_id}
+        )
+        project_name_map = {
+            p.get("id"): p.get("name", "")
+            for p in projects
+            if p.get("id") in project_ids
+        }
+    for e in entries:
+        e["employee_name"] = name_map.get(e.get("employee_id"), "")
+        e["project_name"] = project_name_map.get(e.get("project_id"), "")
 
     return {"entries": entries, "count": len(entries)}
 

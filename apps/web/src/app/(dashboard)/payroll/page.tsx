@@ -683,7 +683,7 @@ export default function PayrollPage() {
                                   className="border-b border-[var(--color-gray-100)] last:border-0"
                                 >
                                   <td className="py-2 px-3 font-medium text-[var(--color-gray-900)]">
-                                    {comp.employee_name || comp.employee_id}
+                                    {comp.employee_name || "—"}
                                   </td>
                                   {[gross, net, empCpf, erCpf].map((f, fi) => (
                                     <td
@@ -733,9 +733,7 @@ export default function PayrollPage() {
                             </div>
                             <ul className="list-disc list-inside text-[var(--color-gray-600)] text-xs ml-1">
                               {compareResult.unmatched_external.map((u, i) => (
-                                <li key={i}>
-                                  {u.employee_name || u.employee_id}
-                                </li>
+                                <li key={i}>{u.employee_name || "—"}</li>
                               ))}
                             </ul>
                           </div>

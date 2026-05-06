@@ -1280,11 +1280,34 @@ async def list_acknowledgments(
         {"company_id": company_id, "is_active": True},
     )
 
+    # Resolve employee_id → (name, email) via the linked User row.
+    # Employee has no name/email of its own; both live on User.
+    eid_to_name: dict[int, str] = {}
+    eid_to_email: dict[int, str] = {}
+    uid_to_eids: dict[int, list[int]] = {}
+    for emp in all_employees:
+        eid = emp.get("id")
+        uid = emp.get("user_id")
+        if eid and uid:
+            uid_to_eids.setdefault(uid, []).append(eid)
+    if uid_to_eids:
+        users = dataflow_crud.list_records(
+            "User", {"company_id": company_id}
+        )
+        for user in users:
+            uid = user.get("id")
+            if uid in uid_to_eids:
+                name = user.get("name", "")
+                email = user.get("email", "")
+                for eid in uid_to_eids[uid]:
+                    eid_to_name[eid] = name
+                    eid_to_email[eid] = email
+
     not_acknowledged = [
         {
             "employee_id": emp.get("id"),
-            "full_name": emp.get("full_name", ""),
-            "email": emp.get("email", ""),
+            "full_name": eid_to_name.get(emp.get("id"), ""),
+            "email": eid_to_email.get(emp.get("id"), ""),
         }
         for emp in all_employees
         if emp.get("id") not in acknowledged_employee_ids
@@ -1299,6 +1322,8 @@ async def list_acknowledgments(
         "acknowledged": [
             {
                 "employee_id": a.get("employee_id"),
+                "full_name": eid_to_name.get(a.get("employee_id"), ""),
+                "email": eid_to_email.get(a.get("employee_id"), ""),
                 "acknowledged_at": a.get("acknowledged_at", ""),
                 "ip_address": a.get("ip_address", ""),
             }

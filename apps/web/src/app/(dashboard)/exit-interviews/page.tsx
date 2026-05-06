@@ -100,8 +100,8 @@ export default function ExitInterviewsPage() {
                 Exit interviews
               </h1>
               <p className="text-sm text-[var(--color-gray-500)] mt-0.5">
-                Trigger a tokenised survey when an employee leaves. Themes
-                aggregate the responses to surface retention signals.
+                Send a private survey link when someone leaves and group their
+                answers into themes so you can see why people quit.
               </p>
             </div>
           </div>

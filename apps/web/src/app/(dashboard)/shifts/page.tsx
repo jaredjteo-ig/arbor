@@ -305,7 +305,7 @@ export default function ShiftsPage() {
                         }}
                       >
                         <div className="font-medium truncate">
-                          {a.employee_name || `Emp #${a.employee_id}`}
+                          {a.employee_name || "—"}
                         </div>
                         <div style={{ color: "var(--color-muted)" }}>
                           {tpl?.name || "Shift"} {tpl?.start_time}–
