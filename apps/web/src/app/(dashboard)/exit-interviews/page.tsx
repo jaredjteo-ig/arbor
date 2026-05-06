@@ -2,8 +2,8 @@
 
 /* P2-EX-3 (obayashi): Admin view for exit interviews — list + theme tally. */
 
-import { useEffect, useState } from "react";
-import { DoorOpen, Loader2, Send } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
+import { ChevronDown, ChevronUp, DoorOpen, Loader2, Send } from "lucide-react";
 import { AdminGuard } from "@/components/auth/AdminGuard";
 import {
   exitInterviewsApi,
@@ -13,6 +13,155 @@ import {
 import { employeesApi, type Employee } from "@/services/api/employees";
 
 type TabKey = "list" | "themes";
+
+/* Survey reason chips — must match the public exit-survey page. */
+const REASON_LABELS: Record<string, string> = {
+  comp: "Compensation",
+  growth: "Career growth",
+  manager: "Manager / leadership",
+  role: "Role / scope fit",
+  location: "Location / commute",
+  family: "Family",
+  retirement: "Retirement",
+  workload: "Workload / burnout",
+  culture: "Culture / environment",
+  other: "Other",
+};
+
+interface SurveyPayload {
+  q1_overall?: number;
+  q2_fairness?: number;
+  q3_reasons?: string[];
+  q4_what_worked?: string;
+  q5_what_to_change?: string;
+  q6_recommend_why?: string;
+}
+
+function parsePayload(raw: string | null | undefined): SurveyPayload | null {
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" ? (obj as SurveyPayload) : null;
+  } catch {
+    return null;
+  }
+}
+
+function ScoreBar({ score }: { score: number }) {
+  const cells = [1, 2, 3, 4, 5];
+  return (
+    <div className="flex items-center gap-1">
+      {cells.map((n) => (
+        <div
+          key={n}
+          className={`h-2 w-6 rounded-full ${
+            n <= score
+              ? "bg-[var(--color-primary)]"
+              : "bg-[var(--color-gray-200)]"
+          }`}
+        />
+      ))}
+      <span className="ml-1 text-xs tabular-nums text-[var(--color-gray-600)]">
+        {score}/5
+      </span>
+    </div>
+  );
+}
+
+function ResponseDetail({
+  interview,
+  payload,
+}: {
+  interview: ExitInterview;
+  payload: SurveyPayload | null;
+}) {
+  if (!interview.submitted_at) {
+    return (
+      <div className="px-4 py-4 text-sm text-[var(--color-gray-500)] italic">
+        Survey not yet submitted — the leaver hasn&apos;t opened the link.
+      </div>
+    );
+  }
+  if (!payload) {
+    return (
+      <div className="px-4 py-4 text-sm text-[var(--color-gray-500)] italic">
+        Submitted, but the response payload couldn&apos;t be parsed. The
+        underlying record may be corrupt.
+      </div>
+    );
+  }
+  const reasons = (payload.q3_reasons ?? []).filter(Boolean);
+  return (
+    <div className="px-4 py-4 space-y-4 bg-[var(--color-surface-page)]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-gray-500)] mb-1">
+            Overall experience
+          </p>
+          {typeof payload.q1_overall === "number" && payload.q1_overall > 0 ? (
+            <ScoreBar score={payload.q1_overall} />
+          ) : (
+            <span className="text-sm text-[var(--color-gray-400)]">—</span>
+          )}
+        </div>
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-gray-500)] mb-1">
+            Fairness
+          </p>
+          {typeof payload.q2_fairness === "number" &&
+          payload.q2_fairness > 0 ? (
+            <ScoreBar score={payload.q2_fairness} />
+          ) : (
+            <span className="text-sm text-[var(--color-gray-400)]">—</span>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-gray-500)] mb-1.5">
+          Reasons for leaving
+        </p>
+        {reasons.length === 0 ? (
+          <span className="text-sm text-[var(--color-gray-400)]">—</span>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {reasons.map((r) => (
+              <span
+                key={r}
+                className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary)]/20"
+              >
+                {REASON_LABELS[r] ?? r}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {(
+        [
+          ["What worked well", payload.q4_what_worked],
+          ["What they would change", payload.q5_what_to_change],
+          ["Would they recommend us", payload.q6_recommend_why],
+        ] as const
+      ).map(([label, value]) => (
+        <div key={label}>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-gray-500)] mb-1">
+            {label}
+          </p>
+          {value && value.trim() ? (
+            <p className="text-sm text-[var(--color-gray-800)] whitespace-pre-wrap leading-relaxed">
+              {value}
+            </p>
+          ) : (
+            <span className="text-sm text-[var(--color-gray-400)]">
+              No comment.
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ExitInterviewsPage() {
   const [tab, setTab] = useState<TabKey>("list");
@@ -29,6 +178,7 @@ export default function ExitInterviewsPage() {
   const [triggerAnonymous, setTriggerAnonymous] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [lastToken, setLastToken] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const employeeName = (id: number) => {
     if (id === 0) return "Anonymous";
@@ -224,6 +374,7 @@ export default function ExitInterviewsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-gray-200)] bg-[var(--color-surface-page)]">
+                    <th className="w-8 py-2 px-2"></th>
                     <th className="text-left py-2 px-4 font-medium text-[var(--color-gray-600)]">
                       Employee
                     </th>
@@ -249,50 +400,81 @@ export default function ExitInterviewsPage() {
                     } catch {
                       themeChips = [];
                     }
+                    const isExpanded = expandedId === iv.id;
+                    const payload = isExpanded
+                      ? parsePayload(iv.survey_payload)
+                      : null;
                     return (
-                      <tr
-                        key={iv.id}
-                        className="border-b border-[var(--color-gray-100)] last:border-0"
-                      >
-                        <td className="py-2 px-4">
-                          {employeeName(iv.employee_id)}
-                        </td>
-                        <td className="py-2 px-4">
-                          {iv.triggered_at
-                            ? new Date(iv.triggered_at).toLocaleDateString(
-                                "en-SG",
-                              )
-                            : "—"}
-                        </td>
-                        <td className="py-2 px-4">
-                          {iv.submitted_at
-                            ? new Date(iv.submitted_at).toLocaleDateString(
-                                "en-SG",
-                              )
-                            : "Pending"}
-                        </td>
-                        <td className="py-2 px-4">
-                          {iv.is_anonymous ? "Yes" : "No"}
-                        </td>
-                        <td className="py-2 px-4">
-                          <div className="flex flex-wrap gap-1">
-                            {themeChips.length === 0 ? (
-                              <span className="text-xs text-[var(--color-gray-400)]">
-                                —
-                              </span>
+                      <Fragment key={iv.id}>
+                        <tr
+                          className="border-b border-[var(--color-gray-100)] hover:bg-[var(--color-gray-50)] transition-colors cursor-pointer"
+                          onClick={() =>
+                            setExpandedId(isExpanded ? null : iv.id)
+                          }
+                        >
+                          <td className="py-2 px-2 align-middle">
+                            {isExpanded ? (
+                              <ChevronUp
+                                className="h-3.5 w-3.5 text-[var(--color-gray-400)]"
+                                aria-hidden="true"
+                              />
                             ) : (
-                              themeChips.map((t) => (
-                                <span
-                                  key={t}
-                                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-700)] capitalize"
-                                >
-                                  {t}
-                                </span>
-                              ))
+                              <ChevronDown
+                                className="h-3.5 w-3.5 text-[var(--color-gray-400)]"
+                                aria-hidden="true"
+                              />
                             )}
-                          </div>
-                        </td>
-                      </tr>
+                          </td>
+                          <td className="py-2 px-4">
+                            {employeeName(iv.employee_id)}
+                          </td>
+                          <td className="py-2 px-4">
+                            {iv.triggered_at
+                              ? new Date(iv.triggered_at).toLocaleDateString(
+                                  "en-SG",
+                                )
+                              : "—"}
+                          </td>
+                          <td className="py-2 px-4">
+                            {iv.submitted_at
+                              ? new Date(iv.submitted_at).toLocaleDateString(
+                                  "en-SG",
+                                )
+                              : "Pending"}
+                          </td>
+                          <td className="py-2 px-4">
+                            {iv.is_anonymous ? "Yes" : "No"}
+                          </td>
+                          <td className="py-2 px-4">
+                            <div className="flex flex-wrap gap-1">
+                              {themeChips.length === 0 ? (
+                                <span className="text-xs text-[var(--color-gray-400)]">
+                                  —
+                                </span>
+                              ) : (
+                                themeChips.map((t) => (
+                                  <span
+                                    key={t}
+                                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-[var(--color-gray-100)] text-[var(--color-gray-700)] capitalize"
+                                  >
+                                    {t}
+                                  </span>
+                                ))
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="border-b border-[var(--color-gray-100)]">
+                            <td colSpan={6} className="p-0">
+                              <ResponseDetail
+                                interview={iv}
+                                payload={payload}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
