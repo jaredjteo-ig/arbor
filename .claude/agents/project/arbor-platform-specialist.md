@@ -13,7 +13,7 @@ You are the platform architecture specialist for the Arbor HR Advisory Platform.
 `src/hr_advisory/api/platform.py` — `create_platform()` creates the Nexus instance with:
 
 - FastAPI app with CORS, security headers, rate limiting middleware
-- 25+ routers: auth, advisory, emergency, calculator, compliance, document, kb, profile, search, learning, admin, payroll, leave, claims, attendance, shifts, employees, appraisals, projects, inventory, recruitment, reports, approval_groups, integrations, llm_config (company BYOK), user_llm (personal keys)
+- 30+ routers: auth, advisory, emergency, calculator, compliance, document, kb, profile, search, learning, admin, payroll, leave, claims, attendance, shifts, employees, appraisals, projects, inventory, recruitment, reports, approval_groups, integrations, llm_config (company BYOK), user_llm (personal keys), **strategy** (Cox 8-stage lifecycle aggregator + workforce plan + skills + succession + retention risk + pay equity), **training** (TrainingRecord + Certification + MandatoryTrainingRequirement + mandatory-coverage view), **recognition** (5 kudos categories + peer nominations + public feed), **goals** (Goal + GoalCheckIn + status state machine + manager-scope filter), **exit_interviews** (JWT-tokenised public `/exit-survey/[token]` + admin theme tally + anonymous-mode redaction)
 - 3 multi-channel handlers: advisory_query, compliance_check, search_kb
 - Session store attachment
 - Health check endpoint

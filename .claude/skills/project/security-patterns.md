@@ -593,6 +593,18 @@ Reach for this skill when:
 - Sequencing-sensitive workflow (publish/pay/finalize) → P20 (chronological-ordering guard)
 - Any user-named active resource → P21 (unique-name helper + auto-suffix)
 - Dashboard tile fed by a snapshot field → P22 (live-vs-snapshot drift)
+- Per-resource handler (`/{id}`, `/{id}/checkins`) on scoped resource → P23 (scope filter on every handler)
+- Resource where one user references another (kudos, nominations) → P24 (self-action guard)
+- Cross-stage activity feed unioning multiple sources → P25 (dedup + tenant-scope each source)
+- Endpoint depending on optional MCP/external tool → P26 (curated fallback)
+- Shipping a feature that previously read "coming soon" → P27 (copy hygiene grep)
+- Module that the lifecycle dashboard quotes → P28 (cross-stage hook in same commit)
+- Filtering on a mixed-case enum (event_type, status) → P29 (`.upper()` compare on the value side)
+- Demo seed inserting into multiple related tables → P30 (independent guards per table)
+- Filtering DataFlow rows on `is_archived=False` / `is_active=True` → P31 (post-filter in Python)
+- Deploy script needs to run a `scripts/*.py` inside the backend container → P32 (`docker cp scripts` first)
+- Aggregated report bucketed by demographic field → P33 (anonymity collapse <5)
+- Per-individual derived score → P34 (no persistence)
 
 Each pattern has a regression test pinning the invariant; refer to those tests for executable examples.
 
@@ -705,3 +717,313 @@ for emp in employees:
 Companion rule: empty values default to a sensible domain default
 (`citizen` for SG-SME) instead of being shown as "Unknown 1" — that
 re-introduces the same drift as a tile-level bug (round-12 M1).
+
+## P23 — Per-resource scope filter, not just on list (round-2 H1)
+
+`_verify_*_ownership` helpers that only check `company_id` let a
+non-admin employee read or write any resource in their tenant by
+guessing the ID. The list endpoint may filter to "own + direct
+reports", but `get/{id}`, `patch/{id}`, and any sub-resource handler
+(`{id}/checkins`, `{id}/items`, etc.) need the same scope check.
+Return 404 (not 403) on out-of-scope to avoid ID enumeration.
+
+```python
+def _verify_goal_in_scope(goal_id: int, current_user: dict) -> dict:
+    company_id = get_current_company_id(current_user)
+    goal = _verify_goal(goal_id, company_id)
+    if _is_admin(current_user):
+        return goal
+    user_id = int(current_user.get("sub", 0))
+    my_emp = _employee_for_user(user_id, company_id)
+    my_emp_id = my_emp.get("id") if my_emp else None
+    if goal.get("employee_id") == my_emp_id:
+        return goal
+    if my_emp_id:
+        reports = dataflow_crud.list_records(
+            "Employee",
+            {"company_id": company_id, "reporting_manager_id": my_emp_id},
+            cache_ttl=0,
+        )
+        if goal.get("employee_id") in {r.get("id") for r in reports if r.get("id")}:
+            return goal
+    raise HTTPException(status_code=404, detail="Goal not found.")
+```
+
+Pinned by `tests/regression/test_redteam2_findings.py::test_h1_goals_handlers_use_scope_check`.
+
+## P24 — Self-action guard on user-references-user resources (round-2 M2)
+
+When a resource lets one user reference another (kudos, peer
+nominations, mentorship requests, etc.) and the action contributes to
+a count or feed visible to others, prevent self-references. Not a
+tenant boundary issue — a gaming + feed-clutter concern.
+
+```python
+target = dataflow_crud.list_records(
+    "Employee",
+    {"id": int(to_emp), "company_id": company_id},
+    cache_ttl=0,
+)
+if not target:
+    raise HTTPException(status_code=404, detail="Recipient not found.")
+if target[0].get("user_id") == user_id:
+    raise HTTPException(
+        status_code=400,
+        detail="Cannot give recognition to yourself.",
+    )
+```
+
+Apply to: `give_recognition`, `nominate`, future mentor/sponsor
+endpoints. Pinned by `test_redteam2_findings.py::test_m2_self_*_blocked`.
+
+## P25 — Activity feed dedup + multi-source normalization (round-2 B1)
+
+Cross-stage activity feeds that union multiple sources (EmploymentEvent
+
+- InterviewSchedule + OnboardingStepProgress + Recognition + ...) need
+  deduplication AND tenant-scoping per source. The `OnboardingStepProgress`
+  table isn't natively company-scoped — pulling raw rows means you get
+  every step every employee finished, which then turns into 7+ duplicates
+  of the same assignment.
+
+Two rules:
+
+1. Roll up "many step events under one parent assignment" into one
+   feed row per assignment (latest watermark wins).
+2. For sources without a `company_id` column, filter via a tenant-scoped
+   parent (`OnboardingAssignment.company_id`).
+
+```python
+company_assignments = dataflow_crud.list_records(
+    "OnboardingAssignment",
+    {"company_id": company_id},
+    cache_ttl=0,
+)
+company_assignment_ids = {a.get("id") for a in company_assignments if a.get("id")}
+latest_per_assignment: dict[int, dict] = {}
+for p in progresses:
+    if p.get("status") != "completed":
+        continue
+    aid = p.get("assignment_id")
+    if aid not in company_assignment_ids:
+        continue
+    prev = latest_per_assignment.get(aid)
+    if prev is None or (prev.get("completed_at") or "") < (p.get("completed_at") or ""):
+        latest_per_assignment[aid] = p
+```
+
+## P26 — Curated fallback for MCP/external-dependent endpoints (round-2 B2)
+
+When an endpoint depends on an external/MCP tool that may be missing
+in some deployments, return the MCP error payload to the user. Always
+detect the failure shape and degrade to a curated/static fallback so
+the UI doesn't dead-end on `{"status": "error"}`. The fallback is a
+demo/recovery surface, not a long-term substitute.
+
+```python
+def _is_mcp_failure(result: dict | None) -> bool:
+    if not isinstance(result, dict):
+        return True
+    if result.get("status") == "error":
+        return True
+    if "courses" not in result and "error" in result:
+        return True
+    return False
+
+try:
+    result = await mcp_call_tool(...)
+    if not _is_mcp_failure(result):
+        return result
+except Exception:
+    logger.debug("MCP tool not available — falling back.")
+return {
+    "courses": _CURATED_FALLBACK_COURSES,
+    "total": len(_CURATED_FALLBACK_COURSES),
+    "source": "curated-fallback",
+}
+```
+
+Always tag the response with `"source": "curated-fallback"` so callers
+can surface it differently if they want to.
+
+## P27 — Stage-panel copy hygiene (round-2 H1)
+
+If a feature ships, every page's blurb that mentions "ships in
+phase X" or "coming soon" must be rewritten in the same commit.
+Stale "coming soon" copy on a shipped surface advertises immaturity
+and leaks internal phase nomenclature to users. Treat copy as part
+of the deliverable, not as filler.
+
+Concrete rule: when closing a Phase ID into `todos/completed/`, grep
+the frontend for the Phase ID and verify no UI string still describes
+it as future.
+
+```bash
+grep -rn "P2-RC\|P2-GO\|P2-EX\|ships in P[0-9]" apps/web/src
+```
+
+## P28 — Cross-stage hooks must be wired when modules ship (round-2 H4/H5)
+
+When a module (Goals, Recognition, ExitInterview) ships, the
+lifecycle dashboard's stage that owns it must read the new model in
+the same commit. Otherwise the stage card reads stale or contradicts
+the module's own page (Retain says 0 exits while ExitInterviews shows
+2 completed). Use `_safe_list` so the aggregator stays resilient when
+a model is briefly absent (during pre-deploy schema warm-up), but
+don't let `_safe_list`'s safety net hide a wiring gap on shipped
+modules.
+
+```python
+goals = _safe_list("Goal", {"company_id": company_id})
+goals_active = sum(
+    1 for g in goals if g.get("status") in ("active", "at_risk")
+)
+goals_at_risk = sum(1 for g in goals if g.get("status") == "at_risk")
+progression["kpi"]["active_goals"] = goals_active
+progression["kpi"]["at_risk_goals"] = goals_at_risk
+```
+
+## P29 — EmploymentEvent type case-insensitivity (round-2 H4)
+
+The `EmploymentEvent.event_type` column has mixed-case values across
+prod data: older seeds use lowercase (`resigned`, `promoted`), newer
+inserts uppercase (`RESIGNED`). Filters comparing against a canonical
+uppercase tuple silently drop the lowercase rows. Always `.upper()`
+on the comparison side, not the canonical side.
+
+```python
+exit_types = ("RESIGNED", "TERMINATED", "RETRENCHED", "RETIRED")
+exits_ytd = [
+    e for e in events
+    if (e.get("event_type") or "").upper() in exit_types
+    and (e.get("created_at") or "") >= year_start
+]
+```
+
+Companion rule: include `RETIRED` alongside the resignation set when
+counting exits — retirements are exits for retention math, just not
+for "voluntary churn" sub-cuts.
+
+## P30 — Independent guards for related seed steps (round-2 deploy)
+
+A demo seed that inserts into multiple related tables (e.g.
+`exit_interviews` + matching `employment_events`) must guard each
+table independently. A single "any-row-already-exists" exit at the
+top of the function means re-running the seed after a partial schema
+change skips the new insertion path entirely.
+
+```python
+# Wrong: combined guard
+if any_row_in_exit_interviews(...):
+    return
+
+# Right: independent guards
+interviews_already_seeded = bool(...)
+if not interviews_already_seeded:
+    insert_interviews()
+
+if exit_events_count(...) == 0:
+    insert_employment_events()
+```
+
+## P31 — DataFlow filter_dict false-bool mismatch (round-2 P2-LD)
+
+`dataflow_crud.list_records(model, {"is_archived": False})` does not
+reliably match Python `False` against PostgreSQL `false` on dataclass-
+derived schemas. Result: filter looks correct but returns zero rows.
+Fix: drop the boolean field from `filter_dict` and post-filter in
+Python.
+
+```python
+# Wrong:
+records = dataflow_crud.list_records(
+    "Certification",
+    {"company_id": company_id, "is_archived": False},
+    cache_ttl=0,
+)
+
+# Right:
+all_rows = dataflow_crud.list_records(
+    "Certification",
+    {"company_id": company_id},
+    cache_ttl=0,
+)
+records = [r for r in all_rows if not r.get("is_archived")]
+```
+
+Same applies to `is_active=True` / `is_default=True` filters where
+the value side is a Python boolean.
+
+## P32 — Backend image bakes only `src/`, not `scripts/` (round-2 deploy)
+
+The Arbor backend Dockerfile copies `src/ ./src/` only. Migration and
+backfill scripts under `scripts/` are NOT baked into the image — they
+ship via the git checkout on the VM. Deploy scripts must `docker cp
+${REMOTE_DIR}/scripts ${BACKEND_CONTAINER}:/app/scripts` before any
+`docker exec ${BACKEND_CONTAINER} python scripts/...` call.
+
+```bash
+"${SSH_CMD[@]}" "docker cp ${REMOTE_DIR}/scripts ${BACKEND_CONTAINER}:/app/scripts"
+"${SSH_CMD[@]}" "docker exec ${BACKEND_CONTAINER} python scripts/backfill_X.py"
+```
+
+Companion: DataFlow auto-creates the new model's tables on the FIRST
+list/create/read endpoint hit. So before running a seed, hit the
+endpoint once to bootstrap the schema:
+
+```bash
+curl -sS "${PROD_API_BASE}/api/${path}" -H "Authorization: Bearer ${TOKEN}"
+```
+
+This avoids the explicit `CREATE TABLE` migration step that DataFlow
+otherwise wants you to skip.
+
+## P33 — Anonymity collapse for re-identification (round-12 P3-5)
+
+Aggregated reports that bucket employees (pay equity by gender,
+training hours by department, etc.) must collapse buckets with
+fewer than 5 members to a non-identifying placeholder. Apply the
+threshold INSIDE the aggregation loop, never as a post-filter, so a
+caller can't bypass by querying narrower slices.
+
+```python
+def _bucket_avg(field: str) -> list[dict]:
+    buckets: dict[str, list[float]] = {}
+    for emp in employees:
+        ...
+    out = []
+    for k, vals in buckets.items():
+        if len(vals) < 5:
+            out.append({"bucket": k, "count": "—", "avg_salary": "—",
+                        "gap_vs_overall_pct": "—"})
+            continue
+        avg = sum(vals) / len(vals)
+        out.append({"bucket": k, "count": len(vals), "avg_salary": round(avg, 2), ...})
+    return out
+```
+
+Pinned by `tests/regression/test_p3_strategic_depth.py::test_p3_pay_equity_anonymity_threshold`.
+
+## P34 — No-PII derived views (round-12 P3-4)
+
+Endpoints that compute a per-individual score (retention risk,
+attrition probability) MUST NOT persist the score. Always recompute
+on every call. Two reasons:
+
+1. PII drift — the score reflects state at the moment it was written;
+   recomputing prevents stale scores from accumulating.
+2. Audit surface — a never-persisted score has no GDPR/PDPA disclosure
+   surface, no breach blast-radius, no need for a delete pipeline.
+
+```python
+@router.get("/retention-risk")
+async def retention_risk(...):
+    employees = _employees_for_company(company_id)
+    rows = []
+    for emp in employees:
+        score, drivers = _compute_score(emp, ...)  # pure compute
+        rows.append({"employee_id": emp.id, "score": score, "drivers": drivers})
+    return {"rows": rows}  # no dataflow_crud.create/update anywhere
+```
+
+Pinned by `tests/regression/test_p3_strategic_depth.py::test_p3_retention_not_persisted`.
