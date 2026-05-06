@@ -201,13 +201,13 @@ def _hero(company_id: int, employees: list[dict], jobs: list[dict]) -> dict:
     exits_ytd = [
         e
         for e in events
-        if e.get("event_type") in ("RESIGNED", "TERMINATED", "RETRENCHED")
+        if (e.get("event_type") or "").upper() in ("RESIGNED", "TERMINATED", "RETRENCHED", "RETIRED")
         and (e.get("created_at") or "") >= year_start
     ]
     exits_last_year = [
         e
         for e in events
-        if e.get("event_type") in ("RESIGNED", "TERMINATED", "RETRENCHED")
+        if (e.get("event_type") or "").upper() in ("RESIGNED", "TERMINATED", "RETRENCHED", "RETIRED")
         and last_year_start <= (e.get("created_at") or "") <= last_year_end
     ]
     churn_ytd_pct = (
@@ -397,17 +397,17 @@ def _stages(  # noqa: PLR0915 — 8 stages each ~5 lines is intentional
     year_start = date(today.year, 1, 1).isoformat()
     last_year_start = date(today.year - 1, 1, 1).isoformat()
     last_year_end = date(today.year - 1, 12, 31).isoformat()
-    exit_types = ("RESIGNED", "TERMINATED", "RETRENCHED")
+    exit_types = ("RESIGNED", "TERMINATED", "RETRENCHED", "RETIRED")
     exits_ytd = [
         e
         for e in events
-        if e.get("event_type") in exit_types
+        if (e.get("event_type") or "").upper() in exit_types
         and (e.get("created_at") or "") >= year_start
     ]
     exits_last_year = [
         e
         for e in events
-        if e.get("event_type") in exit_types
+        if (e.get("event_type") or "").upper() in exit_types
         and last_year_start <= (e.get("created_at") or "") <= last_year_end
     ]
     churn_ytd_pct = (
