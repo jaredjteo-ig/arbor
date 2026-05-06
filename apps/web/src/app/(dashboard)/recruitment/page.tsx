@@ -1487,7 +1487,7 @@ function ScreeningResponsesPanel({ candidateId }: { candidateId: number }) {
           >
             <div className="flex items-start justify-between gap-2 mb-1">
               <p className="text-sm font-medium text-[var(--color-gray-900)]">
-                {r.question_text || `Question #${r.question_id}`}
+                {r.question_text || "—"}
               </p>
               {r.is_knockout && (
                 <span
@@ -1575,7 +1575,7 @@ function ScorecardSummaryPanel({ candidateId }: { candidateId: number }) {
         >
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-medium text-[var(--color-gray-900)]">
-              {entry.template_name || `Template #${entry.template_id}`}
+              {entry.template_name || "—"}
             </p>
             <span className="text-xs text-[var(--color-gray-400)]">
               {entry.interviewer_name ? `${entry.interviewer_name} · ` : ""}

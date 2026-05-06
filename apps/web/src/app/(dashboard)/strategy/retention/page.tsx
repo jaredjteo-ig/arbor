@@ -64,7 +64,7 @@ export default function RetentionPage() {
   }, []);
 
   const employeeName = (id: number) =>
-    employees.find((e) => e.id === id)?.name || `#${id}`;
+    employees.find((e) => e.id === id)?.name || "—";
 
   const colorFor = (score: number) =>
     score >= 70

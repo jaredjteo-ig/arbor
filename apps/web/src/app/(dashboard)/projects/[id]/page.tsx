@@ -430,7 +430,7 @@ export default function ProjectDetailPage() {
                         className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
                       >
                         <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                          {a.employee_name || `#${a.employee_id}`}
+                          {a.employee_name || "—"}
                         </td>
                         <td className="py-3 px-3 text-[var(--color-gray-600)]">
                           {a.role || "-"}
@@ -495,7 +495,7 @@ export default function ProjectDetailPage() {
                         className="border-b border-[var(--color-gray-100)] last:border-0 hover:bg-[var(--color-gray-50)] transition-colors"
                       >
                         <td className="py-3 px-5 font-medium text-[var(--color-gray-900)]">
-                          {ts.employee_name || `#${ts.employee_id}`}
+                          {ts.employee_name || "—"}
                         </td>
                         <td className="py-3 px-3 text-[var(--color-gray-600)]">
                           {formatDate(ts.entry_date ?? "")}

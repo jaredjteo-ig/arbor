@@ -49,7 +49,7 @@ export default function RecognitionPage() {
   const [isPublic, setIsPublic] = useState(true);
 
   const employeeName = (id: number) =>
-    employees.find((e) => e.id === id)?.name || `#${id}`;
+    employees.find((e) => e.id === id)?.name || "—";
 
   const fetchAll = async () => {
     setLoading(true);

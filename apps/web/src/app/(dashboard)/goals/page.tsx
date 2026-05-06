@@ -67,7 +67,7 @@ export default function GoalsPage() {
   }, []);
 
   const employeeName = (id: number) =>
-    employees.find((e) => e.id === id)?.name || `#${id}`;
+    employees.find((e) => e.id === id)?.name || "—";
 
   const grouped = useMemo(() => {
     const map: Record<GoalStatus, Goal[]> = {

@@ -32,7 +32,7 @@ export default function ExitInterviewsPage() {
 
   const employeeName = (id: number) => {
     if (id === 0) return "Anonymous";
-    return employees.find((e) => e.id === id)?.name || `#${id}`;
+    return employees.find((e) => e.id === id)?.name || "—";
   };
 
   const fetchAll = async () => {

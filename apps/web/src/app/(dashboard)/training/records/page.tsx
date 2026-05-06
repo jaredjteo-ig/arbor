@@ -121,7 +121,7 @@ export default function TrainingRecordsPage() {
 
   const employeeName = (id: number) => {
     const e = employees.find((x) => x.id === id);
-    return e?.name || `#${id}`;
+    return e?.name || "—";
   };
 
   const submit = async () => {

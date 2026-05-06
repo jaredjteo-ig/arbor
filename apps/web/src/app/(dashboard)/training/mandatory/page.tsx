@@ -94,7 +94,7 @@ export default function MandatoryPage() {
   }, []);
 
   const employeeName = (id: number) =>
-    employees.find((e) => e.id === id)?.name || `#${id}`;
+    employees.find((e) => e.id === id)?.name || "—";
 
   const submit = async () => {
     if (!name.trim() || !certName.trim()) return;
