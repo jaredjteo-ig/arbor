@@ -192,8 +192,44 @@ When implementing a feature that fits one of these shapes, **use the codified pa
 | Google Calendar sync                               | P15 syncToken + 410-Gone full-resync                                                                | (same file)                                                     |
 | Background maintenance work                        | P16 cron via `docker exec arbor-backend python /app/scripts/...` + empty-state short-circuit        | (operational)                                                   |
 | Body field that maps to `User.role`                | P17 hire-role allow-list + defense-in-depth clamp at acceptance                                     | `test_s2_t1_hire_role_allowlist.py`                             |
+| List endpoint that returns `*_id` columns          | P35 humanize IDs + `_resolve_employee_names` / `_resolve_user_names` helper                         | `test_redteam3_id_leak.py`                                      |
+| Self-service PUT touching User-table fields        | **P40 split per-table updates; response reflects what actually persisted**                          | (recommend new test on next round)                              |
+| ISO timestamp vs config wall-clock comparison      | **P41 convert UTC → SGT (UTC+8) BEFORE comparing**                                                  | (recommend new test on next round)                              |
+| Frontend type field name ≠ backend response key    | **P42 backend response MUST emit the field name the frontend type expects**                         | (manual: scan logs for `/undefined`)                            |
+| Form with disabled submit button                   | **P43 inline help text naming the precondition; never silent-disable**                              | manual: Playwright walk                                         |
+| Empty list rendering                               | **P44 distinguish "nothing yet" / "all done" / "ineligible" / "system error"**                      | manual: Playwright walk                                         |
+| JSON-as-text column on a model                     | **P45 expand-in-place renderer (see `enrichment-and-detail-patterns.md`)**                          | covered by walk per surface                                     |
+| Shell-level component or shared content list       | **P46 role-aware gating beyond `AdminGuard` (see `role-aware-ux.md`)**                              | manual: walk both Grace + Lily                                  |
+| Per-user in-memory cache with separate ownership   | **P47 default-deny on missing ownership entry**                                                     | (recommend new test on next round)                              |
+| LLM provider failure path                          | **P48 translate transient (503/429/timeout) to actionable copy + retry once**                       | unit test recommended                                           |
 
-Read the full pattern (problem → canonical impl → anti-pattern → carve-outs) in `skills/project/security-patterns.md` before implementing.
+Read the full pattern (problem → canonical impl → anti-pattern → carve-outs) in `skills/project/security-patterns.md` before implementing. The companion playbooks `enrichment-and-detail-patterns.md` and `role-aware-ux.md` cover the multi-surface forms (P45 + P46).
+
+### User vs Employee table discipline
+
+Round-7 H2 found the platform's silent class of bug: PUT endpoints that
+accept body fields belonging to multiple tables (`User.name` and
+`Employee.alias`) and throw the entire payload at one DataFlow node.
+DataFlow rejects unknown columns silently — the response says
+`{updated: true, fields: [...]}` but nothing was written.
+
+The discipline:
+
+- `User.{name, email, role, password_hash, token_version, is_active}` —
+  authentication identity. Most edits go through `auth_service` or
+  `dataflow_crud.update("User", ...)`.
+- `Employee.*` — HR-domain attributes (department, designation,
+  start_date, salary, NRIC, bank, alias, address, phone, …). Edits
+  go through `EmployeeUpdateNode`.
+- `_serialize_employee()` joins them at the read site so the API
+  response looks like one record (e.g. `name` from User + `alias`
+  from Employee in the same JSON).
+- **At the WRITE site, always split the body** before the DataFlow
+  call. See P40 in `security-patterns.md` for the canonical pattern.
+- **Never accept `name` in `EMPLOYEE_SELF_SERVICE_FIELDS`** — the
+  Employee table has no `name` column; route `name` updates to
+  `User` via `dataflow_crud.update("User", user_id, {"name": ...})`
+  and return only the fields that actually persisted.
 
 ### Cron operational state (live)
 

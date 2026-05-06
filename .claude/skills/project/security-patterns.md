@@ -1490,3 +1490,490 @@ branch on `editingId`.
 
 **Pinned by:** `tests/regression/test_redteam2_polish.py::test_training_record_patch_allows_typo_fix_and_completion_date`
 (verifies the whitelist drops `employee_id` even when posted).
+
+---
+
+## P40 — Multi-table fields must be split before update (round-7 H2)
+
+**Problem:** A self-service `PUT /employees/me` accepted `name` in its
+`SELF_SERVICE_FIELDS` and threw the entire update at
+`EmployeeUpdateNode`. But `name` lives on `User`, not `Employee`.
+DataFlow rejected the whole payload silently, yet the response said
+`{updated: true, fields: ["name", "alias", "date_of_birth", ...]}`.
+The user clicked Save, saw no error, reloaded — and watched every
+edited field revert. The backend was lying about persistence.
+
+**Pattern:** when a self-service update endpoint accepts fields from
+multiple tables, split the request body into per-table updates, run
+each through its own DataFlow node, and let the response reflect
+ONLY the fields that actually persisted.
+
+```python
+# api/routers/employees.py — PUT /employees/me
+EMPLOYEE_SELF_SERVICE_FIELDS = {
+    "alias", "date_of_birth", "gender", "race", "nationality",
+    "religion", "marital_status", "phone", "photo_url", "nric_fin",
+    "residential_address", "postal_code", "address_block",
+    "address_street", "address_unit", "address_building",
+    "address_postal_code", "bank_name", "bank_account_number",
+    "bank_code", "branch_code",
+}
+USER_SELF_SERVICE_FIELDS = {"name"}
+
+updates = {k: v for k, v in body.items() if k in EMPLOYEE_SELF_SERVICE_FIELDS}
+user_updates = {
+    k: v.strip() if isinstance(v, str) else v
+    for k, v in body.items()
+    if k in USER_SELF_SERVICE_FIELDS and (isinstance(v, str) and v.strip())
+}
+if not updates and not user_updates:
+    raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+persisted_fields: list[str] = []
+if updates:
+    wf = WorkflowBuilder()
+    wf.add_node("EmployeeUpdateNode", "update_me",
+                {"filter": {"id": employee["id"]}, "fields": updates})
+    LocalRuntime().execute(wf.build())
+    persisted_fields.extend(updates.keys())
+
+if user_updates:
+    try:
+        dataflow_crud.update("User", user_id, user_updates)
+        persisted_fields.extend(user_updates.keys())
+    except Exception as exc:
+        logger.warning("User update failed for user_id=%s: %s", user_id, exc)
+
+return {"updated": True, "fields": persisted_fields}
+```
+
+**Anti-pattern:**
+
+```python
+# Accepting a field that doesn't exist on the table you're updating.
+SELF_SERVICE_FIELDS = {"name", "alias", ...}  # name is User.*, alias is Employee.*
+updates = {k: v for k, v in body.items() if k in SELF_SERVICE_FIELDS}
+EmployeeUpdateNode(fields=updates)  # silently no-ops the whole call
+return {"updated": True, "fields": list(updates.keys())}  # lies
+```
+
+**Verification protocol:** any endpoint that returns
+`{updated: true, fields: [...]}` MUST be exercised by a regression
+that PUTs new values, then GETs back to confirm each field actually
+persisted. Don't trust the response.
+
+---
+
+## P41 — UTC vs local-time wall-clock comparisons (round-7 M10)
+
+**Problem:** Attendance status calc compared an ISO clock-in
+timestamp (UTC) against `work_start_time` ("09:00", local SGT) by
+extracting `HH:MM` from the ISO string and using that. A clock-in at
+09:30 SGT (= 01:30 UTC) was compared to "09:00" UTC and tagged "late"
+— off by 8 hours.
+
+**Pattern:** always convert UTC ISO timestamps to the company-local
+TZ before comparing against config wall-clock values.
+
+```python
+def _determine_status(clock_in_time: str, settings: dict) -> str:
+    work_start_h, work_start_m = _parse_time(settings.get("work_start_time", "09:00"))
+    grace = settings.get("grace_period_minutes", 15)
+
+    if "T" in clock_in_time:
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        dt = _dt.fromisoformat(clock_in_time.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_tz.utc)
+        local = dt.astimezone(_tz(_td(hours=8)))  # SGT default
+        clock_h, clock_m = local.hour, local.minute
+    else:
+        clock_h, clock_m = _parse_time(clock_in_time[:5])
+
+    start_minutes = work_start_h * 60 + work_start_m
+    clock_minutes = clock_h * 60 + clock_m
+    return AttendanceStatus.PRESENT if clock_minutes <= start_minutes + grace \
+        else AttendanceStatus.LATE
+```
+
+**Anti-pattern:**
+
+```python
+time_part = clock_in_time.split("T")[1][:5]  # picks UTC time
+clock_h, clock_m = _parse_time(time_part)     # treats as local
+```
+
+**Where this appears in Arbor:** every `AttendanceRecord`,
+`ShiftAssignment`, payroll cut-off, leave-day boundary calculation.
+The product is Singapore-localised; SGT is UTC+8. Build a small util
+(`local_clock_components(utc_iso, tz_offset_hours=8)`) and reuse it.
+
+**Future-proof:** when tenants outside SGT are added, the offset must
+come from company settings, not a constant.
+
+**Pinned by:** none yet — `tests/regression/test_redteam7_lily.py`
+(create on next round) should add a fixture that clocks in at 17:52
+UTC = 01:52 SGT next day and asserts status="present" not "late".
+
+---
+
+## P42 — Frontend type / backend response shape mismatch causes `/undefined` fetches (round-7 M2)
+
+**Problem:** The frontend type declared `payslip_id: number`, but the
+backend `/payroll/my-payslips` endpoint returned raw rows with `id`
+(no `payslip_id`). When a user expanded a payslip card the click
+handler called `payrollApi.myPayslipDetail(payslip.payslip_id)` →
+`payslip_id` was undefined → URL `/payroll/my-payslips/undefined` →
+422 from FastAPI, polluting prod logs.
+
+**Pattern:** when the frontend type uses a domain-specific name like
+`payslip_id` (because rows in different contexts come from different
+tables and `id` is ambiguous), the backend response MUST emit that
+name explicitly. Don't return raw rows that happen to have the wrong
+field name.
+
+```python
+# api/routers/payroll.py — get_my_payslips
+emp_id = emp_records[0].get("id")
+payslips = dataflow_crud.list_records("Payslip", {"employee_id": emp_id})
+visible = [ps for ps in payslips if ps.get("status") in ("confirmed", "paid")]
+visible.sort(key=lambda ps: ps.get("period_start", ""), reverse=True)
+# Mirror the run-detail contract: expose `payslip_id` so the frontend
+# detail-fetch URL doesn't become `/my-payslips/undefined`.
+for ps in visible:
+    ps.setdefault("payslip_id", ps.get("id"))
+return {"payslips": visible}
+```
+
+**Anti-pattern:**
+
+```python
+# Returns raw rows with `id`, frontend reads `.payslip_id` → undefined
+return {"payslips": dataflow_crud.list_records("Payslip", filters)}
+```
+
+**Detection:** scan prod logs for `"undefined"` in API URLs. If any
+request URL contains `/undefined`, the frontend tried to dereference a
+field that wasn't on the response.
+
+```bash
+grep -E '/undefined(\b|/|\?)' /var/log/access.log | head
+```
+
+---
+
+## P43 — Submit button silent-disabled is a UX failure mode (round-7 H4)
+
+**Problem:** New Claim modal opened with the Submit button stuck on
+`[disabled]`. Required: at least one expense item in the items array.
+But the modal showed an inline AddItemRow with 4 fields and a "+"
+icon-only button — no help text, no validation message, no clear
+flow. Users filled the inline row, clicked Submit, nothing happened.
+They concluded "the form is broken" and walked away.
+
+**Pattern:** never disable the primary submit button without ALSO
+explaining what's missing inline AND making the gating action
+visually obvious.
+
+```tsx
+// AddItemRow — explicit label, not just an icon
+<AppButton onClick={handleAdd} disabled={...}>
+  <Plus className="h-4 w-4 mr-1" />
+  Add item
+</AppButton>
+
+// Empty-state nudge above the inline row
+{items.length === 0 && (
+  <p className="text-xs text-[var(--color-gray-500)] mb-2">
+    Fill in the row below and click <strong>Add item</strong> to attach
+    it. You need at least one item before you can submit.
+  </p>
+)}
+
+// Submit gating with the existing condition still in place
+<AppButton type="submit" disabled={!claimMonth || items.length === 0}>
+  Submit Claim
+</AppButton>
+```
+
+**Anti-pattern:**
+
+```tsx
+// Icon-only + disabled submit + no copy = silent dead-end
+<button onClick={handleAdd}><Plus className="h-4 w-4" /></button>
+<button disabled={items.length === 0}>Submit Claim</button>
+```
+
+**Test discipline:** every form with a `disabled` submit button should
+have an accompanying inline message that names the precondition (e.g.
+"You need at least one expense item") visible BEFORE the user clicks.
+A real Playwright walk should be able to reach the submit button via
+the empty-state instructions alone.
+
+---
+
+## P44 — Empty-state quality: distinguish "nothing yet" vs "all done" vs "ineligible" (round-7 M1, M5)
+
+**Problem:** Lily's `/my-onboarding` showed "No onboarding tasks
+assigned" — but Grace's view showed Lily 100% complete on the same
+template. The query filtered by `status in ("in_progress", "overdue")`
+and dropped `completed`. Same shape on `/my-timesheets`: "Start
+logging hours against your projects" was shown when the user wasn't
+on any project — they couldn't act on the prompt.
+
+**Pattern:** classify empty states by ROOT CAUSE and render copy that
+points at the next action, not the void.
+
+| Cause          | Copy intent                        | Action                                   |
+| -------------- | ---------------------------------- | ---------------------------------------- |
+| Nothing yet    | "You haven't done X yet — try Y"   | Primary action button enabled            |
+| All done       | "Complete! Here's a summary"       | Read-only, optionally archive            |
+| Ineligible     | "You can't do X because Y — ask Z" | Primary action disabled with title= hint |
+| System failure | "We couldn't load — retry"         | Retry button                             |
+
+```python
+# Backend onboarding fix — fall back to most-recent completed when no
+# in-flight assignment exists, so the page can render "all done!"
+active = [a for a in assignments if a.get("status") in ("in_progress", "overdue")]
+if active:
+    active.sort(key=lambda a: a.get("assigned_at", ""), reverse=True)
+    assignment = active[0]
+elif assignments:
+    completed = [a for a in assignments if a.get("status") == "completed"]
+    if not completed:
+        return {"assignment": None, "message": "No active onboarding."}
+    completed.sort(key=lambda a: a.get("completed_at") or a.get("assigned_at", ""), reverse=True)
+    assignment = completed[0]
+else:
+    return {"assignment": None, "message": "No active onboarding."}
+```
+
+```tsx
+// my-timesheets — ineligible state
+{
+  projects.length === 0 && !isLoading && (
+    <AppCard variant="flat">
+      <p>
+        You aren't assigned to any project yet, so there's nothing to log time
+        against. Ask your manager to add you to a project — once you're on one,
+        the <strong>Log Time</strong> button will activate.
+      </p>
+    </AppCard>
+  );
+}
+<AppButton
+  disabled={projects.length === 0}
+  title={
+    projects.length === 0
+      ? "You need to be assigned to a project before you can log time. Ask your manager to add you."
+      : undefined
+  }
+>
+  Log Time
+</AppButton>;
+```
+
+**Anti-pattern:** one-size-fits-all "Nothing yet" copy that fires
+regardless of why the list is empty.
+
+---
+
+## P45 — Hidden-detail anti-pattern: rich JSON column never rendered (round-5/6 — see enrichment-and-detail-patterns.md)
+
+**Problem:** DB stores rich structured data in JSON-as-text columns
+(`survey_payload`, `responses`, `scores`, `sections`, `provisions_sample`)
+but the frontend renders only summary numbers. The user sees "5/5
+overall score" but can't read the per-criterion scores or the
+free-text response that drove it.
+
+**Pattern:** every JSON-as-text column SHOULD have an expand-in-place
+renderer in at least one user-facing page. The full playbook lives in
+`enrichment-and-detail-patterns.md` — this entry is the matching shape
+in the security-patterns library so the audit checklist is complete.
+
+The minimum fix shape:
+
+```tsx
+const [expandedId, setExpandedId] = useState<number | null>(null);
+
+function parseJsonObject(
+  raw: string | null | undefined,
+): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" && !Array.isArray(obj)
+      ? (obj as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+// In the row click handler — toggle expand, render <DetailCard payload={...} />
+```
+
+**Anti-pattern:** storing rich structured data the frontend never
+parses. If the field is `: str # JSON`, every user-facing route
+serving a record with that field MUST eventually render it OR
+explicitly opt out (with a comment explaining why).
+
+**Cross-reference:** see `enrichment-and-detail-patterns.md` for the
+complete audit method, the canonical helpers (`parseJsonObject`,
+`ScoreBar`), and the inventory of fixed surfaces.
+
+---
+
+## P46 — Role-aware UX gating beyond the route guard (round-7 M9 + L1 + M7 + M8)
+
+**Problem:** `AdminGuard` blocks employees from admin pages, but the
+dashboard SHELL renders the same compliance-warnings rail / alerts
+unread-count fetch / advisory suggestions to ALL authenticated users.
+Employees got a "Foreign workers — ensure all passes are valid"
+footer on every employee-only page (irrelevant), 403 console errors
+from `/api/alerts/unread-count` (no permission), and HR-manager-style
+suggested questions on the advisor.
+
+**Pattern:** every shell-level component, every shared content list,
+and every fetch effect inside the dashboard layout must check
+`user?.role`. The full catalog and code templates live in
+`role-aware-ux.md` — this entry is the matching shape in the
+security-patterns library.
+
+```tsx
+// Shell component gating
+function RoleGatedShadowMargin() {
+  const { user } = useAuth();
+  if (user?.role !== "owner" && user?.role !== "hr_manager") return null;
+  return <ShadowMarginWrapper />;
+}
+
+// Fetch-effect gating
+const canSeeAlerts = user?.role === "owner" || user?.role === "hr_manager";
+useEffect(() => {
+  if (!canSeeAlerts) return;
+  alertsApi.unreadCount().then(...);
+}, [canSeeAlerts]);
+
+// Content-list branching
+suggestions={
+  user?.role === "employee" ? EMPLOYEE_SUGGESTIONS : ADMIN_SUGGESTIONS
+}
+
+// Backend response branching with anonymous-allowed dependency
+async def getting_started_guide(
+    current_user: dict | None = Depends(get_current_user_optional),
+):
+    role = (current_user or {}).get("role", "")
+    if role == "employee": return _GETTING_STARTED_EMPLOYEE
+    return _GETTING_STARTED
+```
+
+**Anti-pattern:** relying solely on `AdminGuard` at the route level.
+The shell renders OUTSIDE the guarded children — it sees every
+authenticated user.
+
+**Cross-reference:** `role-aware-ux.md` for the full inventory.
+
+---
+
+## P47 — Default-deny on owner-less in-memory cache entries (round-7 M6)
+
+**Problem:** `_conversation_memory` and `_conversation_owners` (in-memory
+OrderedDicts in the advisory router) tracked conversation ownership,
+but legacy entries created before owner tracking was added had
+`conv_owner == ""`. The list endpoint's filter was:
+
+```python
+if conv_owner and conv_owner != user_id:
+    continue
+```
+
+The `if conv_owner and ...` short-circuited to FALSE for the empty-string
+case, so owner-less conversations were INCLUDED for everyone. Lily saw
+Grace's HR-manager queries from a previous session.
+
+**Pattern:** when an in-memory store is queried per-user, default-DENY
+on missing ownership metadata. Legacy entries without explicit
+ownership should be hidden from everyone, not shown to everyone.
+
+```python
+# Round-7 fix
+conv_owner = _conversation_owners.get(conv_key, "")
+if not conv_owner or conv_owner != user_id:
+    continue  # default-deny when ownership is unknown
+```
+
+**Anti-pattern (the bug shape):**
+
+```python
+# Default-allow on missing ownership — leaks history to other users
+conv_owner = _conversation_owners.get(conv_key, "")
+if conv_owner and conv_owner != user_id:
+    continue
+```
+
+**Where this generalises:** any per-user/per-tenant in-memory cache
+keyed by an ID, where ownership is tracked SEPARATELY (not as part of
+the key itself). Default-deny when the ownership entry is absent.
+
+**Better still:** key the cache by `(user_id, resource_id)` so a missing
+mapping is structurally impossible to hit.
+
+---
+
+## P48 — LLM provider transient-failure UX (round-7 H3)
+
+**Problem:** The advisory engine's `except Exception` returned a
+single generic fallback: "I'm having trouble processing your question
+right now. Please try again in a moment." Underlying cause was a
+Gemini 2.5 Flash 503 (transient overload). The user couldn't tell
+whether to retry, escalate, or assume the platform was broken.
+
+**Pattern:** translate provider-specific transient failure modes into
+copy that names the failure class and gives the user an actionable
+next step.
+
+```python
+except Exception as exc:
+    logger.error("Advisory engine failed: %s", exc, exc_info=True)
+    msg = str(exc).lower()
+    if "503" in msg or "unavailable" in msg or "overloaded" in msg:
+        response_text = (
+            "The advisory model is temporarily overloaded — usually "
+            "clears in 30-60 seconds. Please try the question again. "
+            "If it keeps failing, ask your HR admin to check the LLM "
+            "provider status."
+        )
+    elif "429" in msg or "rate" in msg or "quota" in msg:
+        response_text = (
+            "We've hit the company's advisory rate limit for the "
+            "moment. Try again in a minute or contact your HR admin "
+            "to review the budget."
+        )
+    elif "timeout" in msg or "timed out" in msg:
+        response_text = (
+            "The advisory engine took too long to respond. Try a "
+            "shorter or more specific question, or retry in a moment."
+        )
+    else:
+        response_text = (
+            "I couldn't generate a grounded answer for this question "
+            "right now. Please try rewording it, or escalate to an "
+            "Employment Law Specialist using the link below."
+        )
+    return {"response_text": response_text, "risk_tier": "amber",
+            "confidence": 0.3, ..., "degraded": True}
+```
+
+**Anti-pattern:** one generic "try again later" message regardless of
+cause. Users have no signal to differentiate "model was overloaded
+30s ago, retry now" from "your account is rate-limited, wait an
+hour" from "the safety chain rejected your question, rephrase".
+
+**Hardening:** add a single in-engine retry on 503/UNAVAILABLE before
+falling back, since these are usually <60s transient.
+
+**Pinned by:** none yet — runtime-only failure path. Worth adding a
+unit test that injects a synthetic 503 / 429 / timeout exception and
+asserts the user-facing copy.

@@ -173,3 +173,39 @@ const controller = createSSEStream("/advisory/stream", body, {
 - Typography MUST use the `.text-*` scale classes with `--text-size-multiplier` support.
 - ALL animations MUST respect `prefers-reduced-motion` media query.
 - CSV exports MUST sanitize cells against formula injection (`=`, `+`, `-`, `@`).
+
+## Audit Discipline (rounds 3–7)
+
+Whenever editing a list view, detail page, or shell-level shared
+component, run the full audit checklist before declaring done.
+Canonical playbook in three skill files:
+
+- `skills/project/enrichment-and-detail-patterns.md` — raw-ID leakage
+  - hidden-detail anti-pattern. Static-grep audit commands and the
+    live-Playwright leak-detector evaluator.
+- `skills/project/role-aware-ux.md` — which surfaces must check
+  `user?.role`. **AdminGuard at the route level is NOT enough** —
+  shell components rendered inside `(dashboard)/layout.tsx` see
+  every authenticated user including employees.
+- `skills/project/security-patterns.md` P40-P48 — canonical fix
+  shapes for: backend lying about persistence (P40), UTC vs SGT
+  time comparisons (P41), `/undefined` fetches from type mismatches
+  (P42), silent-disabled submit UX (P43), empty-state quality (P44),
+  hidden-detail (P45), role-aware UX gating (P46), default-deny
+  caches (P47), LLM transient-failure UX (P48).
+
+Standard live-verification protocol after any UX change:
+
+1. **Static grep first** — `grep -rEn '#\$\{[^}]+_id\}'` for raw-ID
+   leaks; `grep -rn 'JSON.parse'` for unrendered structured columns.
+2. **Live walk via Playwright MCP as BOTH roles** — Grace Koh
+   (`grace.koh@central-solutions.sg`, HR-manager) and Lily Phang
+   (`lily.phang@central-solutions.sg`, employee). Password
+   `Employee2026!`. Hit every page in each role's sidebar.
+3. **Triage** — H = user-visible broken core flow; M = broken code
+   path that demo data hides; L = polish.
+4. **Ship in batches** with one bundled commit + one rebuild per
+   batch. Local `cd apps/web && npx tsc --noEmit` plus
+   `pytest tests/regression/test_redteam*.py` before each commit.
+5. **Re-walk live after deploy**. Screenshot closure evidence into
+   `workspaces/<workspace>/04-validate/r<n>-fixed-*.png`.
