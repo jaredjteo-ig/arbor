@@ -60,22 +60,86 @@ def run() -> None:
                 "SELECT 1 FROM goals WHERE company_id = %s LIMIT 1",
                 (company_id,),
             )
-            if cur.fetchone():
+            already_seeded = cur.fetchone() is not None
+
+            # Fix-up branch (R2-M finding): even if the row count is
+            # already non-zero, an earlier seed may have written
+            # manager_id=0 / period_id=0 (orphan reads). Repair those
+            # in place before short-circuiting. Safe to run repeatedly.
+            if already_seeded:
+                cur.execute(
+                    "SELECT id FROM appraisal_periods WHERE company_id = %s "
+                    "AND name = 'H1 2026 Performance Review' LIMIT 1",
+                    (company_id,),
+                )
+                period_row = cur.fetchone()
+                period_id_fix = period_row[0] if period_row else 0
+                if period_id_fix:
+                    cur.execute(
+                        "UPDATE goals SET period_id = %s "
+                        "WHERE company_id = %s AND period_id = 0",
+                        (period_id_fix, company_id),
+                    )
+                    logger.info(
+                        "Fix-up: rewired %d goal(s) to period_id=%s.",
+                        cur.rowcount,
+                        period_id_fix,
+                    )
+                # Resolve manager_id: prefer reporting_manager_id; fall
+                # back to the company's demo admin (Founder) so the
+                # field is never 0 in the buyer-facing UI.
+                cur.execute(
+                    "SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id "
+                    "WHERE e.company_id = %s AND u.email = 'demo@central.kailash.ai' "
+                    "ORDER BY e.id LIMIT 1",
+                    (company_id,),
+                )
+                admin_row = cur.fetchone()
+                admin_emp_id = admin_row[0] if admin_row else 0
+                cur.execute(
+                    "UPDATE goals g SET manager_id = "
+                    "  COALESCE("
+                    "    NULLIF((SELECT e.reporting_manager_id FROM employees e "
+                    "            WHERE e.id = g.employee_id), 0),"
+                    "    %s"
+                    "  ) "
+                    "WHERE g.company_id = %s "
+                    "  AND (g.manager_id IS NULL OR g.manager_id = 0)"
+                    "  AND g.employee_id != %s",
+                    (admin_emp_id, company_id, admin_emp_id),
+                )
                 logger.info(
-                    "Goals already seeded for company %s — skipping.",
+                    "Fix-up: rewired %d goal(s) to manager (reporting line "
+                    "or demo admin fallback id=%s).",
+                    cur.rowcount,
+                    admin_emp_id,
+                )
+                logger.info(
+                    "Goals already seeded for company %s — fix-up done.",
                     company_id,
                 )
                 return
 
             cur.execute(
-                "SELECT id, user_id FROM employees WHERE company_id = %s "
-                "AND is_active = true ORDER BY id LIMIT 6",
+                "SELECT id, user_id, reporting_manager_id FROM employees "
+                "WHERE company_id = %s AND is_active = true ORDER BY id LIMIT 6",
                 (company_id,),
             )
             employees = cur.fetchall()
             if len(employees) < 3:
                 logger.warning("Need ≥3 active employees in company %s.", company_id)
                 return
+
+            # R2-M finding: goals had manager_id=0, period_id=0 — orphan
+            # reads. Wire each goal to its employee's reporting manager
+            # and to a real AppraisalPeriod row for FY2026 H1.
+            cur.execute(
+                "SELECT id FROM appraisal_periods WHERE company_id = %s "
+                "AND name = 'H1 2026 Performance Review' LIMIT 1",
+                (company_id,),
+            )
+            period_row = cur.fetchone()
+            period_id = period_row[0] if period_row else 0
 
             seeds = [
                 # employee_idx, title, metric, status, progress, due_offset_days
@@ -130,7 +194,8 @@ def run() -> None:
             ]
             goal_ids: list[int] = []
             for emp_idx, title, metric, status, progress, due_off in seeds:
-                emp_id, _ = employees[emp_idx]
+                emp_id, _user_id, manager_id = employees[emp_idx]
+                manager_id = manager_id or 0  # may be NULL for top-of-org rows
                 due = (today + timedelta(days=due_off)).isoformat()
                 start = (today - timedelta(days=14)).isoformat()
                 cur.execute(
@@ -138,10 +203,12 @@ def run() -> None:
                     "(company_id, employee_id, manager_id, period_id, title, "
                     " description, metric, target_value, start_date, due_date, "
                     " status, progress_pct, is_archived, created_at, updated_at) "
-                    "VALUES (%s,%s,0,0,%s,'',%s,'',%s,%s,%s,%s,false,%s,%s) RETURNING id",
+                    "VALUES (%s,%s,%s,%s,%s,'',%s,'',%s,%s,%s,%s,false,%s,%s) RETURNING id",
                     (
                         company_id,
                         emp_id,
+                        manager_id,
+                        period_id,
                         title,
                         metric,
                         start,
@@ -154,7 +221,12 @@ def run() -> None:
                 )
                 (gid,) = cur.fetchone()
                 goal_ids.append(gid)
-            logger.info("Seeded %d goals.", len(goal_ids))
+            logger.info(
+                "Seeded %d goals (period_id=%s, manager_ids wired from "
+                "employees.reporting_manager_id).",
+                len(goal_ids),
+                period_id,
+            )
 
             # 4 check-ins spread across the goals.
             checkins = [

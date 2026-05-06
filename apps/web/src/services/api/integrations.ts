@@ -152,6 +152,13 @@ export interface SkillsFutureCourse {
 export interface SkillsFutureCourseListResponse {
   courses: SkillsFutureCourse[];
   total: number;
+  /**
+   * Where the catalogue came from. "live" = MCP-served from the
+   * SkillsFuture directory. "curated-fallback" = fixed seed list returned
+   * because the MCP tool was unavailable. The UI surfaces a banner so
+   * buyers see we're transparent about live-vs-cache state.
+   */
+  source?: "live" | "curated-fallback";
 }
 
 export interface SkillsFutureGrantCheckResponse {

@@ -179,6 +179,39 @@ export default function MandatoryPage() {
           </div>
         )}
 
+        {/* Round-2 redteam L finding: a stark "0/N compliant" tile is a
+            dead-end — give the user a one-click path to the catalogue
+            and a clear next step. */}
+        {totals &&
+          totals.total_pairs > 0 &&
+          totals.compliant_pairs < totals.total_pairs && (
+            <div className="rounded-[8px] border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-3">
+              <AlertTriangle
+                className="h-4 w-4 flex-shrink-0 mt-0.5"
+                aria-hidden="true"
+              />
+              <div className="flex-1">
+                <p className="font-medium">
+                  {totals.total_pairs - totals.compliant_pairs} requirement
+                  {totals.total_pairs - totals.compliant_pairs === 1
+                    ? ""
+                    : "s"}{" "}
+                  not yet covered
+                </p>
+                <p className="mt-0.5 text-amber-800">
+                  Browse SkillsFuture for grant-eligible courses (e.g. WSH
+                  First-Aid, fire safety) to close the gap.
+                </p>
+              </div>
+              <Link
+                href="/training/skillsfuture"
+                className="flex-shrink-0 rounded-md bg-amber-900 text-white px-3 py-1.5 text-xs font-medium hover:bg-amber-800 transition-colors"
+              >
+                Browse courses
+              </Link>
+            </div>
+          )}
+
         {showForm && (
           <div className="rounded-xl border border-[var(--color-gray-200)] bg-white p-5 shadow-sm">
             <h2 className="text-sm font-semibold text-[var(--color-gray-900)] mb-3">

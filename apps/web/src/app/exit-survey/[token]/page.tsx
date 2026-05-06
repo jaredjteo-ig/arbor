@@ -4,7 +4,7 @@
    Lives outside the dashboard route group (no AdminGuard, no sidebar).
 */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
 const REASON_OPTIONS = [
@@ -47,6 +47,55 @@ export default function ExitSurveyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Round-2 redteam L finding: preflight token check on mount so the
+  // user sees the right empty state (gone, expired, already submitted)
+  // before investing time filling the form.
+  type Preflight =
+    | { state: "loading" }
+    | { state: "ok"; isAnonymous: boolean }
+    | { state: "invalid" }
+    | { state: "not_found" }
+    | { state: "already_submitted"; submittedAt?: string }
+    | { state: "network_error" };
+  const [preflight, setPreflight] = useState<Preflight>({ state: "loading" });
+
+  useEffect(() => {
+    if (!token) return;
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(
+          `${apiBase}/exit-interviews/public/${encodeURIComponent(token)}/validate`,
+          { method: "GET" },
+        );
+        if (cancelled) return;
+        if (!r.ok) {
+          setPreflight({ state: "network_error" });
+          return;
+        }
+        const body = await r.json();
+        if (body?.ok) {
+          setPreflight({ state: "ok", isAnonymous: !!body.is_anonymous });
+        } else if (body?.reason === "already_submitted") {
+          setPreflight({
+            state: "already_submitted",
+            submittedAt: body.submitted_at,
+          });
+        } else if (body?.reason === "not_found") {
+          setPreflight({ state: "not_found" });
+        } else {
+          setPreflight({ state: "invalid" });
+        }
+      } catch {
+        if (!cancelled) setPreflight({ state: "network_error" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const toggleReason = (r: string) => {
     setReasons((prev) =>
@@ -129,14 +178,56 @@ export default function ExitSurveyPage() {
     </fieldset>
   );
 
-  if (done) {
+  if (done || preflight.state === "already_submitted") {
+    const submittedAt =
+      preflight.state === "already_submitted" ? preflight.submittedAt : null;
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--color-surface-page)] p-6">
         <div className="max-w-md w-full rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
           <h1 className="text-xl font-semibold text-emerald-900">Thank you</h1>
           <p className="mt-2 text-sm text-emerald-800">
-            Your responses have been recorded. We appreciate the candour.
+            {done
+              ? "Your responses have been recorded. We appreciate the candour."
+              : "This exit interview has already been submitted. Thank you for sharing earlier."}
           </p>
+          {submittedAt && (
+            <p className="mt-2 text-xs text-emerald-700">
+              Submitted on {new Date(submittedAt).toLocaleDateString()}.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    preflight.state === "invalid" ||
+    preflight.state === "not_found" ||
+    preflight.state === "network_error"
+  ) {
+    const copy =
+      preflight.state === "not_found"
+        ? "We couldn't find this exit interview. The link may have been revoked."
+        : preflight.state === "network_error"
+          ? "We couldn't reach the survey service. Please refresh in a moment."
+          : "This survey link is invalid or has expired. Please reach out to your HR contact for a fresh link.";
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--color-surface-page)] p-6">
+        <div className="max-w-md w-full rounded-xl border border-amber-200 bg-amber-50 p-6 text-center">
+          <h1 className="text-xl font-semibold text-amber-900">
+            Survey unavailable
+          </h1>
+          <p className="mt-2 text-sm text-amber-800">{copy}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (preflight.state === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--color-surface-page)] p-6">
+        <div className="text-sm text-[var(--color-gray-600)]">
+          Loading your exit interview…
         </div>
       </div>
     );

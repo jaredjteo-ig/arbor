@@ -246,6 +246,53 @@ async def get_interview(
     return {"interview": interview}
 
 
+@router.get("/public/{token}/validate")
+async def validate_token(token: str) -> dict:
+    """Public — preflight check for the survey landing page.
+
+    Round-2 redteam L finding: previously the user only learned a token
+    was bad/expired/already-used after filling and submitting the form.
+    The frontend now calls this on mount and shows the right empty state
+    (gone, expired, already submitted) before the user invests any time.
+    Returns small, non-PII fields only.
+    """
+    try:
+        decoded = _decode_token(token)
+    except HTTPException as exc:
+        # _decode_token raises 401 on invalid/expired. We translate to a
+        # quiet, semantic body so the frontend can branch.
+        return {
+            "ok": False,
+            "reason": "invalid_or_expired",
+            "detail": exc.detail,
+        }
+
+    interview_id = int(decoded.get("ei", 0))
+    company_id = int(decoded.get("co", 0))
+
+    rows = dataflow_crud.list_records(
+        "ExitInterview",
+        {"id": interview_id, "company_id": company_id},
+        cache_ttl=0,
+    )
+    if not rows:
+        return {"ok": False, "reason": "not_found"}
+
+    interview = rows[0]
+    if interview.get("submitted_at"):
+        return {
+            "ok": False,
+            "reason": "already_submitted",
+            "submitted_at": interview.get("submitted_at"),
+        }
+
+    return {
+        "ok": True,
+        "is_anonymous": bool(interview.get("is_anonymous")),
+        "triggered_at": interview.get("triggered_at"),
+    }
+
+
 @router.post("/{token}/submit")
 async def submit_interview(token: str, request: Request) -> dict:
     """Public — leaver submits via tokenized link (no auth)."""

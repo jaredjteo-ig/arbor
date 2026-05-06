@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { GraduationCap, Plus, Archive, Loader2 } from "lucide-react";
+import { GraduationCap, Plus, Archive, Loader2, Pencil } from "lucide-react";
 import { AdminGuard } from "@/components/auth/AdminGuard";
 import { trainingApi, type TrainingRecord } from "@/services/api/training";
 import { employeesApi, type Employee } from "@/services/api/employees";
@@ -65,13 +65,36 @@ export default function TrainingRecordsPage() {
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Form state
+  // Form state — shared between create and edit. editingId is the
+  // record being patched; null means we're creating a new one.
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [empId, setEmpId] = useState<number | "">("");
   const [courseName, setCourseName] = useState("");
   const [courseProvider, setCourseProvider] = useState("");
   const [courseType, setCourseType] = useState("internal");
   const [hours, setHours] = useState<number | "">("");
   const [completion, setCompletion] = useState("");
+
+  const resetForm = () => {
+    setEditingId(null);
+    setEmpId("");
+    setCourseName("");
+    setCourseProvider("");
+    setCourseType("internal");
+    setHours("");
+    setCompletion("");
+  };
+
+  const openEdit = (r: TrainingRecord) => {
+    setEditingId(r.id);
+    setEmpId(r.employee_id);
+    setCourseName(r.course_name);
+    setCourseProvider(r.course_provider ?? "");
+    setCourseType(r.course_type);
+    setHours(r.hours);
+    setCompletion(r.completion_date ?? "");
+    setShowForm(true);
+  };
 
   const fetchAll = async () => {
     setLoading(true);
@@ -105,20 +128,21 @@ export default function TrainingRecordsPage() {
     if (!empId || !courseName.trim()) return;
     setSubmitting(true);
     try {
-      await trainingApi.createRecord({
+      const payload = {
         employee_id: Number(empId),
         course_name: courseName.trim(),
         course_provider: courseProvider.trim(),
         course_type: courseType as TrainingRecord["course_type"],
         hours: typeof hours === "number" ? hours : 0,
         completion_date: completion,
-      });
+      };
+      if (editingId !== null) {
+        await trainingApi.updateRecord(editingId, payload);
+      } else {
+        await trainingApi.createRecord(payload);
+      }
       setShowForm(false);
-      setEmpId("");
-      setCourseName("");
-      setCourseProvider("");
-      setHours("");
-      setCompletion("");
+      resetForm();
       await fetchAll();
     } catch (err) {
       setError(
@@ -161,7 +185,15 @@ export default function TrainingRecordsPage() {
           </div>
           <button
             type="button"
-            onClick={() => setShowForm((v) => !v)}
+            onClick={() => {
+              if (showForm) {
+                setShowForm(false);
+                resetForm();
+              } else {
+                resetForm();
+                setShowForm(true);
+              }
+            }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] text-white px-4 py-2 text-sm font-medium hover:opacity-90"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
@@ -180,19 +212,22 @@ export default function TrainingRecordsPage() {
         {showForm && (
           <div className="rounded-xl border border-[var(--color-gray-200)] bg-white p-5 shadow-sm">
             <h2 className="text-sm font-semibold text-[var(--color-gray-900)] mb-3">
-              Log a training event
+              {editingId !== null
+                ? "Edit training record"
+                : "Log a training event"}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="text-xs text-[var(--color-gray-600)]">
                 Employee
                 <select
                   value={empId}
+                  disabled={editingId !== null}
                   onChange={(e) =>
                     setEmpId(
                       e.target.value === "" ? "" : Number(e.target.value),
                     )
                   }
-                  className="mt-1 block w-full rounded-md border border-[var(--color-gray-300)] px-3 py-1.5 text-sm"
+                  className="mt-1 block w-full rounded-md border border-[var(--color-gray-300)] px-3 py-1.5 text-sm disabled:bg-[var(--color-gray-50)] disabled:text-[var(--color-gray-500)]"
                 >
                   <option value="">Select an employee</option>
                   {employees.map((e) => (
@@ -201,6 +236,12 @@ export default function TrainingRecordsPage() {
                     </option>
                   ))}
                 </select>
+                {editingId !== null && (
+                  <span className="block mt-1 text-[10px] text-[var(--color-gray-500)]">
+                    Employee is locked after creation. Archive and re-create if
+                    this record was logged against the wrong person.
+                  </span>
+                )}
               </label>
               <label className="text-xs text-[var(--color-gray-600)]">
                 Course type
@@ -264,7 +305,10 @@ export default function TrainingRecordsPage() {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setShowForm(false);
+                  resetForm();
+                }}
                 className="rounded-md border border-[var(--color-gray-300)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--color-gray-700)] hover:bg-[var(--color-gray-50)]"
               >
                 Cancel
@@ -275,7 +319,11 @@ export default function TrainingRecordsPage() {
                 disabled={submitting || !empId || !courseName.trim()}
                 className="rounded-md bg-[var(--color-primary)] text-white px-3 py-1.5 text-xs font-medium hover:opacity-90 disabled:opacity-50"
               >
-                {submitting ? "Saving…" : "Save record"}
+                {submitting
+                  ? "Saving…"
+                  : editingId !== null
+                    ? "Save changes"
+                    : "Save record"}
               </button>
             </div>
           </div>
@@ -342,15 +390,26 @@ export default function TrainingRecordsPage() {
                     </td>
                     <td className="py-2 px-4">{r.completion_date || "—"}</td>
                     <td className="py-2 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => archive(r.id)}
-                        className="inline-flex items-center gap-1 text-xs text-[var(--color-gray-500)] hover:text-[var(--color-gray-900)]"
-                        aria-label="Archive training record"
-                      >
-                        <Archive className="h-3.5 w-3.5" aria-hidden="true" />
-                        Archive
-                      </button>
+                      <div className="inline-flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(r)}
+                          className="inline-flex items-center gap-1 text-xs text-[var(--color-gray-500)] hover:text-[var(--color-gray-900)]"
+                          aria-label="Edit training record"
+                        >
+                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => archive(r.id)}
+                          className="inline-flex items-center gap-1 text-xs text-[var(--color-gray-500)] hover:text-[var(--color-gray-900)]"
+                          aria-label="Archive training record"
+                        >
+                          <Archive className="h-3.5 w-3.5" aria-hidden="true" />
+                          Archive
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

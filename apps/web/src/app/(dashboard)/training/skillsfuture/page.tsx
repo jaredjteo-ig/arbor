@@ -484,6 +484,25 @@ export default function SkillsFutureBrowserPage() {
         {/* Search */}
         <SearchBar filters={filters} onChange={setFilters} />
 
+        {/* Curated-fallback banner: surfaced when MCP is unavailable so
+            users aren't misled about live-catalogue freshness. */}
+        {data?.source === "curated-fallback" && (
+          <div className="rounded-[8px] border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2">
+            <Award
+              className="h-4 w-4 flex-shrink-0 mt-0.5"
+              aria-hidden="true"
+            />
+            <div>
+              <p className="font-medium">Showing curated highlights</p>
+              <p className="mt-0.5 text-amber-800">
+                The live SkillsFuture directory is temporarily unavailable.
+                We&apos;re showing a curated selection of popular grant-eligible
+                courses while the connection is restored.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Content */}
         {isPending && <LoadingState variant="card" count={6} />}
 

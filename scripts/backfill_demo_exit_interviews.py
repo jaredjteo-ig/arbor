@@ -184,6 +184,57 @@ def run() -> None:
                             ),
                         )
                     logger.info("Seeded 2 EmploymentEvent exits (RESIGNED + RETIRED).")
+
+            # R2-M finding: hero churn_yoy_delta read 0.0 because seed had
+            # no last-year exits either. Seed 1 RESIGNED 14 months ago to
+            # give the YoY delta a real number to display.
+            cur.execute(
+                "SELECT COUNT(*) FROM employment_events "
+                "WHERE company_id = %s AND event_type IN "
+                "('RESIGNED', 'RETIRED', 'TERMINATED', 'RETRENCHED', "
+                " 'resigned', 'retired', 'terminated', 'retrenched') "
+                "AND created_at < %s",
+                (company_id, now.replace(year=now.year - 1, month=12, day=31)),
+            )
+            (last_year_exits,) = cur.fetchone()
+            if last_year_exits == 0:
+                cur.execute(
+                    "SELECT id FROM employees WHERE company_id = %s "
+                    "AND is_active = false ORDER BY id DESC LIMIT 1",
+                    (company_id,),
+                )
+                inactive_row = cur.fetchone()
+                # Fall back to a high-id employee if none inactive — the demo
+                # cares about the count, not who left.
+                if not inactive_row:
+                    cur.execute(
+                        "SELECT id FROM employees WHERE company_id = %s "
+                        "ORDER BY id DESC LIMIT 1 OFFSET 4",
+                        (company_id,),
+                    )
+                    inactive_row = cur.fetchone()
+                if inactive_row:
+                    last_year_dt = now - timedelta(days=420)  # ~14 months ago
+                    cur.execute(
+                        "INSERT INTO employment_events "
+                        "(company_id, employee_id, event_type, "
+                        " event_date, effective_date, description, "
+                        " old_value, new_value, approved_by, notes, "
+                        " created_at, updated_at) "
+                        "VALUES (%s,%s,'RESIGNED',%s,%s,%s,'{}','{}',0,'',%s,%s)",
+                        (
+                            company_id,
+                            inactive_row[0],
+                            last_year_dt.date().isoformat(),
+                            last_year_dt.date().isoformat(),
+                            "Demo exit seeded for last-year churn baseline.",
+                            last_year_dt,
+                            last_year_dt,
+                        ),
+                    )
+                    logger.info(
+                        "Seeded 1 last-year RESIGNED event for YoY churn delta."
+                    )
     finally:
         conn.close()
 

@@ -510,25 +510,102 @@ def _di_snapshot(company_id: int, employees: list[dict]) -> dict:
 
 
 def _activity(company_id: int, employees: list[dict]) -> list[dict]:
-    """Recent cross-stage activity — last 14 days, capped at 20."""
+    """Recent cross-stage activity — last 14 days, capped at 20.
+
+    Round-2 redteam L finding: humanize summaries — resolve internal IDs
+    (employee_id, candidate_id, assignment_id) to human-readable names.
+    Buyers shouldn't see "assignment #3" or "employee #2".
+    """
     cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=14)).isoformat()
     employees_by_id = {e.get("id"): e for e in employees}
 
+    # Resolve user_id → user.name once for every employee referenced in
+    # the feed. Cheap because Employee count is small.
+    user_ids = {e.get("user_id") for e in employees if e.get("user_id")}
+    users = dataflow_crud.list_records(
+        "User", {"company_id": company_id}, cache_ttl=0
+    ) if user_ids else []
+    user_name_by_id: dict[int, str] = {
+        u.get("id"): (u.get("name") or u.get("email") or f"#{u.get('id')}")
+        for u in users
+    }
+
+    def _emp_name(emp_id: int | None) -> str:
+        emp = employees_by_id.get(emp_id) if emp_id else None
+        if not emp:
+            return f"employee #{emp_id}" if emp_id else "an employee"
+        name = user_name_by_id.get(emp.get("user_id"))
+        if name:
+            return name
+        return emp.get("designation") or f"employee #{emp_id}"
+
+    candidates = dataflow_crud.list_records(
+        "Candidate", {"company_id": company_id}, cache_ttl=0
+    )
+    candidate_name_by_id: dict[int, str] = {
+        c.get("id"): (c.get("name") or f"candidate #{c.get('id')}")
+        for c in candidates
+        if c.get("id")
+    }
+
+    onboarding_assignments = dataflow_crud.list_records(
+        "OnboardingAssignment",
+        {"company_id": company_id},
+        cache_ttl=0,
+    )
+    assignment_emp_id: dict[int, int] = {
+        a.get("id"): a.get("employee_id")
+        for a in onboarding_assignments
+        if a.get("id")
+    }
+
     feed: list[dict] = []
+
+    # Map raw kudos category enums to buyer-facing labels. Snake-case
+    # technical values like "above_and_beyond" or "customer" leak into
+    # the feed verbatim otherwise.
+    KUDOS_LABEL = {
+        "teamwork": "Teamwork",
+        "values": "Values",
+        "customer": "Customer",
+        "innovation": "Innovation",
+        "above_and_beyond": "Above and beyond",
+        "growth": "Growth",
+        "leadership": "Leadership",
+        "delivery": "Delivery",
+    }
+
+    def _kudos_label(raw: str | None) -> str:
+        if not raw:
+            return "recognition"
+        return KUDOS_LABEL.get(raw, raw.replace("_", " ").capitalize())
+
+    # Map raw EmploymentEvent type → buyer-facing verb.
+    EVENT_VERB = {
+        "HIRED": "Hired",
+        "PROMOTED": "Promoted",
+        "RESIGNED": "Resigned",
+        "RETIRED": "Retired",
+        "TERMINATED": "Terminated",
+        "RETRENCHED": "Retrenched",
+        "SALARY_REVISION": "Salary revised",
+        "TRANSFERRED": "Transferred",
+        "CONFIRMED": "Confirmation",
+    }
 
     # EmploymentEvent — hire / promotion / exit
     events = _events_for_company(company_id)
     for ev in events:
         if (ev.get("created_at") or "") < cutoff:
             continue
-        emp = employees_by_id.get(ev.get("employee_id"))
-        emp_name = emp.get("user_id") if emp else "Unknown"
+        et_raw = (ev.get("event_type") or "EVENT").upper()
+        verb = EVENT_VERB.get(et_raw, et_raw.title())
         feed.append(
             {
                 "stage": "strategy",
-                "kind": ev.get("event_type", "EVENT"),
+                "kind": et_raw,
                 "ts": ev.get("created_at"),
-                "summary": f"{ev.get('event_type', 'Event')} — employee #{ev.get('employee_id')}",
+                "summary": f"{verb}: {_emp_name(ev.get('employee_id'))}",
             }
         )
 
@@ -539,12 +616,15 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
     for iv in interviews:
         if (iv.get("created_at") or "") < cutoff:
             continue
+        cand_name = candidate_name_by_id.get(
+            iv.get("candidate_id"), f"candidate #{iv.get('candidate_id')}"
+        )
         feed.append(
             {
                 "stage": "recruit",
                 "kind": "INTERVIEW",
                 "ts": iv.get("created_at"),
-                "summary": f"Interview {iv.get('status')} for candidate #{iv.get('candidate_id')}",
+                "summary": f"Interview {iv.get('status')}: {cand_name}",
             }
         )
 
@@ -552,14 +632,6 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
     # one entry PER ASSIGNMENT (highest-watermark step), not one entry
     # per step, and scope to this company's assignments. Otherwise the
     # feed reads as 7 duplicates of the same employee finishing 7 steps.
-    company_assignments = dataflow_crud.list_records(
-        "OnboardingAssignment",
-        {"company_id": company_id},
-        cache_ttl=0,
-    )
-    company_assignment_ids = {
-        a.get("id") for a in company_assignments if a.get("id")
-    }
     progresses = dataflow_crud.list_records(
         "OnboardingStepProgress", {}, cache_ttl=0
     )
@@ -571,7 +643,7 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
         if ts < cutoff:
             continue
         aid = p.get("assignment_id")
-        if aid not in company_assignment_ids:
+        if aid not in assignment_emp_id:
             continue
         prev = latest_per_assignment.get(aid)
         if prev is None or (prev.get("completed_at") or "") < ts:
@@ -582,7 +654,7 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                 "stage": "onboard",
                 "kind": "STEP_COMPLETE",
                 "ts": p.get("completed_at"),
-                "summary": f"Onboarding progress on assignment #{aid}",
+                "summary": f"Onboarding progress: {_emp_name(assignment_emp_id.get(aid))}",
             }
         )
 
@@ -599,7 +671,7 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                 "stage": "progression",
                 "kind": "APPRAISAL",
                 "ts": ts,
-                "summary": f"Appraisal {ap.get('status')} for employee #{ap.get('employee_id')}",
+                "summary": f"Appraisal {ap.get('status')}: {_emp_name(ap.get('employee_id'))}",
             }
         )
 
@@ -618,8 +690,8 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                 "kind": "KUDOS",
                 "ts": ts,
                 "summary": (
-                    f"Kudos for employee #{r.get('to_employee_id')} "
-                    f"({r.get('category', 'recognition')})"
+                    f"Kudos for {_emp_name(r.get('to_employee_id'))} "
+                    f"({_kudos_label(r.get('category'))})"
                 ),
             }
         )
@@ -634,7 +706,7 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
         emp_label = (
             "anonymous leaver"
             if ei.get("is_anonymous")
-            else f"employee #{ei.get('employee_id')}"
+            else _emp_name(ei.get("employee_id"))
         )
         feed.append(
             {
@@ -642,7 +714,7 @@ def _activity(company_id: int, employees: list[dict]) -> list[dict]:
                 "kind": "EXIT_INTERVIEW",
                 "ts": ts,
                 "summary": (
-                    f"Exit interview {'submitted' if ei.get('submitted_at') else 'triggered'} for {emp_label}"
+                    f"Exit interview {'submitted' if ei.get('submitted_at') else 'triggered'}: {emp_label}"
                 ),
             }
         )

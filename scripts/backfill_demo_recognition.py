@@ -60,16 +60,15 @@ def run() -> None:
                 )
                 return
 
+            # P30 — independent guards. Three buckets:
+            #   (1) baseline 6 kudos + 2 nominations
+            #   (2) kudos received by the demo admin (R2-M)
+            # Each bucket runs only if its own marker is absent.
             cur.execute(
                 "SELECT 1 FROM recognitions WHERE company_id = %s LIMIT 1",
                 (company_id,),
             )
-            if cur.fetchone():
-                logger.info(
-                    "Recognition already seeded for company %s — skipping.",
-                    company_id,
-                )
-                return
+            baseline_already_seeded = bool(cur.fetchone())
 
             cur.execute(
                 "SELECT id, user_id FROM employees WHERE company_id = %s "
@@ -82,6 +81,19 @@ def run() -> None:
                     "Need ≥4 active employees in company %s.", company_id
                 )
                 return
+
+            # R2-M finding: ensure the demo-admin persona has at least one
+            # kudos received so the "Received by me" tab isn't empty when
+            # the buyer logs in as the owner.
+            cur.execute(
+                "SELECT e.id, e.user_id FROM employees e "
+                "WHERE e.company_id = %s AND e.user_id IN ("
+                "  SELECT u.id FROM users u WHERE u.email = 'demo@central.kailash.ai'"
+                ") LIMIT 1",
+                (company_id,),
+            )
+            demo_admin_row = cur.fetchone()
+            demo_admin = demo_admin_row if demo_admin_row else None
 
             # Six recognitions, four recipients, mix of categories + 1 private.
             seeds = [
@@ -134,27 +146,101 @@ def run() -> None:
                     8,
                 ),
             ]
-            for from_user, to_emp, category, msg, public, days_ago in seeds:
-                created = now - timedelta(days=days_ago)
-                cur.execute(
-                    "INSERT INTO recognitions "
-                    "(company_id, from_user_id, to_employee_id, category, "
-                    " message, is_public, is_archived, created_at, updated_at) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,false,%s,%s)",
-                    (
-                        company_id,
-                        from_user,
-                        to_emp,
-                        category,
-                        msg,
-                        public,
-                        created,
-                        created,
-                    ),
+            if not baseline_already_seeded:
+                for from_user, to_emp, category, msg, public, days_ago in seeds:
+                    created = now - timedelta(days=days_ago)
+                    cur.execute(
+                        "INSERT INTO recognitions "
+                        "(company_id, from_user_id, to_employee_id, category, "
+                        " message, is_public, is_archived, created_at, updated_at) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,false,%s,%s)",
+                        (
+                            company_id,
+                            from_user,
+                            to_emp,
+                            category,
+                            msg,
+                            public,
+                            created,
+                            created,
+                        ),
+                    )
+                logger.info("Seeded 6 recognitions across 4 employees.")
+            else:
+                logger.info(
+                    "Baseline recognitions already seeded — checking demo-admin extras."
                 )
-            logger.info("Seeded 6 recognitions across 4 employees.")
 
-            # Peer nominations.
+            # R2-M finding: kudos *received* by the demo-admin persona so the
+            # owner's "Received by me" tab is non-empty on demo day.
+            if demo_admin:
+                demo_admin_emp_id = demo_admin[0]
+                cur.execute(
+                    "SELECT 1 FROM recognitions WHERE company_id = %s "
+                    "AND to_employee_id = %s LIMIT 1",
+                    (company_id, demo_admin_emp_id),
+                )
+                demo_admin_already_seeded = bool(cur.fetchone())
+            else:
+                demo_admin_emp_id = None
+                demo_admin_already_seeded = True  # nothing to seed
+
+            if demo_admin and not demo_admin_already_seeded:
+                # Pick different employees as the givers (not the demo admin).
+                givers = [e for e in employees if e[0] != demo_admin_emp_id]
+                if givers:
+                    extra_kudos = [
+                        (
+                            givers[0][1],
+                            demo_admin_emp_id,
+                            "values",
+                            "Thanks for unblocking the round-12 redteam closure — your call to ship as one bundled commit kept the team aligned.",
+                            True,
+                            2,
+                        ),
+                        (
+                            givers[1][1] if len(givers) > 1 else givers[0][1],
+                            demo_admin_emp_id,
+                            "above_and_beyond",
+                            "Appreciate you carrying the demo prep through the weekend. Made all the difference for the Jennifer call.",
+                            True,
+                            4,
+                        ),
+                    ]
+                    for from_user, to_emp, category, msg, public, days_ago in extra_kudos:
+                        created = now - timedelta(days=days_ago)
+                        cur.execute(
+                            "INSERT INTO recognitions "
+                            "(company_id, from_user_id, to_employee_id, category, "
+                            " message, is_public, is_archived, created_at, updated_at) "
+                            "VALUES (%s,%s,%s,%s,%s,%s,false,%s,%s)",
+                            (
+                                company_id,
+                                from_user,
+                                to_emp,
+                                category,
+                                msg,
+                                public,
+                                created,
+                                created,
+                            ),
+                        )
+                    logger.info(
+                        "Seeded %d kudos received by the demo-admin persona "
+                        "(employee_id=%s).",
+                        len(extra_kudos),
+                        demo_admin_emp_id,
+                    )
+
+            # Peer nominations — independent guard.
+            cur.execute(
+                "SELECT 1 FROM peer_nominations WHERE company_id = %s LIMIT 1",
+                (company_id,),
+            )
+            if cur.fetchone():
+                logger.info("Peer nominations already seeded — skipping.")
+                return
+
             cur.execute(
                 "INSERT INTO peer_nominations "
                 "(company_id, nominator_user_id, nominee_employee_id, "
