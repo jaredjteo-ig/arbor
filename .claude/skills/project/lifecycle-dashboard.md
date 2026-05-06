@@ -144,6 +144,22 @@ for r in _safe_list("MyModel", {"company_id": company_id}):
 Always `feed.sort(key=lambda r: r.get("ts") or "", reverse=True)` and
 `return feed[:20]` at the end.
 
+**Summary copy MUST be humanized (P35).** Every `summary` string the feed
+emits goes straight to a buyer-visible card. Resolve `employee_id`,
+`candidate_id`, `assignment_id` to real names BEFORE composing the
+string — never inline `employee #N`. Resolve enum values
+(`above_and_beyond`, `RESIGNED`) through a `LABEL = {...}` map. Build
+the resolution maps once at the top of `_activity()`; do not query
+inside the per-row loop. See `security-patterns.md::P35`.
+
+**YoY hero metrics need a last-year baseline in the seed.** Hero
+counters that compare to "this time last year" (`churn_yoy_delta`,
+`headcount_yoy_delta`) read 0.0 if the seed only writes events for the
+current year. Demo backfills MUST seed at least one event ~14 months
+ago for every YoY surface. The exit-interview backfill is the canonical
+example — see `scripts/backfill_demo_exit_interviews.py` for the
+"last-year RESIGNED EmploymentEvent" pattern.
+
 ## Strategy depth surfaces (P3)
 
 `/strategy/lifecycle` is the entry. Phase 3 added 3 sibling tabs under
@@ -228,17 +244,24 @@ P2 → P3). Lessons:
   the module ships in the same commit (P27).
 - ❌ Building a new stage card without a regression test pinning its
   KPI keys.
+- ❌ Composing activity-feed `summary` strings with raw IDs or
+  snake_case enums (`employee #3`, `above_and_beyond`). Resolve through
+  the name maps + `LABEL` dict at the top of `_activity()` (P35).
+- ❌ Seeding only this-year data when a hero KPI is YoY (`churn_yoy_delta`
+  reads 0 if there are no last-year exits). Plant a 14-month-old anchor
+  event in the demo backfill.
 
 ## Pinned regression tests
 
-| File                                              | Pins                                                                                              |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `tests/regression/test_p1_lifecycle_dashboard.py` | endpoint exists, response shape, all 8 stages, 28 health-pill cases                               |
-| `tests/regression/test_p2_lnd.py`                 | TrainingRecord/Certification/MandatoryTrainingRequirement models + 8 routes + casefold cert match |
-| `tests/regression/test_p2_rc.py`                  | 5 categories locked, rate limits, 1000-char message cap                                           |
-| `tests/regression/test_p2_go_ex.py`               | Goal status state machine, 0..100 progress bounds, exit token audience, anonymous redaction       |
-| `tests/regression/test_p3_strategic_depth.py`     | WorkforcePlan/Skills/Succession models, anonymity threshold, retention not-persisted              |
-| `tests/regression/test_redteam2_findings.py`      | Goals scope on every handler, self-recognition + self-nomination guards                           |
+| File                                              | Pins                                                                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `tests/regression/test_p1_lifecycle_dashboard.py` | endpoint exists, response shape, all 8 stages, 28 health-pill cases                                       |
+| `tests/regression/test_p2_lnd.py`                 | TrainingRecord/Certification/MandatoryTrainingRequirement models + 8 routes + casefold cert match         |
+| `tests/regression/test_p2_rc.py`                  | 5 categories locked, rate limits, 1000-char message cap                                                   |
+| `tests/regression/test_p2_go_ex.py`               | Goal status state machine, 0..100 progress bounds, exit token audience, anonymous redaction               |
+| `tests/regression/test_p3_strategic_depth.py`     | WorkforcePlan/Skills/Succession models, anonymity threshold, retention not-persisted                      |
+| `tests/regression/test_redteam2_findings.py`      | Goals scope on every handler, self-recognition + self-nomination guards                                   |
+| `tests/regression/test_redteam2_polish.py`        | Activity-feed humanize (P35), exit-survey preflight semantic-reason (P36), training PATCH whitelist (P39) |
 
 If you change the aggregator shape or threshold, update the relevant
 test file in the same commit.

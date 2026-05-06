@@ -605,6 +605,11 @@ Reach for this skill when:
 - Deploy script needs to run a `scripts/*.py` inside the backend container → P32 (`docker cp scripts` first)
 - Aggregated report bucketed by demographic field → P33 (anonymity collapse <5)
 - Per-individual derived score → P34 (no persistence)
+- Activity feed / notification copy that emits IDs or enums verbatim → P35 (humanize at presentation)
+- Tokenized public link consumed via POST (exit-survey, magic-link, password-reset) → P36 (paired GET preflight with semantic reason + timing-equalized branches)
+- Idempotent demo seed where the FIRST run wrote orphan rows (`field=0`) → P37 (fix-up branch repairs in place)
+- Frontend page consuming a P26 fallback-aware endpoint → P38 (disclosure banner)
+- PATCH endpoint where some fields are immutable for audit reasons → P39 (whitelist on backend, lock on UI)
 
 Each pattern has a regression test pinning the invariant; refer to those tests for executable examples.
 
@@ -1027,3 +1032,461 @@ async def retention_risk(...):
 ```
 
 Pinned by `tests/regression/test_p3_strategic_depth.py::test_p3_retention_not_persisted`.
+
+---
+
+## P35 — Humanize internal IDs and enums in customer-facing copy (round-2 polish L)
+
+**Problem:** activity feeds, notification copy, and audit summaries that
+inline raw IDs (`employee #3`, `candidate #23`, `assignment #7`) or raw
+snake_case enums (`above_and_beyond`, `RESIGNED`) read as developer-output.
+Buyers see them and lose trust in the polish of the product.
+
+**Pattern:** at the top of any function that composes user-facing strings,
+build name-resolution maps ONCE. Then resolve every ID through a small
+helper. For enums, define a `LABEL = {raw: pretty}` map at module-or-function
+scope with a safe fallback.
+
+```python
+def _activity(company_id: int, employees: list[dict]) -> list[dict]:
+    employees_by_id = {e.get("id"): e for e in employees}
+
+    # Resolve user_id → user.name for each referenced employee, ONCE.
+    users = dataflow_crud.list_records(
+        "User", {"company_id": company_id}, cache_ttl=0
+    )
+    user_name_by_id: dict[int, str] = {
+        u.get("id"): (u.get("name") or u.get("email") or f"#{u.get('id')}")
+        for u in users
+    }
+
+    def _emp_name(emp_id: int | None) -> str:
+        emp = employees_by_id.get(emp_id) if emp_id else None
+        if not emp:
+            return f"employee #{emp_id}" if emp_id else "an employee"
+        return user_name_by_id.get(emp.get("user_id")) or emp.get("designation") or f"employee #{emp_id}"
+
+    candidates = dataflow_crud.list_records(
+        "Candidate", {"company_id": company_id}, cache_ttl=0
+    )
+    candidate_name_by_id = {c.get("id"): (c.get("name") or f"#{c.get('id')}") for c in candidates}
+
+    onboarding = dataflow_crud.list_records(
+        "OnboardingAssignment", {"company_id": company_id}, cache_ttl=0
+    )
+    assignment_emp_id = {a.get("id"): a.get("employee_id") for a in onboarding}
+
+    # Enum → label
+    KUDOS_LABEL = {
+        "teamwork": "Teamwork",
+        "above_and_beyond": "Above and beyond",
+        ...
+    }
+    def _kudos_label(raw):
+        return KUDOS_LABEL.get(raw, (raw or "recognition").replace("_", " ").capitalize())
+
+    # ... compose summaries using only _emp_name() / candidate_name_by_id /
+    # _kudos_label() — NEVER inline raw ids.
+```
+
+**Anti-pattern:**
+
+```python
+# DO NOT:
+feed.append({"summary": f"Kudos for employee #{r.get('to_employee_id')} ({r.get('category')})"})
+# Buyer sees "Kudos for employee #3 (above_and_beyond)".
+
+# DO NOT (per-row lookups — N+1):
+for ev in events:
+    user = dataflow_crud.read("User", emp.user_id)  # 1 query × N rows
+    summary = f"... {user.name} ..."
+```
+
+**Privacy MUST (BLOCKING):** the name-resolution maps and `_emp_name()` /
+`candidate_name_by_id` helpers MUST NOT be invoked in any handler that
+isn't gated by `require_role("owner", "hr_manager")` (or stricter).
+Names of employees other than the caller are PII under PDPA. An employee-
+self-serve "my activity" page MUST scope to the caller's own employee_id
+BEFORE resolving any name, and MUST NOT include rows for other employees
+even if humanized.
+
+**Mixing with P33 anonymity is FORBIDDEN.** If a response includes
+anonymity-collapsed buckets (P33: <5 members → "—"), it MUST NOT also
+include humanized per-row data in the same payload. A determined caller
+can re-correlate the bucket totals against the named rows. Either the
+endpoint serves aggregations (anonymized) or it serves rows (named to
+authorized roles only) — never both in one response.
+
+**Pinned by:** `tests/regression/test_redteam2_polish.py::test_activity_feed_humanizes_employee_ids`.
+
+---
+
+## P36 — Tokenized public link preflight with semantic reason (round-2 polish L)
+
+**Problem:** a tokenized public POST endpoint (`/exit-interviews/{token}/submit`,
+`/auth/reset/{token}/confirm`, magic-link consumers) used to be the
+_first_ contact point for the user. By the time the JWT is decoded and
+the resource looked up, the user has already filled a multi-field form
+and clicks Submit — only to learn the link was bad/expired/already-used.
+Terrible UX, and worse, it teaches users that the link "kind of worked"
+which complicates support.
+
+**Pattern:** for every tokenized public POST, ship a paired GET preflight
+endpoint that returns a SEMANTIC empty-state reason. Frontend page calls
+preflight on mount, branches to the matching empty state. Both the
+endpoint and the frontend MUST treat the preflight as untrusted public
+input.
+
+Backend:
+
+```python
+@router.get("/public/{token}/validate")
+async def validate_token(token: str) -> dict:
+    """Public preflight — returns small, non-PII fields only.
+
+    Security contract:
+      - All branches MUST do equivalent work to neutralize the
+        timing oracle between "invalid_or_expired", "not_found",
+        and "already_submitted".
+      - Body MUST contain only minimal flags. NEVER return employee
+        names, emails, dates, or any free-text leaver content.
+      - Endpoint MUST be rate-limited (Nexus middleware: 60/min/ip
+        is the project default for public preflights). Without this,
+        an attacker can amortize the constant-work jitter and still
+        harvest state.
+    """
+    decoded = None
+    try:
+        decoded = _decode_token(token)
+    except HTTPException:
+        decoded = None  # do NOT short-circuit; fall through to do
+                        # equivalent DB work, then return generic.
+
+    interview = None
+    if decoded is not None:
+        rows = dataflow_crud.list_records(
+            "ExitInterview",
+            {"id": int(decoded.get("ei", 0)),
+             "company_id": int(decoded.get("co", 0))},
+            cache_ttl=0,
+        )
+        interview = rows[0] if rows else None
+    else:
+        # Burn an equivalent DB roundtrip to mask the signature-failure
+        # branch from the not-found / already-submitted branches.
+        _ = dataflow_crud.list_records("ExitInterview", {"id": -1}, cache_ttl=0)
+
+    if decoded is None:
+        return {"ok": False, "reason": "invalid_or_expired"}
+    if interview is None:
+        return {"ok": False, "reason": "not_found"}
+    if interview.get("submitted_at"):
+        return {"ok": False, "reason": "already_submitted"}
+
+    # Minimal body: only the boolean the frontend needs to render.
+    # Do NOT return triggered_at, employee_id, scheduled_at, etc.
+    return {"ok": True, "is_anonymous": bool(interview.get("is_anonymous"))}
+```
+
+Frontend (always called on mount, before the form is rendered):
+
+```tsx
+type Preflight =
+  | { state: "loading" }
+  | { state: "ok"; isAnonymous: boolean }
+  | { state: "invalid" }
+  | { state: "not_found" }
+  | { state: "already_submitted" }
+  | { state: "network_error" };
+
+useEffect(() => {
+  if (!token) return;
+  let cancelled = false;
+  (async () => {
+    const r = await fetch(`${apiBase}/.../public/${token}/validate`);
+    if (cancelled) return;
+    const body = await r.json();
+    if (body?.ok)
+      setPreflight({ state: "ok", isAnonymous: !!body.is_anonymous });
+    else if (body?.reason === "already_submitted")
+      setPreflight({ state: "already_submitted" });
+    else if (body?.reason === "not_found") setPreflight({ state: "not_found" });
+    else setPreflight({ state: "invalid" });
+  })();
+  return () => {
+    cancelled = true;
+  };
+}, [token]);
+```
+
+**Body-shape rules (BLOCKING):**
+
+1. Body MUST be `{ok: bool, reason?: "invalid_or_expired"|"not_found"|"already_submitted"}`.
+   No employee names, emails, dates, free-text leaver content, or HR
+   workflow timestamps (`triggered_at`, `submitted_at`, `scheduled_at`).
+2. ALL token-decode errors collapse to `invalid_or_expired`. Don't leak
+   "signature mismatch" vs "exp claim past" — those are oracle attacks.
+3. ALL three failure branches MUST do equivalent work (the no-op DB
+   lookup on signature failure in the example above). Branch-asymmetric
+   work is a timing oracle: an attacker with a harvested valid token
+   can distinguish "still pending" vs "submitted" via response time.
+4. The endpoint MUST be rate-limited at the Nexus middleware layer.
+   Default for public preflights in Arbor: 60 requests / minute / IP.
+   Without this, timing-jitter is amortizable.
+5. The frontend MUST treat the preflight body as untrusted public input.
+   Render the empty state by branching on `state`, not by interpolating
+   anything from the body into the DOM (no `dangerouslySetInnerHTML`).
+
+**Anti-pattern:**
+
+```python
+# DO NOT: leak the underlying 401 from _decode_token to the frontend
+# directly. The frontend can't distinguish "show user empty state" from
+# "redirect to login" from a bare 401.
+
+# DO NOT: skip the preflight and hope the user gets a friendly 409 from
+# the submit endpoint. The submit endpoint takes a body — by the time
+# the user discovers the link is bad, they've typed for 3 minutes.
+```
+
+**Pinned by:** `tests/regression/test_redteam2_polish.py::test_exit_survey_preflight_returns_semantic_reason`.
+
+---
+
+## P37 — Fix-up branch in idempotent seed scripts (round-2 polish M)
+
+**Problem:** P30 (independent guards per seed step) prevents re-runs from
+double-inserting. But it doesn't repair rows the FIRST run wrote
+incorrectly. Concrete case: an earlier `backfill_demo_goals.py` wrote
+`manager_id=0` and `period_id=0` because those entities didn't exist yet.
+The "skip if any rows exist" guard then permanently locked the orphans
+in place — re-running the seed never repaired them, and the buyer-visible
+"Manager: 0" / "Period: —" never went away.
+
+**Pattern:** when the guard detects "already seeded", run a fix-up
+branch BEFORE returning. The fix-up is conservative (only touches rows
+where the field is currently empty/zero) and idempotent (running twice
+produces the same result).
+
+```python
+cur.execute("SELECT 1 FROM goals WHERE company_id = %s LIMIT 1", (company_id,))
+already_seeded = cur.fetchone() is not None
+
+if already_seeded:
+    # Repair existing orphans before short-circuiting.
+    cur.execute(
+        "SELECT id FROM appraisal_periods WHERE company_id = %s "
+        "AND name = 'H1 2026 Performance Review' LIMIT 1",
+        (company_id,),
+    )
+    period_id = (cur.fetchone() or [0])[0]
+    if period_id:
+        cur.execute(
+            "UPDATE goals SET period_id = %s "
+            "WHERE company_id = %s AND period_id = 0",
+            (period_id, company_id),
+        )
+        logger.info("Fix-up: rewired %d goal(s) to period_id=%s.",
+                    cur.rowcount, period_id)
+
+    # Resolve manager_id by reporting line, fall back to demo admin.
+    cur.execute(
+        "UPDATE goals g SET manager_id = COALESCE("
+        "  NULLIF((SELECT e.reporting_manager_id FROM employees e "
+        "          WHERE e.id = g.employee_id), 0), %s) "
+        "WHERE g.company_id = %s "
+        "  AND (g.manager_id IS NULL OR g.manager_id = 0) "
+        "  AND g.employee_id != %s",
+        (admin_emp_id, company_id, admin_emp_id),
+    )
+    logger.info("Fix-up: rewired %d goal(s) to manager.", cur.rowcount)
+    return  # short-circuit — don't re-insert
+```
+
+**Safety constraints (BLOCKING):**
+
+- Fix-up MUST be conservative: filter on `WHERE field IS NULL OR field = 0`
+  (or equivalent "looks orphaned" predicate). Never blanket-update.
+- Fix-up MUST be idempotent: re-running on already-fixed rows is a no-op.
+- Fix-up MUST NOT delete rows the user (or a downstream process) might
+  have created/edited. Repair-in-place only.
+- Fix-up MUST be scoped to a known-demo `company_id` resolved from a
+  marker (`is_demo=TRUE` flag, env-var like `ARBOR_DEMO_COMPANY_ID`,
+  or a hard-coded constant in the seed script). Never inherit
+  `company_id` from arbitrary CLI input or HTTP context — a misrouted
+  invocation against a real tenant would clobber operator-set values
+  even with the conservative filter.
+- The fallback values used in the COALESCE chain (e.g.,
+  `manager_id = admin_emp_id`) MUST be reviewed for the failure mode
+  "what if a malicious operator pre-creates rows with this ID to
+  manufacture a relationship?". For seed scripts running in a known-
+  demo tenant this is acceptable; for any future use against real
+  data it is NOT.
+
+**Anti-pattern:** `DELETE FROM goals WHERE company_id = X` followed by
+re-insertion. Loses any user-created data, breaks FK references from
+goal_check_ins, breaks audit log.
+
+**Why this matters for prod data:** fix-up branches let a redeploy-driven
+seed migration converge without operator intervention or a custom data
+migration script. The seed script IS the migration.
+
+**Not pinned by a regression test — the seed script's behaviour is
+verified by post-deploy smoke (the lifecycle dashboard reads non-zero
+manager_id / period_id).** A regression test would require a real DB
+fixture. If you change the fix-up logic, run the script twice locally
+against a primed DB and diff state.
+
+---
+
+## P38 — Frontend disclosure banner for live-vs-cache responses (round-2 polish M)
+
+**Problem:** P26 codifies the backend curated-fallback (return cached
+data with `source: "curated-fallback"` when MCP/external is offline).
+But if the frontend silently renders the fallback as if it were live,
+P26 turns into a quiet lie — the user thinks they're seeing the live
+SkillsFuture catalogue when they're actually seeing 7 hand-curated rows.
+
+**Pattern:** any frontend page that consumes a P26-style endpoint MUST
+inspect `response.source` and render a disclosure banner when it's
+anything other than `"live"`. Same goes for `staleness_seconds`,
+`fetched_at`, etc. Disclosure first, polish second.
+
+```tsx
+{
+  data?.source === "curated-fallback" && (
+    <div className="rounded-[8px] border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2">
+      <Award className="h-4 w-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
+      <div>
+        <p className="font-medium">Showing curated highlights</p>
+        <p className="mt-0.5 text-amber-800">
+          The live SkillsFuture directory is temporarily unavailable. We're
+          showing a curated selection of grant-eligible courses while the
+          connection is restored.
+        </p>
+      </div>
+    </div>
+  );
+}
+```
+
+**Backend contract update:** every endpoint that may emit fallback data
+MUST include `source` in its TypeScript response type so the frontend
+gets a compile-time reminder to handle it. Don't make it optional unless
+the field is genuinely sometimes-absent for non-fallback reasons.
+
+```ts
+export interface SkillsFutureCourseListResponse {
+  courses: SkillsFutureCourse[];
+  total: number;
+  /** "live" = MCP-served. "curated-fallback" = fixed seed list. */
+  source?: "live" | "curated-fallback";
+}
+```
+
+**Anti-pattern:** silently rendering fallback data, or stuffing the
+disclosure into a tooltip behind an `(i)` icon. Buyers reading the page
+top-to-bottom must see the banner before the data.
+
+**Not pinned by a regression test (frontend-only). Manual visual check
+on `/training/skillsfuture` whenever the MCP layer changes.**
+
+---
+
+## P39 — PATCH with allowed-fields whitelist + UI lock for immutable fields (round-2 + UX)
+
+**Problem:** users need to fix typos (course title, hours, completion
+date) on existing rows. But certain fields are part of the audit contract
+(`employee_id` on a training record) and MUST NOT be retargeted after
+creation. If only the backend enforces this (silent drop), the UI lets
+the user "edit" a field that won't change — confusing, looks broken.
+
+**Pattern:** mirror the audit contract in BOTH layers. Backend is
+authoritative (whitelist, defense-in-depth). Frontend is honest (lock
+the field, explain why).
+
+Backend:
+
+```python
+@router.patch("/records/{record_id}")
+async def update_training_record(record_id: int, request: Request, ...):
+    company_id = get_current_company_id(current_user)
+    _verify_record_ownership("TrainingRecord", record_id, company_id)
+    body = await request.json()
+    allowed = {
+        "course_name", "course_provider", "course_type",
+        "start_date", "completion_date", "hours", "cost",
+        "funding_source", "certificate_url", "notes",
+    }
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(400, "No valid fields to update.")
+    if "hours" in updates: updates["hours"] = float(updates["hours"])
+    if "cost" in updates: updates["cost"] = float(updates["cost"])
+    updates["updated_at"] = _now()
+    dataflow_crud.update("TrainingRecord", record_id, updates)
+    return {"record": dataflow_crud.read("TrainingRecord", record_id)}
+```
+
+Frontend (same form for create AND edit, immutable fields disabled):
+
+```tsx
+const [editingId, setEditingId] = useState<number | null>(null);
+
+<select
+  value={empId}
+  disabled={editingId !== null}
+  className="...disabled:bg-[var(--color-gray-50)] disabled:text-[var(--color-gray-500)]"
+  ...
+>
+  {employees.map(e => <option ...>{e.name}</option>)}
+</select>
+{editingId !== null && (
+  <span className="block mt-1 text-[10px] text-[var(--color-gray-500)]">
+    Employee is locked after creation. Archive and re-create if this
+    record was logged against the wrong person.
+  </span>
+)}
+```
+
+**Audit-contract checklist for any `PATCH /resource/{id}`:**
+
+The backend whitelist is the SECURITY BOUNDARY. Items 4–6 are UX
+courtesies that improve honesty but are NOT substitutes for item 1.
+
+1. **(BLOCKING)** Whitelist editable fields on the backend handler —
+   never `dataflow_crud.update(model, id, body)`. The whitelist is the
+   only thing that prevents `employee_id`, `company_id`, `id`,
+   `is_archived` (etc.) from being silently retargeted by a crafted
+   POST. A determined attacker can always construct the request
+   directly; the UI lock does not protect them.
+2. **(BLOCKING)** Coerce numerics (`float(body["hours"])`) BEFORE
+   storing. Pydantic-style coercion at the handler boundary, not at
+   the read site.
+3. Bump `updated_at` to give downstream caches/audits a coherent
+   timeline.
+4. UI: shared form, `editingId` state, `disabled` on locked inputs +
+   helper copy explaining the audit contract. (UX courtesy.)
+5. UI: button labels swap (`Save record` → `Save changes`). (UX
+   courtesy.)
+6. UI: cancel/close resets `editingId` so the next "New record" is
+   clean. (UX courtesy.)
+
+**Anti-pattern (BLOCKING):**
+
+```python
+# DO NOT remove the backend whitelist because the UI happens to
+# disable a field. The UI lock is a UX courtesy; a curl request can
+# still POST employee_id directly.
+@router.patch("/records/{record_id}")
+async def update_record(record_id: int, body: dict, ...):
+    dataflow_crud.update("TrainingRecord", record_id, body)  # ❌
+```
+
+**Anti-pattern (UX):** an "Edit" action that opens a separate
+"EditModal" component duplicating the form's render logic. The form
+drifts; one copy gets a new field, the other doesn't. Use ONE form,
+branch on `editingId`.
+
+**Pinned by:** `tests/regression/test_redteam2_polish.py::test_training_record_patch_allows_typo_fix_and_completion_date`
+(verifies the whitelist drops `employee_id` even when posted).
