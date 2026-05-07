@@ -122,6 +122,75 @@ When using direct SQL, MUST:
 - Document WHY direct SQL was chosen (link to the missing API)
 - Track creation of the missing API as a follow-up
 
+### 9. Probability-weighted demo distributions (P52)
+
+Demo seed data with categorical buckets (e.g. every IC tagged
+"growth"+"manager") reads as fake the moment a buyer sees the
+identical bin sizes. Demo distributions MUST be probability-weighted
+with at least three bands plus background variance.
+
+**Why this rule exists:** the engagement-survey post-walk polish
+caught a seed that tagged 100% of low-scoring engineering ICs with
+both "growth" and "manager" themes. Manager view showed
+`growth ×7, manager ×7` for a 7-report team — buyers immediately
+read it as seed data, not signal.
+
+**Pattern:**
+
+```python
+# Three probability bands per category — focal / adjacent / background
+if is_resigner:
+    growth_prob = 0.90        # focal
+elif dept.startswith("eng") and target_avg < 3.5:
+    growth_prob = 0.70        # focal-adjacent
+elif dept.startswith("eng"):
+    growth_prob = 0.25        # adjacent
+else:
+    growth_prob = 0.08        # background
+if rng.random() < growth_prob:
+    themes_for_response.append("growth")
+
+# Plus a background draw across other categories for variance
+theme_roll = rng.random()
+if theme_roll < 0.15:
+    themes_for_response.append("workload")
+elif theme_roll < 0.25:
+    themes_for_response.append("recognition")
+# ... etc, total background coverage 30-45%
+```
+
+**Calibration heuristic:** focal 70-90%, adjacent 15-30%,
+background 5-10% per item. Hit rates of 100% / 0% read as fake;
+hit rates of 30% / 30% / 30% read as real.
+
+**Determinism:** seed `random.Random(seed_int)` so reproducible
+runs produce identical distributions. Don't use unseeded `rng` —
+demos that drift between resets confuse buyers.
+
+### 10. Wipe-before-reseed when distribution logic changes
+
+Idempotent seeds with a "skip if already seeded" guard (e.g.
+`if existing >= 6: return`) are correct for first-run safety but
+prevent re-runs from picking up updated logic. When the seed
+_logic_ changes (probability bands, theme catalogue, calibration),
+the existing rows still reflect old logic.
+
+**Pattern:** document a wipe SQL block alongside the seed script,
+parameterised by `company_id`. Do NOT bake "wipe-on-rerun" into the
+script itself — that's destructive on prod by accident.
+
+```sql
+-- Run before re-seeding when distribution logic changes:
+DELETE FROM engagement_actions WHERE company_id=:cid;
+DELETE FROM engagement_survey_responses WHERE company_id=:cid;
+DELETE FROM engagement_surveys WHERE company_id=:cid;
+```
+
+The wipe must hit _child_ rows before _parent_ rows (FK ordering)
+and must be `company_id`-scoped (never company-wide). After wipe,
+re-run the seed inside the backend container (the script is not
+baked into the image — copy it in via `docker cp`).
+
 ## MUST NOT Rules
 
 ### 1. No single monolithic main() that chains all sections

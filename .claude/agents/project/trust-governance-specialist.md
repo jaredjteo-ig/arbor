@@ -235,3 +235,49 @@ try:
 except Exception as exc:
     logger.warning("AuditLogEntry append failed: %s", exc)
 ```
+
+## Privacy asymmetry pattern (P50 — engagement post-walk #73)
+
+Pseudonymity is an _external_ re-identification protection, not a
+universal opacity. The data subject already knows what she submitted;
+showing her own submissions back to her does not weaken HR-side
+pseudonymity, because she knows information HR doesn't (her own
+employee_id ↔ pseudonym mapping).
+
+**Implementation pattern:** for the data-subject view, recompute her
+pseudonym per pseudonymous survey from the company secret + her
+employee_id + the survey_id. Match on `employee_pseudonym`. HR
+cannot do this lookup — they don't know which employee_id to feed in.
+The asymmetry IS the privacy guarantee.
+
+```python
+secret = engagement_pseudonym.get_or_create_company_secret(company_id)
+my_pseudonym = engagement_pseudonym.compute_pseudonym(
+    secret, employee_id, survey_id
+)
+my_rows = [r for r in rows if r.get("employee_pseudonym") == my_pseudonym]
+```
+
+**Side-channel suppression even from the data subject:** themes /
+scores / per-question content on pseudonymous responses might be
+visible elsewhere (manager dashboards, aggregate views). If the
+data subject sees "your theme was 'manager'" and a manager also
+sees "manager ×4" from the same pulse, she becomes correlatable to
+anyone with both views. So return survey_name + submitted_at + tier
+badge, but suppress themes / scores for pseudonymous entries.
+
+**Anonymous tier stays hidden** — there's no trail to recover, by
+design. Don't synthesize one.
+
+**UI signal:** badge each entry with tier so the data subject
+understands what HR sees vs what she sees.
+_"Pseudonymous (HR sees only your pseudonym)"_ makes the asymmetry
+explicit.
+
+**Anti-pattern:** treating the data subject as an outsider to her
+own data. Privacy protects against unauthorised inference; the
+subject's own action records aren't an inference, they're the
+ground truth she generated.
+
+**Pinned by:** `my_history` rewrite in commit 5902866. See P50 in
+`skills/project/security-patterns.md` for the full pattern + code.

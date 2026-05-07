@@ -187,12 +187,31 @@ Canonical playbook in three skill files:
   `user?.role`. **AdminGuard at the route level is NOT enough** —
   shell components rendered inside `(dashboard)/layout.tsx` see
   every authenticated user including employees.
-- `skills/project/security-patterns.md` P40-P48 — canonical fix
+- `skills/project/security-patterns.md` P40-P53 — canonical fix
   shapes for: backend lying about persistence (P40), UTC vs SGT
   time comparisons (P41), `/undefined` fetches from type mismatches
   (P42), silent-disabled submit UX (P43), empty-state quality (P44),
   hidden-detail (P45), role-aware UX gating (P46), default-deny
-  caches (P47), LLM transient-failure UX (P48).
+  caches (P47), LLM transient-failure UX (P48), **permission predicate
+  vs role proxy — role and capability are sometimes orthogonal in
+  Arbor's data model (P49)**, **privacy asymmetry: data subjects can
+  re-identify their own pseudonymous data (P50)**, \*\*aggregate stats
+  are necessary but not sufficient — manager view needs per-question
+  - trend (P51)**, **demo seed realism via probability-weighted draws
+    (P52)**, **conditional explanatory copy must match rendered
+    controls (P53)\*\*.
+- `skills/project/engagement-surveys.md` — engagement-survey product
+  domain skill: three-tier anonymity, HMAC pseudonyms (Z02), action
+  loop, manager view depth (avg + per-question + 6-pulse trend),
+  Z01-Z44 numbered amendments catalogue, DataFlow stale-cache
+  workaround (`cache_ttl=0` direct-SQL bypass).
+
+**Role-vs-capability gotcha (P49):** Arbor lets _any_ role be a
+manager via `Employee.reporting_manager_id`. Rajesh has `role=employee`
+and 7 direct reports. Don't gate the manager team page on
+`user.role === "employee"` — use the backend 403-catch instead. The
+only gate where role IS the predicate is `AdminGuard` (matches
+backend `require_role("owner", "hr_manager")` exactly).
 
 Standard live-verification protocol after any UX change:
 

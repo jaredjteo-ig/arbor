@@ -1977,3 +1977,372 @@ falling back, since these are usually <60s transient.
 **Pinned by:** none yet — runtime-only failure path. Worth adding a
 unit test that injects a synthetic 503 / 429 / timeout exception and
 asserts the user-facing copy.
+
+---
+
+## P49 — Permission predicate vs role proxy (engagement post-walk #69)
+
+**Problem:** A frontend page short-circuited the data fetch with
+`if (user.role === "employee") { setAccessDenied(true); return; }`
+to skip a 2-3s loading flicker before the backend's 403 arrived. The
+gate looked obvious — employees shouldn't see the manager team page.
+But Arbor's data model lets _any_ role be a manager via
+`reporting_manager_id`. Rajesh has `role=employee` and 7 direct
+reports. The optimisation locked him out of his own team aggregate.
+
+**Pattern:** permission gates must use the _actual_ permission
+predicate, not a proxy. Role is sometimes the predicate (admin pages)
+and sometimes a coincidence (manager pages). Distinguish:
+
+| Gate type           | Backend check                             | Frontend can predict?  |
+| ------------------- | ----------------------------------------- | ---------------------- |
+| **Role gate**       | `Depends(require_role("owner",...))`      | Yes — role IS the gate |
+| **Capability gate** | `if not employee.reporting_manager_id...` | No — needs round-trip  |
+| **Resource gate**   | `if resource.owner_id != user.id...`      | No — needs round-trip  |
+
+For role gates, frontend short-circuit is fine and matches the
+backend predicate exactly (use `AdminGuard`).
+
+For capability and resource gates, the only safe options are:
+
+1. **Default to backend round-trip** — accept the brief loading
+   state; let the 403/404 catch render the access-denied UI cleanly.
+   This is correct for most pages; the flicker is small.
+
+2. **Extend `/me` with capability flags** when the flicker hurts —
+   e.g. `has_reports: bool`, `assigned_project_ids: list[int]`.
+   Frontend then has a real predicate. Costs: bigger auth payload,
+   capability flags must stay synced with backend gates.
+
+```typescript
+// CORRECT: capability gate via 403-catch (no role short-circuit)
+useEffect(() => {
+  (async () => {
+    try {
+      const r = await api.getTeamAggregate();
+      setData(r);
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      if (status === 403 || status === 404) {
+        setAccessDenied(true); // backend is the source of truth
+      } else if (status !== 401) {
+        setError(err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  })();
+}, []);
+
+// WRONG: role-based pre-emption that lies for non-default cases
+if (user.role === "employee") {
+  setAccessDenied(true); // Wrong for employee-managers
+  return;
+}
+```
+
+**Anti-pattern check:** before adding a frontend role gate, ask "is
+the backend gate `require_role()` or something else?" If something
+else, the role check is a proxy and _will_ have edge cases.
+
+**Pinned by:** the partial-revert in commit 9b31337 — the original
+"fix" 5902866 broke Rajesh's manager view; the revert restored
+correct 403-catch behaviour. Worth a Playwright test that logs in as
+an employee-manager and asserts /engagement/team renders the team
+aggregate, not the access-denied copy.
+
+---
+
+## P50 — Privacy asymmetry: data subjects can re-identify their own pseudonymous data (engagement post-walk #73)
+
+**Problem:** the `/my-history` endpoint suppressed pseudonymous-tier
+submissions because pseudonymous responses zero out `employee_id` at
+submit. The naive `WHERE employee_id = current_employee` filter
+missed every pseudonymous row. The empty-state copy framed this as
+intentional ("Anonymous and pseudonymous responses do not show up
+in your history"). It was a credibility leak: Lily submitted six
+pulses and her own platform showed none of it back to her.
+
+**Pattern:** pseudonymity protects against _external_ re-
+identification (HR, attackers, third parties). The data subject
+already knows what she submitted — she generated it. Showing her
+own submissions back to her does not weaken HR-side pseudonymity
+because she has information HR doesn't (her own employee_id ↔
+pseudonym mapping).
+
+The implementation: for the data-subject view, compute her pseudonym
+per pseudonymous survey from the same secret, match on
+`employee_pseudonym`. HR cannot do this lookup — they don't know
+which employee_id to feed in. The asymmetry is the privacy
+guarantee.
+
+```python
+# Data subject's own history — recompute her pseudonym per survey:
+secret = engagement_pseudonym.get_or_create_company_secret(company_id)
+pseudonym_lookup: dict[int, str] = {}
+for survey in surveys.values():
+    if survey["anonymity_tier"] == "pseudonymous":
+        pseudonym_lookup[survey["id"]] = (
+            engagement_pseudonym.compute_pseudonym(
+                secret, employee_id, survey["id"]
+            )
+        )
+
+# Match own rows by pseudonym, not by employee_id:
+for r in rows:
+    tier = survey["anonymity_tier"]
+    if tier == "pseudonymous":
+        is_mine = (r["employee_pseudonym"] ==
+                   pseudonym_lookup.get(survey["id"]))
+    elif tier == "identified":
+        is_mine = (r["employee_id"] == employee_id)
+    else:  # anonymous — genuinely no trail
+        continue
+```
+
+**Suppress side-channel fields even from the data subject:** themes
+on pseudonymous responses might be visible elsewhere (manager
+dashboards, aggregate views). If she sees "your pseudonymous theme
+was 'manager'" and a manager also sees "growth ×6, manager ×4"
+from the same pulse, she becomes correlatable to anyone with both
+views. So return survey_name + submitted_at + tier badge, but NOT
+themes / scores / per-question content for pseudonymous submissions.
+
+**Anonymous tier stays hidden** — there's no trail to recover, by
+design. Don't synthesize one.
+
+**UI signal:** badge each entry with the tier so the data subject
+understands what HR sees vs what she sees. _"Pseudonymous (HR sees
+only your pseudonym)"_ is the right copy — explicit asymmetry.
+
+**Anti-pattern:** treating the data subject as an outsider to her
+own data. Privacy protects against unauthorised inference; the
+subject's own action records aren't an inference, they're the
+ground truth she generated.
+
+**Pinned by:** the `my_history` rewrite in 5902866. Worth a unit
+test: seed a pseudonymous survey, submit a response as employee X,
+assert `/my-history` returns the row tagged tier=pseudonymous with
+`themes` absent; assert `/my-history` for employee Y returns no row
+for that survey.
+
+---
+
+## P51 — Aggregate stats are necessary but not sufficient (engagement post-walk #72)
+
+**Problem:** the original manager team view showed three numbers:
+average Likert, response count, top theme tags. The buyer's reaction
+during the walk was "OK… so what should I _do_ with this?" The
+view didn't tell the manager which specific dimension was weakest
+or whether engagement was rising or falling.
+
+**Pattern:** any "team aggregate" view needs four axes minimum to
+become a decision tool:
+
+| Axis          | Question it answers | UI shape                    |
+| ------------- | ------------------- | --------------------------- |
+| Headline      | How are we?         | Avg + n                     |
+| Per-dimension | What's lowest?      | Sorted list with score bars |
+| Temporal      | Trend direction?    | Mini line chart + delta     |
+| Qualitative   | Why?                | Theme distribution          |
+
+Skip any one axis and the page degrades from "decision tool" to
+"curio." Per-dimension is usually the missing one because aggregates
+are easy to compute and per-dimension takes a question-id join.
+
+```python
+# Per-question breakdown — sort ascending so the worst surfaces first:
+by_q: dict[str, list[float]] = {}
+for r in submitted:
+    scores = json.loads(r.get("likert_scores") or "{}")
+    for qid, v in scores.items():
+        by_q.setdefault(qid, []).append(float(v))
+
+question_text_lookup = {
+    q["id"]: q["text"]
+    for sec in json.loads(survey["template_sections_snapshot"])
+    for q in sec.get("questions", [])
+}
+
+by_question = sorted(
+    [{
+        "question_id": qid,
+        "question_text": question_text_lookup.get(qid, qid),
+        "n": len(vals),
+        "avg": round(sum(vals) / len(vals), 2),
+    } for qid, vals in by_q.items() if vals],
+    key=lambda r: r["avg"],  # ascending — worst first
+)
+```
+
+```python
+# Trend — same scope rules per pulse, bounded to N most recent:
+def _compute_manager_trend(*, company_id, scope, manager_id,
+                           max_points=6) -> list[dict]:
+    closed = sorted(
+        [s for s in surveys
+         if s.get("closed_at") and s["anonymity_tier"] != "anonymous"],
+        key=lambda s: s["closed_at"], reverse=True,
+    )[:max_points]
+    points = []
+    for s in closed:
+        # ... apply same scope filter (pseudonym or employee_id) ...
+        if n < MIN_COHORT_SIZE: continue  # honour anonymity floor
+        points.append({"survey_id": ..., "n": n, "avg_likert": ...})
+    return list(reversed(points))  # oldest → newest for chart consumption
+```
+
+**Frontend rendering** — the per-question list uses red/amber/green
+score bars (`avg < 3` → rose, `< 4` → amber, else emerald) so the
+manager's eye finds the lowest score in <1s. The trend chart is a
+plain SVG (no chart lib dep) with circles at each point, a dashed
+neutral baseline at 3, and a +/- delta label below.
+
+**Anti-pattern:** shipping the headline-only view as P1, intending
+to add per-dimension and trend "later." Buyers form their judgment
+on first contact; a thin manager view reads as "this product
+wasn't built for me."
+
+**Pinned by:** new `by_question` and `trend` fields in the
+`/team/aggregate` response (5902866). Worth integration tests that
+launch 6 pulses, submit responses across n>=5 employees per pulse,
+and assert the manager response includes `by_question` sorted
+ascending and `trend` length 6.
+
+---
+
+## P52 — Demo seed realism: probability-weighted draws beat categorical buckets (engagement post-walk #74)
+
+**Problem:** the original engagement seed tagged 100% of low-scoring
+engineering ICs with both "growth" _and_ "manager" themes:
+
+```python
+# WRONG: every eng IC under target_avg<3.5 gets BOTH themes:
+if is_resigner or growth_avg < 3:
+    themes_for_response.append("growth")
+if dept.startswith("eng") and target_avg < 3.5:
+    themes_for_response.append("manager")
+```
+
+Result on the manager view: "growth ×7, manager ×7" for a 7-report
+team. Identical bin sizes — every manager who looked at it knew it
+was seed data, not real signal.
+
+**Pattern:** demo distributions must be probabilistic, not
+categorical, AND must include background variance:
+
+```python
+# RIGHT: probability-weighted draws + background themes
+if is_resigner:
+    growth_prob = 0.90
+elif dept.startswith("eng") and target_avg < 3.5:
+    growth_prob = 0.70
+elif dept.startswith("eng"):
+    growth_prob = 0.25
+else:
+    growth_prob = 0.08
+if rng.random() < growth_prob:
+    themes_for_response.append("growth")
+
+# Manager theme: 60% / 15% / 5% by same dept-band logic
+# Plus a background draw for variance:
+theme_roll = rng.random()
+if theme_roll < 0.15:
+    themes_for_response.append("workload")
+elif theme_roll < 0.25:
+    themes_for_response.append("recognition")
+elif theme_roll < 0.32:
+    themes_for_response.append("communication")
+elif theme_roll < 0.38:
+    themes_for_response.append("compensation")
+elif theme_roll < 0.42:
+    themes_for_response.append("autonomy")
+```
+
+After re-seed, the same 7-report team showed: growth ×6, manager ×4,
+compensation ×1, recognition ×1, communication ×1. Dominant signal
+preserved (growth + manager still leading) but with the texture a
+real distribution has.
+
+**Calibration heuristic:** for each demo theme/category, define
+three probability bands — _focal_ (the bucket the demo wants to
+showcase), _adjacent_ (neighbouring buckets that should appear
+sometimes), _background_ (everything else). Hit rates roughly
+70-90% / 15-30% / 5-10% feel real. Hit rates of 100% / 0% / 0%
+read as fake instantly.
+
+**Determinism:** seed `random.Random(seed_int)` so reproducible
+runs produce identical distributions. Don't use unseeded `rng` —
+demos that drift between resets confuse buyers.
+
+**Anti-pattern:** "make the killer demo signal obvious by tagging
+100% of the cohort with the focal theme." Buyers see the 100% and
+discount everything else.
+
+**Pinned by:** `scripts/backfill_demo_engagement_surveys.py`
+post-fix. Worth a snapshot test that runs the seed deterministically
+and asserts theme distribution falls within expected probability
+bands.
+
+---
+
+## P53 — Conditional explanatory copy must match rendered controls (engagement post-walk #67)
+
+**Problem:** the pseudonymous-tier privacy banner read:
+
+> _"Pseudonymous. Your name is hidden. Your responses across surveys
+> can be tracked as a trend, but never traced back to you. Free-text
+> comments may still be readable to HR — keep them general if you
+> want full privacy."_
+
+The Q12 template has no free-text question. The employee read a
+warning about a feature that wasn't there. Credibility leak: every
+mention of "free-text comments" on a form without one degraded the
+trust signal of the rest of the banner.
+
+**Pattern:** explanatory copy that mentions a feature must check
+the feature is actually rendered in the current context. Derive the
+copy from the actual controls, not from a hardcoded full-spectrum
+description.
+
+```typescript
+// Detect free-text from the rendered template:
+export function templateHasFreeText(sections: SurveySection[]): boolean {
+  return sections.some((s) =>
+    (s.questions ?? []).some(
+      (q) => q.type === "short_text" || q.type === "long_text",
+    ),
+  );
+}
+
+// Build copy with a conditional caveat:
+export function describeAnonymityTier(
+  tier: AnonymityTier,
+  hasFreeText: boolean = false,
+): string {
+  const freeTextCaveat = hasFreeText
+    ? " Free-text comments may still be readable to HR — keep them general if you want full privacy."
+    : "";
+  switch (tier) {
+    case "pseudonymous":
+      return `Your name is hidden. Your responses across surveys can be tracked as a trend, but never traced back to you.${freeTextCaveat}`;
+    // ...
+  }
+}
+```
+
+**Generalises to:** "Click here to download your file" (when there's
+no file), "Use the menu above" (when the menu is in a sidebar on
+mobile), "Tap the camera icon" (when the user is on web). Any copy
+that references a UI element must verify the element is present.
+
+**Anti-pattern:** hardcoded full-spectrum disclosure that covers
+every possible feature. Reads as legal boilerplate, not platform
+behaviour.
+
+**Pinned by:** `describeAnonymityTier(tier, hasFreeText)` signature
+
+- `templateHasFreeText` helper in
+  `apps/web/src/services/api/engagement.ts`. Worth a unit test that
+  asserts the caveat appears for templates with free-text and is
+  absent for Q12-only templates.
