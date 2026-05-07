@@ -16,6 +16,7 @@ import {
   engagementApi,
   parseSections,
   describeAnonymityTier,
+  templateHasFreeText,
   type RenderResponse,
   type SurveySection,
   type SurveyQuestion,
@@ -69,6 +70,13 @@ export default function RespondPage() {
     }
     return v === undefined || v === null;
   });
+  const totalRequired = requiredQuestions.length;
+  const answeredRequired = totalRequired - missingRequired.length;
+  const progressPct =
+    totalRequired === 0
+      ? 100
+      : Math.round((answeredRequired / totalRequired) * 100);
+  const hasFreeText = templateHasFreeText(sections);
 
   function setValue(qid: string, value: number | string | string[]) {
     setForm((prev) => ({ ...prev, [qid]: value }));
@@ -165,14 +173,31 @@ export default function RespondPage() {
       </h1>
 
       {/* Anonymity badge — Z41 revised copy */}
-      <AnonymityBadge tier={render.anonymity_tier} />
+      <AnonymityBadge tier={render.anonymity_tier} hasFreeText={hasFreeText} />
+
+      {totalRequired > 0 && (
+        <div className="mt-4" aria-live="polite">
+          <div className="flex items-center justify-between text-xs text-[var(--color-gray-500)] mb-1.5">
+            <span>
+              {answeredRequired} of {totalRequired} answered
+            </span>
+            <span>{progressPct}%</span>
+          </div>
+          <div className="h-1.5 w-full bg-[var(--color-gray-100)] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-rose-500 transition-all duration-200"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <form
         onSubmit={(e) => {
           e.preventDefault();
           submit();
         }}
-        className="space-y-8 mt-6"
+        className="space-y-8 mt-6 pb-32"
       >
         {sections.map((section, sIdx) => (
           <section
@@ -223,7 +248,13 @@ export default function RespondPage() {
   );
 }
 
-function AnonymityBadge({ tier }: { tier: AnonymityTier }) {
+function AnonymityBadge({
+  tier,
+  hasFreeText,
+}: {
+  tier: AnonymityTier;
+  hasFreeText: boolean;
+}) {
   const colourCls =
     tier === "identified"
       ? "bg-amber-50 border-amber-200 text-amber-900"
@@ -239,7 +270,7 @@ function AnonymityBadge({ tier }: { tier: AnonymityTier }) {
   return (
     <div role="note" className={`rounded-md border p-3 text-sm ${colourCls}`}>
       <span className="font-semibold">{label}.</span>{" "}
-      <span>{describeAnonymityTier(tier)}</span>
+      <span>{describeAnonymityTier(tier, hasFreeText)}</span>
     </div>
   );
 }

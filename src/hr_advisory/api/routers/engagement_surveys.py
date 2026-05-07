@@ -1384,54 +1384,101 @@ async def my_pending(
 async def my_history(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Submitted history — only surfaces identified-tier surveys.
+    """Submitted history.
 
-    Pseudonymous and anonymous responses are intentionally absent from
-    history (the user has no re-identifiable trail).
+    Identified surveys: full record (survey name + submitted_at + themes).
+    Pseudonymous surveys: survey name + submitted_at only — themes,
+        scores, and per-question content are suppressed because they
+        could correlate back to the respondent.
+    Anonymous surveys: still hidden — no re-identifiable trail exists.
+
+    Bug #73: pseudonymous tier zeros employee_id at submit, so the
+    naive employee_id lookup misses these rows entirely. We resolve them
+    by computing this employee's pseudonym for each pseudonymous survey
+    and matching on employee_pseudonym. Showing the employee her own
+    submission record does not weaken HR-side pseudonymity (HR still
+    sees only the pseudonym).
     """
     company_id = _resolve_company_id(current_user)
     user_id = int(current_user.get("sub", 0))
     employee = _resolve_employee_for_user(user_id, company_id)
     if not employee:
         return {"history": [], "count": 0}
+    employee_id = int(employee["id"])
 
-    # See my-pending — multi-key filter bug workaround.
     rows = dataflow_crud.list_records(
         "EngagementSurveyResponse",
         {"company_id": company_id},
         limit=2000,
         cache_ttl=0,
     )
-    submitted = [
-        r for r in rows
-        if int(r.get("employee_id") or 0) == int(employee["id"])
-        and r.get("submitted_at")
-        and not r.get("is_void")
-    ]
-    if not submitted:
-        return {"history": [], "count": 0}
-
     surveys = {
         int(s["id"]): s
         for s in dataflow_crud.list_records(
             "EngagementSurvey", {"company_id": company_id}, limit=500, cache_ttl=0
         )
     }
+
+    # Resolve this employee's pseudonym per pseudonymous survey so we can
+    # match the zeroed-employee_id rows back to her own submissions.
+    pseudonym_lookup: dict[int, str] = {}
+    secret: str | None = None
+    for survey in surveys.values():
+        tier = (survey.get("anonymity_tier") or "identified").strip()
+        if tier != "pseudonymous":
+            continue
+        if secret is None:
+            try:
+                secret = engagement_pseudonym.get_or_create_company_secret(
+                    company_id
+                )
+            except Exception:  # noqa: BLE001
+                break
+        pseudonym_lookup[int(survey["id"])] = (
+            engagement_pseudonym.compute_pseudonym(
+                secret, employee_id, int(survey["id"])
+            )
+        )
+
     out = []
-    for r in submitted:
-        survey = surveys.get(int(r.get("survey_id") or 0))
+    for r in rows:
+        if not r.get("submitted_at") or r.get("is_void"):
+            continue
+        survey_id = int(r.get("survey_id") or 0)
+        survey = surveys.get(survey_id)
         if not survey:
             continue
-        # Suppress non-identified tiers from history.
-        if (survey.get("anonymity_tier") or "identified") != "identified":
+        tier = (survey.get("anonymity_tier") or "identified").strip()
+
+        is_mine = False
+        if tier == "identified":
+            is_mine = int(r.get("employee_id") or 0) == employee_id
+        elif tier == "pseudonymous":
+            target_pseudonym = pseudonym_lookup.get(survey_id)
+            is_mine = (
+                target_pseudonym is not None
+                and (r.get("employee_pseudonym") or "") == target_pseudonym
+            )
+        # Anonymous: skip — no trail.
+
+        if not is_mine:
             continue
-        out.append({
+
+        entry = {
             "response_id": int(r["id"]),
-            "survey_id": int(survey["id"]),
+            "survey_id": survey_id,
             "survey_name": survey.get("name", ""),
+            "anonymity_tier": tier,
             "submitted_at": r.get("submitted_at"),
-            "themes": r.get("themes", ""),
-        })
+        }
+        # Themes only on identified — themes on pseudonymous responses
+        # could correlate the row back to the respondent if combined
+        # with side-channel knowledge.
+        if tier == "identified":
+            entry["themes"] = r.get("themes", "")
+        out.append(entry)
+
+    out.sort(key=lambda e: e["submitted_at"] or "", reverse=True)
     return {"history": out, "count": len(out)}
 
 
@@ -1900,6 +1947,99 @@ async def get_aggregate(
 # ──────────────────────────────────────────────────────────────────────
 
 
+def _compute_manager_trend(
+    *,
+    company_id: int,
+    scope: set[int],
+    manager_id: int,
+    max_points: int = 6,
+) -> list[dict]:
+    """Compute a 6-pulse mini trend for the manager's scope.
+
+    Returns oldest → newest list of points:
+      {"survey_id", "survey_name", "closed_at", "n", "avg_likert"}
+
+    Skips pulses where n < MIN_COHORT_SIZE (consistent with the latest-
+    pulse anonymity gate). Anonymous-tier surveys are skipped entirely.
+    """
+    surveys = dataflow_crud.list_records(
+        "EngagementSurvey", {"company_id": company_id}, limit=200, cache_ttl=0
+    )
+    closed = [
+        s for s in surveys
+        if s.get("closed_at")
+        and (s.get("anonymity_tier") or "identified").strip() != "anonymous"
+    ]
+    closed.sort(key=lambda s: s.get("closed_at") or "", reverse=True)
+    closed = closed[:max_points]
+
+    points: list[dict] = []
+    for s in closed:
+        sid = int(s["id"])
+        tier = (s.get("anonymity_tier") or "identified").strip()
+        rows = dataflow_crud.list_records(
+            "EngagementSurveyResponse",
+            {"survey_id": sid},
+            limit=5000,
+            cache_ttl=0,
+        )
+
+        if tier == "pseudonymous":
+            try:
+                secret = engagement_pseudonym.get_or_create_company_secret(
+                    company_id
+                )
+            except Exception:  # noqa: BLE001
+                continue
+            scope_pseudonyms = {
+                engagement_pseudonym.compute_pseudonym(secret, eid, sid)
+                for eid in scope
+            }
+            mgr_pseudonym = engagement_pseudonym.compute_pseudonym(
+                secret, manager_id, sid
+            )
+            submitted = [
+                r for r in rows
+                if r.get("submitted_at")
+                and not r.get("is_void")
+                and (r.get("employee_pseudonym") or "") in scope_pseudonyms
+                and (r.get("employee_pseudonym") or "") != mgr_pseudonym
+            ]
+        else:
+            submitted = [
+                r for r in rows
+                if r.get("submitted_at")
+                and not r.get("is_void")
+                and int(r.get("employee_id") or 0) in scope
+                and int(r.get("employee_id") or 0) != manager_id
+            ]
+
+        n = len(submitted)
+        if n < MIN_COHORT_SIZE:
+            continue
+
+        likerts: list[float] = []
+        for r in submitted:
+            try:
+                scores = json.loads(r.get("likert_scores") or "{}")
+                for v in scores.values():
+                    if isinstance(v, (int, float)):
+                        likerts.append(float(v))
+            except json.JSONDecodeError:
+                pass
+        avg = round(sum(likerts) / len(likerts), 2) if likerts else None
+        points.append({
+            "survey_id": sid,
+            "survey_name": s.get("name", ""),
+            "closed_at": s.get("closed_at"),
+            "n": n,
+            "avg_likert": avg,
+        })
+
+    points.reverse()  # oldest → newest for chart consumption
+    return points
+
+
 @router.get("/team/aggregate")
 async def get_team_aggregate(
     survey_id: int = 0,
@@ -2092,13 +2232,15 @@ async def get_team_aggregate(
 
     # n >= MIN_COHORT_SIZE: full aggregate.
     likerts: list[float] = []
+    by_q: dict[str, list[float]] = {}
     promoter = detractor = enps_n = 0
     for r in submitted:
         try:
             scores = json.loads(r.get("likert_scores") or "{}")
-            for v in scores.values():
+            for qid, v in scores.items():
                 if isinstance(v, (int, float)):
                     likerts.append(float(v))
+                    by_q.setdefault(qid, []).append(float(v))
         except json.JSONDecodeError:
             pass
         s = r.get("enps_score")
@@ -2113,6 +2255,45 @@ async def get_team_aggregate(
         round((promoter - detractor) * 100 / enps_n, 1) if enps_n else None
     )
 
+    # Per-question breakdown — let the manager see WHICH dimensions are
+    # weakest, not just the aggregate. Question text resolved from the
+    # template snapshot frozen on the survey at launch (Z03).
+    question_text_lookup: dict[str, str] = {}
+    try:
+        sections = json.loads(survey.get("template_sections_snapshot") or "[]")
+        for sec in sections:
+            for q in sec.get("questions", []) or []:
+                qid = q.get("id")
+                qtext = q.get("text")
+                if qid and qtext:
+                    question_text_lookup[str(qid)] = str(qtext)
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        pass
+    by_question = sorted(
+        (
+            {
+                "question_id": qid,
+                "question_text": question_text_lookup.get(qid, qid),
+                "n": len(vals),
+                "avg": round(sum(vals) / len(vals), 2),
+            }
+            for qid, vals in by_q.items()
+            if vals
+        ),
+        key=lambda r: r["avg"],  # ascending — lowest first surfaces problems
+    )
+
+    # 6-pulse mini trend for this manager's scope. Same Z26 self-exclusion,
+    # same pseudonym/identified scoping per pulse. Only Likert avg + n
+    # per pulse — no per-question, no themes (kept compact). Bounded to
+    # the 6 most recent closed surveys for this company.
+    trend_points = _compute_manager_trend(
+        company_id=company_id,
+        scope=scope,
+        manager_id=manager_id,
+        max_points=6,
+    )
+
     return {
         "is_visible": True,
         "is_limited": False,
@@ -2123,6 +2304,8 @@ async def get_team_aggregate(
         "avg_likert": avg,
         "enps_score": enps,
         "themes": [{"theme": k, "count": v} for k, v in themes_sorted[:10]],
+        "by_question": by_question,
+        "trend": trend_points,
     }
 
 

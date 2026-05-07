@@ -184,6 +184,21 @@ export interface TeamAggregate {
   avg_likert?: number | null;
   enps_score?: number | null;
   themes?: { theme: string; count: number }[];
+  /** Per-question avg breakdown (n>=5 only). Sorted ascending — lowest first. */
+  by_question?: {
+    question_id: string;
+    question_text: string;
+    n: number;
+    avg: number;
+  }[];
+  /** 6-pulse mini trend for the manager's scope, oldest → newest. */
+  trend?: {
+    survey_id: number;
+    survey_name: string;
+    closed_at: string | null;
+    n: number;
+    avg_likert: number | null;
+  }[];
 }
 
 export interface SuggestedActionsResponse {
@@ -239,6 +254,15 @@ export interface PendingResponse {
   survey_name: string;
   anonymity_tier: AnonymityTier;
   closes_at: string | null;
+}
+
+export interface HistoryEntry {
+  response_id: number;
+  survey_id: number;
+  survey_name: string;
+  anonymity_tier: AnonymityTier;
+  submitted_at: string | null;
+  themes?: string;
 }
 
 export interface RenderResponse {
@@ -428,7 +452,7 @@ export const engagementApi = {
       "/engagement-surveys/my-pending",
     ),
   myHistory: () =>
-    apiClient.get<{ history: PendingResponse[]; count: number }>(
+    apiClient.get<{ history: HistoryEntry[]; count: number }>(
       "/engagement-surveys/my-history",
     ),
   myLoopClosing: () =>
@@ -484,13 +508,27 @@ export function formatAnonymityTierLabel(tier: AnonymityTier): string {
   }
 }
 
-export function describeAnonymityTier(tier: AnonymityTier): string {
+export function describeAnonymityTier(
+  tier: AnonymityTier,
+  hasFreeText: boolean = false,
+): string {
+  const freeTextCaveat = hasFreeText
+    ? " Free-text comments may still be readable to HR — keep them general if you want full privacy."
+    : "";
   switch (tier) {
     case "identified":
       return "Your name will be visible to HR.";
     case "pseudonymous":
-      return "Your name is hidden. Your responses across surveys can be tracked as a trend, but never traced back to you. Free-text comments may still be readable to HR — keep them general if you want full privacy.";
+      return `Your name is hidden. Your responses across surveys can be tracked as a trend, but never traced back to you.${freeTextCaveat}`;
     case "anonymous":
-      return "Your name is hidden. No trend tracking. Free-text comments may still be readable to HR — keep them general if you want full privacy.";
+      return `Your name is hidden. No trend tracking.${freeTextCaveat}`;
   }
+}
+
+export function templateHasFreeText(sections: SurveySection[]): boolean {
+  return sections.some((s) =>
+    (s.questions ?? []).some(
+      (q) => q.type === "short_text" || q.type === "long_text",
+    ),
+  );
 }

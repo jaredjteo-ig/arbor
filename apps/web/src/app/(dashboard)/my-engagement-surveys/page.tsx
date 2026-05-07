@@ -23,6 +23,7 @@ import {
   engagementApi,
   type LoopClosingPayload,
   type PendingResponse,
+  type HistoryEntry,
 } from "@/services/api/engagement";
 
 export default function MyEngagementSurveysPage() {
@@ -30,7 +31,7 @@ export default function MyEngagementSurveysPage() {
     null,
   );
   const [pending, setPending] = useState<PendingResponse[]>([]);
-  const [history, setHistory] = useState<PendingResponse[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,19 +116,28 @@ export default function MyEngagementSurveysPage() {
           <div className="mt-3">
             {history.length === 0 ? (
               <div className="rounded-xl border border-dashed border-[var(--color-gray-200)] bg-white p-6 text-sm text-[var(--color-gray-500)]">
-                Your past responses appear here for surveys where your responses
-                were identified. Anonymous and pseudonymous responses do not
-                show up in your history.
+                Your past responses appear here once you submit. Anonymous
+                surveys are never shown — there&apos;s no trail back to you.
               </div>
             ) : (
               <div className="bg-white rounded-xl border border-[var(--color-gray-200)] divide-y divide-[var(--color-gray-100)]">
                 {history.map((h) => (
-                  <div key={h.response_id} className="p-4 text-sm">
-                    <div className="font-medium text-[var(--color-gray-900)]">
-                      {h.survey_name}
-                    </div>
-                    <div className="text-xs text-[var(--color-gray-500)] mt-0.5">
-                      {h.closes_at?.slice(0, 10)}
+                  <div
+                    key={h.response_id}
+                    className="p-4 text-sm flex items-start justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium text-[var(--color-gray-900)]">
+                        {h.survey_name}
+                      </div>
+                      <div className="text-xs text-[var(--color-gray-500)] mt-0.5">
+                        Submitted {h.submitted_at?.slice(0, 10) ?? "—"}
+                        {h.anonymity_tier === "pseudonymous" && (
+                          <span className="ml-2 text-blue-700">
+                            · Pseudonymous (HR sees only your pseudonym)
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

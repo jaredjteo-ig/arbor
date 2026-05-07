@@ -19,6 +19,7 @@ import {
   Minus,
 } from "lucide-react";
 import { AdminGuard } from "@/components/auth/AdminGuard";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   engagementApi,
   type EngagementSurvey,
@@ -36,6 +37,9 @@ import { Stat } from "@/components/engagement/Stat";
 type TabKey = "surveys" | "templates" | "cohorts";
 
 export default function EngagementPage() {
+  const { user } = useAuth();
+  const isAdmin = user !== null && user.role !== "employee";
+
   const [tab, setTab] = useState<TabKey>("surveys");
   const [trendCohort, setTrendCohort] = useState<string>("all");
   const [trend, setTrend] = useState<TrendPoint[]>([]);
@@ -60,7 +64,10 @@ export default function EngagementPage() {
       setTemplates(t.templates);
       setCohorts(c.cohorts);
     } catch (err) {
-      console.error("Failed to load engagement data", err);
+      const status = (err as { status?: number }).status;
+      if (status !== 403 && status !== 401) {
+        console.error("Failed to load engagement data", err);
+      }
     } finally {
       setLoading(false);
     }
@@ -72,7 +79,10 @@ export default function EngagementPage() {
       const r = await engagementApi.getTrend(cohort, 6);
       setTrend(r.points);
     } catch (err) {
-      console.error("Failed to load trend", err);
+      const status = (err as { status?: number }).status;
+      if (status !== 403 && status !== 401) {
+        console.error("Failed to load trend", err);
+      }
       setTrend([]);
     } finally {
       setTrendLoading(false);
@@ -80,12 +90,14 @@ export default function EngagementPage() {
   }
 
   useEffect(() => {
+    if (!isAdmin) return;
     refreshAll();
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
+    if (!isAdmin) return;
     refreshTrend(trendCohort);
-  }, [trendCohort]);
+  }, [trendCohort, isAdmin]);
 
   /* Build the cohort dropdown — All + departments derived from cohorts.
      Real department list would come from a separate endpoint; for v1

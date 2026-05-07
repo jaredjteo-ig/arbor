@@ -376,11 +376,50 @@ def run() -> None:
                     )
                     pseudo = _hmac_pseudonym(secret_v1, emp["id"], survey_id)
                     payload = {qid: v for qid, v in likert_scores.items()}
+
+                    # Bug #74: realistic theme spread. Previous logic
+                    # tagged 100% of low-scoring engineering ICs with
+                    # both "growth" and "manager", which read as seed
+                    # data, not real signal. Now: probability-weighted
+                    # draw with growth/manager dominant for eng under-
+                    # performers but other themes mixed in.
                     themes_for_response: list[str] = []
-                    if is_resigner or growth_avg < 3:
+                    theme_roll = rng.random()
+                    # Growth: 90% for resigners, 70% for eng<3.5,
+                    # 25% for eng 3.5-4, 8% for everyone else
+                    if is_resigner:
+                        growth_prob = 0.90
+                    elif dept.startswith("eng") and target_avg < 3.5:
+                        growth_prob = 0.70
+                    elif dept.startswith("eng"):
+                        growth_prob = 0.25
+                    else:
+                        growth_prob = 0.08
+                    if rng.random() < growth_prob:
                         themes_for_response.append("growth")
+                    # Manager: 60% for eng<3.5, 15% for eng 3.5-4, 5% other
                     if dept.startswith("eng") and target_avg < 3.5:
+                        mgr_prob = 0.60
+                    elif dept.startswith("eng"):
+                        mgr_prob = 0.15
+                    else:
+                        mgr_prob = 0.05
+                    if rng.random() < mgr_prob:
                         themes_for_response.append("manager")
+                    # Background themes — small but non-zero so the
+                    # tally has texture. Only one extra at most so the
+                    # signal remains growth+manager-dominated.
+                    if theme_roll < 0.15:
+                        themes_for_response.append("workload")
+                    elif theme_roll < 0.25:
+                        themes_for_response.append("recognition")
+                    elif theme_roll < 0.32:
+                        themes_for_response.append("communication")
+                    elif theme_roll < 0.38:
+                        themes_for_response.append("compensation")
+                    elif theme_roll < 0.42:
+                        themes_for_response.append("autonomy")
+
                     cohort_attrs = _build_response_attrs(emp)
 
                     cur.execute(
