@@ -12,24 +12,18 @@ import { useEffect, useState } from "react";
 import { Loader2, Users } from "lucide-react";
 import { engagementApi, type TeamAggregate } from "@/services/api/engagement";
 import { Stat } from "@/components/engagement/Stat";
-import { useAuth } from "@/contexts/AuthContext";
 
 export default function ManagerEngagementPage() {
-  const { user, isLoading: authLoading } = useAuth();
   const [data, setData] = useState<TeamAggregate | null>(null);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (authLoading) return;
-    /* Plain employees never have direct reports — short-circuit before
-       the network round-trip (Bug #69: removes 2-3s loading flicker). */
-    if (user && user.role === "employee") {
-      setAccessDenied(true);
-      setLoading(false);
-      return;
-    }
+    /* Bug #69: We can't short-circuit by role (anyone with role=employee
+       may still be a manager via reporting_manager_id). The 403-catch
+       below renders the access-denied copy cleanly — at the cost of a
+       brief loading flash for non-managers. That's the correct trade. */
     (async () => {
       try {
         const r = await engagementApi.getTeamAggregate();
@@ -45,7 +39,7 @@ export default function ManagerEngagementPage() {
         setLoading(false);
       }
     })();
-  }, [authLoading, user]);
+  }, []);
 
   /* 403/404 short-circuit — skip the loading spinner, show access-denied
      copy immediately. (Bug #69: previously flashed "Loading…" for 2-3s
