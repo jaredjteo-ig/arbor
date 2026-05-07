@@ -21,8 +21,8 @@ import { ManagementShowcase } from "@/components/management/ManagementShowcase";
 function ArborLogo() {
   return (
     <div className="flex items-center gap-2">
-      <div className="flex items-center justify-center rounded-lg bg-blue-600 text-white font-bold w-9 h-9 text-base">
-        C
+      <div className="flex items-center justify-center rounded-lg bg-blue-600 text-white font-bold w-9 h-9 text-sm tracking-tight">
+        HR
       </div>
       <span className="text-xl font-bold text-gray-900">Central</span>
     </div>
@@ -333,8 +333,8 @@ function LandingFooter() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2">
-            <div className="flex items-center justify-center rounded-lg bg-white/10 text-white font-bold w-8 h-8 text-sm">
-              C
+            <div className="flex items-center justify-center rounded-lg bg-white/10 text-white font-bold w-8 h-8 text-xs tracking-tight">
+              HR
             </div>
             <span className="text-white font-semibold">Central</span>
             <span className="text-sm text-gray-500 ml-2">

@@ -481,10 +481,10 @@ export function NavigationSidebar({
             className={clsx(
               "flex items-center justify-center rounded-lg",
               "bg-white/15 text-white font-bold shrink-0",
-              "w-8 h-8 text-sm",
+              "w-8 h-8 text-xs tracking-tight",
             )}
           >
-            C
+            HR
           </div>
           {!collapsed && (
             <span className="text-white font-semibold text-lg truncate">

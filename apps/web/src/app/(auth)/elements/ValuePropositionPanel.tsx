@@ -31,8 +31,8 @@ export function ValuePropositionPanel() {
       {/* Top: Logo + tagline */}
       <div>
         <div className="flex items-center gap-3 mb-2">
-          <div className="flex items-center justify-center rounded-lg border-2 border-white/30 bg-white/10 font-bold text-white w-11 h-11 text-lg">
-            C
+          <div className="flex items-center justify-center rounded-lg border-2 border-white/30 bg-white/10 font-bold text-white w-11 h-11 text-base tracking-tight">
+            HR
           </div>
           <span className="text-2xl font-bold text-white tracking-tight">
             Central

@@ -53,8 +53,8 @@ export default function LoginPage() {
       {/* Logo */}
       <div className="flex justify-center mb-6">
         <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center rounded-lg bg-[var(--color-primary)] text-white font-bold w-10 h-10 text-lg">
-            C
+          <div className="flex items-center justify-center rounded-lg bg-[var(--color-primary)] text-white font-bold w-10 h-10 text-base tracking-tight">
+            HR
           </div>
           <span className="text-xl font-bold text-[var(--color-primary)]">
             Central
