@@ -38,6 +38,7 @@ import {
   Briefcase,
   Sparkles,
   TrendingUp,
+  MessageSquareHeart,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -203,6 +204,13 @@ const adminManagementNavItems: NavItem[] = [
     icon: ClipboardCheck,
   },
   {
+    // M4 T40 (round-3): Engagement surveys — pulse, Q12, action loop.
+    labelKey: "nav.engagement",
+    label: "Engagement",
+    href: "/engagement",
+    icon: MessageSquareHeart,
+  },
+  {
     labelKey: "nav.projects",
     label: "Projects",
     href: "/projects",
@@ -366,6 +374,13 @@ const employeeCoreNavItems: NavItem[] = [
     label: "My Inventory",
     href: "/my-inventory",
     icon: Package,
+  },
+  {
+    // M5 T50: employee-facing engagement surveys
+    labelKey: "nav.my-engagement",
+    label: "My Engagement",
+    href: "/my-engagement-surveys",
+    icon: MessageSquareHeart,
   },
   {
     labelKey: "nav.advisory",

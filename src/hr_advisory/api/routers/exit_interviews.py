@@ -19,7 +19,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hr_advisory.api.middleware.auth_middleware import (
@@ -27,85 +26,73 @@ from hr_advisory.api.middleware.auth_middleware import (
     require_role,
 )
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
-from hr_advisory.config.settings import get_settings
+from hr_advisory.api.routers._survey_tokens import (
+    EXIT_TOKEN_AUDIENCE,
+    EXIT_TOKEN_EXPIRY_DAYS as _EXIT_TOKEN_EXPIRY_DAYS,
+    EXIT_TOKEN_KIND,
+    decode_token as _shared_decode_token,
+    make_token as _shared_make_token,
+)
 from hr_advisory.services import dataflow_crud
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Kept as module-level constants for backwards compatibility with
+# existing tests that grep for the literal string.
 EXIT_TOKEN_AUD = "arbor.exit-interview"
-EXIT_TOKEN_EXPIRY_DAYS = 30
+EXIT_TOKEN_EXPIRY_DAYS = _EXIT_TOKEN_EXPIRY_DAYS
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _settings():
-    return get_settings()
-
-
 def _make_token(interview_id: int, company_id: int) -> str:
-    s = _settings()
-    payload = {
-        "iss": "arbor",
-        "aud": EXIT_TOKEN_AUD,
-        "iat": int(datetime.now(timezone.utc).timestamp()),
-        "exp": int(
-            datetime.now(timezone.utc).timestamp()
-            + EXIT_TOKEN_EXPIRY_DAYS * 86400
-        ),
-        "ei": interview_id,
-        "co": company_id,
-    }
-    return jwt.encode(payload, s.jwt_secret_key, algorithm="HS256")
+    """Mint an exit-interview token. Thin wrapper over the shared helper."""
+    return _shared_make_token(
+        record_id=interview_id,
+        company_id=company_id,
+        kind=EXIT_TOKEN_KIND,
+        audience=EXIT_TOKEN_AUDIENCE,
+        expiry_days=EXIT_TOKEN_EXPIRY_DAYS,
+    )
 
 
 def _decode_token(token: str) -> dict:
-    s = _settings()
-    try:
-        return jwt.decode(
-            token,
-            s.jwt_secret_key,
-            algorithms=["HS256"],
-            audience=EXIT_TOKEN_AUD,
-        )
-    except jwt.ExpiredSignatureError as exc:
-        raise HTTPException(status_code=401, detail="Token expired.") from exc
-    except jwt.InvalidTokenError as exc:
-        raise HTTPException(status_code=401, detail="Invalid token.") from exc
+    """Decode an exit-interview token. Thin wrapper over the shared helper.
+
+    Uses the 30-day legacy grace (`legacy_default_kind=EXIT_TOKEN_KIND`) so
+    tokens minted before the kind-isolation rollout keep working.
+    """
+    return _shared_decode_token(
+        token,
+        expected_kind=EXIT_TOKEN_KIND,
+        expected_audience=EXIT_TOKEN_AUDIENCE,
+        legacy_default_kind=EXIT_TOKEN_KIND,
+    )
 
 
 def _theme_tags(payload: dict) -> list[str]:
-    """Lightweight, deterministic theme derivation.
+    """Exit-interview theme derivation. Thin wrapper over the shared helper.
 
-    Uses the multi-pick reasons (Q3) as the primary tag source plus a
-    keyword sweep over the free-text answers. No LLM call by default —
-    keeps cost predictable and is enough to drive the Themes view.
+    Generalised in M0 T05; the shared implementation lives at
+    `services.theme_tagger.derive_themes` and is also called by the
+    engagement-survey submit handler with a different set of keys.
+    Behaviour preserved for exit interviews: same Q3 reasons, same
+    free-text keys, same 6-theme map.
     """
-    tags: set[str] = set()
-    reasons = payload.get("q3_reasons") or []
-    if isinstance(reasons, list):
-        for r in reasons:
-            tags.add(str(r).strip().lower())
+    from hr_advisory.services.theme_tagger import derive_themes
 
-    text_blob = " ".join(
-        str(payload.get(k) or "")
-        for k in ("q4_what_worked", "q5_what_to_change", "q6_recommend_why")
-    ).lower()
-    keyword_map = {
-        "manager": ["manager", "boss", "supervisor"],
-        "comp": ["pay", "salary", "compensation", "bonus"],
-        "growth": ["growth", "promotion", "career"],
-        "workload": ["workload", "burnout", "overworked"],
-        "culture": ["culture", "environment"],
-        "role": ["role", "scope", "fit"],
-    }
-    for theme, kws in keyword_map.items():
-        if any(k in text_blob for k in kws):
-            tags.add(theme)
-
-    return sorted(tags)
+    return derive_themes(
+        payload,
+        reason_keys=("q3_reasons",),
+        free_text_keys=(
+            "q4_what_worked",
+            "q5_what_to_change",
+            "q6_recommend_why",
+        ),
+    )
 
 
 @router.post("/trigger")

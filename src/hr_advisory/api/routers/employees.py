@@ -3437,6 +3437,32 @@ async def process_employee_exit(
         },
     )
 
+    # --- 6a. Void any pending engagement-survey responses (T17 / C1) ---
+    # Z04: only pending responses are voided. Submitted responses stay
+    # in the aggregate (they were given while the employee was active).
+    try:
+        from hr_advisory.services.engagement_termination import (
+            void_pending_engagement_responses,
+        )
+        void_result = void_pending_engagement_responses(employee_id)
+        if void_result["voided"]:
+            logger.info(
+                "Voided %s pending engagement response(s) for terminated "
+                "employee %s",
+                void_result["voided"],
+                employee_id,
+            )
+    except Exception as exc:
+        # Non-blocking: a failed sweep is logged but doesn't abort the
+        # exit flow. The hourly cron tick (M8 T80) catches the survey
+        # at auto-close time as a backstop.
+        logger.warning(
+            "Engagement-response void on termination failed for "
+            "employee %s: %s",
+            employee_id,
+            exc,
+        )
+
     # --- 6b. Deactivate the User account and bump token_version for instant logout ---
     emp_user_id = emp.get("user_id")
     if emp_user_id:

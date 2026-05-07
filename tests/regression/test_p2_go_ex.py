@@ -85,7 +85,20 @@ def test_p2_ex_anonymous_redaction():
 
 @pytest.mark.regression
 def test_p2_ex_theme_keyword_keys():
-    """Theme derivation must cover the canonical bucket set."""
-    src = EXIT_ROUTER.read_text()
+    """Theme derivation must cover the canonical bucket set.
+
+    M0 T05 (round-3 engagement-survey foundations) generalised the
+    keyword sweep into `services/theme_tagger.py`. The exit-interview
+    `_theme_tags` calls into that module with the historical defaults.
+    Either file may host the literal theme strings.
+    """
+    from pathlib import Path
+    theme_tagger = Path("src/hr_advisory/services/theme_tagger.py")
+    combined = EXIT_ROUTER.read_text() + (
+        theme_tagger.read_text() if theme_tagger.exists() else ""
+    )
     for theme in ("manager", "comp", "growth", "workload", "culture", "role"):
-        assert f'"{theme}"' in src, f"Exit theme bucket {theme!r} dropped."
+        assert f'"{theme}"' in combined, (
+            f"Exit theme bucket {theme!r} dropped from both router and "
+            f"shared theme_tagger module."
+        )

@@ -53,6 +53,7 @@ from hr_advisory.api.routers import (
     settings_router,
     shadow_router,
     exit_interviews_router,
+    engagement_surveys_router,
     goals_router,
     recognition_router,
     shifts_router,
@@ -207,6 +208,11 @@ def _register_routers(app: Nexus) -> None:
         exit_interviews_router,
         prefix="/exit-interviews",
         tags=["Exit Interview"],
+    )
+    api.include_router(
+        engagement_surveys_router,
+        prefix="/engagement-surveys",
+        tags=["Engagement Surveys"],
     )
     api.include_router(claims_router, prefix="/claims", tags=["Claims"])
     api.include_router(attendance_router, prefix="/attendance", tags=["Attendance"])

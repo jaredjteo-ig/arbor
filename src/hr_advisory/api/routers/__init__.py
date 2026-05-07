@@ -38,6 +38,7 @@ from hr_advisory.api.routers.search import router as search_router
 from hr_advisory.api.routers.settings import router as settings_router
 from hr_advisory.api.routers.shadow import router as shadow_router
 from hr_advisory.api.routers.exit_interviews import router as exit_interviews_router
+from hr_advisory.api.routers.engagement_surveys import router as engagement_surveys_router
 from hr_advisory.api.routers.goals import router as goals_router
 from hr_advisory.api.routers.recognition import router as recognition_router
 from hr_advisory.api.routers.shifts import router as shifts_router
@@ -85,6 +86,7 @@ __all__ = [
     "settings_router",
     "shadow_router",
     "exit_interviews_router",
+    "engagement_surveys_router",
     "goals_router",
     "recognition_router",
     "shifts_router",

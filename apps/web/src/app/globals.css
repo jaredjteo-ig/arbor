@@ -56,6 +56,17 @@
   --color-error: #DC2626;
   --color-error-bg: #FEF2F2;
 
+  /* Module accents — engagement uses rose as a deliberate brand-accent
+     distinct from the primary navy. Tailwind's rose-* palette is the
+     source of truth; mirroring here as CSS vars (red-team C9). */
+  --color-engagement-50: #FFF1F2;
+  --color-engagement-100: #FFE4E6;
+  --color-engagement-200: #FECDD3;
+  --color-engagement-400: #FB7185;
+  --color-engagement-500: #F43F5E;
+  --color-engagement-600: #E11D48;
+  --color-engagement-700: #BE123C;
+
   /* Surfaces */
   --background: #F8FAFC;
   --foreground: #0F172A;

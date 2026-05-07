@@ -283,6 +283,15 @@ class Company:
     # match DataFlow's lack of native JSON arrays.
     team_photos_url: str = ""
     glassdoor_url: str = ""
+    # Engagement-survey HMAC pseudonym secret (round-3 / Z02 versioned).
+    # Lazy-generated on first launch of a pseudonymous engagement survey
+    # via services.engagement_pseudonym.get_or_create_company_secret.
+    # Stored encrypted at rest via security.encryption.encrypt_field.
+    # Versioned so rotation produces a new secret without invalidating
+    # historical pseudonyms (responses store pseudonym_version).
+    engagement_secret_v1: str = ""
+    engagement_secret_v2: str = ""
+    engagement_secret_active_version: int = 1
 
     __dataflow__ = {
         "multi_tenant": True,
@@ -336,6 +345,44 @@ class Conversation:
         "indexes": [
             {"name": "idx_conversation_user", "fields": ["user_id"]},
             {"name": "idx_conversation_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class Notification:
+    """In-app notification row for the unified notification feed.
+
+    Built in M0 T06 (round-3 engagement-survey foundations) to back
+    the engagement-pending fanout (Z10) on /my-dashboard. Generic
+    enough to absorb other in-app surfaces over time (claim-approved,
+    leave-decision, payslip-available, etc.) so we don't end up with
+    one table per surface.
+
+    `kind` is the discriminator. For engagement:
+      - `engagement_pending`   — created on launch, resolved on submit
+      - `engagement_reminder`  — created by reminder send (M8 T86)
+      - `engagement_action_accepted` — broadcast when HR accepts
+        an action that has the user's manager as goal owner
+    """
+
+    user_id: int
+    company_id: int
+    kind: str = ""           # discriminator — see docstring
+    title: str = ""
+    body: str = ""
+    link: str = ""           # in-app URL to open on click
+    actor_user_id: int = 0   # who triggered this (0 = system)
+    is_resolved: bool = False
+    resolved_at: Optional[datetime] = None
+    is_archived: bool = False
+    metadata_json: str = ""  # JSON blob for kind-specific payload
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_notification_user", "fields": ["user_id"]},
+            {"name": "idx_notification_user_kind", "fields": ["user_id", "kind"]},
+            {"name": "idx_notification_company", "fields": ["company_id"]},
         ],
     }
 
@@ -2778,7 +2825,9 @@ class OnboardingModule:
         "indexes": [
             {"name": "idx_onbmodule_template", "fields": ["template_id"]},
             {"name": "idx_onbmodule_company", "fields": ["company_id"]},
-            {"name": "idx_onbmodule_order", "fields": ["order"]},
+            # Field name fix: actual column is `sort_order`, not `order`
+            # (which is a reserved word and broke index creation).
+            {"name": "idx_onbmodule_order", "fields": ["sort_order"]},
         ],
     }
 
@@ -2803,7 +2852,9 @@ class OnboardingStep:
     __dataflow__ = {
         "indexes": [
             {"name": "idx_onbstep_module", "fields": ["module_id"]},
-            {"name": "idx_onbstep_order", "fields": ["order"]},
+            # Field name fix: actual column is `sort_order` (`order` is
+            # a reserved word and broke index creation).
+            {"name": "idx_onbstep_order", "fields": ["sort_order"]},
             {"name": "idx_onbstep_active", "fields": ["is_active"]},
         ],
     }
@@ -3276,6 +3327,268 @@ class ExitInterview:
         "indexes": [
             {"name": "idx_exit_company", "fields": ["company_id"]},
             {"name": "idx_exit_employee", "fields": ["employee_id"]},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Engagement Surveys (M1 — round-3 product revision)
+#
+# Six-model schema:
+#   EngagementSurveyTemplate    T10 — reusable question templates
+#   EngagementCohort            T11 — saved targeting filters
+#   EngagementSurvey            T12 — launched instance (template + cohort + window)
+#   EngagementSurveyResponse    T13 — per-employee response
+#   EngagementSurveySchedule    T14 — recurrence (P2 cron tick)
+#   EngagementAction            T17a (Z32) — accepted action loop
+#
+# Round-3 changes from the original M1 spec:
+#   - response_count column dropped (Z07 derive-on-read)
+#   - response_cohort_attributes added on responses (Z03)
+#   - pseudonym_version added on responses (Z02)
+#   - idempotency_key added on responses (Z08)
+#   - email_delivery_status on surveys (Z09 saga)
+#   - EngagementAction model added (Z32 action loop)
+#   - public-route fields irrelevant since engagement is in-app only
+# ---------------------------------------------------------------------------
+
+
+@db.model
+class EngagementSurveyTemplate:
+    """Reusable engagement-survey question template.
+
+    `sections` JSON shape mirrors `AppraisalTemplate.sections` so the
+    same React renderers serve both modules. See
+    `workspaces/engagement-survey/02-plans/01-data-model.md` for the
+    section/question schema.
+    """
+
+    company_id: int
+    name: str = ""
+    description: str = ""
+    methodology: str = "custom"  # custom | gallup_q12 | trust_index | pulse | enps
+    sections: str = ""  # JSON
+    is_archived: bool = False
+    created_by: int = 0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_estpl_company", "fields": ["company_id"]},
+            {"name": "idx_estpl_methodology", "fields": ["methodology"]},
+        ],
+    }
+
+
+@db.model
+class EngagementCohort:
+    """Saved targeting filter for engagement surveys.
+
+    `filter_spec` JSON validated by `services.cohort_resolver`. P1 UI
+    exposes only presets + ad-hoc list (M2 T22); the resolver supports
+    the full filter spec since v1 so saved cohorts created in P1 keep
+    resolving correctly when M8 T91 ships the full builder.
+    """
+
+    company_id: int
+    name: str = ""
+    description: str = ""
+    filter_spec: str = ""  # JSON
+    is_archived: bool = False
+    created_by: int = 0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_ecoh_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class EngagementSurvey:
+    """A launched engagement-survey instance — template + cohort + window.
+
+    Snapshots `template.sections` JSON at launch as
+    `template_sections_snapshot` (red-team C3) so post-launch template
+    edits don't corrupt aggregator output. Snapshots `cohort.filter_spec`
+    similarly.
+
+    `anonymity_tier` (round-3 / red-team C2):
+      - identified   — full employee_id stored; admin sees names
+      - pseudonymous — employee_id zeroed at submit; HMAC pseudonym stored
+      - anonymous    — employee_id zeroed; no pseudonym
+
+    Round-3 changes:
+      - `response_count` denormalised counter REMOVED (Z07). The detail
+        page derives it via `SELECT COUNT(*) FROM EngagementSurveyResponse
+        WHERE survey_id=? AND submitted_at IS NOT NULL AND is_void=False`.
+      - `email_delivery_status` added (Z09) for the saga partial-delivery
+        banner. Engagement v1 is in-app only so this stays "pending"
+        always at v1; field reserved for P2 reminder send.
+    """
+
+    company_id: int
+    template_id: int
+    template_sections_snapshot: str = ""  # JSON snapshot at launch (C3)
+    cohort_id: int = 0
+    cohort_filter_spec: str = ""  # JSON snapshot at launch
+    name: str = ""
+    anonymity_tier: str = "identified"  # identified | pseudonymous | anonymous
+    schedule_id: int = 0
+    launched_at: Optional[datetime] = None
+    closes_at: Optional[datetime] = None
+    closed_at: Optional[datetime] = None
+    target_count: int = 0
+    voided_count: int = 0  # responses voided after termination (C1)
+    consent_notice_version: str = ""  # PDPA — text shown to respondent (S1)
+    email_delivery_status: str = "pending"  # pending | partial | complete (Z09)
+    # D3 (red-team Phase 2): set when an admin opens the survey detail
+    # page. Drives the 3-state loop-closing card on the employee view:
+    #   - no closed pulse                    → card hidden
+    #   - closed + accepted action           → "HR did Y"
+    #   - closed + no action + viewed        → "HR is reviewing"
+    #   - closed + no action + not yet viewed → "HR has been notified"
+    last_viewed_by_admin_at: Optional[datetime] = None
+    is_archived: bool = False
+    created_by: int = 0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_esur_company", "fields": ["company_id"]},
+            {"name": "idx_esur_template", "fields": ["template_id"]},
+            {"name": "idx_esur_schedule", "fields": ["schedule_id"]},
+        ],
+    }
+
+
+@db.model
+class EngagementSurveyResponse:
+    """Per-employee response to a launched survey.
+
+    Created at launch as `pending` (submitted_at=None); filled in on
+    submit. The shape borrows from `ExitInterview` deliberately — the
+    submit handler is similar.
+
+    Anonymity behaviour at submit time per parent survey's `anonymity_tier`:
+      - identified   → keep employee_id; pseudonym=""; pseudonym_version=0
+      - pseudonymous → zero employee_id; pseudonym = HMAC(secret_vN,
+                       employee_id|survey_id); pseudonym_version=N
+      - anonymous    → zero employee_id; pseudonym=""; pseudonym_version=0
+
+    Round-3 / Z amendments folded in:
+      - `pseudonym_version` (Z02) — secret rotation tracking
+      - `response_cohort_attributes` (Z03) — JSON snapshot of department
+        / pass_type / tenure_band / manager_id_hashed at submit time,
+        BEFORE identity stripping. Aggregator uses this for by-cohort
+        breakdowns on pseudonymous and anonymous tiers without needing
+        a live Employee join.
+      - `idempotency_key` (Z08) — sha256(response_id + canonical_payload)
+        by default; replays return the prior response unchanged.
+      - `is_void` / `voided_at` (C1) — termination sweep.
+    """
+
+    company_id: int
+    survey_id: int
+    employee_id: int = 0  # 0 when anonymous/pseudonymous post-submit
+    employee_pseudonym: str = ""  # HMAC, set when tier=pseudonymous (C2)
+    pseudonym_version: int = 0  # Z02 — 0 = none, 1+ = matches secret_vN
+    survey_payload: str = ""  # JSON {q1: "...", q2: 4, q3: ["a","b"], ...}
+    likert_scores: str = ""  # JSON {q1: 4, q2: 5, ...} for fast aggregation
+    themes: str = ""  # JSON list ["manager", "growth"] derived after submit
+    enps_score: Optional[int] = None  # 0-10 if asked, None if not (m1)
+    response_cohort_attributes: str = ""  # JSON snapshot (Z03)
+    idempotency_key: str = ""  # Z08
+    submitted_at: Optional[datetime] = None
+    triggered_at: Optional[datetime] = None
+    consent_notice_version: str = ""  # echoes parent at submit (S1)
+    is_void: bool = False  # set True on termination mid-window (C1)
+    voided_at: Optional[datetime] = None
+    is_archived: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_esrsp_company", "fields": ["company_id"]},
+            {"name": "idx_esrsp_survey", "fields": ["survey_id"]},
+            {"name": "idx_esrsp_employee", "fields": ["employee_id"]},
+            {"name": "idx_esrsp_pseudonym", "fields": ["employee_pseudonym"]},
+            {"name": "idx_esrsp_idempotency", "fields": ["idempotency_key"]},
+        ],
+    }
+
+
+@db.model
+class EngagementSurveySchedule:
+    """Recurrence definition for engagement-survey pulses.
+
+    Cron tick (M8 T80) launches new EngagementSurvey rows when
+    `next_launch_at <= now()`. `last_skipped_at` set when overlap
+    protection triggers (round-1 redteam M2: skip launch if prior
+    survey is still open).
+    """
+
+    company_id: int
+    template_id: int
+    cohort_id: int
+    name: str = ""
+    cadence: str = "monthly"  # weekly | biweekly | monthly | quarterly
+    anonymity_tier: str = "pseudonymous"
+    next_launch_at: Optional[datetime] = None
+    last_launched_survey_id: int = 0
+    last_skipped_at: Optional[datetime] = None  # M2 round-1 redteam
+    open_window_days: int = 14
+    is_active: bool = True
+    created_by: int = 0
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_esch_company", "fields": ["company_id"]},
+            {"name": "idx_esch_active", "fields": ["is_active"]},
+        ],
+    }
+
+
+@db.model
+class EngagementAction:
+    """Action loop entry — Z32 (round-3 product revision).
+
+    Wires the 'survey → suggestion → accept → linked goal → next-pulse
+    measurement' loop. Without this, surveys measure pain without
+    relieving it.
+
+    Lifecycle:
+      proposed   — system-generated (M3 T36 suggested-actions)
+      accepted   — HR clicked Accept; optionally creates a linked Goal
+      rejected   — HR clicked Reject (kept for analytics)
+      done       — closed out manually OR auto-closed when next pulse
+                   shows improvement on the anchored question
+    """
+
+    company_id: int
+    survey_id: int  # parent survey the finding came from
+    cohort_label: str = ""  # e.g. "Engineering" or "" for company-wide
+    finding_summary: str = ""  # one-liner what the survey showed
+    suggested_action_text: str = ""  # the action text (AI or HR-typed)
+    # D4 (red-team Phase 2): explicit theme (growth / manager / comp /
+    # workload / culture / role / etc.) so loop-closing card lookup is
+    # exact-match instead of brittle substring search of finding_summary.
+    theme: str = ""
+    status: str = "proposed"  # proposed | accepted | rejected | done
+    linked_goal_id: int = 0  # 0 = no linked goal; otherwise points at Goals module
+    next_pulse_question: str = ""  # text to anchor in the next pulse
+    next_pulse_survey_id: int = 0  # the next pulse this measures against
+    resolved_at: Optional[datetime] = None
+    resolved_score_delta: Optional[float] = None  # set after next pulse closes
+    created_by: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_eaction_survey", "fields": ["survey_id"]},
+            {"name": "idx_eaction_status", "fields": ["status"]},
+            {"name": "idx_eaction_linked_goal", "fields": ["linked_goal_id"]},
+            {"name": "idx_eaction_company", "fields": ["company_id"]},
         ],
     }
 

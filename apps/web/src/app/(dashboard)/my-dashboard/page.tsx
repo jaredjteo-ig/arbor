@@ -582,6 +582,69 @@ function OnboardingProgressCard() {
 
 /* -- Page ---------------------------------------------------------- */
 
+/* ── M5 T52: Engagement pending card ────────────────────────── */
+
+function EngagementPendingCard() {
+  const [count, setCount] = useState<number>(0);
+  const [closesIn, setClosesIn] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { engagementApi } = await import("@/services/api/engagement");
+        const r = await engagementApi.myPending();
+        if (cancelled) return;
+        setCount(r.pending.length);
+        if (r.pending.length > 0) {
+          const earliest = r.pending
+            .map((p) => p.closes_at)
+            .filter((c): c is string => !!c)
+            .sort()[0];
+          if (earliest) {
+            const days = Math.max(
+              0,
+              Math.ceil((new Date(earliest).getTime() - Date.now()) / 86400000),
+            );
+            setClosesIn(days);
+          }
+        }
+      } catch {
+        /* employee may not have any pending; silent */
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!loaded || count === 0) return null;
+
+  return (
+    <Link
+      href="/my-engagement-surveys"
+      className="block rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 transition-colors p-4"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-medium text-rose-900">
+            {count} pending engagement check-in{count === 1 ? "" : "s"}
+          </p>
+          <p className="text-sm text-rose-700 mt-0.5">
+            Takes about 90 seconds
+            {closesIn !== null &&
+              ` · closes in ${closesIn} day${closesIn === 1 ? "" : "s"}`}
+          </p>
+        </div>
+        <ArrowRight className="h-5 w-5 text-rose-600 flex-shrink-0" />
+      </div>
+    </Link>
+  );
+}
+
 export default function MyDashboardPage() {
   const { user } = useAuth();
   const firstName = user?.name?.split(" ")[0] ?? null;
@@ -634,6 +697,9 @@ export default function MyDashboardPage() {
 
       {/* Pending policy acknowledgments nudge */}
       <PendingAcknowledgmentsBanner />
+
+      {/* M5 T52: pending engagement check-ins */}
+      <EngagementPendingCard />
 
       {/* Onboarding progress (shown only when in-progress) */}
       <OnboardingProgressCard />

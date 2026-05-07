@@ -1,0 +1,74 @@
+milestone: M0+M1+M2+M3+M4+M5+M6 + Phase-1 (B1-B7) + Phase-2 (D1-D4) + Phase-3 polish
+timestamp: 2026-05-07T00:00:00Z
+baseline_pass: 335
+baseline_fail: 0
+final_pass: 461
+final_fail: 0
+new_tests: 126
+regressions: 0
+typecheck_apps_web: pass
+
+Phase 3 polish shipped:
+
+C1 [HIGH] — Stat component extracted:
+  - apps/web/src/components/engagement/Stat.tsx (variant: plain | card)
+  - 3 inline definitions removed from /engagement/page.tsx,
+    /engagement/team/page.tsx, /engagement/surveys/[id]/page.tsx
+  - Detail page uses variant="card" (white card wrapper)
+  - Other two use variant="plain"
+
+C2 [HIGH] — Cross-tenant ad_hoc_employee_ids guard on launch:
+  - Extracted to _check_cross_tenant_ad_hoc_ids() helper
+  - Applied in BOTH cohort preview AND launch handlers
+  - Defense-in-depth — preview gates UI, launch gates the action
+
+C3 [HIGH] — CSRF allowlist via settings.cors_origins:
+  - _check_csrf_or_origin now compares against settings.cors_origins_list()
+  - Origin: null still rejected (sandboxed iframes, file://)
+  - Cross-origin Origin (e.g. attacker.com) now rejected
+  - Referer fallback when Origin missing
+  - Bearer-only callers (no Origin/Referer) still accepted
+
+C8 [MEDIUM] — Test state leak fix:
+  - test_submit_voided_response_returns_410 now launches its own
+    fresh survey instead of relying on the shared identified_survey
+    fixture. No more silent skip when test order changes.
+
+C9 [MEDIUM] — Color tokens for engagement module:
+  - Added --color-engagement-50/100/200/400/500/600/700 CSS vars
+    to globals.css mirroring Tailwind's rose-* palette
+  - Tailwind rose-* classes still in use (engagement is intentionally
+    accent-coloured); CSS vars now available for any non-Tailwind
+    consumer.
+
+C10 [MEDIUM] — email_delivery_status set on launch (Z09 saga shape):
+  - Compute partial-vs-complete from actual notification fanout count
+  - Persist on EngagementSurvey row
+  - Return delivery_status + delivered_count in launch response so
+    UI can surface "14/28 delivered, 14 retrying" banner
+
+4d [LOW] — Notification mark-resolved silent-swallow fix:
+  - submit_my_response's mark_resolved_by_link now logs warning on
+    failure instead of bare except: pass
+  - Submit itself still succeeds — only the badge-dismiss is best-effort
+
+F2.1 [LOW — doc only] — Multi-worker lock limitation comment:
+  - Documented why threading.Lock is adequate for single-process
+    deployments and what the Postgres advisory-lock migration looks
+    like when this scales to multi-worker uvicorn
+
+Files modified for Phase 3:
+  - apps/web/src/components/engagement/Stat.tsx (NEW)
+  - apps/web/src/app/(dashboard)/engagement/page.tsx (Stat import)
+  - apps/web/src/app/(dashboard)/engagement/team/page.tsx (Stat import)
+  - apps/web/src/app/(dashboard)/engagement/surveys/[id]/page.tsx (Stat import + variant="card")
+  - apps/web/src/app/globals.css (engagement-* CSS vars)
+  - src/hr_advisory/api/routers/engagement_surveys.py (C2, C3, C10, 4d, F2.1)
+  - tests/integration/test_engagement_surveys_m3.py (C8 fix)
+
+Skipped from Phase 3 (logged as P2 follow-ups):
+  - C4 idempotency-key header support (apiClient extension needed)
+  - C5 router split (1700-line file refactor; risky for single-tenant)
+  - C6 trend caching (perf optimization; single-tenant probably fine
+    at typical load)
+  - C7 manager:42 cohort filter in trend (rarely-used path; can ship)
