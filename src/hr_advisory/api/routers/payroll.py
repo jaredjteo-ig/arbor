@@ -3293,12 +3293,99 @@ async def export_payroll_run_to_xero(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Hash the payload before posting — included in the audit log so we
+    # can later prove exactly what was sent without storing line text.
+    import hashlib
+    import json as _json
+
+    payload_hash = hashlib.sha256(
+        _json.dumps(journal_data, sort_keys=True).encode()
+    ).hexdigest()
+    actor_id = int(current_user.get("sub", 0))
+
+    def _write_audit(
+        *,
+        journal_id: str,
+        status: str,
+        error_message: str = "",
+    ) -> None:
+        """Append an immutable XeroExportLog row. Best-effort — never
+        raises into the request path."""
+        try:
+            dataflow_crud.create(
+                "XeroExportLog",
+                {
+                    "company_id": company_id,
+                    "payroll_run_id": run_id,
+                    "journal_id": journal_id,
+                    "posted_at": datetime.now(timezone.utc).isoformat(),
+                    "actor_id": actor_id,
+                    "line_count": len(journal_data["lines"]),
+                    "payload_hash": payload_hash,
+                    "status": status,
+                    "error_message": error_message[:500],
+                    "bonus_total": bonus_total,
+                    "forced_reexport": force,
+                },
+            )
+        except Exception:
+            logger.exception(
+                "Failed to write XeroExportLog (run=%s)", run_id
+            )
+
+    # Stable Idempotency-Key — same key on retry returns the original
+    # response from Xero (24h dedupe window). Increments only on
+    # force=true so each forced re-export is genuinely new.
+    next_force_counter = (
+        int(run.get("xero_force_counter") or 0) + (1 if force else 0)
+    )
+    idempotency_key = (
+        f"xero-payroll:{company_id}:{run_id}:{next_force_counter}"
+    )
+
+    # If this is a forced re-export of a previously-posted run, void the
+    # prior Xero journal first. Otherwise the customer's books end up
+    # with two posted journals for the same payroll period — a real
+    # reconciliation problem. If void fails, abort the export so we
+    # never leave duplicates behind.
+    prior_journal_id = run.get("xero_journal_id") or ""
+    if force and prior_journal_id:
+        try:
+            await adapter.void_journal(str(company_id), prior_journal_id)
+        except XeroAPIError as exc:
+            logger.warning(
+                "Force-re-export aborted — could not void prior journal %s: %s",
+                prior_journal_id,
+                exc,
+            )
+            _write_audit(
+                journal_id=prior_journal_id,
+                status="FAILED",
+                error_message=f"void_failed: {exc}",
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Could not void the prior Xero journal "
+                    f"({prior_journal_id}). Re-export aborted to avoid "
+                    f"duplicate journals: {exc}"
+                ),
+            ) from exc
+        else:
+            _write_audit(
+                journal_id=prior_journal_id, status="VOIDED"
+            )
+
     try:
         result = await adapter.post_payroll_journal(
             str(company_id),
             journal_data,
+            idempotency_key=idempotency_key,
         )
     except XeroRateLimitError as exc:
+        _write_audit(
+            journal_id="", status="FAILED", error_message=f"rate_limit: {exc}"
+        )
         raise HTTPException(
             status_code=429,
             detail=f"Xero rate limit hit. Retry after {exc.retry_after}s.",
@@ -3307,12 +3394,18 @@ async def export_payroll_run_to_xero(
         logger.warning(
             "Xero rejected payroll journal for run %s: %s", run_id, exc
         )
+        _write_audit(
+            journal_id="", status="FAILED", error_message=str(exc)
+        )
         raise HTTPException(
             status_code=502,
             detail=f"Xero rejected the journal: {exc}",
         ) from exc
     except Exception as exc:
         logger.exception("Unexpected error posting Xero journal")
+        _write_audit(
+            journal_id="", status="FAILED", error_message=str(exc)
+        )
         raise HTTPException(
             status_code=502,
             detail=f"Failed to post journal to Xero: {exc}",
@@ -3326,8 +3419,10 @@ async def export_payroll_run_to_xero(
         {
             "xero_journal_id": journal_id,
             "xero_exported_at": now,
+            "xero_force_counter": next_force_counter,
         },
     )
+    _write_audit(journal_id=journal_id, status="POSTED")
 
     logger.info(
         "Exported payroll run %s to Xero as journal %s (company=%s)",

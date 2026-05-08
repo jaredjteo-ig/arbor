@@ -1214,3 +1214,242 @@ async def test_provider_connection(
         "message": f"No active connection found for {provider}. Please connect first.",
         "latency_ms": elapsed_ms,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Xero OAuth 2.0 — production round-trip
+# ──────────────────────────────────────────────────────────────────────
+#
+# The /{provider}/connect stub above predates real OAuth. These two
+# endpoints implement the actual round-trip:
+#
+#   1. Browser hits /integrations/xero/oauth/start (frontend POST)
+#      → backend builds the auth URL, signs a CSRF state value, and
+#        returns the URL. Frontend redirects.
+#   2. Xero redirects user back to /integrations/xero/oauth/callback
+#      → backend validates state, exchanges code for tokens via the
+#        adapter, persists the IntegrationToken row, and redirects the
+#        browser to /settings/integrations?xero=connected (or an org
+#        picker if multiple Xero orgs are connected).
+#
+# State is HMAC-signed using INTEGRATION_ENCRYPTION_KEY so it is
+# unforgeable, and binds to the user_id + company_id at the time of
+# /start. Without this, an attacker could trick a victim into
+# completing the flow on the attacker's Xero org, polluting audit
+# history. State entries are short-TTL (10 minutes).
+
+
+@router.get("/xero/oauth/start")
+async def xero_oauth_start(
+    request: Request,
+    current_user: dict = Depends(require_role("owner")),
+) -> dict:
+    """Begin the Xero OAuth 2.0 flow. Returns the authorization URL.
+
+    Frontend reads ``redirect_url`` and does ``window.location =
+    redirect_url`` (full-page navigation, not iframe — Xero's consent
+    screen blocks framing).
+    """
+    import hashlib
+    import hmac as _hmac
+    import json
+    import os
+    import secrets
+    import time
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"xero_oauth_start:{user_id}",
+        max_requests=10,
+        window_seconds=300,
+        action_name="Xero OAuth start",
+    )
+
+    key = os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").encode()
+    if not key:
+        raise HTTPException(
+            status_code=500,
+            detail="INTEGRATION_ENCRYPTION_KEY not configured on the server.",
+        )
+
+    redirect_uri = _build_xero_redirect_uri(request)
+
+    # Pack state: company_id + user_id + nonce + issued_at, HMAC-signed
+    # with INTEGRATION_ENCRYPTION_KEY. The callback verifies the HMAC
+    # and that issued_at is within the TTL window.
+    nonce = secrets.token_urlsafe(16)
+    payload = json.dumps(
+        {
+            "c": company_id,
+            "u": user_id,
+            "n": nonce,
+            "t": int(time.time()),
+        },
+        separators=(",", ":"),
+    )
+    sig = _hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
+    state = f"{payload}.{sig}"
+
+    from hr_advisory.mcp_servers.adapters.xero import get_xero_adapter
+
+    adapter = get_xero_adapter()
+    try:
+        # The adapter's get_authorization_url doesn't accept state, so
+        # we append it manually. The adapter URL already contains all
+        # other params (response_type, client_id, redirect_uri, scope).
+        base_url = adapter.get_authorization_url(
+            tenant_id=str(company_id), redirect_uri=redirect_uri
+        )
+    except ValueError as exc:
+        # Surfaces "XERO_CLIENT_ID not configured" with a useful 500.
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    import urllib.parse
+
+    auth_url = (
+        f"{base_url}&state={urllib.parse.quote(state, safe='')}"
+    )
+    return {"redirect_url": auth_url}
+
+
+@router.get("/xero/oauth/callback")
+async def xero_oauth_callback(
+    request: Request,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+):
+    """Receive the OAuth redirect from Xero, persist tokens, redirect.
+
+    No auth dependency — Xero hits this directly after the user clicks
+    Allow. We rely on the HMAC-signed state to identify the originating
+    Arbor user/company.
+    """
+    import hashlib
+    import hmac as _hmac
+    import json
+    import os
+    import time
+    import urllib.parse
+
+    from fastapi.responses import RedirectResponse
+
+    if error:
+        return RedirectResponse(
+            url=f"/settings/integrations?xero_error={urllib.parse.quote(error)}",
+            status_code=302,
+        )
+    if not code or not state:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing code or state in Xero callback.",
+        )
+
+    key = os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").encode()
+    if not key:
+        raise HTTPException(
+            status_code=500,
+            detail="INTEGRATION_ENCRYPTION_KEY not configured.",
+        )
+
+    payload, _, sig = state.rpartition(".")
+    if not payload or not sig:
+        raise HTTPException(status_code=400, detail="Malformed state.")
+
+    expected = _hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
+    if not _hmac.compare_digest(expected, sig):
+        logger.warning("Xero OAuth state HMAC mismatch")
+        raise HTTPException(status_code=403, detail="State signature invalid.")
+
+    try:
+        decoded = json.loads(payload)
+        company_id = int(decoded["c"])
+        user_id = int(decoded["u"])
+        issued_at = int(decoded["t"])
+    except (KeyError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Malformed state payload.") from exc
+
+    # 10-minute TTL on the state token. Long enough for a Xero consent
+    # round-trip, short enough that an exfiltrated state token is stale.
+    if time.time() - issued_at > 600:
+        raise HTTPException(status_code=403, detail="State expired.")
+
+    redirect_uri = _build_xero_redirect_uri(request)
+
+    from hr_advisory.mcp_servers.adapters.xero import (
+        XeroAPIError,
+        get_xero_adapter,
+    )
+    from hr_advisory.mcp_servers.auth.token_store import get_token_manager
+
+    adapter = get_xero_adapter()
+    try:
+        result = await adapter.handle_oauth_callback(
+            tenant_id=str(company_id),
+            code=code,
+            redirect_uri=redirect_uri,
+        )
+    except XeroAPIError as exc:
+        logger.warning("Xero token exchange failed: %s", exc)
+        return RedirectResponse(
+            url=f"/settings/integrations?xero_error={urllib.parse.quote('token_exchange_failed')}",
+            status_code=302,
+        )
+
+    # Re-fetch the token row and stamp xero_tenant_id + connected_by.
+    # (handle_oauth_callback already stored the tokens; we enrich with
+    # the org id and the actor for audit trail.)
+    manager = get_token_manager()
+    stored = manager.get_stored_token(str(company_id), "xero")
+    if stored is None:
+        raise HTTPException(
+            status_code=500, detail="Token storage failed unexpectedly."
+        )
+
+    # Re-store with the additional metadata. The persisted-token store
+    # does an upsert keyed on (tenant_id, provider) so this just enriches
+    # the existing active row.
+    manager.store_token(
+        str(company_id),
+        "xero",
+        {
+            "access_token": stored.access_token,
+            "refresh_token": stored.refresh_token,
+            "expires_in": int(stored.expires_at - time.time())
+            if stored.expires_at
+            else 1800,
+            "scope": " ".join(stored.scopes),
+            "xero_tenant_id": result.get("xero_tenant_id", ""),
+            "connected_by": user_id,
+        },
+    )
+
+    logger.info(
+        "Xero OAuth completed: company=%s, xero_tenant=%s",
+        company_id,
+        result.get("xero_tenant_id"),
+    )
+
+    return RedirectResponse(
+        url="/settings/integrations?xero=connected", status_code=302
+    )
+
+
+def _build_xero_redirect_uri(request: Request) -> str:
+    """Construct the absolute callback URL Xero will redirect to.
+
+    Honours ``XERO_OAUTH_REDIRECT_BASE_URL`` env var (set in production
+    to the public-facing domain) so the URL doesn't depend on the
+    incoming Host header. Falls back to the request's base URL for
+    local dev.
+    """
+    import os
+
+    base = os.environ.get("XERO_OAUTH_REDIRECT_BASE_URL", "").strip()
+    if not base:
+        base = str(request.base_url).rstrip("/")
+    return f"{base}/integrations/xero/oauth/callback"

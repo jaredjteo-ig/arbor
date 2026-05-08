@@ -187,6 +187,8 @@ class _FakeXeroAdapter:
     def __init__(self, connected: bool = True):
         self._connected = connected
         self.posted_journals: list[dict[str, Any]] = []
+        self.voided_journal_ids: list[str] = []
+        self.idempotency_keys: list[str] = []
 
     def is_connected(self, tenant_id: str) -> bool:
         return self._connected
@@ -195,9 +197,14 @@ class _FakeXeroAdapter:
         return list(_FAKE_XERO_CHART)
 
     async def post_payroll_journal(
-        self, tenant_id: str, journal_data: dict, xero_tenant_id=None
+        self,
+        tenant_id: str,
+        journal_data: dict,
+        xero_tenant_id=None,
+        idempotency_key=None,
     ) -> dict:
         self.posted_journals.append(journal_data)
+        self.idempotency_keys.append(idempotency_key or "")
         return {
             "journal_id": f"fake-mj-{len(self.posted_journals)}",
             "status": "POSTED",
@@ -206,6 +213,12 @@ class _FakeXeroAdapter:
             "line_count": len(journal_data.get("lines", [])),
             "provider": "xero",
         }
+
+    async def void_journal(
+        self, tenant_id: str, journal_id: str, xero_tenant_id=None
+    ) -> dict:
+        self.voided_journal_ids.append(journal_id)
+        return {"journal_id": journal_id, "status": "VOIDED", "provider": "xero"}
 
 
 @pytest.fixture
@@ -475,11 +488,12 @@ def test_export_force_overrides_duplicate_guard(
             json={"mapping": _full_mapping_payload()},
         )
 
-        client.post(
+        first = client.post(
             f"/payroll/runs/{approved_payroll_run['id']}/export-xero",
             headers=_auth(owner_token),
             json={},
         )
+        first_journal_id = first.json()["journal_id"]
         forced = client.post(
             f"/payroll/runs/{approved_payroll_run['id']}/export-xero",
             headers=_auth(owner_token),
@@ -487,4 +501,50 @@ def test_export_force_overrides_duplicate_guard(
         )
 
     assert forced.status_code == 200
-    assert len(fake.posted_journals) == 2  # both calls hit Xero
+    # Both forced and original POST hit Xero
+    assert len(fake.posted_journals) == 2
+    # Force-re-export voids the prior journal so the customer's books
+    # don't end up with two posted journals for the same payroll run.
+    assert fake.voided_journal_ids == [first_journal_id]
+    # Idempotency keys advance with the force counter so retries dedupe
+    # but a forced re-export is genuinely new.
+    assert fake.idempotency_keys[0].endswith(":0")
+    assert fake.idempotency_keys[1].endswith(":1")
+
+
+def test_export_writes_audit_log_row_on_success(
+    client, owner_token, approved_payroll_run, test_company
+):
+    """XeroExportLog row written for every successful export."""
+    fake = _FakeXeroAdapter(connected=True)
+    with patch(
+        "hr_advisory.mcp_servers.adapters.xero.get_xero_adapter",
+        return_value=fake,
+    ):
+        client.put(
+            "/payroll/xero/account-mapping",
+            headers=_auth(owner_token),
+            json={"mapping": _full_mapping_payload()},
+        )
+        client.post(
+            f"/payroll/runs/{approved_payroll_run['id']}/export-xero",
+            headers=_auth(owner_token),
+            json={"bonus_total": 250.0},
+        )
+
+    rows = dataflow_crud.list_records(
+        "XeroExportLog",
+        {
+            "company_id": test_company["company_id"],
+            "payroll_run_id": approved_payroll_run["id"],
+        },
+        cache_ttl=0,
+    )
+    assert len(rows) >= 1
+    posted_rows = [r for r in rows if r.get("status") == "POSTED"]
+    assert posted_rows, f"no POSTED row in {rows}"
+    log = posted_rows[-1]
+    assert log["journal_id"].startswith("fake-mj-")
+    assert log["payload_hash"]
+    assert log["bonus_total"] == 250.0
+    assert log["forced_reexport"] is False
