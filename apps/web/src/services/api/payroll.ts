@@ -401,11 +401,13 @@ export interface XeroStatusResponse {
   mapping_complete: boolean;
 }
 
+/** Backend normalizes Xero's `{Code, Name, Type, Status}` to lowercase. */
 export interface XeroAccount {
-  Code: string;
-  Name: string;
-  Type: string;
-  [key: string]: unknown;
+  account_id: string;
+  code: string;
+  name: string;
+  type: string;
+  status: string;
 }
 
 export interface XeroChartOfAccountsResponse {

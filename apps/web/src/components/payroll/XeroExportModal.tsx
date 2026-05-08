@@ -470,8 +470,8 @@ function BucketRow({
       >
         <option value="">— select Xero account —</option>
         {accounts.map((acc) => (
-          <option key={acc.Code} value={acc.Code}>
-            {acc.Code} · {acc.Name}
+          <option key={acc.code} value={acc.code}>
+            {acc.code} · {acc.name}
           </option>
         ))}
       </select>

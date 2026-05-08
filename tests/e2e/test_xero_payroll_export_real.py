@@ -235,7 +235,9 @@ def test_chart_of_accounts_returns_real_xero_shape(client, owner_token):
     # The auto-matcher relies on Code, Name, Type. Confirm at least one
     # account has the canonical shape.
     sample = accounts[0]
-    assert "Code" in sample and "Name" in sample, (
+    # Adapter normalizes Xero's {Code, Name, Type} to lowercase keys
+    # before returning. Confirm we see the normalized shape.
+    assert "code" in sample and "name" in sample, (
         f"Unexpected Xero account shape: {sample}"
     )
 
@@ -247,31 +249,46 @@ def _select_codes_for_e2e(accounts: list[dict]) -> dict[str, str]:
     Demo Company and reuse them across buckets. Xero accepts the same
     code on multiple lines as long as the journal balances, which is
     what we want for a sandbox smoke test.
+
+    Uses lowercase keys because XeroAdapter.get_chart_of_accounts
+    normalizes the {Code, Name, Type, Status} response to lowercase.
     """
-    expense = next(
-        (a for a in accounts if a.get("Type") in ("EXPENSE", "OVERHEADS", "DIRECTCOSTS")
-         and a.get("Status", "ACTIVE") == "ACTIVE"
-         and not a.get("SystemAccount")),
-        None,
-    )
-    liability = next(
-        (a for a in accounts if a.get("Type") in ("CURRLIAB", "LIABILITY")
-         and a.get("Status", "ACTIVE") == "ACTIVE"
-         and not a.get("SystemAccount")),
-        None,
-    )
+    def _usable(a: dict) -> bool:
+        # Xero system accounts (DEBTORS, CREDITORS, BANK, GST, …) reject
+        # ManualJournal posts with a ValidationException. Skip them.
+        return (
+            (a.get("status") or "ACTIVE").upper() == "ACTIVE"
+            and bool(a.get("code"))
+            and not a.get("system_account")
+        )
+
+    def _is_expense(a: dict) -> bool:
+        return _usable(a) and (a.get("type") or "").upper() in (
+            "EXPENSE",
+            "OVERHEADS",
+            "DIRECTCOSTS",
+        )
+
+    def _is_liability(a: dict) -> bool:
+        return _usable(a) and (a.get("type") or "").upper() in (
+            "CURRLIAB",
+            "LIABILITY",
+        )
+
+    expense = next((a for a in accounts if _is_expense(a)), None)
+    liability = next((a for a in accounts if _is_liability(a)), None)
     assert expense and liability, (
-        f"Demo Company missing expense/liability accounts. Got: "
-        f"{[(a.get('Code'), a.get('Type')) for a in accounts[:8]]}"
+        f"Demo Company missing expense/liability accounts. First 8: "
+        f"{[(a.get('code'), a.get('type')) for a in accounts[:8]]}"
     )
 
     return {
-        "salary_expense_code": expense["Code"],
-        "bonus_expense_code": expense["Code"],
-        "employer_cpf_expense_code": expense["Code"],
-        "sdl_expense_code": expense["Code"],
-        "cpf_payable_code": liability["Code"],
-        "net_pay_payable_code": liability["Code"],
+        "salary_expense_code": expense["code"],
+        "bonus_expense_code": expense["code"],
+        "employer_cpf_expense_code": expense["code"],
+        "sdl_expense_code": expense["code"],
+        "cpf_payable_code": liability["code"],
+        "net_pay_payable_code": liability["code"],
     }
 
 

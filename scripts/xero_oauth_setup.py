@@ -142,15 +142,23 @@ async def main() -> None:
     # store, which we won't use directly here.
     local_tenant = "xero-e2e-setup"
     state = secrets.token_urlsafe(16)
-    scopes = [
+    # Apps created after 2 March 2026 use granular scopes. The old
+    # broad ``accounting.transactions`` was split into per-endpoint
+    # scopes — ManualJournals lives at ``accounting.manualjournals``.
+    # Reference: https://developer.xero.com/documentation/guides/oauth2/scopes/
+    # Override at the CLI with ``--scopes "a b c"`` if you need to debug.
+    default_scopes = [
         "openid",
-        "profile",
-        "email",
-        "accounting.transactions",
-        "accounting.reports.read",
-        "accounting.settings.read",
         "offline_access",
+        "accounting.manualjournals",
+        "accounting.settings.read",
     ]
+    cli_scopes = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--scopes" and i + 1 < len(sys.argv):
+            cli_scopes = sys.argv[i + 1].split()
+    scopes = cli_scopes or default_scopes
+    print(f"Requesting scopes: {' '.join(scopes)}")
     auth_params = urllib.parse.urlencode(
         {
             "response_type": "code",

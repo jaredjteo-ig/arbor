@@ -98,6 +98,7 @@ class XeroAccount:
     code: str
     name: str
     type: str = ""
+    system_account: str = ""
 
     @classmethod
     def from_dict(cls, raw: dict) -> "XeroAccount":
@@ -105,6 +106,9 @@ class XeroAccount:
             code=str(raw.get("Code") or raw.get("code") or "").strip(),
             name=str(raw.get("Name") or raw.get("name") or "").strip(),
             type=str(raw.get("Type") or raw.get("type") or "").strip().upper(),
+            system_account=str(
+                raw.get("SystemAccount") or raw.get("system_account") or ""
+            ).strip(),
         )
 
 
@@ -139,6 +143,11 @@ def auto_match_accounts(
         for pattern in patterns:
             for account in parsed:
                 if not account.code or not account.name:
+                    continue
+                # Skip Xero system accounts (DEBTORS, CREDITORS, BANK,
+                # GST, etc.) — they reject ManualJournal posts with a
+                # ValidationException. Auto-match must not pick them.
+                if account.system_account:
                     continue
                 normalized_name = _normalize(account.name)
                 if pattern not in normalized_name:

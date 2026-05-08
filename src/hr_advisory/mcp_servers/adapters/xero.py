@@ -86,8 +86,24 @@ class XeroAdapter:
         # In-memory cache: {tenant_id: {"data": [...], "cached_at": float}}
         self._coa_cache: dict[str, dict[str, Any]] = {}
 
+        # Cache of Xero tenant id (org id) resolved per Arbor tenant. The
+        # connections endpoint is cheap but adds a round-trip we don't
+        # need to repeat for every API call.
+        self._xero_tenant_cache: dict[str, str] = {}
+
         # Daily call counter: {date_str: count}
         self._daily_calls: dict[str, int] = {}
+
+    async def _resolve_xero_tenant_id(
+        self, tenant_id: str, access_token: str
+    ) -> str:
+        """Return the cached or freshly-resolved Xero org id for a caller."""
+        cached = self._xero_tenant_cache.get(tenant_id)
+        if cached:
+            return cached
+        resolved = await self._get_xero_tenant_id(access_token)
+        self._xero_tenant_cache[tenant_id] = resolved
+        return resolved
 
     # ------------------------------------------------------------------
     # OAuth 2.0 flow
@@ -288,14 +304,23 @@ class XeroAdapter:
         if not access_token:
             raise XeroAPIError(401, "No valid Xero token. Re-authorization required.")
 
+        # All /api.xro/2.0/* endpoints require Xero-Tenant-Id. If the caller
+        # didn't supply one, resolve it from the connections endpoint and
+        # cache per (Arbor) tenant so we don't hit /connections on every
+        # call. NOTE: picks the first connected org — multi-org accounts
+        # need to surface a picker upstream and pass xero_tenant_id through.
+        if not xero_tenant_id:
+            xero_tenant_id = await self._resolve_xero_tenant_id(
+                tenant_id, access_token
+            )
+
         url = f"{XERO_API_BASE}{endpoint}"
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "Xero-Tenant-Id": xero_tenant_id,
         }
-        if xero_tenant_id:
-            headers["Xero-Tenant-Id"] = xero_tenant_id
 
         async def _do_request() -> dict:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -366,6 +391,10 @@ class XeroAdapter:
                 "tax_type": acc.get("TaxType", ""),
                 "description": acc.get("Description", ""),
                 "enable_payments": acc.get("EnablePaymentsToAccount", False),
+                # System accounts (Accounts Receivable/Payable, Bank, GST,
+                # etc.) reject manual journals with ValidationException.
+                # Surface this so callers / auto-match can filter them.
+                "system_account": acc.get("SystemAccount", ""),
             }
             for acc in accounts
         ]
