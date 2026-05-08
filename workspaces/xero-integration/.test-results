@@ -1,31 +1,30 @@
-commit: f45d94638379ff0a4d225cc74e755677e7df4e70 (baseline before M2)
-timestamp: 2026-05-08T07:30:00Z
-phase: M2 — Day-2 Robustness
-baseline_pass: 45
-baseline_fail: 0 (excluded e2e — needs fresh OAuth tokens; pre-existing)
-final_pass: 51
+commit: ad86caf371449db48f1ee3276c21bbc92a81e746 (baseline before M3+M4)
+timestamp: 2026-05-08T08:00:00Z
+phase: M3 — Polish + Operational Maturity / M4 — Docs + Listings
+baseline_pass: 51
+baseline_fail: 0 (excluded e2e — pre-existing rotated-token state)
+final_pass: 53
 final_fail: 0
-new_tests: 6
-  - 1 unit (large-payroll Decimal balance invariant)
-  - 3 unit (scope-mismatch detection: passes / raises with missing list / unknown feature noop)
-  - 2 integration (void clears journal id + audits; void rejects no-journal run)
+new_tests: 2
+  - 1 unit (xero_log_event grep-friendly format + dropped empty values)
+  - 1 unit (xero_log_event WARNING for outcome=failure)
 regressions: 0
 command: pytest tests/{unit/test_xero_*,integration/test_xero_*,regression/test_xero_*} --timeout=60 -q
 ts_check: 0 errors
 
-m2_completed_in_session:
-  - M2-T03 Decimal arithmetic in journal builder (ROUND_HALF_UP, prec=28)
-  - M2-T04 Per-Xero-org rate-limit key (xero_org:{tenant_id}, not company_id)
-  - M2-T11 X-DayLimit-Remaining / X-MinLimit-Remaining warnings in logs
-  - M2-T05 bonus_total auto-derived from PayslipItem (with override + drift warning)
-  - M2-T08 XeroScopeMissing typed error + assert_xero_scopes guard at call sites
-  - M2-T01 POST /payroll/runs/{id}/void-xero-export + Void button on run detail
-  - M2-T02 Settings → Integrations → Xero mapping page (mapping form, refresh,
-           disconnect, mapping-health banner, "Manage" link from integrations card)
-  - M2-T09 Account-code typeahead (filter by code OR name) replaces dropdown
-  - M2-T07 GET /payroll/runs/{id}/xero-export-status; status badge for FAILED / VOIDED
-  - M2-T06 Disconnect UX paths documented (user, Xero-side revoke, refresh expiry)
-  - M2-T10 Reversal date semantics documented (void preserves original date)
-  - M2-T12 Cross-currency deferred (documented in service module docstring)
+m3_completed_in_session:
+  - M3-T01 xero_log_event helper + structured fields at all key call sites
+  - M3-T05 GET /integrations/xero/test endpoint + Settings card uses it for Xero
+  - M3-T03 XeroAccountMappingHistory model + diff-on-PUT writes + GET endpoint
+  - M3-T04 POST /payroll/runs/bulk-export-xero (cap 24, advisory lock per run)
+  - M3-T02 GET /payroll/xero/operations-summary + alerting thresholds in runbook
+  - M3-T06 lib/telemetry.ts + track() events on modal interactions
+  - M3-T07 QBO + Zoho adapter docstrings cross-reference Xero hardening pattern
 
-next: M3 — Polish + Operational Maturity (7 items) and/or M4 docs.
+m4_completed_in_session:
+  - M4-T01 /help/xero-integration page (in-app customer guide)
+  - M4-T02 deploy/runbooks/xero-support.md (Tier-1 support runbook)
+  - M4-T03 workspaces/xero-marketplace-listing/briefs/01-listing-brief.md
+  - M4-T04 02-plans/03-privacy-tos-deltas.md (privacy + ToS copy ready for legal)
+
+next: M0+M1+M2+M3+M4 all closed. Production deploy when ready.

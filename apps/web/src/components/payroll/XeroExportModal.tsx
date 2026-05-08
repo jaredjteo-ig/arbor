@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { toast, AppButton } from "@/components/design-system";
+import { track } from "@/lib/telemetry";
 import {
   useExportRunToXero,
   useSaveXeroMapping,
@@ -177,6 +178,10 @@ export function XeroExportModal({
   const blocked = !isConnected;
 
   async function handleSaveMapping() {
+    track("xero.mapping_saved", {
+      run_id: runId,
+      from_source: mapping.data?.source,
+    });
     try {
       await saveMapping.mutateAsync(draft);
       toast.success("Xero account mapping saved");
@@ -188,6 +193,12 @@ export function XeroExportModal({
   }
 
   async function handleExport() {
+    track("xero.export_attempted", {
+      run_id: runId,
+      mapping_changed: mappingChanged,
+      bonus_default_kept: bonusTotalEdit === null,
+      force_reexport: existingJournalId ? forceReexport : false,
+    });
     // Save mapping first if it changed — the export endpoint only reads
     // the persisted row, so we must persist before posting the journal.
     if (mappingChanged) {
@@ -215,11 +226,20 @@ export function XeroExportModal({
         narration: result.narration,
         date: result.date,
       });
+      track("xero.export_success", {
+        run_id: runId,
+        journal_id: result.journal_id,
+        line_count: result.line_count,
+      });
       toast.success("Posted to Xero");
       onExported?.();
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to export to Xero.";
+      track("xero.export_failure", {
+        run_id: runId,
+        error: message.slice(0, 200),
+      });
       toast.error(message);
     }
   }

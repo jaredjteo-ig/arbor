@@ -23,6 +23,46 @@ from hr_advisory.mcp_servers.resilience import check_rate_limit, get_circuit
 
 logger = logging.getLogger(__name__)
 
+
+def xero_log_event(event: str, **fields) -> None:
+    """Emit a structured log line for a Xero event.
+
+    Format: ``xero event=<name> k1=v1 k2=v2 ...`` — easy to grep
+    (``grep 'xero event=xero_export_post'``) and easy for log
+    aggregators to parse. Standard fields callers should include
+    when relevant:
+
+    - ``outcome``       — "success" / "failure" / "skipped"
+    - ``xero_status``   — Xero HTTP status code on failure
+    - ``tenant_id``     — Arbor company id (string)
+    - ``xero_tenant_id`` — Xero org id
+    - ``company_id``    — Arbor company id (numeric, for grep parity)
+    - ``run_id``        — PayrollRun id
+    - ``journal_id``    — Xero ManualJournalID
+    - ``latency_ms``    — round-trip time
+    - ``error``         — short human-readable error string
+    - ``feature``       — feature key for scope checks
+
+    None values and empty strings are dropped — keeps the log line
+    clean. The verbosity stays at INFO except for outcome=failure
+    which jumps to WARNING.
+    """
+    parts = [f"xero event={event}"]
+    for key, value in fields.items():
+        if value is None or value == "":
+            continue
+        # Whitespace in values would break naive grep — replace with _.
+        if isinstance(value, str) and " " in value:
+            parts.append(f"{key}={value.replace(' ', '_')}")
+        else:
+            parts.append(f"{key}={value}")
+    line = " ".join(parts)
+    if str(fields.get("outcome", "")).lower() == "failure":
+        logger.warning(line)
+    else:
+        logger.info(line)
+
+
 XERO_API_BASE = "https://api.xero.com/api.xro/2.0/"
 XERO_IDENTITY_URL = "https://identity.xero.com/connect/token"
 XERO_AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize"
@@ -371,10 +411,11 @@ class XeroAdapter:
                 # Refresh token is dead. Hard-disconnect so subsequent
                 # is_connected checks return False and the UI flips.
                 self._token_manager.revoke_token(tenant_id, PROVIDER_NAME)
-                logger.warning(
-                    "Xero refresh returned invalid_grant for tenant=%s — "
-                    "disconnected locally; user must reconnect.",
-                    tenant_id,
+                xero_log_event(
+                    "refresh_invalid_grant",
+                    outcome="failure",
+                    tenant_id=tenant_id,
+                    error="reauth_required",
                 )
                 raise XeroReauthRequired(
                     tenant_id, reason="refresh token expired or revoked"
@@ -555,10 +596,12 @@ class XeroAdapter:
                     self._token_manager.revoke_token(
                         tenant_id, PROVIDER_NAME
                     )
-                    logger.warning(
-                        "Xero 401 on %s for tenant=%s — disconnected; user must reconnect.",
-                        endpoint,
-                        tenant_id,
+                    xero_log_event(
+                        "api_401_auto_disconnect",
+                        outcome="failure",
+                        tenant_id=tenant_id,
+                        endpoint=endpoint,
+                        error="reauth_required",
                     )
                     raise XeroReauthRequired(
                         tenant_id,
@@ -748,11 +791,12 @@ class XeroAdapter:
         )
         journals = response.get("ManualJournals", [])
         status = journals[0].get("Status", "") if journals else ""
-        logger.info(
-            "Voided Xero ManualJournal %s for tenant=%s (status=%s)",
-            journal_id,
-            tenant_id,
-            status,
+        xero_log_event(
+            "void_journal",
+            outcome="success",
+            tenant_id=tenant_id,
+            journal_id=journal_id,
+            xero_status=status,
         )
         return {
             "journal_id": journal_id,
@@ -874,11 +918,12 @@ class XeroAdapter:
             "provider": PROVIDER_NAME,
         }
 
-        logger.info(
-            "Posted payroll journal to Xero: id=%s, lines=%d, tenant=%s",
-            result["journal_id"],
-            result["line_count"],
-            tenant_id,
+        xero_log_event(
+            "post_payroll_journal",
+            outcome="success",
+            tenant_id=tenant_id,
+            journal_id=result["journal_id"],
+            line_count=result["line_count"],
         )
         return result
 

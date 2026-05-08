@@ -1603,6 +1603,109 @@ async def xero_pending_orgs(token: str = "") -> dict:
     }
 
 
+@router.get("/xero/test")
+async def xero_test_connection(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Cheap diagnostic: hits Xero ``/connections`` and returns a
+    success/latency/tenant summary.
+
+    Used by the Settings → Integrations card "Test" button so users
+    can confirm the connection without committing data. Logs the
+    result via the structured ``xero_log_event`` helper so ops can
+    track test rates separately from real export rates.
+    """
+    import time as _time
+
+    from hr_advisory.mcp_servers.adapters.xero import (
+        XeroAPIError,
+        XeroReauthRequired,
+        get_xero_adapter,
+        xero_log_event,
+    )
+    from hr_advisory.mcp_servers.auth.token_store import get_token_manager
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    adapter = get_xero_adapter()
+    if not adapter.is_connected(str(company_id)):
+        return {
+            "success": False,
+            "message": "Xero is not connected.",
+            "latency_ms": 0,
+            "tenant_name": "",
+            "scopes": [],
+        }
+
+    manager = get_token_manager()
+    started = _time.perf_counter()
+    try:
+        token = await manager.refresh_if_expired(str(company_id), "xero")
+        if not token:
+            raise XeroReauthRequired(str(company_id), reason="no token")
+        connections = await adapter.list_xero_connections(token)
+    except XeroReauthRequired:
+        xero_log_event(
+            "test_connection",
+            outcome="failure",
+            company_id=company_id,
+            error="reauth_required",
+        )
+        return {
+            "success": False,
+            "message": "Connection expired. Reconnect Xero.",
+            "latency_ms": int((_time.perf_counter() - started) * 1000),
+            "tenant_name": "",
+            "scopes": [],
+        }
+    except XeroAPIError as exc:
+        xero_log_event(
+            "test_connection",
+            outcome="failure",
+            company_id=company_id,
+            xero_status=exc.status_code,
+            error=str(exc)[:80],
+        )
+        return {
+            "success": False,
+            "message": f"Xero returned {exc.status_code}: {exc.detail[:120]}",
+            "latency_ms": int((_time.perf_counter() - started) * 1000),
+            "tenant_name": "",
+            "scopes": [],
+        }
+
+    latency_ms = int((_time.perf_counter() - started) * 1000)
+
+    chosen_id = manager.get_xero_tenant_id(str(company_id))
+    chosen = next(
+        (c for c in connections if c.get("tenantId") == chosen_id),
+        connections[0] if connections else None,
+    )
+
+    stored = manager.get_stored_token(str(company_id), "xero")
+    scopes = stored.scopes if stored else []
+
+    xero_log_event(
+        "test_connection",
+        outcome="success",
+        company_id=company_id,
+        latency_ms=latency_ms,
+        connections_count=len(connections),
+    )
+    return {
+        "success": True,
+        "message": "Xero is reachable.",
+        "latency_ms": latency_ms,
+        "tenant_name": (chosen or {}).get("tenantName", ""),
+        "tenant_id": (chosen or {}).get("tenantId", ""),
+        "tenant_type": (chosen or {}).get("tenantType", ""),
+        "scopes": scopes,
+        "connection_count": len(connections),
+    }
+
+
 @router.post("/xero/disconnect")
 async def xero_disconnect(
     current_user: dict = Depends(require_role("owner")),

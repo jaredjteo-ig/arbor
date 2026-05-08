@@ -235,6 +235,29 @@ history.
 
 ---
 
+## 7b. Alerting thresholds (M3-T02)
+
+Pipe the structured `xero event=...` log lines (M3-T01) into your
+alerting tool (Slack, PagerDuty, whatever the project uses) with
+the following thresholds. The `xero_log_event` helper logs at
+WARNING when `outcome=failure` so a simple severity filter is
+enough.
+
+| Signal                                            | Threshold        | Action                                                      |
+| ------------------------------------------------- | ---------------- | ----------------------------------------------------------- |
+| `event=refresh_invalid_grant` count               | any              | Slack: customer must reconnect — do not page.               |
+| `event=api_401_auto_disconnect` count             | any              | Slack: same as above.                                       |
+| `event=post_payroll_journal outcome=failure` rate | > 10% per hour   | Page on-call — likely Xero outage or scope regression.      |
+| `event=*` HTTP 429 (rate-limit)                   | any in last hour | Slack: a customer is hitting Xero's per-org cap.            |
+| `event=test_connection outcome=failure` rate      | > 50% in 5 min   | Page — Xero side likely down.                               |
+| `event=export_run` zero successes in 24h          | n/a              | Daily check, not paging — confirms the integration is live. |
+
+The `GET /payroll/xero/operations-summary` endpoint exposes a
+rolling-24h breakdown per company (`by_status`, `success_rate`,
+`last_failure`). Wire your dashboard to this.
+
+---
+
 ## 8. Post-deploy monitoring (first 24h)
 
 Tail logs and grep for Xero-specific structured events:

@@ -271,6 +271,20 @@ function ProviderRow({
   const handleTest = async () => {
     setTesting(true);
     try {
+      // Xero gets a real diagnostic that hits the API. Other
+      // providers stay on the legacy stub for now.
+      if (config.id === "xero") {
+        const { integrationsApi } = await import("@/services/api/integrations");
+        const result = await integrationsApi.xeroTestConnection();
+        if (result.success) {
+          const tenant =
+            result.tenant_name || result.tenant_id || "your Xero org";
+          toast.success(`Xero reachable · ${tenant} · ${result.latency_ms}ms`);
+        } else {
+          toast.error(result.message || "Xero connection test failed.");
+        }
+        return;
+      }
       const result = await testConn.mutateAsync(config.id);
       if (result.success) {
         toast.success(

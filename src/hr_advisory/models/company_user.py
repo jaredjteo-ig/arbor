@@ -1781,6 +1781,30 @@ class XeroExportLog:
 
 
 @db.model
+class XeroAccountMappingHistory:
+    """Append-only history of mapping changes per company.
+
+    Written by the PUT account-mapping endpoint when any of the six
+    bucket codes changes. Lets us answer accountant queries like
+    "why did Salary Expense move from 477 to 478 between April and
+    May exports?" without forensic reconstruction (M3-T03).
+    """
+
+    company_id: int
+    field_name: str = ""  # e.g. "salary_expense_code"
+    previous_code: str = ""
+    new_code: str = ""
+    changed_by: int = 0
+    changed_at: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_xerohist_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
 class XeroAccountMapping:
     """Per-company mapping of payroll buckets to Xero account codes.
 

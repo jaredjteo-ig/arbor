@@ -5,6 +5,33 @@ and journal entry posting for payroll and claims.
 
 QBO API docs: https://developer.intuit.com/app/developer/qbo/docs
 Rate limits: 500 calls/min, 10 concurrent requests.
+
+Hardening status (M3-T07)
+-------------------------
+The Xero adapter is the reference template for production-ready
+accounting integrations. When this QBO path moves from "code
+exists" to "real customers using it", inherit the same checklist:
+
+- Persisted IntegrationToken row (scopes, qbo_realm_id, etc.).
+- Real OAuth start + callback endpoints with HMAC-signed state.
+- Multi-realm picker (QBO equivalent of Xero multi-org).
+- Audit log table + idempotency-key on POST.
+- Postgres advisory lock around the export endpoint (TOCTOU fix).
+- PDPA-compliant disconnect (revoke at QBO + hard-delete locally).
+- Refresh-token resilience (typed reauth exception, 401 auto-
+  disconnect, daily keepalive cron, ``invalid_grant`` handling).
+- CoA cache invalidation on archive/rename + mapping-health
+  endpoint.
+- Decimal arithmetic in the journal builder.
+- Per-realm rate limiting and near-limit warnings.
+- Mapping settings page with account-code typeahead.
+- Void/undo flow (QBO supports DELETE on JournalEntry).
+- Structured logging via an ``qbo_log_event`` helper.
+
+See ``workspaces/xero-integration/todos/completed/`` for the
+M0..M3 checklists. Each item there has a one-line description
+and acceptance criteria — adapt them per QBO's API conventions
+when prioritised.
 """
 
 from __future__ import annotations

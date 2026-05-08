@@ -409,4 +409,21 @@ export const integrationsApi = {
       "/integrations/xero/disconnect",
     );
   },
+
+  /**
+   * Live diagnostic — hits Xero /connections and reports
+   * success/latency/tenant info. M3-T05.
+   */
+  xeroTestConnection(): Promise<{
+    success: boolean;
+    message: string;
+    latency_ms: number;
+    tenant_name: string;
+    tenant_id?: string;
+    tenant_type?: string;
+    scopes: string[];
+    connection_count?: number;
+  }> {
+    return apiClient.get("/integrations/xero/test");
+  },
 };

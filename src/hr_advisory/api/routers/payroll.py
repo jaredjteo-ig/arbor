@@ -12,7 +12,7 @@ import math
 import re
 import uuid
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -3426,10 +3426,73 @@ async def put_xero_account_mapping(
             {"company_id": company_id, **payload},
         )
 
+    # Append-only change history (M3-T03). Only diff against the
+    # prior saved row — first-time saves have no history rows.
+    if existing:
+        for field in MAPPING_FIELDS:
+            previous = str(existing.get(field) or "").strip()
+            new = cleaned[field]
+            if previous != new:
+                try:
+                    dataflow_crud.create(
+                        "XeroAccountMappingHistory",
+                        {
+                            "company_id": company_id,
+                            "field_name": field,
+                            "previous_code": previous,
+                            "new_code": new,
+                            "changed_by": actor_id,
+                            "changed_at": now,
+                        },
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to write XeroAccountMappingHistory row "
+                        "(field=%s, company=%s)",
+                        field,
+                        company_id,
+                    )
+
     return {
         "mapping": cleaned,
         "complete": mapping_is_complete(cleaned),
         "last_updated_at": now,
+    }
+
+
+@router.get("/xero/mapping-history")
+async def get_xero_mapping_history(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Mapping change log for the current company (M3-T03).
+
+    Most recent first. Used by the settings page to surface "On
+    2026-04-15, Jared changed Salary Expense from 477 to 478"
+    entries so accountant questions can be answered without DB
+    forensics.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    rows = dataflow_crud.list_records(
+        "XeroAccountMappingHistory",
+        {"company_id": company_id},
+        cache_ttl=0,
+    )
+    rows.sort(key=lambda r: r.get("changed_at") or "", reverse=True)
+    return {
+        "history": [
+            {
+                "field_name": r.get("field_name"),
+                "previous_code": r.get("previous_code"),
+                "new_code": r.get("new_code"),
+                "changed_by": r.get("changed_by"),
+                "changed_at": r.get("changed_at"),
+            }
+            for r in rows[:100]  # cap to keep payload small
+        ],
+        "total": len(rows),
     }
 
 
@@ -3493,6 +3556,180 @@ async def export_payroll_run_to_xero(
         )
     finally:
         lock_ctx.__exit__(None, None, None)
+
+
+@router.get("/xero/operations-summary")
+async def xero_operations_summary(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Rolling-24h operations summary for the company.
+
+    Used by ops dashboards / alerting (M3-T02). Surfaces:
+    - export attempts and per-status counts (POSTED / FAILED / VOIDED)
+    - success rate
+    - most recent failure (with redacted error text)
+
+    Alerting thresholds documented in
+    ``deploy/xero-deployment-runbook.md``: refresh failure rate >5%/h,
+    export 4xx rate >10%/h, any 429 hit.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+
+    rows = dataflow_crud.list_records(
+        "XeroExportLog",
+        {"company_id": company_id},
+        cache_ttl=0,
+    )
+    recent = [r for r in rows if (r.get("posted_at") or "") >= cutoff]
+
+    by_status: dict[str, int] = {}
+    last_failure: dict | None = None
+    for r in recent:
+        status = str(r.get("status") or "").upper() or "UNKNOWN"
+        by_status[status] = by_status.get(status, 0) + 1
+        if status == "FAILED":
+            if (
+                last_failure is None
+                or (r.get("posted_at") or "")
+                > (last_failure.get("posted_at") or "")
+            ):
+                last_failure = r
+
+    total = sum(by_status.values())
+    posted = by_status.get("POSTED", 0)
+    success_rate = (posted / total) if total else 1.0
+
+    return {
+        "window_hours": 24,
+        "total_attempts": total,
+        "by_status": by_status,
+        "success_rate": round(success_rate, 4),
+        "last_failure": (
+            None
+            if last_failure is None
+            else {
+                "posted_at": last_failure.get("posted_at"),
+                "run_id": last_failure.get("payroll_run_id"),
+                "error_message": last_failure.get("error_message"),
+            }
+        ),
+    }
+
+
+@router.post("/runs/bulk-export-xero")
+async def bulk_export_runs_to_xero(
+    request: Request,
+    current_user: dict = Depends(require_role("owner")),
+) -> dict:
+    """Export multiple payroll runs to Xero in series (M3-T04).
+
+    Body: ``{run_ids: [int]}``. Processes runs one at a time to
+    respect Xero's per-org rate limits. A failure on one run does
+    not abort the batch — each result carries its own status so the
+    caller can show per-run feedback.
+
+    Use case: customer onboarding mid-year wants to backfill 6
+    months of journals instead of clicking Export per run.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    actor_id = int(current_user.get("sub", 0))
+    body = await request.json()
+    run_ids = body.get("run_ids") or []
+    if not isinstance(run_ids, list) or not run_ids:
+        raise HTTPException(
+            status_code=400, detail="run_ids must be a non-empty list of ids."
+        )
+    # Cap to avoid runaway long requests / rate-limit blowups.
+    if len(run_ids) > 24:
+        raise HTTPException(
+            status_code=400,
+            detail="Bulk export supports up to 24 runs at a time. Split the batch.",
+        )
+
+    check_rate_limit(
+        f"payroll_xero_bulk_export:{company_id}",
+        max_requests=4,
+        window_seconds=3600,
+        action_name="Xero bulk export",
+    )
+
+    results: list[dict] = []
+    for raw_id in run_ids:
+        try:
+            run_id = int(raw_id)
+        except (TypeError, ValueError):
+            results.append({"run_id": raw_id, "ok": False, "error": "invalid id"})
+            continue
+
+        # Take the per-run advisory lock so concurrent bulk requests
+        # don't race against each other. Skip the run with a 409
+        # result if we can't acquire — caller can retry.
+        try:
+            lock = _xero_export_lock(company_id, run_id)
+            lock.__enter__()
+        except _XeroExportInProgress:
+            results.append(
+                {
+                    "run_id": run_id,
+                    "ok": False,
+                    "status_code": 409,
+                    "error": "Another export in progress for this run.",
+                }
+            )
+            continue
+
+        try:
+            single_result = await _do_xero_export(
+                run_id=run_id,
+                request=request,
+                current_user=current_user,
+                company_id=company_id,
+            )
+            results.append(
+                {
+                    "run_id": run_id,
+                    "ok": True,
+                    "journal_id": single_result.get("journal_id", ""),
+                }
+            )
+        except HTTPException as exc:
+            results.append(
+                {
+                    "run_id": run_id,
+                    "ok": False,
+                    "status_code": exc.status_code,
+                    "error": (
+                        exc.detail
+                        if isinstance(exc.detail, str)
+                        else (exc.detail or {}).get("message", "error")
+                    ),
+                }
+            )
+        except Exception as exc:
+            logger.exception(
+                "Bulk export: unexpected error for run %s", run_id
+            )
+            results.append(
+                {"run_id": run_id, "ok": False, "error": str(exc)[:200]}
+            )
+        finally:
+            lock.__exit__(None, None, None)
+
+    success_count = sum(1 for r in results if r.get("ok"))
+    return {
+        "submitted": len(run_ids),
+        "succeeded": success_count,
+        "failed": len(run_ids) - success_count,
+        "results": results,
+        "actor_id": actor_id,
+    }
 
 
 @router.post("/runs/{run_id}/void-xero-export")
@@ -3878,6 +4115,18 @@ async def _do_xero_export(
         },
     )
     _write_audit(journal_id=journal_id, status="POSTED")
+    # Structured log for ops dashboards / alerting (M3-T01).
+    from hr_advisory.mcp_servers.adapters.xero import xero_log_event
+
+    xero_log_event(
+        "export_run",
+        outcome="success",
+        company_id=company_id,
+        run_id=run_id,
+        journal_id=journal_id,
+        line_count=len(journal_data["lines"]),
+        forced=force,
+    )
 
     logger.info(
         "Exported payroll run %s to Xero as journal %s (company=%s)",

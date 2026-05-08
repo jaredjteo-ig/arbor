@@ -6,6 +6,27 @@ and journal posting for payroll and claims.
 Zoho Books API docs: https://www.zoho.com/books/api/v3/
 Rate limits: 2,500 calls/day per organization.
 Aggressive caching required due to low daily limit.
+
+Hardening status (M3-T07)
+-------------------------
+The Xero adapter is the reference template. When this Zoho path
+moves from "code exists" to "real customers using it", inherit
+the same Phase-1 checklist (persisted tokens, real OAuth start +
+callback, audit log, idempotency, advisory lock, PDPA disconnect,
+refresh resilience, CoA invalidation, Decimal arithmetic, mapping
+settings page, void flow, structured logs).
+
+Zoho-specific differences to plan for:
+- Daily 2,500-call cap is tighter than Xero's 5,000 — the per-org
+  rate limiter (M2-T04 equivalent) and near-limit warnings
+  (M2-T11) carry more weight.
+- Zoho "organizations" are the per-tenant unit (their version of
+  Xero tenants).
+- Verify Zoho refresh-token idle expiry when prioritised; the
+  60-day cliff handling may not be needed.
+
+See ``workspaces/xero-integration/todos/completed/`` for the full
+M0..M3 checklist that Zoho inherits.
 """
 
 from __future__ import annotations

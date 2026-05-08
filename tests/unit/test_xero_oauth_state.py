@@ -95,6 +95,48 @@ def test_assert_xero_scopes_raises_with_missing_list():
         raise AssertionError("expected XeroScopeMissing")
 
 
+def test_xero_log_event_emits_grep_friendly_line(caplog):
+    """Operators grep ``xero event=...`` so the format matters.
+    Asserts: event prefix, ordered key=value pairs, empty values
+    dropped, whitespace replaced."""
+    import logging as _logging
+    from hr_advisory.mcp_servers.adapters.xero import xero_log_event
+
+    with caplog.at_level(_logging.INFO, logger="hr_advisory.mcp_servers.adapters.xero"):
+        xero_log_event(
+            "export_run",
+            outcome="success",
+            company_id=42,
+            journal_id="abc-def",
+            error="",  # empty → dropped
+            note="multi word value",  # whitespace → underscore
+        )
+    line = caplog.records[-1].message
+    assert line.startswith("xero event=export_run")
+    assert "outcome=success" in line
+    assert "company_id=42" in line
+    assert "journal_id=abc-def" in line
+    assert "error=" not in line
+    assert "note=multi_word_value" in line
+
+
+def test_xero_log_event_failure_logs_at_warning(caplog):
+    """outcome=failure should bump severity so operators can alert."""
+    import logging as _logging
+    from hr_advisory.mcp_servers.adapters.xero import xero_log_event
+
+    with caplog.at_level(_logging.INFO, logger="hr_advisory.mcp_servers.adapters.xero"):
+        xero_log_event(
+            "post_payroll_journal",
+            outcome="failure",
+            tenant_id="42",
+            xero_status=400,
+            error="account_invalid",
+        )
+    rec = caplog.records[-1]
+    assert rec.levelno == _logging.WARNING
+
+
 def test_assert_xero_scopes_unknown_feature_is_noop():
     from hr_advisory.mcp_servers.adapters.xero import assert_xero_scopes
 
