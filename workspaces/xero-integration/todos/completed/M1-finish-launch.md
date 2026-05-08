@@ -8,21 +8,33 @@ month-end and after a customer disconnects."
 
 ---
 
-## M1-T01 — User actions: Xero partner program + production secrets
+## M1-T01 — User actions: Xero partner program (deferred) + production secrets
 
-**Owner: Jared, not code.** These are wall-clock blockers, not
-implementation work.
+**Owner: Jared, not code.**
+
+**Update (2026-05-08):** Earlier framing as a 1-3 week calendar gate
+was wrong. Xero's partner-app program is **customer-evidence-gated**,
+not bureaucratic — you need 3+ active customer connections before
+they'll start the certification review, and ~10 happy customers for
+full app-store certification. Until then the dev/unverified app
+already covers production usage with two caveats: (a) hard cap of
+25 connections, and (b) customers see a "this app isn't yet
+certified by Xero" warning during OAuth that they can still proceed
+through.
+
+**So the actual sequence is: deploy first, onboard up to 25
+customers on the dev app, apply to the partner program once 3+
+real connections exist.**
 
 **Tasks:**
 
-1. Submit Xero partner-program app review at
-   https://developer.xero.com/partner/sign-up. Include:
-   - App name, description, support URL, privacy policy URL.
-   - Production redirect URI.
-   - Logo (256×256 PNG).
-   - Demo video or screenshot of the export flow.
-     Approval is calendar-gated (1-3 weeks). Until approved you're
-     capped at 25 connections and OAuth shows an "unverified" warning.
+1. **Defer** the partner-program application until 3+ paying
+   customers have connected and exported successfully. Submission
+   page when ready: https://developer.xero.com/documentation/xero-app-store/app-partner-guides/become-an-app-partner/.
+   The 9 certification checkpoints (scopes, error handling, data
+   integrity, taxes, mapping) are exactly what M0+M1 closes — passing
+   the review will be a paperwork exercise once we have customer
+   evidence.
 2. Generate and set production env vars on the GCP host (136.110.51.61):
    ```
    INTEGRATION_ENCRYPTION_KEY=<Fernet.generate_key().decode()>

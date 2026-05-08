@@ -38,6 +38,18 @@ MINUTE_LIMIT = 60
 COA_CACHE_TTL = 86400
 
 
+# Pull account codes out of a Xero "Account code 'X' is not a valid
+# code for this document." validation message. Xero may concatenate
+# multiple in one response; extract them all.
+import re as _re
+
+_OFFENDING_CODE_RE = _re.compile(r"[Aa]ccount code '([^']+)'")
+
+
+def _extract_offending_codes(detail: str) -> list[str]:
+    return list({m.group(1) for m in _OFFENDING_CODE_RE.finditer(detail or "")})
+
+
 class XeroRateLimitError(Exception):
     """Raised when Xero API rate limit is hit."""
 
@@ -53,6 +65,53 @@ class XeroAPIError(Exception):
         self.status_code = status_code
         self.detail = detail
         super().__init__(f"Xero API error {status_code}: {detail}")
+
+
+class XeroAccountInvalid(Exception):
+    """An account code in the request no longer exists or is archived.
+
+    Carries the offending code(s) so the API surface can include them
+    in the user-facing error and link to the mapping page. Also
+    triggers cache invalidation so the next chart-of-accounts fetch
+    pulls fresh data.
+    """
+
+    def __init__(
+        self,
+        tenant_id: str,
+        offending_codes: list[str],
+        detail: str = "",
+    ):
+        self.tenant_id = tenant_id
+        self.offending_codes = offending_codes
+        self.detail = detail
+        codes = ", ".join(offending_codes) if offending_codes else "(unknown)"
+        super().__init__(
+            f"Xero rejected account code(s) {codes} for tenant {tenant_id}: "
+            f"{detail or 'archived or no longer exists'}"
+        )
+
+
+class XeroReauthRequired(Exception):
+    """The customer's Xero connection needs the user to re-OAuth.
+
+    Raised when the refresh token returns ``invalid_grant`` (60-day
+    idle expiry, or revoked at source) and on persistent 401s after
+    refresh attempts. The token row is auto-disconnected before this
+    is raised so the UI status flips to "Disconnected" immediately.
+
+    Caller (export endpoint) should surface this as an HTTP 401 with
+    a ``reconnect_url`` payload so the frontend can render a
+    "Reconnect Xero" CTA instead of a generic auth error.
+    """
+
+    def __init__(self, tenant_id: str, reason: str = ""):
+        self.tenant_id = tenant_id
+        self.reason = reason
+        super().__init__(
+            f"Xero re-authorization required for tenant={tenant_id}: "
+            f"{reason or 'token expired or revoked'}"
+        )
 
 
 class XeroAdapter:
@@ -240,6 +299,10 @@ class XeroAdapter:
         """Refresh an expired Xero access token.
 
         Called automatically by ExternalTokenManager.refresh_if_expired().
+        On ``invalid_grant`` (refresh-token expired or revoked at
+        source) we hard-disconnect the local token row and raise
+        ``XeroReauthRequired`` so the user is prompted to reconnect
+        rather than seeing a silent failure.
         """
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
@@ -251,6 +314,19 @@ class XeroAdapter:
                 auth=(self._client_id, self._client_secret),
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
+
+            if response.status_code == 400 and "invalid_grant" in response.text:
+                # Refresh token is dead. Hard-disconnect so subsequent
+                # is_connected checks return False and the UI flips.
+                self._token_manager.revoke_token(tenant_id, PROVIDER_NAME)
+                logger.warning(
+                    "Xero refresh returned invalid_grant for tenant=%s — "
+                    "disconnected locally; user must reconnect.",
+                    tenant_id,
+                )
+                raise XeroReauthRequired(
+                    tenant_id, reason="refresh token expired or revoked"
+                )
 
             if response.status_code != 200:
                 raise XeroAPIError(response.status_code, response.text)
@@ -388,6 +464,24 @@ class XeroAdapter:
                     retry_after = int(response.headers.get("Retry-After", "60"))
                     raise XeroRateLimitError(retry_after=retry_after)
 
+                if response.status_code == 401:
+                    # Persistent 401 after a refresh attempt usually
+                    # means the user revoked Arbor's access at Xero's
+                    # side. Hard-disconnect locally so the UI status
+                    # flips, then signal reauth needed.
+                    self._token_manager.revoke_token(
+                        tenant_id, PROVIDER_NAME
+                    )
+                    logger.warning(
+                        "Xero 401 on %s for tenant=%s — disconnected; user must reconnect.",
+                        endpoint,
+                        tenant_id,
+                    )
+                    raise XeroReauthRequired(
+                        tenant_id,
+                        reason=f"401 from Xero on {endpoint}",
+                    )
+
                 if response.status_code >= 400:
                     raise XeroAPIError(response.status_code, response.text[:500])
 
@@ -458,6 +552,72 @@ class XeroAdapter:
     # ------------------------------------------------------------------
     # Post payroll journal
     # ------------------------------------------------------------------
+
+    async def revoke_at_source(
+        self, tenant_id: str, xero_tenant_id: Optional[str] = None
+    ) -> bool:
+        """Revoke Arbor's authorization at Xero.
+
+        Calls ``DELETE https://api.xero.com/connections/{id}`` so the
+        customer's Xero "Connected apps" list no longer shows Arbor
+        even after they disconnect on our side. PDPA-aligned: the
+        purpose has ended, so the OAuth grant is removed at source.
+
+        Returns True on success or 404 (already gone). Raises
+        ``XeroAPIError`` on any other failure so the caller can decide
+        whether to still hard-delete the local row.
+        """
+        access_token = await self._token_manager.refresh_if_expired(
+            tenant_id, PROVIDER_NAME
+        )
+        if not access_token:
+            # No valid token — nothing to revoke at Xero.
+            return False
+        if not xero_tenant_id:
+            xero_tenant_id = self._token_manager.get_xero_tenant_id(tenant_id)
+        if not xero_tenant_id:
+            # Token never got bound to a Xero org (mid-OAuth abort).
+            return False
+
+        # Need to find the connection_id (per /connections), which is a
+        # different id from the xero_tenant_id (org id). Each connection
+        # has both: ``id`` and ``tenantId``.
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                XERO_CONNECTIONS_URL,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+            )
+            if resp.status_code != 200:
+                raise XeroAPIError(resp.status_code, resp.text)
+            connections = resp.json() or []
+            target = next(
+                (
+                    c
+                    for c in connections
+                    if c.get("tenantId") == xero_tenant_id
+                ),
+                None,
+            )
+            if target is None:
+                # Already gone (revoked from Xero side).
+                return True
+            connection_id = target.get("id", "")
+            if not connection_id:
+                return False
+
+            del_resp = await client.delete(
+                f"{XERO_CONNECTIONS_URL}/{connection_id}",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/json",
+                },
+            )
+            if del_resp.status_code in (204, 200, 404):
+                return True
+            raise XeroAPIError(del_resp.status_code, del_resp.text)
 
     async def void_journal(
         self,
@@ -578,14 +738,38 @@ class XeroAdapter:
             ]
         }
 
-        response = await self._api_call(
-            tenant_id=tenant_id,
-            method="POST",
-            endpoint="ManualJournals",
-            xero_tenant_id=xero_tenant_id,
-            json_data=payload,
-            idempotency_key=idempotency_key,
-        )
+        try:
+            response = await self._api_call(
+                tenant_id=tenant_id,
+                method="POST",
+                endpoint="ManualJournals",
+                xero_tenant_id=xero_tenant_id,
+                json_data=payload,
+                idempotency_key=idempotency_key,
+            )
+        except XeroAPIError as exc:
+            # Detect "account code N is not valid" — this happens when
+            # a mapped account has been archived or renamed in Xero
+            # since our cache was populated. Invalidate the cache and
+            # raise a typed error with the offending codes so callers
+            # can surface a clear "update your mapping" message rather
+            # than a generic 502.
+            if exc.status_code == 400 and (
+                "is not a valid code" in exc.detail
+                or "AccountID could not be found" in exc.detail
+            ):
+                self._coa_cache.pop(tenant_id, None)
+                offending = _extract_offending_codes(exc.detail)
+                logger.warning(
+                    "Xero rejected account code(s) %s for tenant=%s — "
+                    "invalidated CoA cache",
+                    offending,
+                    tenant_id,
+                )
+                raise XeroAccountInvalid(
+                    tenant_id, offending, detail=exc.detail
+                ) from exc
+            raise
 
         journals = response.get("ManualJournals", [])
         if not journals:

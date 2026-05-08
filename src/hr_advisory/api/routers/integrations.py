@@ -1603,6 +1603,54 @@ async def xero_pending_orgs(token: str = "") -> dict:
     }
 
 
+@router.post("/xero/disconnect")
+async def xero_disconnect(
+    current_user: dict = Depends(require_role("owner")),
+) -> dict:
+    """Disconnect Xero — revoke at source AND hard-delete locally.
+
+    PDPA-aligned: the purpose of holding the OAuth tokens has ended,
+    so we remove them rather than soft-deleting forever. Best-effort
+    on the Xero side (network errors don't block the local delete);
+    the customer's books are already safe because the export endpoint
+    won't fire without an active row.
+    """
+    from hr_advisory.mcp_servers.adapters.xero import (
+        XeroAPIError,
+        get_xero_adapter,
+    )
+    from hr_advisory.mcp_servers.auth.token_store import get_token_manager
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    adapter = get_xero_adapter()
+    revoked = False
+    try:
+        revoked = await adapter.revoke_at_source(str(company_id))
+    except XeroAPIError as exc:
+        # Don't block local disconnect on Xero-side failure — the
+        # customer asked to disconnect; honour it locally and surface
+        # the upstream error in logs for follow-up.
+        logger.warning(
+            "Xero revoke failed for company=%s: %s — proceeding with local delete",
+            company_id,
+            exc,
+        )
+
+    manager = get_token_manager()
+    deleted = manager.hard_delete(str(company_id), "xero")
+
+    logger.info(
+        "Xero disconnect: company=%s, revoked_at_xero=%s, local_deleted=%s",
+        company_id,
+        revoked,
+        deleted,
+    )
+    return {"disconnected": deleted, "revoked_at_xero": revoked}
+
+
 @router.post("/xero/pick-org")
 async def xero_pick_org(request: Request) -> dict:
     """Frontend POSTs the chosen org id from the picker.

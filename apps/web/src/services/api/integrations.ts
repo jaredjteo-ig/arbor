@@ -388,4 +388,25 @@ export const integrationsApi = {
       reference,
     });
   },
+
+  /**
+   * Begin the Xero OAuth round-trip. Returns a redirect URL the
+   * frontend uses for full-page navigation (Xero's consent screen
+   * blocks framing).
+   */
+  xeroOauthStart(): Promise<{ redirect_url: string }> {
+    return apiClient.get<{ redirect_url: string }>(
+      "/integrations/xero/oauth/start",
+    );
+  },
+
+  /**
+   * Hard-disconnect Xero — revokes Arbor's authorisation at Xero's
+   * side and hard-deletes the IntegrationToken row (PDPA M1-T07).
+   */
+  xeroDisconnect(): Promise<{ disconnected: boolean }> {
+    return apiClient.post<{ disconnected: boolean }>(
+      "/integrations/xero/disconnect",
+    );
+  },
 };

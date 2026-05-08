@@ -66,6 +66,33 @@ def test_malformed_state_rejected():
         _verify("no-dot-here")
 
 
+def test_extract_offending_codes_pulls_codes_from_xero_400():
+    """Regression: M1-T05 — the adapter must extract every account
+    code Xero rejects so the API can show the user exactly which
+    mappings are stale, not a generic "something went wrong"."""
+    from hr_advisory.mcp_servers.adapters.xero import (
+        _extract_offending_codes,
+    )
+
+    # Single-code form Xero actually returns:
+    msg = (
+        "{\"ValidationErrors\": [{\"Message\": "
+        "\"Account code '800' is not a valid code for this document.\"}]}"
+    )
+    assert _extract_offending_codes(msg) == ["800"]
+
+    # Multi-code form (sometimes Xero batches them):
+    msg2 = (
+        "Account code '477' is not a valid code for this document. "
+        "Account code '825' is not a valid code for this document."
+    )
+    assert sorted(_extract_offending_codes(msg2)) == ["477", "825"]
+
+    # Non-matching detail returns empty list, not None.
+    assert _extract_offending_codes("some other error") == []
+    assert _extract_offending_codes("") == []
+
+
 def test_idempotency_key_is_stable_for_same_force_counter():
     """Round-tripping the same (company, run, force_counter) yields the
     same Idempotency-Key, so a network-retry of the same logical

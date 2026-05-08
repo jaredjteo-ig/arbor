@@ -299,6 +299,35 @@ class ExternalTokenManager:
         logger.info("Revoked token for %s/%s", tenant_id, provider)
         return True
 
+    def hard_delete(self, tenant_id: str, provider: str) -> bool:
+        """PDPA hard-delete: drop the active token row entirely.
+
+        Used when the customer disconnects — the purpose for holding
+        the OAuth grant has ended. Disconnected (already soft-deleted)
+        rows are preserved for audit; only the active row is removed.
+
+        Returns True if an active row existed and was deleted.
+        """
+        from hr_advisory.services import dataflow_crud
+
+        existing = self._read_active_row(tenant_id, provider)
+        self._store.pop(self._key(tenant_id, provider), None)
+        if not existing:
+            return False
+        try:
+            dataflow_crud.delete("IntegrationToken", existing["id"])
+            logger.info(
+                "Hard-deleted token for %s/%s", tenant_id, provider
+            )
+            return True
+        except Exception:
+            logger.exception(
+                "Failed to hard-delete token for %s/%s",
+                tenant_id,
+                provider,
+            )
+            return False
+
     def list_connections(self, tenant_id: str) -> list[dict]:
         """List all active (non-disconnected) providers for a tenant."""
         from hr_advisory.services import dataflow_crud

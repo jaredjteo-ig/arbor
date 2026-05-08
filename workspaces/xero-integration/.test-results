@@ -1,26 +1,28 @@
-commit: 049d99d8f5fd73d3b23800afc20b438ef1bc3e8e (baseline)
-timestamp: 2026-05-08T05:50:00Z
-phase: M0 — pre-launch BLOCKERS
-baseline_pass: 35
-baseline_fail: 2 (pre-existing — Xero rotated the captured refresh token; needs xero_oauth_setup.py re-run)
+commit: f2d6cfa68349c372781e2ed4374aa4a532fda920 (baseline before M1)
+timestamp: 2026-05-08T07:00:00Z
+phase: M1 — Finish-The-Launch (code-only items)
+baseline_pass: 44
+baseline_fail: 0 (excluded e2e — needs fresh OAuth tokens)
 final_pass: 45
-final_fail: 2 (same pre-existing e2e failures, not introduced by M0 changes)
-new_tests: 10
-  - 2 unit (BASEXCLUDED tax_type, NoTax line_amount_types)
-  - 1 integration (empty pay_date rejected)
-  - 6 integration (multi-org callback flow + pick-org guards)
-  - 1 regression (concurrent export advisory lock)
+final_fail: 0
+new_tests: 1 (offending-code regex unit test)
 regressions: 0
-command: pytest tests/{unit/test_xero_*,integration/test_xero_*,regression/test_xero_*,e2e/test_xero_*} --timeout=60 -q
-files: tests/unit/test_xero_payroll_journal.py + test_xero_oauth_state.py
-       tests/integration/test_xero_payroll_export_api.py + test_xero_oauth_multi_org.py
-       tests/regression/test_xero_concurrent_export.py
-       tests/e2e/test_xero_payroll_export_real.py
+command: pytest tests/{unit/test_xero_*,integration/test_xero_*,regression/test_xero_*} --timeout=60 -q
+ts_check: 0 errors
 
-m0_completed:
-  - M0-T03 SG GST BASEXCLUDED TaxType + LineAmountTypes:NoTax
-  - M0-T04 Require pay_date for export (400 fail-fast)
-  - M0-T05 Frontend double-click safety (existing logic verified, comment added)
-  - M0-T02 TOCTOU race fix — Postgres advisory lock + concurrent regression test
-  - M0-T01 Multi-org picker — backend (list_xero_connections, pending-org store, picker endpoints) + frontend (pick-org page)
-  - M0-T06 E2E coverage — 6 multi-org integration tests + 1 concurrent regression covering the new failure modes
+m1_completed_in_session:
+  - M1-T02 Frontend: Settings → Connect Xero now calls /integrations/xero/oauth/start
+  - M1-T07 Disconnect endpoint: PDPA hard-delete + revoke at Xero source
+  - M1-T03 XeroReauthRequired typed exception on invalid_grant + structured 401 response
+  - M1-T09 401 from any /api.xro/2.0/* endpoint auto-disconnects locally + signals reauth
+  - M1-T05 CoA cache invalidation on account-not-found + XeroAccountInvalid typed error
+  - M1-T06 GET /payroll/xero/mapping-health returns archived/missing/system_managed codes
+  - M1-T04 scripts/keep_xero_tokens_warm.py — daily refresh keepalive
+  - M1-T10 02-data-retention.md + scripts/redact_old_xero_tokens.py monthly redaction
+  - M1-T08 deploy/xero-deployment-runbook.md
+
+m1_deferred:
+  - M1-T01 partner-program submission — re-framed as customer-evidence-gated
+    (start when 3+ paying customers connected; deploy first)
+
+next: M2 — Day-2 robustness (12 items)

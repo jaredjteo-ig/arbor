@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Plug,
   Building2,
@@ -216,6 +216,23 @@ function ProviderRow({
   const lastSync = providerStatus?.last_sync;
 
   const handleConnect = async () => {
+    // Xero has a real OAuth round-trip (M1-T02) — start endpoint
+    // returns a Xero-hosted consent URL we redirect the whole page
+    // to. Other providers still go through the legacy stub for now.
+    if (config.id === "xero") {
+      try {
+        const { integrationsApi } = await import("@/services/api/integrations");
+        const result = await integrationsApi.xeroOauthStart();
+        if (result.redirect_url) {
+          window.location.assign(result.redirect_url);
+          return;
+        }
+        toast.error("Could not start the Xero connection — please retry.");
+      } catch {
+        toast.error("Could not start the Xero connection — please retry.");
+      }
+      return;
+    }
     try {
       const result = await connect.mutateAsync(config.id);
       if (result.redirect_url) {
@@ -228,6 +245,21 @@ function ProviderRow({
   };
 
   const handleDisconnect = async () => {
+    // Xero uses the PDPA-compliant hard-delete + Xero-side revoke
+    // path (M1-T07). Other providers stay on the legacy stub.
+    if (config.id === "xero") {
+      try {
+        const { integrationsApi } = await import("@/services/api/integrations");
+        await integrationsApi.xeroDisconnect();
+        toast.success("Xero disconnected.");
+        // Force a status refresh — the integration card should flip
+        // back to "Disconnected" immediately.
+        window.location.reload();
+      } catch {
+        toast.error("Could not disconnect Xero — please retry.");
+      }
+      return;
+    }
     try {
       await disconnect.mutateAsync(config.id);
       toast.success(`${config.name} disconnected.`);
@@ -359,8 +391,47 @@ function IntegrationSection({
 
 /* ── Page ─────────────────────────────────────────────────── */
 
+const _XERO_ERROR_MESSAGES: Record<string, string> = {
+  token_exchange_failed:
+    "Xero rejected the authorization code. Please try connecting again.",
+  list_connections_failed:
+    "Connected to Xero, but couldn't list your organisations. Try again.",
+  no_orgs_authorized:
+    "No Xero organisations were authorised. Pick at least one org during the consent step.",
+  access_denied: "You declined to authorise Xero. No connection was made.",
+};
+
 export default function IntegrationSettingsPage() {
   const { data, isPending, error, refetch } = useIntegrationStatus();
+
+  // Handle the round-trip return from Xero OAuth (M1-T02). Read the
+  // query params once on mount, surface a toast, then clear them so
+  // a refresh doesn't re-fire the toast. Stripped early-render keeps
+  // the URL clean for share/back behaviour.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const xero = url.searchParams.get("xero");
+    const xeroError = url.searchParams.get("xero_error");
+
+    if (xero === "connected") {
+      toast.success(
+        "Xero connected. You can now export payroll runs as ManualJournals.",
+      );
+      refetch();
+    } else if (xeroError) {
+      const friendly =
+        _XERO_ERROR_MESSAGES[xeroError] ??
+        `Xero connection error: ${xeroError}`;
+      toast.error(friendly);
+    }
+
+    if (xero || xeroError) {
+      url.searchParams.delete("xero");
+      url.searchParams.delete("xero_error");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [refetch]);
 
   const statusMap = new Map<string, ProviderStatus>();
   if (data?.providers) {

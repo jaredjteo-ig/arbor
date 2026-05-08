@@ -3153,9 +3153,15 @@ async def get_xero_status(
 
 @router.get("/xero/chart-of-accounts")
 async def get_xero_chart_of_accounts(
+    refresh: bool = False,
     current_user: dict = Depends(require_role("owner", "hr_manager")),
 ) -> dict:
-    """Fetch the company's Xero chart of accounts for dropdown population."""
+    """Fetch the company's Xero chart of accounts for dropdown population.
+
+    ``refresh=true`` bypasses the 24h cache — used by the mapping page's
+    "Refresh accounts from Xero" button when an accountant has renamed
+    or archived an account on the Xero side.
+    """
     from hr_advisory.mcp_servers.adapters.xero import get_xero_adapter
 
     company_id = get_current_company_id(current_user)
@@ -3170,7 +3176,9 @@ async def get_xero_chart_of_accounts(
         )
 
     try:
-        accounts = await adapter.get_chart_of_accounts(str(company_id))
+        accounts = await adapter.get_chart_of_accounts(
+            str(company_id), force_refresh=refresh
+        )
     except Exception as exc:
         logger.exception("Failed to fetch Xero chart of accounts")
         raise HTTPException(
@@ -3179,6 +3187,77 @@ async def get_xero_chart_of_accounts(
         ) from exc
 
     return {"accounts": accounts}
+
+
+@router.get("/xero/mapping-health")
+async def get_xero_mapping_health(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Compare the saved mapping against the current Xero chart.
+
+    Returns the codes that are now archived (still exist but inactive),
+    missing (no longer in the chart at all), or system-managed (Xero
+    rejects manual journals against them). The frontend mapping page
+    shows a banner for any non-empty result so the customer fixes
+    their mapping BEFORE the next export attempt fails.
+    """
+    from hr_advisory.mcp_servers.adapters.xero import get_xero_adapter
+    from hr_advisory.services.xero_payroll_journal import MAPPING_FIELDS
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    saved = _get_xero_mapping(company_id)
+    if saved is None:
+        return {
+            "archived": [],
+            "missing": [],
+            "system_managed": [],
+            "ok": True,
+        }
+
+    adapter = get_xero_adapter()
+    if not adapter.is_connected(str(company_id)):
+        raise HTTPException(
+            status_code=409,
+            detail="Xero is not connected.",
+        )
+
+    try:
+        accounts = await adapter.get_chart_of_accounts(str(company_id))
+    except Exception as exc:
+        logger.exception("mapping-health: failed to fetch CoA")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch chart of accounts from Xero: {exc}",
+        ) from exc
+
+    by_code = {str(a.get("code") or ""): a for a in accounts if a.get("code")}
+    archived: list[str] = []
+    missing: list[str] = []
+    system: list[str] = []
+    for field in MAPPING_FIELDS:
+        code = str(saved.get(field) or "").strip()
+        if not code:
+            continue
+        acc = by_code.get(code)
+        if acc is None:
+            missing.append(code)
+            continue
+        status = str(acc.get("status") or "").upper()
+        if status and status != "ACTIVE":
+            archived.append(code)
+            continue
+        if acc.get("system_account"):
+            system.append(code)
+
+    return {
+        "archived": archived,
+        "missing": missing,
+        "system_managed": system,
+        "ok": not (archived or missing or system),
+    }
 
 
 @router.get("/xero/account-mapping")
@@ -3355,8 +3434,10 @@ async def _do_xero_export(
 ) -> dict:
     """Body of the export — runs under the advisory lock."""
     from hr_advisory.mcp_servers.adapters.xero import (
+        XeroAccountInvalid,
         XeroAPIError,
         XeroRateLimitError,
+        XeroReauthRequired,
         get_xero_adapter,
     )
     from hr_advisory.services.xero_payroll_journal import build_journal_lines
@@ -3519,6 +3600,49 @@ async def _do_xero_export(
             journal_data,
             idempotency_key=idempotency_key,
         )
+    except XeroReauthRequired as exc:
+        # Refresh-token cliff or revocation at source. Adapter has
+        # already hard-disconnected the local row. Surface a typed
+        # 401 with reconnect_url so the modal can render a clear
+        # "Reconnect Xero" CTA (M1-T03).
+        _write_audit(
+            journal_id="",
+            status="FAILED",
+            error_message=f"reauth_required: {exc.reason}",
+        )
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "message": (
+                    "Your Xero connection expired or was revoked. "
+                    "Reconnect to continue exporting."
+                ),
+                "action": "reconnect",
+                "reconnect_url": "/settings/integrations?reconnect=xero",
+            },
+        ) from exc
+    except XeroAccountInvalid as exc:
+        # A mapped account is archived or no longer exists. The
+        # adapter has already invalidated the CoA cache. Surface 409
+        # with the offending codes so the modal can deep-link the
+        # user to fix their mapping.
+        _write_audit(
+            journal_id="",
+            status="FAILED",
+            error_message=f"account_invalid: {','.join(exc.offending_codes)}",
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "Xero rejected one or more account codes. They may "
+                    "have been archived or renamed since your last "
+                    "export. Update your mapping and retry."
+                ),
+                "offending_codes": exc.offending_codes,
+                "mapping_url": "/settings/integrations/xero",
+            },
+        ) from exc
     except XeroRateLimitError as exc:
         _write_audit(
             journal_id="", status="FAILED", error_message=f"rate_limit: {exc}"
