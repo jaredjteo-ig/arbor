@@ -94,10 +94,34 @@ class XeroAdapter:
         # Daily call counter: {date_str: count}
         self._daily_calls: dict[str, int] = {}
 
+        # Register the refresh callback at construction time. Previously
+        # only registered inside handle_oauth_callback, which meant any
+        # caller injecting tokens directly (tests, persisted-token
+        # rehydration on cold-start) had no auto-refresh — token expiry
+        # surfaced as a hard 401 instead of a transparent refresh.
+        self._token_manager.register_refresh_callback(
+            PROVIDER_NAME, self._refresh_token
+        )
+
     async def _resolve_xero_tenant_id(
         self, tenant_id: str, access_token: str
     ) -> str:
-        """Return the cached or freshly-resolved Xero org id for a caller."""
+        """Return the Xero org id for a caller, persistence-first.
+
+        Resolution order:
+          1. Persisted ``IntegrationToken.xero_tenant_id`` (set at OAuth
+             callback time and stable across processes/restarts).
+          2. In-process cache (warmed by previous calls in this worker).
+          3. Live ``/connections`` API call — first connection wins.
+
+        The ``/connections`` fallback is a defensive path for tokens
+        stored before xero_tenant_id was persisted; it should be a
+        cold-path branch in normal operation.
+        """
+        persisted = self._token_manager.get_xero_tenant_id(tenant_id)
+        if persisted:
+            self._xero_tenant_cache[tenant_id] = persisted
+            return persisted
         cached = self._xero_tenant_cache.get(tenant_id)
         if cached:
             return cached
@@ -129,14 +153,18 @@ class XeroAdapter:
             raise ValueError("XERO_CLIENT_ID not configured")
 
         if scopes is None:
+            # Apps created after 2 March 2026 use granular scopes —
+            # legacy ``accounting.transactions`` was split per endpoint.
+            # ManualJournals lives under ``accounting.manualjournals``;
+            # the chart of accounts under ``accounting.settings.read``.
+            # Reference: https://developer.xero.com/documentation/guides/oauth2/scopes/
+            # ``profile``/``email`` dropped — not used, and apps need to
+            # explicitly enable them under the new scope regime.
             scopes = [
                 "openid",
-                "profile",
-                "email",
-                "accounting.transactions",
-                "accounting.reports.read",
-                "accounting.settings.read",
                 "offline_access",
+                "accounting.manualjournals",
+                "accounting.settings.read",
             ]
 
         params = {
@@ -283,6 +311,7 @@ class XeroAdapter:
         xero_tenant_id: Optional[str] = None,
         json_data: Optional[dict] = None,
         params: Optional[dict] = None,
+        idempotency_key: Optional[str] = None,
     ) -> dict:
         """Make an authenticated Xero API call with rate limiting and circuit breaker.
 
@@ -321,6 +350,13 @@ class XeroAdapter:
             "Accept": "application/json",
             "Xero-Tenant-Id": xero_tenant_id,
         }
+        # Xero supports an Idempotency-Key header on POST endpoints —
+        # if the same key has been seen in the last 24 hours, Xero
+        # returns the original response instead of creating a duplicate.
+        # Critical for ManualJournals: a network blip during POST + a
+        # naive client retry would otherwise post the same journal twice.
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
 
         async def _do_request() -> dict:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -407,11 +443,64 @@ class XeroAdapter:
     # Post payroll journal
     # ------------------------------------------------------------------
 
+    async def void_journal(
+        self,
+        tenant_id: str,
+        journal_id: str,
+        xero_tenant_id: Optional[str] = None,
+    ) -> dict:
+        """Mark a Xero ManualJournal as VOIDED.
+
+        Used by force-re-export to neutralize the prior journal before
+        posting a replacement, so the customer's books don't end up
+        with two posted journals for the same payroll run.
+
+        Args:
+            tenant_id: Arbor company ID.
+            journal_id: Xero ManualJournalID to void.
+            xero_tenant_id: Optional override; auto-resolved if absent.
+
+        Returns:
+            Dict with journal_id and status="VOIDED".
+        """
+        if not journal_id:
+            raise ValueError("journal_id required for void_journal")
+
+        payload = {
+            "ManualJournals": [
+                {
+                    "ManualJournalID": journal_id,
+                    "Status": "VOIDED",
+                }
+            ]
+        }
+        response = await self._api_call(
+            tenant_id=tenant_id,
+            method="POST",
+            endpoint=f"ManualJournals/{journal_id}",
+            xero_tenant_id=xero_tenant_id,
+            json_data=payload,
+        )
+        journals = response.get("ManualJournals", [])
+        status = journals[0].get("Status", "") if journals else ""
+        logger.info(
+            "Voided Xero ManualJournal %s for tenant=%s (status=%s)",
+            journal_id,
+            tenant_id,
+            status,
+        )
+        return {
+            "journal_id": journal_id,
+            "status": status,
+            "provider": PROVIDER_NAME,
+        }
+
     async def post_payroll_journal(
         self,
         tenant_id: str,
         journal_data: dict,
         xero_tenant_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> dict:
         """Post a payroll journal entry to Xero as a ManualJournal.
 
@@ -473,6 +562,7 @@ class XeroAdapter:
             endpoint="ManualJournals",
             xero_tenant_id=xero_tenant_id,
             json_data=payload,
+            idempotency_key=idempotency_key,
         )
 
         journals = response.get("ManualJournals", [])

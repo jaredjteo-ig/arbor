@@ -1,10 +1,16 @@
 """Encrypted OAuth token store for external API credentials.
 
-Per-tenant, per-provider token management. Tokens stored encrypted using
-Fernet (same pattern as PII encryption in hr_advisory/security/encryption.py).
-In-memory cache with TTL for hot path.
+Per-tenant, per-provider token management. Tokens stored encrypted
+using Fernet (same key, ``INTEGRATION_ENCRYPTION_KEY``, as PII
+encryption in hr_advisory/security/encryption.py).
 
-T205: Encrypted OAuth Token Store
+Persisted via the ``IntegrationToken`` DataFlow model so tokens
+survive backend restart and are visible across uvicorn workers.
+In-process cache fronts the DB for hot-path adapter calls; cache
+entries are written through on store/refresh and invalidated on
+revoke. Soft-deletes via ``disconnected_at`` preserve audit history.
+
+T205 → P1.3: persisted token store.
 """
 
 from __future__ import annotations
@@ -99,11 +105,47 @@ class ExternalTokenManager:
     """
 
     def __init__(self):
-        self._store: dict[str, StoredToken] = {}  # key: "{tenant_id}:{provider}"
+        # In-process write-through cache, keyed by "{tenant_id}:{provider}".
+        # Avoids hitting the DB on every adapter API call. Invalidated on
+        # store/refresh/revoke so multi-worker uvicorn stays consistent
+        # across token refreshes (workers re-read from DB on cache miss).
+        self._store: dict[str, StoredToken] = {}
         self._refresh_callbacks: dict[str, callable] = {}
 
     def _key(self, tenant_id: str, provider: str) -> str:
         return f"{tenant_id}:{provider}"
+
+    @staticmethod
+    def _row_to_stored(row: dict) -> StoredToken:
+        return StoredToken(
+            tenant_id=str(row.get("tenant_id", "")),
+            provider=str(row.get("provider", "")),
+            access_token_encrypted=str(row.get("access_token_encrypted", "")),
+            refresh_token_encrypted=(
+                str(row["refresh_token_encrypted"])
+                if row.get("refresh_token_encrypted")
+                else None
+            ),
+            expires_at=(
+                float(row["expires_at"]) if row.get("expires_at") else None
+            ),
+            scopes=str(row.get("scopes", "")).split() if row.get("scopes") else [],
+        )
+
+    def _read_active_row(self, tenant_id: str, provider: str) -> Optional[dict]:
+        """Fetch the active (not disconnected) IntegrationToken row, if any."""
+        from hr_advisory.services import dataflow_crud
+
+        rows = dataflow_crud.list_records(
+            "IntegrationToken",
+            {
+                "tenant_id": tenant_id,
+                "provider": provider,
+                "disconnected_at": "",
+            },
+            cache_ttl=0,
+        )
+        return rows[0] if rows else None
 
     def store_token(
         self,
@@ -111,48 +153,98 @@ class ExternalTokenManager:
         provider: str,
         token_data: dict,
     ) -> None:
-        """Store an OAuth token (encrypted at rest).
+        """Store an OAuth token (encrypted at rest, persisted to DB).
+
+        Idempotent upsert keyed by (tenant_id, provider) — overwrites the
+        active row, preserves any disconnected rows for audit.
 
         Args:
-            tenant_id: Company/tenant ID.
+            tenant_id: Company/tenant ID (stringified).
             provider: External API name (e.g., "xero", "cpf_apex").
-            token_data: Dict with access_token, refresh_token, expires_in, scope.
+            token_data: Dict with access_token, refresh_token, expires_in,
+                scope. Optional: xero_tenant_id, xero_tenant_name (Xero
+                org id and display name resolved at OAuth callback time);
+                connected_by (Arbor user id who clicked Connect).
         """
+        from hr_advisory.services import dataflow_crud
+
         access_encrypted = encrypt_value(token_data["access_token"])
-        refresh_encrypted = None
+        refresh_encrypted = ""
         if token_data.get("refresh_token"):
             refresh_encrypted = encrypt_value(token_data["refresh_token"])
 
-        expires_at = None
+        expires_at = 0.0
         if token_data.get("expires_in"):
             expires_at = time.time() + token_data["expires_in"]
 
-        scopes = []
-        if token_data.get("scope"):
-            scopes = (
-                token_data["scope"].split()
-                if isinstance(token_data["scope"], str)
-                else token_data["scope"]
-            )
+        scope_value = token_data.get("scope") or ""
+        scopes_str = (
+            scope_value
+            if isinstance(scope_value, str)
+            else " ".join(scope_value)
+        )
 
-        stored = StoredToken(
+        now_iso = datetime.now(timezone.utc).isoformat()
+        existing = self._read_active_row(tenant_id, provider)
+        payload = {
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "access_token_encrypted": access_encrypted,
+            "refresh_token_encrypted": refresh_encrypted,
+            "expires_at": expires_at,
+            "scopes": scopes_str,
+            "xero_tenant_id": str(token_data.get("xero_tenant_id", "")),
+            "xero_tenant_name": str(token_data.get("xero_tenant_name", "")),
+            "connected_by": int(token_data.get("connected_by", 0) or 0),
+            "connected_at": (
+                existing.get("connected_at") if existing else now_iso
+            ),
+            "disconnected_at": "",
+        }
+
+        if existing:
+            dataflow_crud.update("IntegrationToken", existing["id"], payload)
+        else:
+            dataflow_crud.create("IntegrationToken", payload)
+
+        # Refresh the in-process cache.
+        scopes_list = scopes_str.split() if scopes_str else []
+        self._store[self._key(tenant_id, provider)] = StoredToken(
             tenant_id=tenant_id,
             provider=provider,
             access_token_encrypted=access_encrypted,
-            refresh_token_encrypted=refresh_encrypted,
-            expires_at=expires_at,
-            scopes=scopes,
+            refresh_token_encrypted=refresh_encrypted or None,
+            expires_at=expires_at if expires_at > 0 else None,
+            scopes=scopes_list,
         )
-        self._store[self._key(tenant_id, provider)] = stored
-        logger.info("Stored token for %s/%s (expires_at=%s)", tenant_id, provider, expires_at)
+        logger.info(
+            "Stored token for %s/%s (expires_at=%s)",
+            tenant_id,
+            provider,
+            expires_at,
+        )
+
+    def get_stored_token(
+        self, tenant_id: str, provider: str
+    ) -> Optional[StoredToken]:
+        """Get the full stored token object, hitting cache then DB."""
+        key = self._key(tenant_id, provider)
+        cached = self._store.get(key)
+        if cached is not None:
+            return cached
+        row = self._read_active_row(tenant_id, provider)
+        if not row:
+            return None
+        stored = self._row_to_stored(row)
+        self._store[key] = stored
+        return stored
 
     def get_valid_token(self, tenant_id: str, provider: str) -> Optional[str]:
-        """Get a valid access token, or None if not available.
+        """Get a valid access token, or None if expired / absent.
 
-        Does NOT auto-refresh. Call refresh_token() explicitly if expired.
+        Does NOT auto-refresh. Call ``refresh_if_expired`` for that.
         """
-        key = self._key(tenant_id, provider)
-        stored = self._store.get(key)
+        stored = self.get_stored_token(tenant_id, provider)
         if stored is None:
             return None
         if stored.is_expired:
@@ -160,45 +252,85 @@ class ExternalTokenManager:
             return None
         return stored.access_token
 
-    def get_stored_token(self, tenant_id: str, provider: str) -> Optional[StoredToken]:
-        """Get the full stored token object."""
-        return self._store.get(self._key(tenant_id, provider))
-
     def has_token(self, tenant_id: str, provider: str) -> bool:
-        """Check if a token exists for this tenant/provider."""
-        return self._key(tenant_id, provider) in self._store
+        """True if an active (non-disconnected) token row exists."""
+        return self.get_stored_token(tenant_id, provider) is not None
 
     def is_connected(self, tenant_id: str, provider: str) -> bool:
-        """Check if tenant has a valid (non-expired) connection."""
-        token = self.get_valid_token(tenant_id, provider)
-        return token is not None
+        """True if an active connection exists, even if access-token is stale.
+
+        "Connected" means we have an active (non-disconnected) row with a
+        refresh_token. The access_token may be expired — the next API
+        call will refresh transparently. Returning False on expiry
+        breaks the UI status badge after every 30-minute idle period.
+        """
+        stored = self.get_stored_token(tenant_id, provider)
+        if stored is None:
+            return False
+        # Either the access token is still good, or we can refresh.
+        if not stored.is_expired:
+            return True
+        return stored.refresh_token is not None
+
+    def get_xero_tenant_id(self, tenant_id: str) -> str:
+        """Provider-specific helper: persisted Xero org id for this tenant."""
+        row = self._read_active_row(tenant_id, "xero")
+        return str(row.get("xero_tenant_id", "")) if row else ""
 
     def revoke_token(self, tenant_id: str, provider: str) -> bool:
-        """Delete a stored token. Returns True if existed."""
-        key = self._key(tenant_id, provider)
-        if key in self._store:
-            del self._store[key]
-            logger.info("Revoked token for %s/%s", tenant_id, provider)
-            return True
-        return False
+        """Soft-delete the active token row.
+
+        Sets ``disconnected_at`` so audit history is preserved. Returns
+        True if a row was updated.
+        """
+        from hr_advisory.services import dataflow_crud
+
+        existing = self._read_active_row(tenant_id, provider)
+        if not existing:
+            self._store.pop(self._key(tenant_id, provider), None)
+            return False
+
+        dataflow_crud.update(
+            "IntegrationToken",
+            existing["id"],
+            {"disconnected_at": datetime.now(timezone.utc).isoformat()},
+        )
+        self._store.pop(self._key(tenant_id, provider), None)
+        logger.info("Revoked token for %s/%s", tenant_id, provider)
+        return True
 
     def list_connections(self, tenant_id: str) -> list[dict]:
-        """List all connected providers for a tenant."""
+        """List all active (non-disconnected) providers for a tenant."""
+        from hr_advisory.services import dataflow_crud
+
+        rows = dataflow_crud.list_records(
+            "IntegrationToken",
+            {"tenant_id": tenant_id, "disconnected_at": ""},
+            cache_ttl=0,
+        )
         connections = []
-        for key, stored in self._store.items():
-            if stored.tenant_id == tenant_id:
-                connections.append(
-                    {
-                        "provider": stored.provider,
-                        "connected": not stored.is_expired,
-                        "expires_at": (
-                            datetime.fromtimestamp(stored.expires_at, tz=timezone.utc).isoformat()
-                            if stored.expires_at
-                            else None
-                        ),
-                        "scopes": stored.scopes,
-                    }
-                )
+        for row in rows:
+            expires_at = row.get("expires_at")
+            iso_expires: Optional[str] = None
+            if expires_at:
+                iso_expires = datetime.fromtimestamp(
+                    float(expires_at), tz=timezone.utc
+                ).isoformat()
+            scopes_list = (
+                str(row.get("scopes", "")).split() if row.get("scopes") else []
+            )
+            stored = self._row_to_stored(row)
+            connections.append(
+                {
+                    "provider": str(row.get("provider", "")),
+                    "connected": not stored.is_expired,
+                    "expires_at": iso_expires,
+                    "scopes": scopes_list,
+                    "xero_tenant_id": str(row.get("xero_tenant_id", "")),
+                    "xero_tenant_name": str(row.get("xero_tenant_name", "")),
+                    "connected_at": str(row.get("connected_at", "")),
+                }
+            )
         return connections
 
     def register_refresh_callback(self, provider: str, callback: callable) -> None:

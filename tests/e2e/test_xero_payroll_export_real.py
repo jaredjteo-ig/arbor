@@ -136,13 +136,24 @@ def test_company():
 
 @pytest.fixture(scope="module", autouse=True)
 def bootstrap_xero_token(test_company):
-    """Inject the captured Xero tokens into the in-memory token store.
+    """Inject the captured Xero tokens into the persisted token store.
 
-    The token store keys by ``(tenant_id, provider)``; we use the local
-    Arbor company_id as tenant_id so XeroAdapter.is_connected() returns
-    True for our test company.
+    Sets ``expires_in: 1`` so the next call triggers refresh through
+    the refresh token — the captured access token may be stale by the
+    time the test runs (Xero access tokens live for 30 minutes; the
+    OAuth setup script runs minutes-to-hours before the test).
+
+    Asserts that ``XeroAdapter`` registers its refresh callback at
+    construction time so the refresh actually fires.
     """
     company_id = str(test_company["company_id"])
+    # Ensure the adapter singleton has been instantiated so its refresh
+    # callback is registered with the token manager. Without this,
+    # refresh_if_expired returns None silently.
+    from hr_advisory.mcp_servers.adapters.xero import get_xero_adapter
+
+    get_xero_adapter()
+
     manager = get_token_manager()
     manager.store_token(
         company_id,
@@ -150,8 +161,8 @@ def bootstrap_xero_token(test_company):
         {
             "access_token": os.environ["XERO_E2E_ACCESS_TOKEN"],
             "refresh_token": os.environ["XERO_E2E_REFRESH_TOKEN"],
-            "expires_in": 1800,  # 30 minutes; refresh kicks in if stale
-            "scope": "accounting.transactions accounting.settings.read",
+            "expires_in": 1,  # force refresh on first call
+            "scope": "openid offline_access accounting.manualjournals accounting.settings.read",
         },
     )
     yield

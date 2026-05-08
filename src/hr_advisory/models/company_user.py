@@ -771,8 +771,12 @@ class PayrollRun:
     # Xero journal export — populated when the run is pushed to Xero as a
     # ManualJournal. xero_journal_id is the Xero ManualJournalID; empty
     # means "not yet exported." Re-exporting overwrites these fields.
+    # xero_force_counter increments on every force=true re-export and is
+    # mixed into the Xero Idempotency-Key so each forced retry is a
+    # genuinely new operation while accidental retries are deduped.
     xero_journal_id: str = ""
     xero_exported_at: str = ""
+    xero_force_counter: int = 0
 
     __dataflow__ = {
         "indexes": [
@@ -1696,6 +1700,82 @@ class PayslipSettings:
     __dataflow__ = {
         "indexes": [
             {"name": "idx_paysettings_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class IntegrationToken:
+    """Persisted OAuth tokens for external API connections.
+
+    One row per (tenant_id, provider). Tokens are Fernet-encrypted at
+    rest using ``INTEGRATION_ENCRYPTION_KEY``. Survives backend
+    restarts and is shared across uvicorn workers.
+
+    Provider-specific extras (xero_tenant_id for Xero org id;
+    xero_tenant_name for display) sit on this row to avoid a separate
+    table per provider — the column names are reusable for any future
+    provider that has an org-id concept.
+
+    Soft-delete via ``disconnected_at`` so audit history is preserved.
+    """
+
+    tenant_id: str  # Arbor company id, stringified for provider-agnostic store
+    provider: str  # "xero", "cpf_apex", "quickbooks", etc.
+    access_token_encrypted: str = ""
+    refresh_token_encrypted: str = ""
+    expires_at: float = 0.0  # Unix timestamp; 0.0 = no expiry recorded
+    scopes: str = ""  # Space-separated
+    # Provider-specific: Xero org id chosen at connect time. Persisted here
+    # so multi-worker uvicorn doesn't diverge between requests.
+    xero_tenant_id: str = ""
+    xero_tenant_name: str = ""
+    connected_by: int = 0  # User id who clicked Connect
+    connected_at: str = ""  # ISO timestamp
+    disconnected_at: str = ""  # Empty when active; ISO timestamp on disconnect
+
+    __dataflow__ = {
+        "indexes": [
+            {
+                "name": "idx_inttok_tenant_provider",
+                "fields": ["tenant_id", "provider"],
+            },
+        ],
+    }
+
+
+@db.model
+class XeroExportLog:
+    """Append-only audit log of Xero ManualJournal export attempts.
+
+    One row per POST attempt — success or failure. Customers under SG
+    statutory query (IRAS, accountant audit) need to be able to answer
+    "who pushed which journal when?" without trusting the Xero side
+    alone.
+
+    ``payload_hash`` (SHA-256 of the journal_data JSON) lets us prove
+    exactly what was sent without storing PII-laden line descriptions.
+    """
+
+    company_id: int
+    payroll_run_id: int
+    journal_id: str = ""  # Xero ManualJournalID; empty on failure
+    posted_at: str = ""  # ISO timestamp of the POST attempt
+    actor_id: int = 0  # Arbor user who clicked Export
+    line_count: int = 0
+    payload_hash: str = ""  # SHA-256 hex of journal_data JSON
+    status: str = ""  # POSTED | FAILED | VOIDED
+    error_message: str = ""  # Populated on FAILED
+    bonus_total: float = 0.0
+    forced_reexport: bool = False
+
+    __dataflow__ = {
+        "indexes": [
+            {
+                "name": "idx_xerolog_company_run",
+                "fields": ["company_id", "payroll_run_id"],
+            },
+            {"name": "idx_xerolog_journal", "fields": ["journal_id"]},
         ],
     }
 
