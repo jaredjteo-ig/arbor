@@ -270,6 +270,51 @@ def test_every_line_has_basexcluded_tax_type():
         )
 
 
+def test_large_payroll_balance_holds_with_decimal_arithmetic():
+    """Regression: M2-T03 — float ULP errors accumulate on
+    200-employee runs and break the abs(total) > 0.01 balance check.
+    Test data picks per-employee numbers that cause floats to
+    accumulate error (ending in 0.99/0.49) but Decimal to be exact.
+    """
+    # 200 employees, each with values designed to trip float drift.
+    # Per-employee figures balance individually so the sum balances
+    # exactly under Decimal but accumulates ULP under float.
+    n = 200
+    per_gross = 5_321.99
+    per_net = 4_252.49
+    per_employer_cpf = 904.74
+    per_employee_cpf = 1_069.50
+    per_sdl = 13.30
+    per_fwl = 0.0
+    per_shg = 0.0
+
+    run = {
+        "period_start": "2026-04-01",
+        "period_end": "2026-04-30",
+        "pay_date": "2026-05-01",
+        "total_gross": per_gross * n,
+        "total_net": per_net * n,
+        "total_employer_cpf": per_employer_cpf * n,
+        "total_employee_cpf": per_employee_cpf * n,
+        "total_sdl": per_sdl * n,
+        "total_fwl": per_fwl * n,
+        "total_shg": per_shg * n,
+    }
+    # Sanity: invariant gross - net == employee_cpf + shg holds for
+    # the per-employee figures (otherwise the test data is bad).
+    assert abs(per_gross - per_net - per_employee_cpf - per_shg) < 0.01
+
+    result = build_journal_lines(
+        payroll_run=run, mapping=_complete_mapping(), bonus_total=0.0
+    )
+    total = sum(line["amount"] for line in result["lines"])
+    # With Decimal arithmetic, total should be exactly 0 — not just
+    # within 0.01. Use a tighter tolerance than the builder's check.
+    assert abs(total) < 1e-6, (
+        f"Large-N journal failed to balance under Decimal: total={total}"
+    )
+
+
 def test_journal_data_marks_no_tax_at_journal_level():
     """At the journal level, line_amount_types must be NoTax so Xero
     doesn't try to apply tax to the gross amounts."""

@@ -30,6 +30,7 @@ import {
   useXeroChartOfAccounts,
   useXeroMapping,
   useXeroPayrollStatus,
+  useXeroSuggestedBonus,
 } from "@/hooks/api";
 import type {
   XeroAccount,
@@ -112,6 +113,7 @@ export function XeroExportModal({
   const status = useXeroPayrollStatus();
   const chart = useXeroChartOfAccounts(isOpen);
   const mapping = useXeroMapping(isOpen);
+  const suggestedBonus = useXeroSuggestedBonus(runId, isOpen);
   const saveMapping = useSaveXeroMapping();
   const exportRun = useExportRunToXero();
 
@@ -121,7 +123,9 @@ export function XeroExportModal({
   // mounts the modal conditionally (`{isOpen && ...}`) so reopening
   // starts with a fresh component and these states reset to defaults.
   const [overrides, setOverrides] = useState<Partial<XeroAccountMapping>>({});
-  const [bonusTotal, setBonusTotal] = useState<string>("0");
+  // ``null`` means "user hasn't touched the input" → fall back to the
+  // server-suggested value. Once they type, we hold their input as-is.
+  const [bonusTotalEdit, setBonusTotalEdit] = useState<string | null>(null);
   const [forceReexport, setForceReexport] = useState<boolean>(false);
   const [exportResult, setExportResult] = useState<{
     journalId: string;
@@ -129,6 +133,21 @@ export function XeroExportModal({
     narration: string;
     date: string;
   } | null>(null);
+
+  const suggestedBonusValue = suggestedBonus.data?.suggested_bonus_total ?? 0;
+  // Display value: user's edit if any, else the server suggestion
+  // formatted to 2dp. Computed lazily so server data lands cleanly.
+  const bonusTotal: string =
+    bonusTotalEdit !== null ? bonusTotalEdit : suggestedBonusValue.toFixed(2);
+  const parsedBonus = Number.parseFloat(bonusTotal || "0") || 0;
+  // Warn the user if their override is >1% off the suggested value —
+  // typo guard, not a hard block.
+  const bonusDriftPct =
+    suggestedBonusValue > 0
+      ? Math.abs(parsedBonus - suggestedBonusValue) / suggestedBonusValue
+      : 0;
+  const showBonusDriftWarning =
+    bonusTotalEdit !== null && suggestedBonusValue > 0 && bonusDriftPct > 0.01;
 
   const draft: XeroAccountMapping = useMemo(
     () => ({
@@ -182,7 +201,6 @@ export function XeroExportModal({
       }
     }
 
-    const parsedBonus = Number.parseFloat(bonusTotal || "0") || 0;
     try {
       const result = await exportRun.mutateAsync({
         runId,
@@ -325,21 +343,48 @@ export function XeroExportModal({
                 >
                   Bonus portion of gross (optional)
                 </label>
-                <input
-                  id="bonus-total"
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  value={bonusTotal}
-                  onChange={(e) => setBonusTotal(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm"
-                  placeholder="0.00"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    id="bonus-total"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={bonusTotal}
+                    onChange={(e) => setBonusTotalEdit(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm"
+                    placeholder="0.00"
+                  />
+                  {bonusTotalEdit !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setBonusTotalEdit(null)}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700 whitespace-nowrap"
+                    >
+                      Use suggested
+                    </button>
+                  )}
+                </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Splits the gross debit into Salary Expense and Bonus Expense.
-                  Leave at 0 to put the whole gross under Salary.
+                  {suggestedBonus.isLoading
+                    ? "Loading suggestion from payslip line items…"
+                    : suggestedBonusValue > 0
+                      ? `Suggested $${suggestedBonusValue.toFixed(
+                          2,
+                        )} (sum of bonus + commission line items on this run). Override if you need to.`
+                      : "No bonus or commission line items on this run. Leave at 0 to put the whole gross under Salary."}
                 </p>
+                {showBonusDriftWarning && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
+                    Heads up: your bonus total ($
+                    {parsedBonus.toFixed(2)}) is{" "}
+                    {(bonusDriftPct * 100).toFixed(1)}% off the suggested value
+                    ($
+                    {suggestedBonusValue.toFixed(2)}). Make sure that's
+                    intentional — the Salary/Bonus expense split posts to Xero
+                    as you enter it.
+                  </p>
+                )}
               </div>
 
               {existingJournalId && (

@@ -21,6 +21,7 @@ import {
   Download,
   FileText,
   ExternalLink,
+  AlertCircle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -30,6 +31,7 @@ import {
   type PayslipDetail,
 } from "@/services/api/payroll";
 import { XeroExportModal } from "@/components/payroll/XeroExportModal";
+import { useXeroExportStatus } from "@/hooks/api";
 
 /* ── Helpers ──────────────────────────────────────────────── */
 
@@ -392,6 +394,29 @@ export default function PayrollRunDetailPage({
     }
   }
 
+  async function handleVoidXero() {
+    if (!run?.xero_journal_id) return;
+    const confirmMsg =
+      `Void the Xero journal ${run.xero_journal_id}? It stays in your` +
+      ` Xero with status VOIDED on the original date — your accountant` +
+      ` can still see it for audit. The run will be marked as not-yet-` +
+      `exported here so you can re-export if needed.`;
+    if (!window.confirm(confirmMsg)) return;
+    setActionLoading("void-xero");
+    try {
+      const { xeroPayrollApi } = await import("@/services/api/payroll");
+      await xeroPayrollApi.voidExport(runId);
+      toast.success("Xero journal voided.");
+      fetchRun();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to void Xero journal.";
+      toast.error(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   async function downloadFile(type: "cpf" | "giro") {
     setActionLoading(type);
     try {
@@ -609,10 +634,24 @@ export default function PayrollRunDetailPage({
                       : "Export to Xero"}
                   </AppButton>
                 )}
+              {/* Void — only when there's a posted journal to void. */}
+              {isAdmin && run.xero_journal_id && (
+                <AppButton
+                  variant="outlined"
+                  size="sm"
+                  onClick={handleVoidXero}
+                  loading={actionLoading === "void-xero"}
+                  disabled={actionLoading !== null}
+                >
+                  <XCircle className="h-4 w-4 mr-1.5" />
+                  Void Xero export
+                </AppButton>
+              )}
             </div>
           )}
 
-          {/* Xero export status badge */}
+          {/* Xero export status badge — current journal */}
+          <XeroStatusBadge runId={runId} run={run} />
           {run.xero_journal_id && (
             <div className="inline-flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full">
               <CheckCircle2 className="h-3.5 w-3.5" />
@@ -714,4 +753,47 @@ export default function PayrollRunDetailPage({
       ) : null}
     </div>
   );
+}
+
+/* ── Xero status badge ─────────────────────────────────────── */
+
+function XeroStatusBadge({
+  runId,
+  run,
+}: {
+  runId: number;
+  run: PayrollRunDetail;
+}) {
+  const status = useXeroExportStatus(runId, true);
+  const last = status.data?.last_attempt;
+  // No attempts ever → no badge.
+  if (!last) return null;
+  // The "current journal" badge below the button already covers
+  // POSTED+xero_journal_id; only render here for the failure / void
+  // states the simple boolean badge can't represent.
+  if (last.status === "POSTED" && run.xero_journal_id) return null;
+
+  if (last.status === "FAILED") {
+    return (
+      <div className="inline-flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-md max-w-2xl">
+        <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+        <div>
+          <p className="font-semibold">Last Xero export attempt failed</p>
+          <p className="text-amber-700">
+            {last.error_message || "Unknown error"} — review and retry.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  if (last.status === "VOIDED") {
+    return (
+      <div className="inline-flex items-center gap-2 text-xs text-[var(--color-gray-700)] bg-[var(--color-gray-100)] border border-[var(--color-gray-200)] px-3 py-1.5 rounded-full">
+        <XCircle className="h-3.5 w-3.5" />
+        Last Xero journal voided
+        {last.posted_at ? ` · ${formatDate(last.posted_at)}` : ""}
+      </div>
+    );
+  }
+  return null;
 }

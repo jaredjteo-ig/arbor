@@ -558,6 +558,94 @@ def test_export_force_overrides_duplicate_guard(
     assert fake.idempotency_keys[1].endswith(":1")
 
 
+def test_void_xero_export_clears_journal_id_and_audits(
+    client, owner_token, approved_payroll_run, test_company
+):
+    """M2-T01: voiding a posted run should
+    - call adapter.void_journal with the existing journal id
+    - clear xero_journal_id + xero_exported_at on the PayrollRun
+    - write a XeroExportLog row with status=VOIDED."""
+    fake = _FakeXeroAdapter(connected=True)
+    with patch(
+        "hr_advisory.mcp_servers.adapters.xero.get_xero_adapter",
+        return_value=fake,
+    ):
+        client.put(
+            "/payroll/xero/account-mapping",
+            headers=_auth(owner_token),
+            json={"mapping": _full_mapping_payload()},
+        )
+        export = client.post(
+            f"/payroll/runs/{approved_payroll_run['id']}/export-xero",
+            headers=_auth(owner_token),
+            json={},
+        )
+        assert export.status_code == 200
+        original_journal = export.json()["journal_id"]
+
+        void = client.post(
+            f"/payroll/runs/{approved_payroll_run['id']}/void-xero-export",
+            headers=_auth(owner_token),
+        )
+
+    assert void.status_code == 200, void.text
+    body = void.json()
+    assert body["voided_journal_id"] == original_journal
+    assert body["status"] == "VOIDED"
+
+    # PayrollRun cleared back to "not yet exported"
+    refreshed = dataflow_crud.read("PayrollRun", approved_payroll_run["id"])
+    assert refreshed["xero_journal_id"] == ""
+    assert refreshed["xero_exported_at"] == ""
+
+    # Adapter saw the void call
+    assert fake.voided_journal_ids == [original_journal]
+
+    # Audit log carries a VOIDED row for that journal
+    rows = dataflow_crud.list_records(
+        "XeroExportLog",
+        {
+            "company_id": test_company["company_id"],
+            "payroll_run_id": approved_payroll_run["id"],
+            "status": "VOIDED",
+        },
+        cache_ttl=0,
+    )
+    assert len(rows) >= 1
+    assert rows[-1]["journal_id"] == original_journal
+
+
+def test_void_rejects_run_with_no_journal(
+    client, owner_token, test_company, fake_xero
+):
+    """Voiding a run that was never exported is a 400 — nothing to undo."""
+    never_exported = dataflow_crud.create(
+        "PayrollRun",
+        {
+            "company_id": test_company["company_id"],
+            "period_start": "2026-02-01",
+            "period_end": "2026-02-28",
+            "pay_date": "2026-03-01",
+            "status": "approved",
+            "payroll_type": "monthly",
+            "total_gross": 1000.0,
+            "total_net": 800.0,
+            "total_employer_cpf": 170.0,
+            "total_employee_cpf": 200.0,
+            "total_sdl": 2.5,
+        },
+    )
+    try:
+        resp = client.post(
+            f"/payroll/runs/{never_exported['id']}/void-xero-export",
+            headers=_auth(owner_token),
+        )
+        assert resp.status_code == 400
+        assert "not been exported" in resp.json()["detail"].lower()
+    finally:
+        dataflow_crud.delete("PayrollRun", never_exported["id"])
+
+
 def test_export_writes_audit_log_row_on_success(
     client, owner_token, approved_payroll_run, test_company
 ):

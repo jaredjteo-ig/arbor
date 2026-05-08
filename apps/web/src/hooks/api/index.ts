@@ -89,6 +89,10 @@ export {
   useXeroMapping,
   useSaveXeroMapping,
   useExportRunToXero,
+  useXeroSuggestedBonus,
+  useVoidXeroExport,
+  useXeroMappingHealth,
+  useXeroExportStatus,
 } from "./useXeroPayroll";
 
 export {

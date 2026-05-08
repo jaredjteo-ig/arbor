@@ -14,7 +14,7 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 import httpx
 
@@ -65,6 +65,58 @@ class XeroAPIError(Exception):
         self.status_code = status_code
         self.detail = detail
         super().__init__(f"Xero API error {status_code}: {detail}")
+
+
+class XeroScopeMissing(Exception):
+    """The connected Xero token doesn't carry the scope a feature needs.
+
+    Today's tokens only request ``accounting.manualjournals`` and
+    ``accounting.settings.read``. When future Phase work adds a
+    feature that needs (say) ``accounting.contacts.read``, existing
+    customers' tokens won't have it. Calling those endpoints without
+    surfacing a clear "reconnect to enable" message is poor UX.
+
+    Caller should return a typed 403 with ``action=reconnect_for_scope``
+    and the missing scope list so the frontend can deep-link a
+    re-OAuth that requests the broader set.
+    """
+
+    def __init__(self, tenant_id: str, missing_scopes: list[str]):
+        self.tenant_id = tenant_id
+        self.missing_scopes = missing_scopes
+        super().__init__(
+            f"Xero scope missing for tenant={tenant_id}: "
+            f"{', '.join(missing_scopes)}"
+        )
+
+
+# Required scopes per feature. Extend when new features add scope
+# dependencies. Values are space-separated scope names that match the
+# strings stored in IntegrationToken.scopes.
+XERO_SCOPE_REQUIREMENTS: dict[str, set[str]] = {
+    "post_payroll_journal": {"accounting.manualjournals"},
+    "void_journal": {"accounting.manualjournals"},
+    "get_chart_of_accounts": {"accounting.settings.read"},
+    "get_trial_balance": {"accounting.reports.read"},
+    "post_claims_journal": {"accounting.manualjournals"},
+}
+
+
+def assert_xero_scopes(stored_scopes: Iterable[str], feature: str) -> None:
+    """Raise ``XeroScopeMissing`` if the token lacks any required scope.
+
+    Pass the iterable of granted scopes (typically
+    ``IntegrationToken.scopes.split()``) and the feature key from
+    ``XERO_SCOPE_REQUIREMENTS``. Unknown features are no-ops by
+    design — adding a feature is cheaper than mis-spelling a key.
+    """
+    required = XERO_SCOPE_REQUIREMENTS.get(feature, set())
+    if not required:
+        return
+    granted = {str(s).strip() for s in stored_scopes if s}
+    missing = sorted(required - granted)
+    if missing:
+        raise XeroScopeMissing("", missing)
 
 
 class XeroAccountInvalid(Exception):
@@ -374,22 +426,51 @@ class XeroAdapter:
     # Rate limit enforcement
     # ------------------------------------------------------------------
 
-    def _check_rate_limit(self, tenant_id: str) -> None:
-        """Enforce both per-minute and daily rate limits.
+    def _check_rate_limit(self, xero_tenant_id: str) -> None:
+        """Enforce both per-minute and daily rate limits per Xero ORG.
 
-        Per-minute check uses the centralized check_rate_limit() helper
-        from resilience.py. Daily limit is tracked locally.
+        Xero counts requests against the connection — i.e. per Xero
+        organisation. A customer running multiple Arbor companies into
+        the same Xero org would silently 429 if we keyed off the
+        Arbor tenant, so the bucket is the Xero org id.
         """
-        # Per-minute check via centralized rate limiter (raises RateLimitExceeded)
-        check_rate_limit(tenant_id, PROVIDER_NAME)
+        bucket_key = f"xero_org:{xero_tenant_id}" if xero_tenant_id else "xero:unbound"
+        check_rate_limit(bucket_key, PROVIDER_NAME)
 
-        # Daily limit check
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        daily_key = f"{tenant_id}:{today}"
+        daily_key = f"{bucket_key}:{today}"
         current = self._daily_calls.get(daily_key, 0)
         if current >= DAILY_LIMIT:
             raise XeroRateLimitError(retry_after=3600)
         self._daily_calls[daily_key] = current + 1
+
+    @staticmethod
+    def _maybe_warn_rate_limit_headers(
+        headers: dict, xero_tenant_id: str
+    ) -> None:
+        """If Xero indicates we're near the daily/minute cap, log loudly.
+
+        Operators want a heads-up before customers see 429s. Xero
+        returns ``X-DayLimit-Remaining`` and ``X-MinLimit-Remaining``
+        on every response — surface a warning when within 10% of zero.
+        """
+        try:
+            day_remaining = int(headers.get("X-DayLimit-Remaining", "9999"))
+            minute_remaining = int(headers.get("X-MinLimit-Remaining", "9999"))
+        except (TypeError, ValueError):
+            return
+        if day_remaining <= max(50, DAILY_LIMIT // 10):
+            logger.warning(
+                "xero_rate_limit_warn event=daily xero_tenant=%s remaining=%d",
+                xero_tenant_id,
+                day_remaining,
+            )
+        if minute_remaining <= max(6, MINUTE_LIMIT // 10):
+            logger.warning(
+                "xero_rate_limit_warn event=minute xero_tenant=%s remaining=%d",
+                xero_tenant_id,
+                minute_remaining,
+            )
 
     # ------------------------------------------------------------------
     # Authenticated API call helper
@@ -418,9 +499,8 @@ class XeroAdapter:
         Returns:
             Parsed JSON response.
         """
-        self._check_rate_limit(tenant_id)
-
-        # Get valid access token (auto-refresh if expired)
+        # Get valid access token (auto-refresh if expired) BEFORE rate-
+        # limit check so we can resolve the Xero org id to key on.
         access_token = await self._token_manager.refresh_if_expired(tenant_id, PROVIDER_NAME)
         if not access_token:
             raise XeroAPIError(401, "No valid Xero token. Re-authorization required.")
@@ -428,12 +508,15 @@ class XeroAdapter:
         # All /api.xro/2.0/* endpoints require Xero-Tenant-Id. If the caller
         # didn't supply one, resolve it from the connections endpoint and
         # cache per (Arbor) tenant so we don't hit /connections on every
-        # call. NOTE: picks the first connected org — multi-org accounts
-        # need to surface a picker upstream and pass xero_tenant_id through.
+        # call.
         if not xero_tenant_id:
             xero_tenant_id = await self._resolve_xero_tenant_id(
                 tenant_id, access_token
             )
+
+        # Rate-limit AFTER tenant resolution so multi-tenant Arbor
+        # companies sharing one Xero org share the limit bucket.
+        self._check_rate_limit(xero_tenant_id)
 
         url = f"{XERO_API_BASE}{endpoint}"
         headers = {
@@ -484,6 +567,12 @@ class XeroAdapter:
 
                 if response.status_code >= 400:
                     raise XeroAPIError(response.status_code, response.text[:500])
+
+                # Xero echoes daily/minute remaining quotas — surface
+                # near-limit warnings so operators react before 429.
+                self._maybe_warn_rate_limit_headers(
+                    dict(response.headers), xero_tenant_id or ""
+                )
 
                 return response.json()
 

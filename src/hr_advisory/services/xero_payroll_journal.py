@@ -12,15 +12,60 @@ Two responsibilities:
    Validates debits == credits before returning.
 
 Xero convention: positive ``amount`` = debit, negative = credit.
+
+Currency
+--------
+Journals post in the Xero org's **base currency**. Multi-currency
+support (CurrencyCode + CurrencyRate at the journal level) is
+explicitly deferred (M2-T12). SG SMEs paying employees in SGD are
+covered. Multi-currency would matter for groups paying foreign-
+currency wages or for AU/NZ orgs with SGD payroll lines, but is
+gated on customer pull — don't build speculatively.
+
+Re-enabling later requires:
+- Adding ``currency_code`` + ``currency_rate`` parameters to this
+  function (default None / 1.0 for SGD).
+- Threading them into the Xero ManualJournal payload via
+  ``XeroAdapter.post_payroll_journal``.
+- Sourcing the rate from Xero's CurrencyRates endpoint or letting
+  the user override.
+- A UI control in the export modal to pick the currency.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal, getcontext
 from typing import Iterable
 
 logger = logging.getLogger(__name__)
+
+# 28 digits is plenty for SG SME payroll — biggest realistic case is
+# ~10k employees * ~$10k/month gross. Setting it explicitly so the
+# arithmetic doesn't depend on the host's default precision.
+getcontext().prec = 28
+
+_TWO_PLACES = Decimal("0.01")
+
+
+def _to_decimal(value) -> Decimal:
+    """Coerce float / int / str / Decimal → Decimal without losing precision.
+
+    Floats are converted via str() to avoid IEEE-754 representation
+    artifacts (e.g. 0.1 + 0.2 != 0.3). DataFlow rows store financial
+    fields as floats today; the conversion happens at this boundary.
+    """
+    if isinstance(value, Decimal):
+        return value
+    if value is None:
+        return Decimal(0)
+    return Decimal(str(value))
+
+
+def _quantize(value: Decimal) -> Decimal:
+    """Round to 2dp using half-up (the convention SG accountants expect)."""
+    return value.quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
 
 
 # Six buckets the company must map to Xero account codes before exporting.
@@ -174,6 +219,42 @@ def mapping_is_complete(mapping: dict) -> bool:
     return all(str(mapping.get(field) or "").strip() for field in MAPPING_FIELDS)
 
 
+def compute_bonus_total(payroll_run_id: int, company_id: int) -> float:
+    """Sum bonus + commission line items across the run's payslips.
+
+    Used by the export modal to pre-fill bonus_total with a value
+    derived from actual payslip data, instead of requiring the user
+    to type a number that might not match what was paid. The user can
+    still override; the modal warns if their override differs by >1%.
+
+    Returns the sum as a float (DataFlow row convention) — boundary
+    layer converts to Decimal for arithmetic.
+    """
+    from hr_advisory.services import dataflow_crud
+
+    payslips = dataflow_crud.list_records(
+        "Payslip",
+        {"payroll_run_id": payroll_run_id, "company_id": company_id},
+        cache_ttl=0,
+    )
+    if not payslips:
+        return 0.0
+
+    payslip_ids = {p["id"] for p in payslips}
+    items = dataflow_crud.list_records(
+        "PayslipItem",
+        {"company_id": company_id},
+        cache_ttl=0,
+    )
+    total = Decimal(0)
+    for item in items:
+        if item.get("payslip_id") not in payslip_ids:
+            continue
+        if item.get("item_type") in ("bonus", "commission"):
+            total += _to_decimal(item.get("amount"))
+    return float(_quantize(total))
+
+
 def missing_buckets(mapping: dict) -> list[str]:
     """Bucket field names that are not yet mapped."""
     return [
@@ -183,8 +264,14 @@ def missing_buckets(mapping: dict) -> list[str]:
     ]
 
 
-def _round2(value: float) -> float:
-    return round(float(value), 2)
+def _round2(value) -> float:
+    """Float-API compatibility — round Decimal/float to 2dp float.
+
+    Kept for the Xero adapter path which still expects floats. Inside
+    the journal builder the new Decimal-native pathway is preferred;
+    this function is the boundary-crossing helper.
+    """
+    return float(_quantize(_to_decimal(value)))
 
 
 def build_journal_lines(
@@ -234,14 +321,18 @@ def build_journal_lines(
             f"Xero account mapping incomplete. Missing: {missing}"
         )
 
-    gross = float(payroll_run.get("total_gross") or 0.0)
-    net = float(payroll_run.get("total_net") or 0.0)
-    employer_cpf = float(payroll_run.get("total_employer_cpf") or 0.0)
-    employee_cpf = float(payroll_run.get("total_employee_cpf") or 0.0)
-    sdl = float(payroll_run.get("total_sdl") or 0.0)
-    fwl = float(payroll_run.get("total_fwl") or 0.0)
-    shg = float(payroll_run.get("total_shg") or 0.0)
-    bonus = max(0.0, float(bonus_total))
+    # Convert at the boundary — DataFlow rows are floats; everything
+    # downstream is Decimal so we get exact arithmetic, exact balance
+    # checks, and reproducible rounding (ROUND_HALF_UP, the SG SME
+    # convention) at line emission.
+    gross = _to_decimal(payroll_run.get("total_gross"))
+    net = _to_decimal(payroll_run.get("total_net"))
+    employer_cpf = _to_decimal(payroll_run.get("total_employer_cpf"))
+    employee_cpf = _to_decimal(payroll_run.get("total_employee_cpf"))
+    sdl = _to_decimal(payroll_run.get("total_sdl"))
+    fwl = _to_decimal(payroll_run.get("total_fwl"))
+    shg = _to_decimal(payroll_run.get("total_shg"))
+    bonus = max(Decimal(0), _to_decimal(bonus_total))
     if bonus > gross:
         raise ValueError(
             f"bonus_total ({bonus:.2f}) cannot exceed total_gross "
@@ -268,7 +359,7 @@ def build_journal_lines(
             {
                 "account_code": mapping["salary_expense_code"],
                 "description": f"Salaries — {period_label}".strip(" —"),
-                "amount": _round2(salary),
+                "amount": float(_quantize(salary)),
                 "tax_type": "BASEXCLUDED",
             }
         )
@@ -277,7 +368,7 @@ def build_journal_lines(
             {
                 "account_code": mapping["bonus_expense_code"],
                 "description": f"Bonus — {period_label}".strip(" —"),
-                "amount": _round2(bonus),
+                "amount": float(_quantize(bonus)),
                 "tax_type": "BASEXCLUDED",
             }
         )
@@ -286,7 +377,7 @@ def build_journal_lines(
             {
                 "account_code": mapping["employer_cpf_expense_code"],
                 "description": f"Employer CPF — {period_label}".strip(" —"),
-                "amount": _round2(employer_cpf),
+                "amount": float(_quantize(employer_cpf)),
                 "tax_type": "BASEXCLUDED",
             }
         )
@@ -300,7 +391,7 @@ def build_journal_lines(
             {
                 "account_code": mapping["sdl_expense_code"],
                 "description": f"{sdl_label} — {period_label}".strip(" —"),
-                "amount": _round2(sdl_plus_fwl),
+                "amount": float(_quantize(sdl_plus_fwl)),
                 "tax_type": "BASEXCLUDED",
             }
         )
@@ -312,7 +403,7 @@ def build_journal_lines(
             {
                 "account_code": mapping["cpf_payable_code"],
                 "description": f"CPF & statutory payable — {period_label}".strip(" —"),
-                "amount": -_round2(cpf_payable),
+                "amount": float(-_quantize(cpf_payable)),
                 "tax_type": "BASEXCLUDED",
             }
         )
@@ -321,7 +412,7 @@ def build_journal_lines(
             {
                 "account_code": mapping["net_pay_payable_code"],
                 "description": f"Net wages payable — {period_label}".strip(" —"),
-                "amount": -_round2(net),
+                "amount": float(-_quantize(net)),
                 "tax_type": "BASEXCLUDED",
             }
         )
@@ -331,10 +422,11 @@ def build_journal_lines(
             "Payroll run has no monetary totals — nothing to export."
         )
 
-    # Defensive balance check before we hand off to the Xero adapter
-    # (which also validates, but a clearer error here helps debugging).
-    total = round(sum(line["amount"] for line in lines), 2)
-    if abs(total) > 0.01:
+    # Defensive balance check using Decimal so we never accept a
+    # journal that won't balance on Xero's side. Sum back as Decimal,
+    # round to 2dp, compare against zero.
+    total = sum((_to_decimal(line["amount"]) for line in lines), Decimal(0))
+    if _quantize(abs(total)) > _TWO_PLACES:
         raise ValueError(
             f"Journal does not balance: total={total:.2f}. "
             "Debits must equal credits. Check that net + cpf_payable "

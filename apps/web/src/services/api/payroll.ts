@@ -422,6 +422,28 @@ export interface XeroMappingResponse {
   last_updated_at: string;
 }
 
+/** GET /payroll/xero/mapping-health — is the saved mapping still valid. */
+export interface XeroMappingHealthResponse {
+  archived: string[];
+  missing: string[];
+  system_managed: string[];
+  ok: boolean;
+}
+
+/** GET /payroll/runs/{id}/xero-export-status — last attempt summary. */
+export interface XeroExportStatusResponse {
+  current_journal_id: string;
+  current_exported_at: string;
+  last_attempt: {
+    status: "POSTED" | "FAILED" | "VOIDED";
+    journal_id: string;
+    posted_at: string;
+    error_message: string;
+    actor_id: number;
+  } | null;
+  attempt_count: number;
+}
+
 export interface XeroExportRequest {
   bonus_total?: number;
   narration?: string;
@@ -449,9 +471,35 @@ export const xeroPayrollApi = {
     return apiClient.get<XeroStatusResponse>("/payroll/xero/status");
   },
 
-  getChartOfAccounts(): Promise<XeroChartOfAccountsResponse> {
+  /** Sum of bonus + commission line items for a payroll run.
+   *  Modal uses this to pre-fill the bonus_total field. */
+  getSuggestedBonus(runId: number): Promise<{ suggested_bonus_total: number }> {
+    return apiClient.get<{ suggested_bonus_total: number }>(
+      `/payroll/runs/${runId}/xero-suggested-bonus`,
+    );
+  },
+
+  /** Most recent XeroExportLog status for a run (M2-T07). */
+  getExportStatus(runId: number): Promise<XeroExportStatusResponse> {
+    return apiClient.get<XeroExportStatusResponse>(
+      `/payroll/runs/${runId}/xero-export-status`,
+    );
+  },
+
+  getChartOfAccounts(
+    forceRefresh = false,
+  ): Promise<XeroChartOfAccountsResponse> {
     return apiClient.get<XeroChartOfAccountsResponse>(
       "/payroll/xero/chart-of-accounts",
+      forceRefresh ? { refresh: "true" } : undefined,
+    );
+  },
+
+  /** Compares saved mapping to current Xero chart and returns
+   *  archived/missing/system_managed codes (M1-T06). */
+  getMappingHealth(): Promise<XeroMappingHealthResponse> {
+    return apiClient.get<XeroMappingHealthResponse>(
+      "/payroll/xero/mapping-health",
     );
   },
 
@@ -475,5 +523,15 @@ export const xeroPayrollApi = {
       `/payroll/runs/${runId}/export-xero`,
       body,
     );
+  },
+
+  /** Void a previously-exported journal at Xero and clear the run's
+   *  xero_journal_id locally. Posts a XeroExportLog VOIDED row for audit. */
+  voidExport(runId: number): Promise<{
+    voided_journal_id: string;
+    status: string;
+    voided_at: string;
+  }> {
+    return apiClient.post(`/payroll/runs/${runId}/void-xero-export`);
   },
 };

@@ -66,6 +66,42 @@ def test_malformed_state_rejected():
         _verify("no-dot-here")
 
 
+def test_assert_xero_scopes_passes_when_required_scope_present():
+    from hr_advisory.mcp_servers.adapters.xero import assert_xero_scopes
+
+    # Token with manualjournals scope can post journals — no raise.
+    assert_xero_scopes(
+        ["openid", "offline_access", "accounting.manualjournals"],
+        feature="post_payroll_journal",
+    )
+
+
+def test_assert_xero_scopes_raises_with_missing_list():
+    from hr_advisory.mcp_servers.adapters.xero import (
+        XeroScopeMissing,
+        assert_xero_scopes,
+    )
+
+    # Token connected before settings.read was required fails the
+    # chart-of-accounts feature check.
+    try:
+        assert_xero_scopes(
+            ["openid", "offline_access", "accounting.manualjournals"],
+            feature="get_chart_of_accounts",
+        )
+    except XeroScopeMissing as exc:
+        assert exc.missing_scopes == ["accounting.settings.read"]
+    else:
+        raise AssertionError("expected XeroScopeMissing")
+
+
+def test_assert_xero_scopes_unknown_feature_is_noop():
+    from hr_advisory.mcp_servers.adapters.xero import assert_xero_scopes
+
+    # No raise — unknown feature key is the safe default.
+    assert_xero_scopes([], feature="not-a-real-feature")
+
+
 def test_extract_offending_codes_pulls_codes_from_xero_400():
     """Regression: M1-T05 — the adapter must extract every account
     code Xero rejects so the API can show the user exactly which

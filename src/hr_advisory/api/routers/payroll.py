@@ -3260,6 +3260,76 @@ async def get_xero_mapping_health(
     }
 
 
+@router.get("/runs/{run_id}/xero-export-status")
+async def get_xero_export_status(
+    run_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Most recent XeroExportLog status for a payroll run.
+
+    Used by the run detail page to show an accurate badge for runs
+    whose last export attempt failed or was voided — `xero_journal_id`
+    alone doesn't tell us whether the most recent attempt succeeded.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    run = dataflow_crud.read("PayrollRun", run_id)
+    if run is None or run.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Payroll run not found.")
+
+    rows = dataflow_crud.list_records(
+        "XeroExportLog",
+        {"company_id": company_id, "payroll_run_id": run_id},
+        cache_ttl=0,
+    )
+    rows.sort(key=lambda r: r.get("posted_at") or "", reverse=True)
+    last = rows[0] if rows else None
+
+    return {
+        "current_journal_id": run.get("xero_journal_id") or "",
+        "current_exported_at": run.get("xero_exported_at") or "",
+        "last_attempt": (
+            None
+            if last is None
+            else {
+                "status": last.get("status"),
+                "journal_id": last.get("journal_id"),
+                "posted_at": last.get("posted_at"),
+                "error_message": last.get("error_message"),
+                "actor_id": last.get("actor_id"),
+            }
+        ),
+        "attempt_count": len(rows),
+    }
+
+
+@router.get("/runs/{run_id}/xero-suggested-bonus")
+async def get_xero_suggested_bonus(
+    run_id: int,
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Sum bonus + commission PayslipItems for the run.
+
+    The export modal pre-fills its bonus_total field from this so the
+    Salary/Bonus expense split mirrors what was actually paid, instead
+    of relying on the user to type a number from memory (M2-T05).
+    """
+    from hr_advisory.services.xero_payroll_journal import compute_bonus_total
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    run = dataflow_crud.read("PayrollRun", run_id)
+    if run is None or run.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Payroll run not found.")
+
+    suggested = compute_bonus_total(run_id, company_id)
+    return {"suggested_bonus_total": suggested}
+
+
 @router.get("/xero/account-mapping")
 async def get_xero_account_mapping(
     current_user: dict = Depends(require_role("owner", "hr_manager")),
@@ -3425,6 +3495,106 @@ async def export_payroll_run_to_xero(
         lock_ctx.__exit__(None, None, None)
 
 
+@router.post("/runs/{run_id}/void-xero-export")
+async def void_payroll_run_xero_export(
+    run_id: int,
+    current_user: dict = Depends(require_role("owner")),
+) -> dict:
+    """Void the Xero ManualJournal previously posted for this run.
+
+    Reverses a wrongly-exported run without producing a duplicate at
+    Xero. The journal stays visible in the customer's Xero (status
+    VOIDED, original date) so the audit trail is preserved — see
+    ``02-data-retention.md``. Clears ``xero_journal_id`` on the
+    PayrollRun so the run is treated as "not yet exported" again
+    (the next export uses a fresh idempotency key, no force needed).
+    """
+    from hr_advisory.mcp_servers.adapters.xero import (
+        XeroAPIError,
+        XeroReauthRequired,
+        get_xero_adapter,
+    )
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    actor_id = int(current_user.get("sub", 0))
+    run = dataflow_crud.read("PayrollRun", run_id)
+    if run is None or run.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Payroll run not found.")
+
+    journal_id = (run.get("xero_journal_id") or "").strip()
+    if not journal_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This run has not been exported to Xero — nothing to void.",
+        )
+
+    adapter = get_xero_adapter()
+    try:
+        result = await adapter.void_journal(str(company_id), journal_id)
+    except XeroReauthRequired as exc:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "message": "Reconnect Xero to void this journal.",
+                "action": "reconnect",
+                "reconnect_url": "/settings/integrations?reconnect=xero",
+            },
+        ) from exc
+    except XeroAPIError as exc:
+        logger.warning(
+            "Void failed for run=%s journal=%s: %s", run_id, journal_id, exc
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Xero rejected the void: {exc}",
+        ) from exc
+
+    now = datetime.now(timezone.utc).isoformat()
+    dataflow_crud.update(
+        "PayrollRun",
+        run_id,
+        {
+            "xero_journal_id": "",
+            "xero_exported_at": "",
+        },
+    )
+    # Audit log row for the void.
+    try:
+        dataflow_crud.create(
+            "XeroExportLog",
+            {
+                "company_id": company_id,
+                "payroll_run_id": run_id,
+                "journal_id": journal_id,
+                "posted_at": now,
+                "actor_id": actor_id,
+                "line_count": 0,
+                "payload_hash": "",
+                "status": "VOIDED",
+                "error_message": "",
+                "bonus_total": 0.0,
+                "forced_reexport": False,
+            },
+        )
+    except Exception:
+        logger.exception("Failed to write XeroExportLog VOIDED row")
+
+    logger.info(
+        "Voided Xero journal %s for run=%s, company=%s",
+        journal_id,
+        run_id,
+        company_id,
+    )
+    return {
+        "voided_journal_id": journal_id,
+        "status": result.get("status", "VOIDED"),
+        "voided_at": now,
+    }
+
+
 async def _do_xero_export(
     *,
     run_id: int,
@@ -3438,8 +3608,11 @@ async def _do_xero_export(
         XeroAPIError,
         XeroRateLimitError,
         XeroReauthRequired,
+        XeroScopeMissing,
+        assert_xero_scopes,
         get_xero_adapter,
     )
+    from hr_advisory.mcp_servers.auth.token_store import get_token_manager
     from hr_advisory.services.xero_payroll_journal import build_journal_lines
 
     run = dataflow_crud.read("PayrollRun", run_id)
@@ -3500,6 +3673,27 @@ async def _do_xero_export(
             status_code=409,
             detail="Xero is not connected. Reconnect it in Settings → Integrations.",
         )
+
+    # Scope guard (M2-T08). Tokens issued before a feature was added
+    # may lack a required scope; surface a typed 403 with a reconnect
+    # link rather than letting the call fail with a generic 502.
+    stored = get_token_manager().get_stored_token(str(company_id), "xero")
+    if stored is not None:
+        try:
+            assert_xero_scopes(stored.scopes, feature="post_payroll_journal")
+        except XeroScopeMissing as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": (
+                        "Your Xero connection is missing a required permission. "
+                        "Reconnect Xero to grant the additional scope."
+                    ),
+                    "action": "reconnect_for_scope",
+                    "missing_scopes": exc.missing_scopes,
+                    "reconnect_url": "/settings/integrations?reconnect=xero",
+                },
+            ) from exc
 
     try:
         journal_data = build_journal_lines(

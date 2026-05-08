@@ -93,6 +93,72 @@ integration is too new for any rows to be eligible yet.
 
 ---
 
+## Void / reversal date semantics (M2-T10)
+
+When a customer voids an exported journal via the run detail page,
+the adapter PUTs `Status: VOIDED` against the original ManualJournal
+ID and **does not change the JournalDate**. Implications:
+
+- The void appears in the customer's Xero on the **original posting
+  date**, not the void date. This preserves period accuracy — the
+  expense and the reversal both belong to the period the payroll
+  was actually for.
+- Auditors and accountants see a clean trail: a POSTED journal on
+  date X, then a VOIDED status update on the same id. Drilldown
+  shows when the void happened (Xero tracks `UpdatedDateUTC`
+  internally) but the ledger date stays put.
+- Arbor mirrors this on its side: `XeroExportLog` records two rows
+  for the run — POSTED with `posted_at = original`, then VOIDED
+  with `posted_at = now`. The journal_id is identical on both rows
+  so the pair is queryable as a unit.
+
+We chose this over a "post a counter-journal on today's date"
+approach because:
+
+1. SG accountants generally prefer same-period reversals for
+   period-close cleanliness.
+2. Counter-journals would double the row count in Xero's journal
+   report, making month-end reconciliation harder.
+3. Re-exporting after a void uses a fresh idempotency key (the
+   force counter increments) so the new journal is genuinely a new
+   entry, not a duplicate dedupe.
+
+If a customer needs the void to land on the void date specifically
+(rare; usually for next-FY corrections), they can manually add a
+counter-journal in Xero — Arbor doesn't currently expose that.
+
+---
+
+## Disconnect verification (M2-T06)
+
+The end-to-end disconnect path is exercised in two places:
+
+1. **Settings → Integrations card** — when a user clicks the
+   Disconnect button (and the integration card detects `xero`,
+   special-cases the new endpoint), the page reloads and the card
+   flips to Disconnected.
+2. **Settings → Integrations → Xero** dedicated page — full
+   disconnect flow with confirmation prompt, hard-delete + Xero-side
+   revoke, page reload to flip status.
+
+A 401 on any subsequent `/api.xro/2.0/*` call also auto-disconnects
+locally (covered by `_api_call`'s 401 path → `revoke_token` +
+`XeroReauthRequired`). Smoke-test scenarios:
+
+- **User-initiated disconnect**: confirm dialog → POST → IntegrationToken
+  row hard-deleted → settings card flips → Xero "Connected apps"
+  no longer lists Arbor.
+- **Xero-side revocation**: customer revokes from inside Xero →
+  next API call returns 401 → adapter auto-disconnects → next page
+  load shows "Connect Xero" instead of "Connected".
+- **Refresh-token expiry**: `_refresh_token` returns `invalid_grant`
+  → adapter auto-disconnects → next page load shows reconnect prompt.
+
+These paths share the same `revoke_token` / `hard_delete` helpers,
+so once one passes the others should too.
+
+---
+
 ## What we do NOT store
 
 - The plaintext payroll journal JSON sent to Xero (we hash it).

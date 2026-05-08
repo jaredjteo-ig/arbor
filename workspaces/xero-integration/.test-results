@@ -1,28 +1,31 @@
-commit: f2d6cfa68349c372781e2ed4374aa4a532fda920 (baseline before M1)
-timestamp: 2026-05-08T07:00:00Z
-phase: M1 — Finish-The-Launch (code-only items)
-baseline_pass: 44
-baseline_fail: 0 (excluded e2e — needs fresh OAuth tokens)
-final_pass: 45
+commit: f45d94638379ff0a4d225cc74e755677e7df4e70 (baseline before M2)
+timestamp: 2026-05-08T07:30:00Z
+phase: M2 — Day-2 Robustness
+baseline_pass: 45
+baseline_fail: 0 (excluded e2e — needs fresh OAuth tokens; pre-existing)
+final_pass: 51
 final_fail: 0
-new_tests: 1 (offending-code regex unit test)
+new_tests: 6
+  - 1 unit (large-payroll Decimal balance invariant)
+  - 3 unit (scope-mismatch detection: passes / raises with missing list / unknown feature noop)
+  - 2 integration (void clears journal id + audits; void rejects no-journal run)
 regressions: 0
 command: pytest tests/{unit/test_xero_*,integration/test_xero_*,regression/test_xero_*} --timeout=60 -q
 ts_check: 0 errors
 
-m1_completed_in_session:
-  - M1-T02 Frontend: Settings → Connect Xero now calls /integrations/xero/oauth/start
-  - M1-T07 Disconnect endpoint: PDPA hard-delete + revoke at Xero source
-  - M1-T03 XeroReauthRequired typed exception on invalid_grant + structured 401 response
-  - M1-T09 401 from any /api.xro/2.0/* endpoint auto-disconnects locally + signals reauth
-  - M1-T05 CoA cache invalidation on account-not-found + XeroAccountInvalid typed error
-  - M1-T06 GET /payroll/xero/mapping-health returns archived/missing/system_managed codes
-  - M1-T04 scripts/keep_xero_tokens_warm.py — daily refresh keepalive
-  - M1-T10 02-data-retention.md + scripts/redact_old_xero_tokens.py monthly redaction
-  - M1-T08 deploy/xero-deployment-runbook.md
+m2_completed_in_session:
+  - M2-T03 Decimal arithmetic in journal builder (ROUND_HALF_UP, prec=28)
+  - M2-T04 Per-Xero-org rate-limit key (xero_org:{tenant_id}, not company_id)
+  - M2-T11 X-DayLimit-Remaining / X-MinLimit-Remaining warnings in logs
+  - M2-T05 bonus_total auto-derived from PayslipItem (with override + drift warning)
+  - M2-T08 XeroScopeMissing typed error + assert_xero_scopes guard at call sites
+  - M2-T01 POST /payroll/runs/{id}/void-xero-export + Void button on run detail
+  - M2-T02 Settings → Integrations → Xero mapping page (mapping form, refresh,
+           disconnect, mapping-health banner, "Manage" link from integrations card)
+  - M2-T09 Account-code typeahead (filter by code OR name) replaces dropdown
+  - M2-T07 GET /payroll/runs/{id}/xero-export-status; status badge for FAILED / VOIDED
+  - M2-T06 Disconnect UX paths documented (user, Xero-side revoke, refresh expiry)
+  - M2-T10 Reversal date semantics documented (void preserves original date)
+  - M2-T12 Cross-currency deferred (documented in service module docstring)
 
-m1_deferred:
-  - M1-T01 partner-program submission — re-framed as customer-evidence-gated
-    (start when 3+ paying customers connected; deploy first)
-
-next: M2 — Day-2 robustness (12 items)
+next: M3 — Polish + Operational Maturity (7 items) and/or M4 docs.

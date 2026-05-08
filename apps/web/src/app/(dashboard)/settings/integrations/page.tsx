@@ -309,6 +309,16 @@ function ProviderRow({
         )}
       </div>
       <div className="flex items-center gap-2 shrink-0">
+        {/* Xero gets a dedicated settings page (mapping, refresh, disconnect). */}
+        {config.id === "xero" && (
+          <Link
+            href="/settings/integrations/xero"
+            className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+          >
+            Manage
+            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+          </Link>
+        )}
         {isConnected && (
           <AppButton
             variant="outlined"
