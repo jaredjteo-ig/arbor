@@ -24,6 +24,10 @@ export interface PayrollRun {
   approved_by: number | null;
   approved_at: string;
   notes: string;
+  /** Xero ManualJournalID once exported; empty string means not exported. */
+  xero_journal_id?: string;
+  /** ISO timestamp of last successful Xero export; empty string when never. */
+  xero_exported_at?: string;
 }
 
 export interface PayslipSummary {
@@ -378,3 +382,96 @@ export interface ParallelCompareResult {
   unmatched_external: ParallelUnmatched[];
   unmatched_arbor: ParallelUnmatched[];
 }
+
+/* ── Xero export ─────────────────────────────────────────── */
+
+/** Six buckets the user maps to Xero account codes before export. */
+export interface XeroAccountMapping {
+  salary_expense_code: string;
+  bonus_expense_code: string;
+  employer_cpf_expense_code: string;
+  sdl_expense_code: string;
+  cpf_payable_code: string;
+  net_pay_payable_code: string;
+}
+
+export interface XeroStatusResponse {
+  connected: boolean;
+  mapping_present: boolean;
+  mapping_complete: boolean;
+}
+
+export interface XeroAccount {
+  Code: string;
+  Name: string;
+  Type: string;
+  [key: string]: unknown;
+}
+
+export interface XeroChartOfAccountsResponse {
+  accounts: XeroAccount[];
+}
+
+/** GET /payroll/xero/account-mapping — saved or auto-matched. */
+export interface XeroMappingResponse {
+  source: "saved" | "auto_match" | "empty";
+  mapping: XeroAccountMapping;
+  complete: boolean;
+  last_updated_at: string;
+}
+
+export interface XeroExportRequest {
+  bonus_total?: number;
+  narration?: string;
+  force?: boolean;
+}
+
+export interface XeroExportLine {
+  account_code: string;
+  description: string;
+  amount: number;
+}
+
+export interface XeroExportResponse {
+  journal_id: string;
+  status: string;
+  narration: string;
+  date: string;
+  line_count: number;
+  exported_at: string;
+  lines_preview: XeroExportLine[];
+}
+
+export const xeroPayrollApi = {
+  getStatus(): Promise<XeroStatusResponse> {
+    return apiClient.get<XeroStatusResponse>("/payroll/xero/status");
+  },
+
+  getChartOfAccounts(): Promise<XeroChartOfAccountsResponse> {
+    return apiClient.get<XeroChartOfAccountsResponse>(
+      "/payroll/xero/chart-of-accounts",
+    );
+  },
+
+  getMapping(): Promise<XeroMappingResponse> {
+    return apiClient.get<XeroMappingResponse>("/payroll/xero/account-mapping");
+  },
+
+  putMapping(mapping: XeroAccountMapping): Promise<{
+    mapping: XeroAccountMapping;
+    complete: boolean;
+    last_updated_at: string;
+  }> {
+    return apiClient.put("/payroll/xero/account-mapping", { mapping });
+  },
+
+  exportRun(
+    runId: number,
+    body: XeroExportRequest = {},
+  ): Promise<XeroExportResponse> {
+    return apiClient.post<XeroExportResponse>(
+      `/payroll/runs/${runId}/export-xero`,
+      body,
+    );
+  },
+};

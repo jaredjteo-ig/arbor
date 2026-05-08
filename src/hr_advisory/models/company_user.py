@@ -768,6 +768,11 @@ class PayrollRun:
     approved_by: Optional[int] = None
     approved_at: str = ""
     notes: str = ""
+    # Xero journal export — populated when the run is pushed to Xero as a
+    # ManualJournal. xero_journal_id is the Xero ManualJournalID; empty
+    # means "not yet exported." Re-exporting overwrites these fields.
+    xero_journal_id: str = ""
+    xero_exported_at: str = ""
 
     __dataflow__ = {
         "indexes": [
@@ -1691,6 +1696,35 @@ class PayslipSettings:
     __dataflow__ = {
         "indexes": [
             {"name": "idx_paysettings_company", "fields": ["company_id"]},
+        ],
+    }
+
+
+@db.model
+class XeroAccountMapping:
+    """Per-company mapping of payroll buckets to Xero account codes.
+
+    Required before a payroll run can be exported as a Xero ManualJournal.
+    Each field stores a Xero AccountCode (e.g. "477", "6000"). Empty means
+    "not mapped" — the export endpoint validates that all six are set.
+
+    Auto-match on first export pre-fills these from the company's Xero
+    chart of accounts; the user confirms/edits in the export modal.
+    """
+
+    company_id: int
+    salary_expense_code: str = ""
+    bonus_expense_code: str = ""
+    employer_cpf_expense_code: str = ""
+    sdl_expense_code: str = ""
+    cpf_payable_code: str = ""
+    net_pay_payable_code: str = ""
+    last_updated_by: int = 0
+    last_updated_at: str = ""
+
+    __dataflow__ = {
+        "indexes": [
+            {"name": "idx_xeromap_company", "fields": ["company_id"]},
         ],
     }
 

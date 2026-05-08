@@ -83,6 +83,15 @@ export {
 } from "./useQa";
 
 export {
+  xeroPayrollKeys,
+  useXeroPayrollStatus,
+  useXeroChartOfAccounts,
+  useXeroMapping,
+  useSaveXeroMapping,
+  useExportRunToXero,
+} from "./useXeroPayroll";
+
+export {
   integrationKeys,
   useIntegrationStatus,
   useConnectorHealth,

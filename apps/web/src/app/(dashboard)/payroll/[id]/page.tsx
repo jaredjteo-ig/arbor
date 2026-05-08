@@ -20,6 +20,7 @@ import {
   ChevronUp,
   Download,
   FileText,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -28,6 +29,7 @@ import {
   type PayslipSummary,
   type PayslipDetail,
 } from "@/services/api/payroll";
+import { XeroExportModal } from "@/components/payroll/XeroExportModal";
 
 /* ── Helpers ──────────────────────────────────────────────── */
 
@@ -320,6 +322,7 @@ export default function PayrollRunDetailPage({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [xeroOpen, setXeroOpen] = useState<boolean>(false);
 
   const fetchRun = useCallback(async () => {
     setIsLoading(true);
@@ -568,7 +571,7 @@ export default function PayrollRunDetailPage({
             </div>
           )}
 
-          {/* File downloads */}
+          {/* File downloads + accounting export */}
           {run.status !== "cancelled" && (
             <div className="flex flex-wrap gap-3">
               <AppButton
@@ -591,7 +594,46 @@ export default function PayrollRunDetailPage({
                 <FileText className="h-4 w-4 mr-1.5" />
                 Bank GIRO File
               </AppButton>
+              {/* Xero export — only available once the run is approved or paid;
+                  draft and cancelled runs hide the button entirely. */}
+              {isAdmin &&
+                (run.status === "approved" || run.status === "paid") && (
+                  <AppButton
+                    variant="outlined"
+                    size="sm"
+                    onClick={() => setXeroOpen(true)}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-1.5" />
+                    {run.xero_journal_id
+                      ? "Re-export to Xero"
+                      : "Export to Xero"}
+                  </AppButton>
+                )}
             </div>
+          )}
+
+          {/* Xero export status badge */}
+          {run.xero_journal_id && (
+            <div className="inline-flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Exported to Xero · journal{" "}
+              <span className="font-mono">{run.xero_journal_id}</span>
+              {run.xero_exported_at
+                ? ` · ${formatDate(run.xero_exported_at)}`
+                : ""}
+            </div>
+          )}
+
+          {/* Conditional render so closing unmounts the modal and resets
+              its transient state (overrides, bonus, force, result). */}
+          {xeroOpen && (
+            <XeroExportModal
+              isOpen
+              onClose={() => setXeroOpen(false)}
+              runId={runId}
+              existingJournalId={run.xero_journal_id || undefined}
+              onExported={fetchRun}
+            />
           )}
 
           {/* Payslip table */}

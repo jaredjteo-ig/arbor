@@ -3012,3 +3012,336 @@ async def compare_parallel_payroll(
         "unmatched_external": unmatched_external,
         "unmatched_arbor": unmatched_arbor,
     }
+
+
+# --------------------------------------------------------------------------
+# Xero payroll-journal export
+# --------------------------------------------------------------------------
+#
+# Lifecycle:
+#   1. User OAuth-connects Xero in Settings → Integrations
+#      (existing flow — uses XeroAdapter token store).
+#   2. GET /payroll/xero/status — UI checks if Xero is connected and
+#      whether an account mapping has been saved.
+#   3. GET /payroll/xero/chart-of-accounts — populates dropdowns in the
+#      mapping modal.
+#   4. GET /payroll/xero/account-mapping — returns saved mapping if any,
+#      otherwise auto-match suggestions from the chart of accounts.
+#   5. PUT /payroll/xero/account-mapping — persists the user-confirmed
+#      mapping (idempotent upsert keyed by company_id).
+#   6. POST /payroll/runs/{run_id}/export-xero — builds the journal,
+#      posts to Xero, stamps xero_journal_id + xero_exported_at on the
+#      PayrollRun. Run must be in 'approved' or 'paid' status.
+
+_XERO_PROVIDER = "xero"
+
+
+def _get_xero_mapping(company_id: int) -> dict | None:
+    rows = dataflow_crud.list_records(
+        "XeroAccountMapping",
+        {"company_id": company_id},
+        cache_ttl=0,
+    )
+    return rows[0] if rows else None
+
+
+@router.get("/xero/status")
+async def get_xero_status(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Connection + mapping status for the Xero export feature."""
+    from hr_advisory.mcp_servers.adapters.xero import get_xero_adapter
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    adapter = get_xero_adapter()
+    connected = adapter.is_connected(str(company_id))
+    mapping = _get_xero_mapping(company_id)
+
+    from hr_advisory.services.xero_payroll_journal import mapping_is_complete
+
+    return {
+        "connected": connected,
+        "mapping_present": mapping is not None,
+        "mapping_complete": bool(mapping and mapping_is_complete(mapping)),
+    }
+
+
+@router.get("/xero/chart-of-accounts")
+async def get_xero_chart_of_accounts(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Fetch the company's Xero chart of accounts for dropdown population."""
+    from hr_advisory.mcp_servers.adapters.xero import get_xero_adapter
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    adapter = get_xero_adapter()
+    if not adapter.is_connected(str(company_id)):
+        raise HTTPException(
+            status_code=409,
+            detail="Xero is not connected. Connect it in Settings → Integrations first.",
+        )
+
+    try:
+        accounts = await adapter.get_chart_of_accounts(str(company_id))
+    except Exception as exc:
+        logger.exception("Failed to fetch Xero chart of accounts")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch chart of accounts from Xero: {exc}",
+        ) from exc
+
+    return {"accounts": accounts}
+
+
+@router.get("/xero/account-mapping")
+async def get_xero_account_mapping(
+    current_user: dict = Depends(require_role("owner", "hr_manager")),
+) -> dict:
+    """Return saved mapping or auto-match suggestions from Xero accounts."""
+    from hr_advisory.mcp_servers.adapters.xero import get_xero_adapter
+    from hr_advisory.services.xero_payroll_journal import (
+        MAPPING_FIELDS,
+        auto_match_accounts,
+        mapping_is_complete,
+    )
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    saved = _get_xero_mapping(company_id)
+    if saved:
+        return {
+            "source": "saved",
+            "mapping": {field: saved.get(field, "") for field in MAPPING_FIELDS},
+            "complete": mapping_is_complete(saved),
+            "last_updated_at": saved.get("last_updated_at", ""),
+        }
+
+    adapter = get_xero_adapter()
+    if not adapter.is_connected(str(company_id)):
+        return {
+            "source": "empty",
+            "mapping": {field: "" for field in MAPPING_FIELDS},
+            "complete": False,
+            "last_updated_at": "",
+        }
+
+    try:
+        accounts = await adapter.get_chart_of_accounts(str(company_id))
+    except Exception:
+        logger.exception("Auto-match: failed to fetch chart of accounts")
+        return {
+            "source": "empty",
+            "mapping": {field: "" for field in MAPPING_FIELDS},
+            "complete": False,
+            "last_updated_at": "",
+        }
+
+    suggestions = auto_match_accounts(accounts)
+    return {
+        "source": "auto_match",
+        "mapping": suggestions,
+        "complete": mapping_is_complete(suggestions),
+        "last_updated_at": "",
+    }
+
+
+@router.put("/xero/account-mapping")
+async def put_xero_account_mapping(
+    request: Request,
+    current_user: dict = Depends(require_role("owner")),
+) -> dict:
+    """Persist the user-confirmed Xero account mapping (upsert per company)."""
+    from hr_advisory.services.xero_payroll_journal import (
+        MAPPING_FIELDS,
+        mapping_is_complete,
+    )
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    body = await request.json()
+    mapping_input = body.get("mapping") or {}
+    if not isinstance(mapping_input, dict):
+        raise HTTPException(status_code=400, detail="mapping must be an object.")
+
+    cleaned = {
+        field: str(mapping_input.get(field, "") or "").strip()
+        for field in MAPPING_FIELDS
+    }
+
+    actor_id = int(current_user.get("sub", 0))
+    now = datetime.now(timezone.utc).isoformat()
+
+    existing = _get_xero_mapping(company_id)
+    payload = {
+        **cleaned,
+        "last_updated_by": actor_id,
+        "last_updated_at": now,
+    }
+    if existing:
+        dataflow_crud.update("XeroAccountMapping", existing["id"], payload)
+    else:
+        dataflow_crud.create(
+            "XeroAccountMapping",
+            {"company_id": company_id, **payload},
+        )
+
+    return {
+        "mapping": cleaned,
+        "complete": mapping_is_complete(cleaned),
+        "last_updated_at": now,
+    }
+
+
+@router.post("/runs/{run_id}/export-xero")
+async def export_payroll_run_to_xero(
+    run_id: int,
+    request: Request,
+    current_user: dict = Depends(require_role("owner")),
+) -> dict:
+    """Push an approved payroll run to Xero as a ManualJournal.
+
+    Body (optional):
+        bonus_total: float — portion of total_gross paid as bonus, if
+            tracked separately. Defaults to 0.0 (all gross is salary).
+        narration: str — override the default journal memo.
+        force: bool — re-export even if xero_journal_id is already set.
+
+    Returns:
+        Dict with journal_id, status, narration, date, line_count.
+    """
+    from hr_advisory.mcp_servers.adapters.xero import (
+        XeroAPIError,
+        XeroRateLimitError,
+        get_xero_adapter,
+    )
+    from hr_advisory.services.xero_payroll_journal import build_journal_lines
+
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    check_rate_limit(
+        f"payroll_xero_export:{company_id}",
+        max_requests=20,
+        window_seconds=3600,
+        action_name="Xero payroll export",
+    )
+
+    run = dataflow_crud.read("PayrollRun", run_id)
+    if run is None or run.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Payroll run not found.")
+
+    if run.get("status") not in ("approved", "paid"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Only approved or paid payroll runs can be exported to Xero. "
+                f"Current status: {run.get('status', 'unknown')}."
+            ),
+        )
+
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    bonus_total = float(body.get("bonus_total") or 0.0)
+    narration_override = body.get("narration") or None
+    force = bool(body.get("force"))
+
+    if run.get("xero_journal_id") and not force:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This run was already exported to Xero. "
+                f"Existing journal id: {run['xero_journal_id']}. "
+                "Pass force=true to re-export."
+            ),
+        )
+
+    mapping = _get_xero_mapping(company_id)
+    if mapping is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Xero account mapping not configured. Save a mapping first.",
+        )
+
+    adapter = get_xero_adapter()
+    if not adapter.is_connected(str(company_id)):
+        raise HTTPException(
+            status_code=409,
+            detail="Xero is not connected. Reconnect it in Settings → Integrations.",
+        )
+
+    try:
+        journal_data = build_journal_lines(
+            payroll_run=run,
+            mapping=mapping,
+            bonus_total=bonus_total,
+            narration=narration_override,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        result = await adapter.post_payroll_journal(
+            str(company_id),
+            journal_data,
+        )
+    except XeroRateLimitError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Xero rate limit hit. Retry after {exc.retry_after}s.",
+        ) from exc
+    except XeroAPIError as exc:
+        logger.warning(
+            "Xero rejected payroll journal for run %s: %s", run_id, exc
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Xero rejected the journal: {exc}",
+        ) from exc
+    except Exception as exc:
+        logger.exception("Unexpected error posting Xero journal")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to post journal to Xero: {exc}",
+        ) from exc
+
+    journal_id = result.get("journal_id", "")
+    now = datetime.now(timezone.utc).isoformat()
+    dataflow_crud.update(
+        "PayrollRun",
+        run_id,
+        {
+            "xero_journal_id": journal_id,
+            "xero_exported_at": now,
+        },
+    )
+
+    logger.info(
+        "Exported payroll run %s to Xero as journal %s (company=%s)",
+        run_id,
+        journal_id,
+        company_id,
+    )
+
+    return {
+        "journal_id": journal_id,
+        "status": result.get("status", ""),
+        "narration": result.get("narration", ""),
+        "date": result.get("date", ""),
+        "line_count": result.get("line_count", 0),
+        "exported_at": now,
+        "lines_preview": journal_data["lines"],
+    }
