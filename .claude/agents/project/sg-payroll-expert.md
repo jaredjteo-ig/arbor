@@ -110,6 +110,50 @@ Compare Arbor calculations against an external HRIS:
 - Employee self-service: `GET /payroll/my-payslips/{id}/pdf`
 - CORS exposes `Content-Disposition` header for frontend filename extraction
 
+## Accounting Export (Xero, QBO, Zoho)
+
+Approved/paid payroll runs can be pushed to a connected accounting
+system as a balanced ManualJournal. The Xero path is production-ready;
+QBO and Zoho adapters are stubbed.
+
+**Critical SG-payroll-specific rules** (codified in
+`skills/project/third-party-integration-patterns.md`):
+
+1. **GST: BASEXCLUDED on every line.** SG GST-registered companies
+   (>S$1M turnover) MUST mark salary journal lines as out-of-scope
+   for GST. Default behaviour silently breaks the customer's IRAS
+   GST F5 return. Both the per-line `TaxType` and the journal-level
+   `LineAmountTypes: NoTax` are set in
+   `services/xero_payroll_journal.py::build_journal_lines`.
+2. **JournalDate must be `pay_date`, not `now()`.** Xero interprets
+   the date in the org's local timezone — UTC fallback near
+   month-end posts to the wrong period. The export endpoint hard-
+   rejects empty `pay_date` with 400.
+3. **Decimal arithmetic is mandatory** for the journal builder.
+   200-employee runs hit float ULP errors in the
+   `abs(total) > 0.01` balance check; the builder uses Decimal at
+   `prec=28` with `ROUND_HALF_UP` quantising at line emission.
+4. **The six payroll buckets** the builder maps to Xero accounts:
+   salary expense (gross − bonus), bonus expense, employer CPF,
+   SDL+FWL bundled, CPF & statutory payable (employer CPF +
+   employee CPF + SDL + FWL + SHG combined), net pay payable.
+   The invariant `gross - net == employee_cpf + shg` must hold
+   for the journal to balance.
+5. **Export endpoint is advisory-locked** per (company, run) so two
+   concurrent clicks can't post duplicate journals; force-re-export
+   voids the prior journal first to avoid leaving two POSTED
+   journals for the same period in the customer's books.
+
+**Files:** `src/hr_advisory/services/xero_payroll_journal.py`,
+`src/hr_advisory/api/routers/payroll.py` (`export-xero`,
+`void-xero-export`, `bulk-export-xero`, `mapping-health`,
+`xero-suggested-bonus`, `xero-export-status`,
+`operations-summary`). Tests:
+`tests/unit/test_xero_payroll_journal.py`,
+`tests/integration/test_xero_payroll_export_api.py`,
+`tests/regression/test_xero_concurrent_export.py`,
+`tests/e2e/test_xero_payroll_export_real.py`.
+
 ## Testing
 
 87 unit tests + 8 performance tests (200 employees < 30s, per-employee < 150ms). Covers: CPF all age bands, SDL boundaries, SHG all funds, proration, salary components, cross-module, edge cases, statutory file formats, CPF/FWL correctness by immigration status. Run: `python -m pytest tests/unit/test_payroll_calculator.py tests/performance/test_payroll_performance.py -v`

@@ -234,8 +234,55 @@ The discipline:
 ### Cron operational state (live)
 
 ```
-0 */6 * * * /opt/arbor/cron/refresh_calendar_watches.sh   # Calendar channel refresh
-0 1   * * * /opt/arbor/cron/send_overdue_reminders.sh     # Daily onboarding reminders
+0 */6 * * * /opt/arbor/cron/refresh_calendar_watches.sh    # Calendar channel refresh
+0 1   * * * /opt/arbor/cron/send_overdue_reminders.sh      # Daily onboarding reminders
+0 2   * * * python scripts/keep_xero_tokens_warm.py        # Refresh Xero tokens within 7d of expiry
+0 3 1 * *   python scripts/redact_old_xero_tokens.py       # PDPA redact disconnected tokens >90d
 ```
 
-Both cron scripts run inside `arbor-backend` via `docker exec` — env inherits from `docker-compose.prod.yml`. New env vars MUST be added to the backend service env block, NOT just `.env.prod` (the script only sees what compose passes through).
+All cron scripts run inside `arbor-backend` via `docker exec` — env inherits from `docker-compose.prod.yml`. New env vars MUST be added to the backend service env block, NOT just `.env.prod` (the script only sees what compose passes through).
+
+## Third-party OAuth integrations
+
+When wiring up any new accounting / HR / banking integration (Xero is
+the reference; QuickBooks and Zoho are stubbed adapters waiting to
+inherit the same hardening), follow the production-readiness playbook
+codified in **`skills/project/third-party-integration-patterns.md`**.
+It documents the 12 patterns the Xero workstream proved necessary —
+multi-org picker, HMAC-signed OAuth state, persisted token store,
+advisory-lock TOCTOU fix, Idempotency-Key + force counter,
+PDPA-compliant disconnect, audit log + payload hash, scope evolution,
+mapping health, decimal-arithmetic boundary, refresh-token cliff
+handling, bulk skip-not-abort — plus the M0..M4 milestone framework
+that turns ~38-40 distinct items into a single workstream.
+
+Three reference checkpoints when reviewing an integration PR:
+
+1. **Does the OAuth callback handle multi-org?** Search for
+   `connections[0]` — if present without a picker upstream, this
+   is a SILENT cross-tenant data leak (one customer's data lands in
+   another's books).
+2. **Is the export endpoint advisory-locked?** Concurrent same-run
+   POSTs without `pg_try_advisory_lock` produce silent duplicate
+   journals via the read-then-write race on any version counter.
+3. **Is the token store DB-backed and Fernet-encrypted with a
+   stable `INTEGRATION_ENCRYPTION_KEY`?** The previous in-memory
+   default did NOT survive restart; an ephemeral Fernet key is
+   generated on boot if the env var is missing, making any
+   persisted tokens un-decryptable.
+
+Operational state for the Xero integration:
+
+- Backend: `src/hr_advisory/api/routers/{integrations.py, payroll.py}`,
+  `src/hr_advisory/mcp_servers/adapters/xero.py`,
+  `src/hr_advisory/services/xero_payroll_journal.py`,
+  `src/hr_advisory/mcp_servers/auth/token_store.py` (write-through
+  DB cache).
+- Frontend: `apps/web/src/components/payroll/XeroExportModal.tsx`,
+  `apps/web/src/app/(dashboard)/settings/integrations/xero/{page.tsx, pick-org/page.tsx}`,
+  `apps/web/src/app/(dashboard)/help/xero-integration/page.tsx`.
+- Migrations: `scripts/migrate_{xero_payroll_export,
+integration_tokens, xero_export_log, xero_force_counter,
+xero_mapping_history}.py` — all idempotent.
+- Deploy + support: `deploy/xero-deployment-runbook.md`,
+  `deploy/runbooks/xero-support.md`.

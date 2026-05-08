@@ -2,6 +2,18 @@
 
 External API integrations via 5 domain-grouped MCP servers. 38 connectors, 97 tools, 56 Python files, 484 tests.
 
+> **Wiring up a new OAuth integration?** Read
+> [`third-party-integration-patterns.md`](./third-party-integration-patterns.md)
+> first — the production-readiness playbook codified from the Xero
+> workstream. The 12 patterns covered there (multi-org picker, HMAC
+> state, persisted token store, advisory-lock TOCTOU fix,
+> Idempotency-Key + force counter, PDPA disconnect, audit log + hash,
+> scope evolution, mapping health, decimal-arithmetic boundary,
+> refresh-token cliff, bulk-skip-not-abort) are NOT covered by the
+> connector inventory in this skill. Skipping any of them introduces
+> silent data leaks or correctness bugs that will not be detected
+> post-hoc.
+
 ## Module Map
 
 ### Infrastructure (root level)
@@ -29,9 +41,9 @@ External API integrations via 5 domain-grouped MCP servers. 38 connectors, 97 to
 
 ### 5 MCP Servers
 
-| Server File                | Server Name         | Tools | Domain                                                                            |
-| -------------------------- | ------------------- | ----- | --------------------------------------------------------------------------------- |
-| `government_server.py`     | arbor-government    | 33    | CPF, IRAS (IR8A/8S/21/Appendix 8A), MOM OED, MyInfo, ACRA, CorpPass, SkillsFuture |
+| Server File                | Server Name          | Tools | Domain                                                                            |
+| -------------------------- | -------------------- | ----- | --------------------------------------------------------------------------------- |
+| `government_server.py`     | arbor-government     | 33    | CPF, IRAS (IR8A/8S/21/Appendix 8A), MOM OED, MyInfo, ACRA, CorpPass, SkillsFuture |
 | `accounting_server.py`     | arbor-accounting     | 22    | Xero, QuickBooks Online, Zoho Books, Financio, CSV/JSON export, claims sync       |
 | `communications_server.py` | arbor-communications | 22    | Resend email, SES, Telegram bot, WhatsApp, Slack, Teams, Google Calendar, Outlook |
 | `banking_server.py`        | arbor-banking        | 12    | ISO 20022 GIRO, FAST (DBS/UOB), PayNow QR, Aspire payouts                         |
@@ -331,7 +343,7 @@ Patterns detected: NRIC/FIN (`[STFGM]\d{7}[A-Z]`), SG phone numbers, bank accoun
 
 | Test File                     | What It Covers                                        | Tests   |
 | ----------------------------- | ----------------------------------------------------- | ------- |
-| `test_base.py`                | ArborMCPServer tool registration, audit, tenant ctx    | ~30     |
+| `test_base.py`                | ArborMCPServer tool registration, audit, tenant ctx   | ~30     |
 | `test_resilience.py`          | Circuit breaker states, rate limiter, recovery        | ~40     |
 | `test_idempotency.py`         | Submission ledger, duplicate blocking, retry on fail  | ~35     |
 | `test_saga.py`                | Saga lifecycle, step progression, resume, cancel      | ~40     |
