@@ -3035,6 +3035,88 @@ async def compare_parallel_payroll(
 
 _XERO_PROVIDER = "xero"
 
+# Advisory-lock namespace for Xero exports. Postgres advisory locks
+# accept two int4s; we use a stable hash of "xero-export" as the
+# class id and (company_id << 16) | (run_id & 0xFFFF) as the object
+# id. Collisions across companies are mathematically possible but
+# benign — they just serialize unrelated exports under contention,
+# which is a soft failure not a correctness one.
+_XERO_LOCK_CLASS_ID = 0x7E70_E000  # arbitrary stable namespace constant
+
+
+def _xero_lock_object_id(company_id: int, run_id: int) -> int:
+    return ((company_id & 0xFFFF) << 16) | (run_id & 0xFFFF)
+
+
+class _XeroExportInProgress(Exception):
+    """Raised when an advisory lock for the same run is already held."""
+
+
+class _xero_export_lock:
+    """Context manager that takes a Postgres session-level advisory lock
+    keyed on (company_id, run_id) for the duration of an export.
+
+    Concurrent calls for the same run get ``pg_try_advisory_lock = false``
+    and we raise ``_XeroExportInProgress`` immediately rather than
+    blocking — caller surfaces as 409.
+
+    Implemented as a sync class because psycopg2 is sync; called via
+    ``run_in_executor`` from the async endpoint so the event loop
+    stays free during the Xero round-trip.
+    """
+
+    def __init__(self, company_id: int, run_id: int):
+        self.company_id = company_id
+        self.run_id = run_id
+        self._conn = None
+        self._cur = None
+        self._object_id = _xero_lock_object_id(company_id, run_id)
+
+    def __enter__(self):
+        import os as _os
+
+        import psycopg2
+
+        self._conn = psycopg2.connect(_os.environ["DATABASE_URL"])
+        self._conn.autocommit = True  # advisory locks don't need a tx
+        self._cur = self._conn.cursor()
+        self._cur.execute(
+            "SELECT pg_try_advisory_lock(%s, %s)",
+            (_XERO_LOCK_CLASS_ID, self._object_id),
+        )
+        acquired = bool(self._cur.fetchone()[0])
+        if not acquired:
+            self._cleanup()
+            raise _XeroExportInProgress(
+                f"Another Xero export is already in progress for run "
+                f"{self.run_id}."
+            )
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            self._cur.execute(
+                "SELECT pg_advisory_unlock(%s, %s)",
+                (_XERO_LOCK_CLASS_ID, self._object_id),
+            )
+        finally:
+            self._cleanup()
+        return False
+
+    def _cleanup(self) -> None:
+        if self._cur is not None:
+            try:
+                self._cur.close()
+            except Exception:
+                pass
+            self._cur = None
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
+
 
 def _get_xero_mapping(company_id: int) -> dict | None:
     rows = dataflow_crud.list_records(
@@ -3219,13 +3301,6 @@ async def export_payroll_run_to_xero(
     Returns:
         Dict with journal_id, status, narration, date, line_count.
     """
-    from hr_advisory.mcp_servers.adapters.xero import (
-        XeroAPIError,
-        XeroRateLimitError,
-        get_xero_adapter,
-    )
-    from hr_advisory.services.xero_payroll_journal import build_journal_lines
-
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
@@ -3237,6 +3312,55 @@ async def export_payroll_run_to_xero(
         action_name="Xero payroll export",
     )
 
+    # Serialize concurrent exports for the same run via a Postgres
+    # advisory lock. Without this, two clicks within the same
+    # millisecond can race on the read-then-write of xero_force_counter
+    # and produce duplicate journals at Xero — a silent correctness
+    # bug not detectable post-hoc. The lock is non-blocking; the
+    # second caller gets 409.
+    try:
+        lock_ctx = _xero_export_lock(company_id, run_id)
+        lock_ctx.__enter__()
+    except _XeroExportInProgress as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        # Lock infrastructure failure (DB unreachable, etc.) — be loud
+        # and fail closed rather than silently skipping the lock.
+        logger.exception("Failed to acquire Xero export lock")
+        raise HTTPException(
+            status_code=503,
+            detail="Could not coordinate concurrent exports. Please retry.",
+        ) from exc
+
+    try:
+        return await _do_xero_export(
+            run_id=run_id,
+            request=request,
+            current_user=current_user,
+            company_id=company_id,
+        )
+    finally:
+        lock_ctx.__exit__(None, None, None)
+
+
+async def _do_xero_export(
+    *,
+    run_id: int,
+    request: Request,
+    current_user: dict,
+    company_id: int,
+) -> dict:
+    """Body of the export — runs under the advisory lock."""
+    from hr_advisory.mcp_servers.adapters.xero import (
+        XeroAPIError,
+        XeroRateLimitError,
+        get_xero_adapter,
+    )
+    from hr_advisory.services.xero_payroll_journal import build_journal_lines
+
     run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
@@ -3247,6 +3371,19 @@ async def export_payroll_run_to_xero(
             detail=(
                 "Only approved or paid payroll runs can be exported to Xero. "
                 f"Current status: {run.get('status', 'unknown')}."
+            ),
+        )
+
+    # Require an explicit pay_date — Xero interprets JournalDate in the
+    # org's local timezone, so a UTC fallback near month-end can post
+    # to the wrong accounting period. Fail fast before any Xero call.
+    if not (run.get("pay_date") or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Pay date is required before exporting to Xero. "
+                "Set pay_date on the payroll run first — Xero posts the "
+                "journal to that date in your organisation's timezone."
             ),
         )
 

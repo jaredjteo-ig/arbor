@@ -1,0 +1,26 @@
+commit: 049d99d8f5fd73d3b23800afc20b438ef1bc3e8e (baseline)
+timestamp: 2026-05-08T05:50:00Z
+phase: M0 — pre-launch BLOCKERS
+baseline_pass: 35
+baseline_fail: 2 (pre-existing — Xero rotated the captured refresh token; needs xero_oauth_setup.py re-run)
+final_pass: 45
+final_fail: 2 (same pre-existing e2e failures, not introduced by M0 changes)
+new_tests: 10
+  - 2 unit (BASEXCLUDED tax_type, NoTax line_amount_types)
+  - 1 integration (empty pay_date rejected)
+  - 6 integration (multi-org callback flow + pick-org guards)
+  - 1 regression (concurrent export advisory lock)
+regressions: 0
+command: pytest tests/{unit/test_xero_*,integration/test_xero_*,regression/test_xero_*,e2e/test_xero_*} --timeout=60 -q
+files: tests/unit/test_xero_payroll_journal.py + test_xero_oauth_state.py
+       tests/integration/test_xero_payroll_export_api.py + test_xero_oauth_multi_org.py
+       tests/regression/test_xero_concurrent_export.py
+       tests/e2e/test_xero_payroll_export_real.py
+
+m0_completed:
+  - M0-T03 SG GST BASEXCLUDED TaxType + LineAmountTypes:NoTax
+  - M0-T04 Require pay_date for export (400 fail-fast)
+  - M0-T05 Frontend double-click safety (existing logic verified, comment added)
+  - M0-T02 TOCTOU race fix — Postgres advisory lock + concurrent regression test
+  - M0-T01 Multi-org picker — backend (list_xero_connections, pending-org store, picker endpoints) + frontend (pick-org page)
+  - M0-T06 E2E coverage — 6 multi-org integration tests + 1 concurrent regression covering the new failure modes

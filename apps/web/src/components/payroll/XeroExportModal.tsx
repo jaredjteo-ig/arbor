@@ -386,6 +386,10 @@ export function XeroExportModal({
                 >
                   Save mapping only
                 </AppButton>
+                {/* Disabled while either mutation is in flight — prevents
+                    a double-click sending two POSTs. Server-side has a
+                    Postgres advisory lock as a second belt for the
+                    multi-worker / network-retry case. */}
                 <AppButton
                   variant="primary"
                   onClick={handleExport}

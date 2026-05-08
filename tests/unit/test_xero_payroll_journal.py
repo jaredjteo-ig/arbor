@@ -251,3 +251,31 @@ def test_build_journal_custom_narration_overrides_default():
         narration="Custom memo for April",
     )
     assert result["narration"] == "Custom memo for April"
+
+
+def test_every_line_has_basexcluded_tax_type():
+    """SG GST-registered companies (>S$1M turnover) must mark salary
+    journals as out-of-scope (BASEXCLUDED) for IRAS GST F5. Without
+    this, the customer's GST return is silently wrong — they will
+    blame Arbor.
+    """
+    result = build_journal_lines(
+        payroll_run=_balanced_run(total_fwl=50.0, total_shg=100.0, total_net=7900.0),
+        mapping=_complete_mapping(),
+        bonus_total=1000.0,
+    )
+    for line in result["lines"]:
+        assert line.get("tax_type") == "BASEXCLUDED", (
+            f"line missing BASEXCLUDED tax_type: {line}"
+        )
+
+
+def test_journal_data_marks_no_tax_at_journal_level():
+    """At the journal level, line_amount_types must be NoTax so Xero
+    doesn't try to apply tax to the gross amounts."""
+    result = build_journal_lines(
+        payroll_run=_balanced_run(),
+        mapping=_complete_mapping(),
+        bonus_total=0.0,
+    )
+    assert result.get("line_amount_types") == "NoTax"

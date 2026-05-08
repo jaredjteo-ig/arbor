@@ -269,6 +269,7 @@ def build_journal_lines(
                 "account_code": mapping["salary_expense_code"],
                 "description": f"Salaries — {period_label}".strip(" —"),
                 "amount": _round2(salary),
+                "tax_type": "BASEXCLUDED",
             }
         )
     if bonus > 0:
@@ -277,6 +278,7 @@ def build_journal_lines(
                 "account_code": mapping["bonus_expense_code"],
                 "description": f"Bonus — {period_label}".strip(" —"),
                 "amount": _round2(bonus),
+                "tax_type": "BASEXCLUDED",
             }
         )
     if employer_cpf > 0:
@@ -285,6 +287,7 @@ def build_journal_lines(
                 "account_code": mapping["employer_cpf_expense_code"],
                 "description": f"Employer CPF — {period_label}".strip(" —"),
                 "amount": _round2(employer_cpf),
+                "tax_type": "BASEXCLUDED",
             }
         )
     sdl_plus_fwl = sdl + fwl
@@ -298,6 +301,7 @@ def build_journal_lines(
                 "account_code": mapping["sdl_expense_code"],
                 "description": f"{sdl_label} — {period_label}".strip(" —"),
                 "amount": _round2(sdl_plus_fwl),
+                "tax_type": "BASEXCLUDED",
             }
         )
 
@@ -309,6 +313,7 @@ def build_journal_lines(
                 "account_code": mapping["cpf_payable_code"],
                 "description": f"CPF & statutory payable — {period_label}".strip(" —"),
                 "amount": -_round2(cpf_payable),
+                "tax_type": "BASEXCLUDED",
             }
         )
     if net > 0:
@@ -317,6 +322,7 @@ def build_journal_lines(
                 "account_code": mapping["net_pay_payable_code"],
                 "description": f"Net wages payable — {period_label}".strip(" —"),
                 "amount": -_round2(net),
+                "tax_type": "BASEXCLUDED",
             }
         )
 
@@ -344,5 +350,9 @@ def build_journal_lines(
     return {
         "narration": journal_narration,
         "date": pay_date,
+        # SG GST-registered companies must not have salary journals
+        # affect their GST F5. NoTax + per-line BASEXCLUDED keeps the
+        # journal entirely out of scope for GST.
+        "line_amount_types": "NoTax",
         "lines": lines,
     }

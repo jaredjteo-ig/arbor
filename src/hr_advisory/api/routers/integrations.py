@@ -1387,8 +1387,11 @@ async def xero_oauth_callback(
     from hr_advisory.mcp_servers.auth.token_store import get_token_manager
 
     adapter = get_xero_adapter()
+    # Step 1: exchange code → tokens. handle_oauth_callback stores them
+    # via the token manager (xero_tenant_id will be empty until we
+    # resolve below).
     try:
-        result = await adapter.handle_oauth_callback(
+        await adapter.handle_oauth_callback(
             tenant_id=str(company_id),
             code=code,
             redirect_uri=redirect_uri,
@@ -1400,9 +1403,6 @@ async def xero_oauth_callback(
             status_code=302,
         )
 
-    # Re-fetch the token row and stamp xero_tenant_id + connected_by.
-    # (handle_oauth_callback already stored the tokens; we enrich with
-    # the org id and the actor for audit trail.)
     manager = get_token_manager()
     stored = manager.get_stored_token(str(company_id), "xero")
     if stored is None:
@@ -1410,33 +1410,264 @@ async def xero_oauth_callback(
             status_code=500, detail="Token storage failed unexpectedly."
         )
 
-    # Re-store with the additional metadata. The persisted-token store
-    # does an upsert keyed on (tenant_id, provider) so this just enriches
-    # the existing active row.
+    # Step 2: list ALL Xero orgs the user authorised. Bookkeepers
+    # commonly have 5+. Picking the first silently routes one
+    # customer's journals into another customer's books — a financial
+    # data leak we explicitly defend against here (M0-T01).
+    try:
+        connections = await adapter.list_xero_connections(stored.access_token)
+    except XeroAPIError as exc:
+        logger.warning("Failed to list Xero connections: %s", exc)
+        return RedirectResponse(
+            url=f"/settings/integrations?xero_error={urllib.parse.quote('list_connections_failed')}",
+            status_code=302,
+        )
+
+    if not connections:
+        return RedirectResponse(
+            url=f"/settings/integrations?xero_error={urllib.parse.quote('no_orgs_authorized')}",
+            status_code=302,
+        )
+
+    if len(connections) == 1:
+        # Single-org happy path: persist the chosen tenant id directly.
+        chosen = connections[0]
+        _persist_xero_org_choice(
+            company_id=company_id,
+            user_id=user_id,
+            stored=stored,
+            xero_tenant_id=chosen.get("tenantId", ""),
+            xero_tenant_name=chosen.get("tenantName", ""),
+        )
+        logger.info(
+            "Xero OAuth completed (single-org): company=%s, xero_tenant=%s",
+            company_id,
+            chosen.get("tenantId"),
+        )
+        return RedirectResponse(
+            url="/settings/integrations?xero=connected", status_code=302
+        )
+
+    # Step 3 (multi-org): stash the connections list under a signed
+    # nonce, redirect to the picker page. The user picks an org, the
+    # frontend POSTs the choice to /integrations/xero/pick-org.
+    pick_token = _stash_pending_org_pick(
+        company_id=company_id,
+        user_id=user_id,
+        connections=connections,
+        key=key,
+    )
+    logger.info(
+        "Xero OAuth multi-org (n=%d) — redirecting to picker for company %s",
+        len(connections),
+        company_id,
+    )
+    return RedirectResponse(
+        url=f"/settings/integrations/xero/pick-org?token={urllib.parse.quote(pick_token)}",
+        status_code=302,
+    )
+
+
+# In-memory pending-org-pick store. Single-process by design — bumps
+# to multi-worker should swap to Redis or a short-TTL DB row. TTL is
+# 10 minutes, matching the OAuth state TTL.
+_PENDING_ORG_PICK: dict[str, dict] = {}
+_PENDING_ORG_PICK_TTL_SEC = 600
+
+
+def _persist_xero_org_choice(
+    *,
+    company_id: int,
+    user_id: int,
+    stored,
+    xero_tenant_id: str,
+    xero_tenant_name: str,
+) -> None:
+    """Re-store the Xero token with the chosen org id + connected_by."""
+    import time as _time
+
+    from hr_advisory.mcp_servers.auth.token_store import get_token_manager
+
+    manager = get_token_manager()
     manager.store_token(
         str(company_id),
         "xero",
         {
             "access_token": stored.access_token,
             "refresh_token": stored.refresh_token,
-            "expires_in": int(stored.expires_at - time.time())
-            if stored.expires_at
-            else 1800,
+            "expires_in": (
+                int(stored.expires_at - _time.time())
+                if stored.expires_at
+                else 1800
+            ),
             "scope": " ".join(stored.scopes),
-            "xero_tenant_id": result.get("xero_tenant_id", ""),
+            "xero_tenant_id": xero_tenant_id,
+            "xero_tenant_name": xero_tenant_name,
             "connected_by": user_id,
         },
     )
 
-    logger.info(
-        "Xero OAuth completed: company=%s, xero_tenant=%s",
-        company_id,
-        result.get("xero_tenant_id"),
+
+def _stash_pending_org_pick(
+    *,
+    company_id: int,
+    user_id: int,
+    connections: list[dict],
+    key: bytes,
+) -> str:
+    """Save a pending pick under an HMAC-signed nonce; return the token.
+
+    Token is the nonce + HMAC. Picker frontend includes it on
+    GET /integrations/xero/pending-orgs and POST /integrations/xero/pick-org.
+    """
+    import hashlib as _hashlib
+    import hmac as _hmac
+    import secrets as _secrets
+    import time as _time
+
+    nonce = _secrets.token_urlsafe(24)
+    sig = _hmac.new(key, nonce.encode(), _hashlib.sha256).hexdigest()
+    token = f"{nonce}.{sig}"
+
+    # Prune expired entries before insert (cheap, bounded).
+    _prune_pending_org_picks()
+    _PENDING_ORG_PICK[nonce] = {
+        "company_id": company_id,
+        "user_id": user_id,
+        "connections": connections,
+        "expires_at": _time.time() + _PENDING_ORG_PICK_TTL_SEC,
+    }
+    return token
+
+
+def _prune_pending_org_picks() -> None:
+    import time as _time
+
+    now = _time.time()
+    expired = [k for k, v in _PENDING_ORG_PICK.items() if v["expires_at"] < now]
+    for k in expired:
+        _PENDING_ORG_PICK.pop(k, None)
+
+
+def _validate_pick_token(token: str, key: bytes) -> tuple[str, dict]:
+    """Verify HMAC and TTL; return (nonce, pending entry).
+
+    Raises HTTPException on any failure — never lets an invalid token
+    through to picker logic.
+    """
+    import hashlib as _hashlib
+    import hmac as _hmac
+    import time as _time
+
+    nonce, _, sig = token.rpartition(".")
+    if not nonce or not sig:
+        raise HTTPException(status_code=400, detail="Malformed pick token.")
+    expected = _hmac.new(key, nonce.encode(), _hashlib.sha256).hexdigest()
+    if not _hmac.compare_digest(expected, sig):
+        raise HTTPException(status_code=403, detail="Pick token signature invalid.")
+    entry = _PENDING_ORG_PICK.get(nonce)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Pick token expired or unknown.")
+    if entry["expires_at"] < _time.time():
+        _PENDING_ORG_PICK.pop(nonce, None)
+        raise HTTPException(status_code=403, detail="Pick token expired.")
+    return nonce, entry
+
+
+@router.get("/xero/pending-orgs")
+async def xero_pending_orgs(token: str = "") -> dict:
+    """Frontend reads this to render the org picker.
+
+    Returns ``{connections: [{tenantId, tenantName, tenantType}, ...]}``
+    for the pending OAuth round-trip identified by ``token``.
+    """
+    import os as _os
+
+    key = _os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").encode()
+    if not key:
+        raise HTTPException(
+            status_code=500, detail="INTEGRATION_ENCRYPTION_KEY not configured."
+        )
+    if not token:
+        raise HTTPException(status_code=400, detail="Missing token.")
+    _, entry = _validate_pick_token(token, key)
+    return {
+        "connections": [
+            {
+                "tenantId": c.get("tenantId", ""),
+                "tenantName": c.get("tenantName", ""),
+                "tenantType": c.get("tenantType", ""),
+            }
+            for c in entry["connections"]
+        ],
+    }
+
+
+@router.post("/xero/pick-org")
+async def xero_pick_org(request: Request) -> dict:
+    """Frontend POSTs the chosen org id from the picker.
+
+    Body: ``{token, xero_tenant_id}``. We validate the token, ensure
+    the chosen id was in the original connections list (so the caller
+    can't pick an org they didn't authorise), and persist.
+    """
+    import os as _os
+
+    key = _os.environ.get("INTEGRATION_ENCRYPTION_KEY", "").encode()
+    if not key:
+        raise HTTPException(
+            status_code=500, detail="INTEGRATION_ENCRYPTION_KEY not configured."
+        )
+
+    body = await request.json()
+    token = body.get("token", "")
+    chosen_id = body.get("xero_tenant_id", "")
+    if not token or not chosen_id:
+        raise HTTPException(
+            status_code=400, detail="token and xero_tenant_id required."
+        )
+
+    nonce, entry = _validate_pick_token(token, key)
+    valid_ids = {c.get("tenantId", "") for c in entry["connections"]}
+    if chosen_id not in valid_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Chosen tenant id was not in the authorised connections list.",
+        )
+    chosen_name = next(
+        (
+            c.get("tenantName", "")
+            for c in entry["connections"]
+            if c.get("tenantId") == chosen_id
+        ),
+        "",
     )
 
-    return RedirectResponse(
-        url="/settings/integrations?xero=connected", status_code=302
+    from hr_advisory.mcp_servers.auth.token_store import get_token_manager
+
+    manager = get_token_manager()
+    stored = manager.get_stored_token(str(entry["company_id"]), "xero")
+    if stored is None:
+        raise HTTPException(
+            status_code=409,
+            detail="No pending Xero connection found. Restart OAuth.",
+        )
+
+    _persist_xero_org_choice(
+        company_id=entry["company_id"],
+        user_id=entry["user_id"],
+        stored=stored,
+        xero_tenant_id=chosen_id,
+        xero_tenant_name=chosen_name,
     )
+    _PENDING_ORG_PICK.pop(nonce, None)
+
+    logger.info(
+        "Xero OAuth completed (multi-org pick): company=%s, xero_tenant=%s",
+        entry["company_id"],
+        chosen_id,
+    )
+    return {"redirect_url": "/settings/integrations?xero=connected"}
 
 
 def _build_xero_redirect_uri(request: Request) -> str:

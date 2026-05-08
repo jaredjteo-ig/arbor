@@ -257,8 +257,17 @@ class XeroAdapter:
 
             return response.json()
 
-    async def _get_xero_tenant_id(self, access_token: str) -> str:
-        """Fetch the Xero tenant (organization) ID from connections endpoint."""
+    async def list_xero_connections(self, access_token: str) -> list[dict]:
+        """Fetch ALL Xero orgs the access token has access to.
+
+        Bookkeepers commonly have 5+. The caller decides whether to
+        auto-pick (single connection) or surface a picker (>1) — picking
+        the first silently routes one customer's payroll into another
+        customer's books.
+
+        Returns: list of dicts with at least ``tenantId``, ``tenantName``,
+        ``tenantType``. Empty list = caller has no orgs (unusual).
+        """
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(
                 XERO_CONNECTIONS_URL,
@@ -267,16 +276,23 @@ class XeroAdapter:
                     "Content-Type": "application/json",
                 },
             )
-
             if response.status_code != 200:
                 raise XeroAPIError(response.status_code, response.text)
+            return response.json() or []
 
-            connections = response.json()
-            if not connections:
-                raise XeroAPIError(404, "No Xero organizations connected")
+    async def _get_xero_tenant_id(self, access_token: str) -> str:
+        """Backward-compatible single-tenant resolver — picks the first.
 
-            # Return the first (most recent) connection's tenant ID
-            return connections[0]["tenantId"]
+        New code should call ``list_xero_connections`` and surface a
+        picker when ``len > 1`` (see integrations.py callback flow).
+        """
+        connections = await self.list_xero_connections(access_token)
+        if not connections:
+            raise XeroAPIError(404, "No Xero organizations connected")
+        # Return the first connection's tenant id. Callers that need
+        # the full list (e.g. multi-org picker UX) should call
+        # list_xero_connections directly.
+        return connections[0]["tenantId"]
 
     # ------------------------------------------------------------------
     # Rate limit enforcement
@@ -543,6 +559,11 @@ class XeroAdapter:
                 "Debits (positive) must equal credits (negative)."
             )
 
+        # LineAmountTypes:NoTax keeps the entire journal out of scope
+        # for the org's GST. Combined with per-line TaxType:BASEXCLUDED
+        # this ensures SG GST F5 returns aren't affected by payroll.
+        line_amount_types = journal_data.get("line_amount_types", "NoTax")
+
         payload = {
             "ManualJournals": [
                 {
@@ -551,6 +572,7 @@ class XeroAdapter:
                         "date", datetime.now(timezone.utc).strftime("%Y-%m-%d")
                     ),
                     "Status": "POSTED",
+                    "LineAmountTypes": line_amount_types,
                     "JournalLines": journal_lines,
                 }
             ]

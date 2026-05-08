@@ -370,6 +370,52 @@ def test_export_requires_xero_connected(
     assert "not connected" in resp.json()["detail"].lower()
 
 
+def test_export_rejects_run_with_empty_pay_date(
+    client, owner_token, test_company, fake_xero
+):
+    """Pay date must be set on the PayrollRun before export.
+
+    Xero interprets the journal date in the org's local timezone, so
+    relying on a UTC fallback near month-end can post to the wrong
+    period. Require an explicit pay_date and fail fast.
+    """
+    no_date_run = dataflow_crud.create(
+        "PayrollRun",
+        {
+            "company_id": test_company["company_id"],
+            "period_start": "2026-03-01",
+            "period_end": "2026-03-31",
+            "pay_date": "",
+            "status": "approved",
+            "payroll_type": "monthly",
+            "total_gross": 5000.0,
+            "total_net": 4000.0,
+            "total_employer_cpf": 850.0,
+            "total_employee_cpf": 1000.0,
+            "total_sdl": 12.5,
+            "total_fwl": 0.0,
+            "total_shg": 0.0,
+            "approved_by": 991_001,
+        },
+    )
+    try:
+        # Set up mapping
+        client.put(
+            "/payroll/xero/account-mapping",
+            headers=_auth(owner_token),
+            json={"mapping": _full_mapping_payload()},
+        )
+        resp = client.post(
+            f"/payroll/runs/{no_date_run['id']}/export-xero",
+            headers=_auth(owner_token),
+            json={},
+        )
+        assert resp.status_code == 400
+        assert "pay_date" in resp.json()["detail"].lower() or "pay date" in resp.json()["detail"].lower()
+    finally:
+        dataflow_crud.delete("PayrollRun", no_date_run["id"])
+
+
 def test_export_rejects_draft_run(client, owner_token, test_company, fake_xero):
     # Create a DRAFT run — should be rejected
     draft = dataflow_crud.create(
