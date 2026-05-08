@@ -1,0 +1,13 @@
+[build]
+  command = "npm install && npm run build"
+  publish = "out"
+  base = "apps/landing"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[redirects]]
+  from = "/login"
+  to = "/contact/"
+  status = 301
+  force = true

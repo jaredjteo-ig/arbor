@@ -1,0 +1,416 @@
+@import "tailwindcss";
+
+/* ── Arbor Design System Tokens ───────────────────────────── */
+
+:root {
+  /* Primary */
+  --color-primary: #1E3A5F;
+  --color-primary-light: #2A4F7F;
+  --color-primary-dark: #152B47;
+
+  /* Secondary */
+  --color-secondary: #0D6E4F;
+  --color-secondary-light: #11946A;
+  --color-secondary-dark: #0A5A40;
+
+  /* Neutrals */
+  --color-gray-50: #F8FAFC;
+  --color-gray-100: #F1F5F9;
+  --color-gray-200: #E2E8F0;
+  --color-gray-300: #CBD5E1;
+  --color-gray-400: #94A3B8;
+  --color-gray-500: #64748B;
+  --color-gray-600: #475569;
+  --color-gray-700: #334155;
+  --color-gray-800: #1E293B;
+  --color-gray-900: #0F172A;
+
+  /* Risk tiers */
+  --color-risk-green: #16A34A;
+  --color-risk-green-bg: #F0FDF4;
+  --color-risk-green-border: #BBF7D0;
+  --color-risk-amber: #D97706;
+  --color-risk-amber-bg: #FFFBEB;
+  --color-risk-amber-border: #FDE68A;
+  --color-risk-red: #DC2626;
+  --color-risk-red-bg: #FEF2F2;
+  --color-risk-red-border: #FECACA;
+
+  /* Authority badges */
+  --color-authority-statutory: #2563EB;
+  --color-authority-statutory-bg: #EFF6FF;
+  --color-authority-guideline: #D97706;
+  --color-authority-guideline-bg: #FFFBEB;
+  --color-authority-best-practice: #16A34A;
+  --color-authority-best-practice-bg: #F0FDF4;
+  --color-authority-company-policy: #7C3AED;
+  --color-authority-company-policy-bg: #F5F3FF;
+
+  /* Semantic */
+  --color-info: #2563EB;
+  --color-info-bg: #EFF6FF;
+  --color-success: #16A34A;
+  --color-success-bg: #F0FDF4;
+  --color-warning: #D97706;
+  --color-warning-bg: #FFFBEB;
+  --color-error: #DC2626;
+  --color-error-bg: #FEF2F2;
+
+  /* Module accents — engagement uses rose as a deliberate brand-accent
+     distinct from the primary navy. Tailwind's rose-* palette is the
+     source of truth; mirroring here as CSS vars (red-team C9). */
+  --color-engagement-50: #FFF1F2;
+  --color-engagement-100: #FFE4E6;
+  --color-engagement-200: #FECDD3;
+  --color-engagement-400: #FB7185;
+  --color-engagement-500: #F43F5E;
+  --color-engagement-600: #E11D48;
+  --color-engagement-700: #BE123C;
+
+  /* Surfaces */
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --color-surface-card: #FFFFFF;
+  --color-surface-sidebar: #1E3A5F;
+  --color-surface-sidebar-hover: #2A4F7F;
+  --color-surface-input: #FFFFFF;
+  --color-surface-input-border: #CBD5E1;
+  --color-surface-input-focus: #1E3A5F;
+
+  /* Typography */
+  --font-family: 'Source Sans 3', 'Source Sans Pro', system-ui, -apple-system, sans-serif;
+
+  /* Text size multiplier (updated by JS for accessibility) */
+  --text-size-multiplier: 1;
+
+  /* Derived colors */
+  --color-primary-bg: #EFF3F8;
+
+  /* Shadows */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-raised: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-dropdown: 0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 20px 25px rgba(0, 0, 0, 0.1), 0 8px 10px rgba(0, 0, 0, 0.04);
+
+  /* ── Shadow Agent — AI presence system ──────────────────────── */
+
+  /* Colors — derived from primary (#1E3A5F) at low opacity */
+  --shadow-glow: rgba(30, 58, 95, 0.1);
+  --shadow-accent: #2a6fa8;
+  --shadow-pulse-color: #4a90c4;
+  --shadow-border: rgba(30, 58, 95, 0.2);
+  --shadow-text: var(--foreground);
+  --shadow-surface: rgba(30, 58, 95, 0.04);
+  --shadow-surface-hover: rgba(30, 58, 95, 0.08);
+  --shadow-mark-bg: var(--color-primary-bg);
+
+  /* Layout */
+  --shadow-margin-collapsed: 48px;
+  --shadow-margin-expanded: 320px;
+  --shadow-widget-size: 44px;
+  --shadow-widget-inner: 36px;
+
+  /* Animation timing */
+  --shadow-pulse-duration: 3s;
+  --shadow-attention-interval: 5s;
+  --shadow-transition-fast: 150ms;
+  --shadow-transition-normal: 200ms;
+  --shadow-transition-slow: 300ms;
+
+  /* Z-index layers */
+  --z-shadow-annotation: 20;
+  --z-shadow-margin: 30;
+  --z-shadow-widget: 35;
+  --z-shadow-command: 50;
+}
+
+/* ── Dark Mode ────────────────────────────────────────────── */
+
+html.dark {
+  /* Primary — slightly lighter for dark backgrounds */
+  --color-primary: #5B8DBF;
+  --color-primary-light: #7AABDA;
+  --color-primary-dark: #3D6F9F;
+
+  /* Neutrals — inverted */
+  --color-gray-50: #0F172A;
+  --color-gray-100: #1E293B;
+  --color-gray-200: #334155;
+  --color-gray-300: #475569;
+  --color-gray-400: #64748B;
+  --color-gray-500: #94A3B8;
+  --color-gray-600: #CBD5E1;
+  --color-gray-700: #E2E8F0;
+  --color-gray-800: #F1F5F9;
+  --color-gray-900: #F8FAFC;
+
+  /* Risk tiers — keep hues, adjust for dark bg */
+  --color-risk-green-bg: #052e16;
+  --color-risk-green-border: #166534;
+  --color-risk-amber-bg: #451a03;
+  --color-risk-amber-border: #92400e;
+  --color-risk-red-bg: #450a0a;
+  --color-risk-red-border: #991b1b;
+
+  /* Authority badges — darker backgrounds */
+  --color-authority-statutory-bg: #1e3a5f;
+  --color-authority-guideline-bg: #451a03;
+  --color-authority-best-practice-bg: #052e16;
+  --color-authority-company-policy-bg: #2e1065;
+
+  /* Semantic — darker backgrounds */
+  --color-info-bg: #1e3a5f;
+  --color-success-bg: #052e16;
+  --color-warning-bg: #451a03;
+  --color-error-bg: #450a0a;
+
+  /* Surfaces */
+  --background: #0F172A;
+  --foreground: #F1F5F9;
+  --color-surface-card: #1E293B;
+  --color-surface-sidebar: #0F172A;
+  --color-surface-sidebar-hover: #1E293B;
+  --color-surface-input: #1E293B;
+  --color-surface-input-border: #475569;
+  --color-surface-input-focus: #5B8DBF;
+
+  /* Derived */
+  --color-primary-bg: #1E293B;
+
+  /* Shadows — stronger for dark mode */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-raised: 0 4px 6px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-dropdown: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-modal: 0 20px 25px rgba(0, 0, 0, 0.4), 0 8px 10px rgba(0, 0, 0, 0.2);
+
+  /* Shadow Agent */
+  --shadow-glow: rgba(91, 141, 191, 0.15);
+  --shadow-accent: #5B8DBF;
+  --shadow-pulse-color: #7AABDA;
+  --shadow-border: rgba(91, 141, 191, 0.3);
+  --shadow-text: var(--foreground);
+  --shadow-surface: rgba(91, 141, 191, 0.08);
+  --shadow-surface-hover: rgba(91, 141, 191, 0.12);
+  --shadow-mark-bg: var(--color-primary-bg);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-family);
+
+  /* Expose design tokens to Tailwind */
+  --color-primary: var(--color-primary);
+  --color-primary-light: var(--color-primary-light);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-secondary: var(--color-secondary);
+  --color-secondary-light: var(--color-secondary-light);
+
+  --color-risk-green: var(--color-risk-green);
+  --color-risk-amber: var(--color-risk-amber);
+  --color-risk-red: var(--color-risk-red);
+}
+
+/* ── Base styles ──────────────────────────────────────────── */
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-family);
+  font-size: calc(16px * var(--text-size-multiplier));
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Override hardcoded bg-white in dark mode */
+html.dark .bg-white {
+  background-color: var(--color-surface-card) !important;
+}
+html.dark .bg-gray-50,
+html.dark .bg-slate-50 {
+  background-color: var(--color-gray-50) !important;
+}
+html.dark .border-gray-200,
+html.dark .border-slate-200 {
+  border-color: var(--color-gray-200) !important;
+}
+html.dark .text-gray-900,
+html.dark .text-slate-900 {
+  color: var(--color-gray-900) !important;
+}
+html.dark .text-gray-700,
+html.dark .text-slate-700 {
+  color: var(--color-gray-700) !important;
+}
+html.dark .text-gray-500,
+html.dark .text-slate-500 {
+  color: var(--color-gray-500) !important;
+}
+
+/* ── Text size accessibility ──────────────────────────────── */
+
+[data-text-size="normal"] {
+  --text-size-multiplier: 1;
+}
+
+[data-text-size="large"] {
+  --text-size-multiplier: 1.15;
+}
+
+[data-text-size="extra-large"] {
+  --text-size-multiplier: 1.3;
+}
+
+/* ── Focus indicators (WCAG AAA) ──────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ── Typography scale ────────────────────────────────────── */
+
+.text-display {
+  font-size: 2rem;
+  line-height: 2.5rem;
+  font-weight: 700;
+}
+
+.text-heading {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 600;
+}
+
+.text-subtitle {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+}
+
+.text-body-lg {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 400;
+}
+
+.text-body {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 400;
+}
+
+.text-caption {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 400;
+}
+
+.text-micro {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 400;
+}
+
+/* ── Page transitions ───────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 150ms ease-out;
+}
+
+/* ── Shadow Agent animations ───────────────────────────────── */
+
+@keyframes shadow-breathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes shadow-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes shadow-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shadow-scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-shadow-breathe {
+  animation: shadow-breathe var(--shadow-pulse-duration) ease-in-out infinite;
+}
+
+.animate-shadow-ripple {
+  animation: shadow-ripple var(--shadow-attention-interval) ease-out infinite;
+}
+
+@keyframes shadow-nudge-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--shadow-accent);
+    opacity: 0.5;
+  }
+  50% {
+    box-shadow: 0 0 0 8px transparent;
+    opacity: 0;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    opacity: 0;
+  }
+}
+
+@keyframes shadow-badge-in {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-shadow-nudge-pulse {
+  animation: shadow-nudge-pulse 2s ease-out infinite;
+}
+
+.animate-shadow-badge-in {
+  animation: shadow-badge-in var(--shadow-transition-normal) ease-out;
+}
+
+.animate-shadow-fade-in {
+  animation: shadow-fade-in var(--shadow-transition-normal) ease-out;
+}
+
+.animate-shadow-scale-in {
+  animation: shadow-scale-in var(--shadow-transition-normal) ease-out;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
