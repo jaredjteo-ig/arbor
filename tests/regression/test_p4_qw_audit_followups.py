@@ -378,6 +378,39 @@ def test_p4_qw_7_seed_uses_relative_work_pass_expiry():
     )
 
 
+@pytest.mark.regression
+def test_p4_qw_7_employees_list_returns_work_pass_expiry():
+    """The `/api/employees` list response must include
+    `work_pass_expiry` so the frontend's 'Work Pass Expiring Soon'
+    filter can match against it.
+
+    Discovered during P4-QW-7 deploy verification: even with
+    correct DB data, the filter was returning 0 because the
+    serializer was omitting the field.
+    """
+    employees_router = REPO_ROOT / "src" / "hr_advisory" / "api" / "routers" / "employees.py"
+    src = employees_router.read_text()
+
+    # Find the _serialize_employee_summary function and confirm
+    # work_pass_expiry is in its returned dict.
+    import ast
+
+    tree = ast.parse(src)
+    target = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "_serialize_employee_summary":
+            target = node
+            break
+    assert target is not None, "_serialize_employee_summary helper missing"
+
+    func_src = ast.get_source_segment(src, target) or ""
+    assert '"work_pass_expiry"' in func_src, (
+        "_serialize_employee_summary must include `work_pass_expiry` "
+        "in the dict it returns — the /employees list endpoint relies "
+        "on it for the 'Work Pass Expiring Soon' filter (P4-QW-7)."
+    )
+
+
 # ---------------------------------------------------------------------------
 # P4-QW-8 — WICA $0 in Cost-to-Company must have a tooltip explaining
 # the $2,600 / manual-worker threshold.

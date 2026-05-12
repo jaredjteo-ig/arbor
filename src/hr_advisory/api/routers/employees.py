@@ -312,6 +312,15 @@ def _serialize_employee_summary(emp: dict, user: dict | None = None) -> dict:
     else:
         status = "active"
 
+    # work_pass_expiry stored as ISO string in the DB. Strip the time
+    # component if DataFlow returns a timestamp, so the frontend's date
+    # comparison (`new Date(expiry)`) sees a clean YYYY-MM-DD value.
+    work_pass_expiry = str(emp.get("work_pass_expiry") or "")
+    if "T" in work_pass_expiry:
+        work_pass_expiry = work_pass_expiry.split("T", 1)[0]
+    elif " " in work_pass_expiry:
+        work_pass_expiry = work_pass_expiry.split(" ", 1)[0]
+
     return {
         "id": emp.get("id"),
         "user_id": emp.get("user_id"),
@@ -331,6 +340,10 @@ def _serialize_employee_summary(emp: dict, user: dict | None = None) -> dict:
         "pass_type": emp.get("pass_type", ""),
         "photo_url": emp.get("photo_url", ""),
         "phone": emp.get("phone", ""),
+        # Required by the "Work Pass Expiring Soon" filter on /employees
+        # (audit P4-QW-7). Not PII — just a date — and the frontend can't
+        # compute "expiring" without it. Empty string for citizens/PRs.
+        "work_pass_expiry": work_pass_expiry,
     }
 
 
