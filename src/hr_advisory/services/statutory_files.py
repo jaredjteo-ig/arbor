@@ -9,7 +9,22 @@ import io
 import logging
 from datetime import date
 
+from hr_advisory.security.encryption import decrypt_field
+
 logger = logging.getLogger(__name__)
+
+
+def _decrypt_emp_pii(emp: dict) -> dict:
+    """Return a shallow copy of `emp` with NRIC + bank account decrypted.
+
+    CPF Board and banks reject encrypted blobs — files must carry plaintext.
+    `decrypt_field` is a no-op on values that aren't ciphertext (legacy rows).
+    """
+    return {
+        **emp,
+        "nric_fin": decrypt_field(emp.get("nric_fin", "")),
+        "bank_account_number": decrypt_field(emp.get("bank_account_number", "")),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -31,8 +46,9 @@ def generate_cpf_esubmit(
 
     Returns CSV content as a string.
     """
-    # Build employee lookup by id
-    emp_by_id = {e.get("id"): e for e in employees}
+    # Build employee lookup by id — decrypt PII at the boundary so the
+    # CPF Board upload contains plaintext NRIC, not Fernet ciphertext.
+    emp_by_id = {e.get("id"): _decrypt_emp_pii(e) for e in employees}
 
     # Derive payment year-month from payroll run period
     period_start = payroll_run.get("period_start", "")
@@ -150,7 +166,9 @@ def generate_bank_giro(
 
     Returns file content as a string.
     """
-    emp_by_id = {e.get("id"): e for e in employees}
+    # Decrypt PII at the boundary so the bank file contains plaintext
+    # account numbers (banks reject Fernet ciphertext).
+    emp_by_id = {e.get("id"): _decrypt_emp_pii(e) for e in employees}
     pay_date = payroll_run.get("pay_date", "")
     run_id = payroll_run.get("id", 0)
 

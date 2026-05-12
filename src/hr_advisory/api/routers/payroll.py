@@ -425,6 +425,7 @@ async def get_payroll_run(
         enriched.append(
             {
                 **ps,
+                "payslip_id": ps.get("id"),
                 "employee_name": user.get("name", "") if user else "",
                 "employee_email": user.get("email", "") if user else "",
             }
