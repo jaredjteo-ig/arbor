@@ -228,6 +228,16 @@ function LeaveBalanceCard({
           {leave.pending} day{leave.pending !== 1 ? "s" : ""} pending approval
         </p>
       )}
+
+      {/* SG Employment Act: hospitalisation leave is INCLUSIVE of the 14
+          outpatient sick days, not on top of them. Without this
+          disclaimer, employees read 14 + 60 = 74 medical days, which is
+          wrong and creates HR disputes. See P4-QW-4 audit. */}
+      {leave.name === "Hospitalisation Leave" && (
+        <p className="text-xs text-[var(--color-gray-500)] mt-3 text-center italic">
+          Inclusive of the 14 outpatient sick days — not additional.
+        </p>
+      )}
     </AppCard>
   );
 }

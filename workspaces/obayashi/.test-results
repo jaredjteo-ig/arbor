@@ -1,0 +1,15 @@
+commit: pending — P4-QW bundle in progress
+timestamp: 2026-05-12T06:55:00Z
+scope: tests/regression + tests/unit/test_payroll_calculator
+baseline_pass: 517
+baseline_fail: 1 (pre-existing: test_b11_rate_limit_coverage[integrations])
+final_pass: 526
+final_fail: 1 (same pre-existing)
+new_tests: 9 (test_p4_qw_audit_followups.py: 5 added during this session, +4 from earlier session = 14 total in the new file but 9 net new vs baseline)
+regressions: 0
+notes: |
+  Full-suite pytest tests/ shows 3865 passed, 159 pre-existing failures
+  in modules not touched by this bundle (recruitment, hire_role,
+  attendance, etc.). All 14 new P4-QW regression tests pass. No
+  regressions in payroll/regression scope vs baseline.
+command: .venv/bin/pytest tests/regression/ tests/unit/test_payroll_calculator.py -q

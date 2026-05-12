@@ -1259,19 +1259,53 @@ def _serialize_employee(
     return result
 
 
-def _statutory_defaults() -> list[dict]:
+def _ea_annual_leave_days(start_date_str: str, year: int) -> float:
+    """EA Schedule 4 annual leave entitlement, scaled by years of service.
+
+    The Singapore Employment Act mandates:
+      - 7 days from completion of 1st year
+      - +1 day each subsequent year
+      - capped at 14 days from year 8 onwards
+
+    For a brand-new employee (no start_date or first calendar year of
+    service), returns 7 — the minimum the statute requires for
+    "completing 1 year". Implementation uses the same formula as
+    `_calculate_entitlement_for_employee` in `routers/leave.py`.
+
+    See `workspaces/obayashi/04-validate/09-redteam-roles-2026-05-12.md`
+    finding P2-B (the audit observed a 4-year-service employee
+    receiving 7 days from the `_statutory_defaults` fallback path
+    because that path did not scale).
+    """
+    if not start_date_str:
+        return 7.0
+    try:
+        start_dt = date_type.fromisoformat(start_date_str)
+    except (ValueError, TypeError):
+        return 7.0
+    completed_years = year - start_dt.year
+    if date_type(year, 1, 1) < start_dt:
+        completed_years = 0
+    return float(min(7 + max(0, completed_years - 1), 14))
+
+
+def _statutory_defaults(employee: dict | None = None) -> list[dict]:
     """Return statutory default leave balances for Singapore employees.
 
-    These are the minimum entitlements under the Employment Act for
-    a first-year employee. Used as a fallback when no leave balances
-    have been recorded.
+    The minimum entitlements under the Employment Act. Used as a
+    fallback when no leave-balance records exist. When an `employee`
+    record is provided, annual-leave entitlement is scaled by years
+    of service per EA Schedule 4 (7 → 14 across years 1-8+); sick
+    and hospitalisation are flat statutory floors.
     """
     current_year = datetime.now(timezone.utc).year
+    start_date_str = employee.get("start_date", "") if employee else ""
+    annual_days = _ea_annual_leave_days(start_date_str, current_year)
     return [
         {
             "leave_type": "annual",
             "year": current_year,
-            "entitlement_days": 7.0,
+            "entitlement_days": annual_days,
             "used_days": 0.0,
             "pending_days": 0.0,
         },
@@ -2074,7 +2108,9 @@ async def get_my_leave_balances(
 
     balances = _get_leave_balances(employee["id"], company_id)
     if not balances:
-        return {"balances": _statutory_defaults()}
+        # Fallback uses employee's start_date so annual leave scales per
+        # EA Schedule 4 (P4-QW-3 audit). Sick + hospitalisation are flat.
+        return {"balances": _statutory_defaults(employee)}
 
     return {
         "balances": [

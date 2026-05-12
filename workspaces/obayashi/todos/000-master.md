@@ -138,6 +138,75 @@ risk + pay equity all live at /strategy/\*.
 
 ---
 
+## Gate 5 — Phase 4: Audit follow-ups (May 2026)
+
+Source audits (this session):
+
+- `04-validate/07-buyer-audit-2026-05-08.md` — buyer/marketing lens
+- `04-validate/08-functional-audit-2026-05-12.md` — daily-ops lens (3
+  P0 PII/payslip bugs already shipped in commits `f1a8394` + `e9d5ffc`)
+- `04-validate/09-redteam-roles-2026-05-12.md` — role-based lens
+
+Three actionable bundles + one deferred parking lot. P4-QW unblocks
+nothing else; P4-MG is real product work; P4-LP is marketing surface;
+P4-XX collects intentionally-deferred items (Xero, HTTPS, multi-currency).
+
+### P4-QW — Quick wins (1 day total) ✅ COMPLETED 2026-05-12
+
+All 10 items shipped under the P4-QW bundle. 14 new regression tests
+in `tests/regression/test_p4_qw_audit_followups.py` pin every change.
+
+| ID       | Title                                              | Status                                           |
+| -------- | -------------------------------------------------- | ------------------------------------------------ |
+| P4-QW-1  | Role-aware post-login redirect                     | completed — AdminGuard silently redirects        |
+| P4-QW-2  | Friendly 404 for /payroll/runs + invalid run IDs   | completed — Pydantic array no longer JSON-leaked |
+| P4-QW-3  | EA Schedule 4 leave scaling                        | completed — `_ea_annual_leave_days(start, year)` |
+| P4-QW-4  | Fix hospitalisation-vs-sick-leave additive framing | completed — "inclusive of" disclaimer added      |
+| P4-QW-5  | Fix NRIC mask shape on My Profile                  | completed — server mask used verbatim            |
+| P4-QW-6  | Hide stale onboarding card on legacy employees     | completed — empty-template cards hidden          |
+| P4-QW-7  | Seed ≥1 work-pass-expiring employee                | completed — relative dates (+45d, +75d)          |
+| P4-QW-8  | WICA tooltip in Cost-to-Company calculator         | completed — ResultRow accepts `tooltip` prop     |
+| P4-QW-9  | Payslip PDF download button on run-detail          | completed — wired to existing BE endpoint        |
+| P4-QW-10 | Compliance page inner-scroll trap                  | completed — no-fix needed (audit methodology)    |
+
+File: `todos/completed/P4-QW-quick-wins.md`.
+
+### P4-MG — Line-manager role + team scope (2-week sprint)
+
+| ID      | Title                                            | Status |
+| ------- | ------------------------------------------------ | ------ |
+| P4-MG-1 | Derive manager scope helper                      | active |
+| P4-MG-2 | Team approval endpoints (leave/claims/timesheet) | active |
+| P4-MG-3 | /team dashboard + sidebar entry                  | active |
+| P4-MG-4 | Team appraisal surface                           | active |
+| P4-MG-5 | Team engagement view (manager scope)             | active |
+
+File: `todos/active/P4-MG-manager-role.md`.
+
+### P4-LP — Landing page & procurement surface (1 day)
+
+| ID      | Title                              | Status |
+| ------- | ---------------------------------- | ------ |
+| P4-LP-1 | Book-a-demo CTA + form             | active |
+| P4-LP-2 | Trust strip above the fold         | active |
+| P4-LP-3 | Pricing transparency (tiers + CTA) | active |
+
+File: `todos/active/P4-LP-landing-page.md`.
+
+### P4-XX — Explicitly deferred (owner-locked)
+
+| ID      | Title                               | Status   |
+| ------- | ----------------------------------- | -------- |
+| P4-XX-1 | HTTPS + custom domain               | deferred |
+| P4-XX-2 | Xero production deploy + migrations | deferred |
+| P4-XX-3 | Multi-currency + multi-entity       | deferred |
+| P4-XX-4 | QBO / Zoho / MYOB / Tally adapters  | deferred |
+| P4-XX-5 | Xero Payroll API direct integration | deferred |
+
+File: `todos/active/P4-XX-deferred.md`. Each item has unblock criteria.
+
+---
+
 ## Status legend
 
 - **active** — sitting in `todos/active/<id>-<slug>.md` waiting for `/implement`

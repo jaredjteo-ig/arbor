@@ -187,11 +187,35 @@ async function parseErrorBody(
 
     /* Standard FastAPI HTTPException uses { detail: "..." } */
     if (body.detail) {
-      const detail =
-        typeof body.detail === "string"
-          ? body.detail
-          : JSON.stringify(body.detail);
-      return { detail };
+      if (typeof body.detail === "string") {
+        return { detail: body.detail };
+      }
+      /* Pydantic validation errors arrive as
+         { detail: [{type, loc, msg, input}, ...] }. Render a
+         human-readable summary instead of JSON.stringifying it
+         onto the page (audit P4-QW-2). */
+      if (Array.isArray(body.detail)) {
+        const validationDetails = body.detail as Array<{
+          msg?: string;
+          loc?: Array<string | number>;
+        }>;
+        const summary = validationDetails
+          .map((v) => {
+            const field =
+              v.loc && v.loc.length > 0 ? v.loc[v.loc.length - 1] : null;
+            const msg = v.msg ?? "Invalid value";
+            return field ? `${field}: ${msg}` : msg;
+          })
+          .join("; ");
+        return {
+          detail:
+            summary.length > 0
+              ? `Invalid request — ${summary}.`
+              : "Invalid request. Please check your input.",
+        };
+      }
+      /* Fallback for unexpected shapes — never expose raw JSON. */
+      return { detail: "Invalid request. Please check your input." };
     }
   } catch {
     /* response body may not be JSON */

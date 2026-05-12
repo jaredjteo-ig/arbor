@@ -124,6 +124,21 @@ function PayslipRow({
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<PayslipDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  async function handleDownloadPdf(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDownloadingPdf(true);
+    setPdfError(null);
+    try {
+      await payrollApi.downloadPayslipPdf(runId, payslip.payslip_id);
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
 
   async function handleToggle() {
     if (expanded) {
@@ -293,6 +308,24 @@ function PayslipRow({
                     </div>
                   </div>
                 )}
+
+                {/* Download PDF action */}
+                <div className="pt-2 border-t border-[var(--color-gray-200)] flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdf}
+                    disabled={downloadingPdf}
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[var(--color-primary)] hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Download className="h-4 w-4" />
+                    {downloadingPdf
+                      ? "Generating PDF…"
+                      : "Download payslip PDF"}
+                  </button>
+                  {pdfError && (
+                    <span className="text-xs text-red-600">{pdfError}</span>
+                  )}
+                </div>
               </div>
             ) : (
               <p className="text-sm text-[var(--color-gray-500)]">
@@ -317,6 +350,7 @@ export default function PayrollRunDetailPage({
 }: PayrollRunDetailPageProps) {
   const { id } = use(params);
   const runId = Number(id);
+  const runIdInvalid = !Number.isFinite(runId) || runId <= 0;
   const { user } = useAuth();
   const isAdmin = user?.role === "owner" || user?.role === "hr_manager";
 
@@ -327,6 +361,11 @@ export default function PayrollRunDetailPage({
   const [xeroOpen, setXeroOpen] = useState<boolean>(false);
 
   const fetchRun = useCallback(async () => {
+    if (runIdInvalid) {
+      setIsLoading(false);
+      setError("Payroll run not found.");
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
@@ -341,7 +380,7 @@ export default function PayrollRunDetailPage({
     } finally {
       setIsLoading(false);
     }
-  }, [runId]);
+  }, [runId, runIdInvalid]);
 
   useEffect(() => {
     fetchRun();

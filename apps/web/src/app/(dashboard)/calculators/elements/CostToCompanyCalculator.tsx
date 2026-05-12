@@ -262,6 +262,7 @@ export function CostToCompanyCalculator() {
           <ResultRow
             label="WICA Insurance (est.)"
             value={fmt(result.insurance)}
+            tooltip="WICA is mandatory for manual workers and for non-manual employees earning ≤$2,600/month. A non-manual citizen above $2,600 doesn't trigger the threshold — $0 here is correct, not a gap."
           />
           <ResultRow
             label="Total Monthly Cost"

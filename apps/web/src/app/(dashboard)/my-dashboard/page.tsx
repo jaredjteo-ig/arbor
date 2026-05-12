@@ -540,6 +540,13 @@ function OnboardingProgressCard() {
   );
   const percent = assignment.completion_percentage ?? 0;
 
+  /* Hide empty-template assignments (audit P4-QW-6). Legacy employees
+     can have onboarding templates assigned retroactively by seeds; if
+     the template has zero actual steps, rendering "0 of 0 steps
+     completed" is noise that suggests unfinished work where there is
+     none. */
+  if (totalSteps === 0) return null;
+
   return (
     <AppCard variant="flat">
       <div className="flex items-start gap-3">

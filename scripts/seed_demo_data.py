@@ -167,7 +167,10 @@ EMPLOYEE_PROFILES: list[dict[str, Any]] = [
         "employment_type": "full_time",
         "start_date": "2023-08-01",
         "confirmation_status": "confirmed",
-        "work_pass_expiry": "2026-04-15",  # Expiring in ~3 weeks
+        # Computed at seed-run time so the "Work Pass Expiring Soon"
+        # filter on /employees always has a fresh entry to surface,
+        # regardless of when the seed is re-run (P4-QW-7 audit).
+        "work_pass_expiry": (date.today() + timedelta(days=45)).isoformat(),
     },
     {
         "name": "Ahmad Bin Ismail",
@@ -183,7 +186,9 @@ EMPLOYEE_PROFILES: list[dict[str, Any]] = [
         "employment_type": "full_time",
         "start_date": "2024-01-08",
         "confirmation_status": "confirmed",
-        "work_pass_expiry": "2026-04-20",  # Expiring in ~4 weeks
+        # Slightly further out than Nguyen's so the filter shows a
+        # graduated set (P4-QW-7).
+        "work_pass_expiry": (date.today() + timedelta(days=75)).isoformat(),
     },
     {
         "name": "Sato Yuki",

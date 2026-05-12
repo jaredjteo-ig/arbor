@@ -459,11 +459,19 @@ export default function MyProfilePage() {
       >
         <Field
           label="NRIC / FIN"
+          /*
+           * Display the server-masked value verbatim. The backend's
+           * `mask_nric` helper already returns the SG-correct shape:
+           * first character preserved (S/T/F/G citizenship band),
+           * middle 4 characters hidden, last 4 visible — e.g.
+           * `S****567A` (9 chars). Reconstructing `****{last4}` here
+           * (the old behaviour) dropped the leading char and produced
+           * an 8-char string, which read as a malformed NRIC.
+           * See audit P4-QW-5.
+           */
           value={
             profile.nric_fin && !nricEditing
-              ? profile.nric_fin_last4
-                ? `****${profile.nric_fin_last4}`
-                : profile.nric_fin
+              ? profile.nric_fin
               : profile.nric_fin || ""
           }
           onChange={(v) => {
