@@ -17,6 +17,12 @@ export interface Employee {
   employment_type?: string;
   pass_type?: string;
   confirmation_status?: string;
+  /**
+   * Work pass expiry date (ISO YYYY-MM-DD). Empty string for SG
+   * citizens and PRs. Surfaced on the list endpoint to power the
+   * "Work Pass Expiring Soon" filter without an N+1 fetch.
+   */
+  work_pass_expiry?: string;
 }
 
 export interface EmployeeRecord {

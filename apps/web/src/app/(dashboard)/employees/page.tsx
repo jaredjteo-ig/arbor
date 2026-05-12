@@ -821,38 +821,20 @@ function DirectoryTab({
   >({});
   const [isLoadingWorkPass, setIsLoadingWorkPass] = useState(false);
 
+  /*
+   * P4-QW-7 followup: the list endpoint now returns `work_pass_expiry`
+   * directly on each row, so we no longer need the N+1 detail-fetch
+   * pattern that previously hydrated this map. Kept the state shape
+   * for backward compatibility with the legacy code paths but use
+   * `emp.work_pass_expiry` directly in the filter.
+   */
   const fetchWorkPassData = useCallback(async () => {
-    if (Object.keys(workPassExpiryMap).length > 0) return;
-    setIsLoadingWorkPass(true);
-    try {
-      const map: Record<number, string> = {};
-      const detailPromises = employees.map(async (emp) => {
-        try {
-          const detail = await employeesApi.getEmployee(emp.id);
-          if (detail.work_pass_expiry) {
-            map[emp.id] = detail.work_pass_expiry;
-          }
-        } catch {
-          // Skip on failure
-        }
-      });
-      await Promise.all(detailPromises);
-      setWorkPassExpiryMap(map);
-    } finally {
-      setIsLoadingWorkPass(false);
-    }
-  }, [employees, workPassExpiryMap]);
+    setIsLoadingWorkPass(false);
+    setWorkPassExpiryMap({});
+  }, []);
 
   function handleToggleWorkPassFilter() {
-    const newVal = !workPassFilter;
-    setWorkPassFilter(newVal);
-    if (
-      newVal &&
-      Object.keys(workPassExpiryMap).length === 0 &&
-      employees.length > 0
-    ) {
-      fetchWorkPassData();
-    }
+    setWorkPassFilter(!workPassFilter);
   }
 
   const filteredEmployees = employees.filter((emp) => {
@@ -862,12 +844,13 @@ function DirectoryTab({
       emp.department.toLowerCase().includes(searchQuery.toLowerCase());
     if (!matchesSearch) return false;
     if (workPassFilter) {
-      const expiry = workPassExpiryMap[emp.id];
+      const expiry = emp.work_pass_expiry;
       if (!expiry) return false;
-      const daysLeft = Math.ceil(
-        (new Date(expiry).getTime() - Date.now()) / 86400000,
-      );
-      return daysLeft <= 90;
+      const expiryMs = new Date(expiry).getTime();
+      if (Number.isNaN(expiryMs)) return false;
+      const daysLeft = Math.ceil((expiryMs - Date.now()) / 86400000);
+      // Within the next 90 days AND not already expired.
+      return daysLeft >= 0 && daysLeft <= 90;
     }
     return true;
   });
