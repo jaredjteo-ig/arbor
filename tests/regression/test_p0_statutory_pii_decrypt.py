@@ -17,6 +17,15 @@ all of which would break the first real payroll cycle for a customer:
         `get_my_payslips`) but the same fix was never applied to
         `get_payroll_run`.
 
+  P0-4. Discovered during P0-1/2/3 deploy verification: DataFlow
+        `express_sync.read("PayrollRun", id)` returns None for every
+        PayrollRun row while `express_sync.list("PayrollRun", filter={"id": id})`
+        returns the same row correctly. This blocks 19 payroll endpoints
+        (every one that calls `dataflow_crud.read("PayrollRun", ...)`),
+        including the CPF e-Submit + Bank GIRO POSTs fixed in P0-1/2.
+        Defensive fix: `dataflow_crud.read` falls back to a filtered
+        list when express_sync.read returns None.
+
 Origin: workspaces/obayashi/04-validate/08-functional-audit-2026-05-12.md
 """
 
@@ -194,3 +203,83 @@ def test_p0_3_admin_run_detail_aliases_payslip_id():
         "navigate to /payslips/{id}. Without this alias, the React "
         "PayslipRow component calls /payslips/undefined."
     )
+
+
+# ---------------------------------------------------------------------------
+# P0-4 — dataflow_crud.read must fall back to list when express_sync.read fails
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.regression
+def test_p0_4_read_falls_back_to_list_when_express_read_returns_none():
+    """`dataflow_crud.read` must retry via `express_sync.list` on None.
+
+    DataFlow's express_sync.read returns None for some models (observed:
+    PayrollRun in prod after a container rebuild). The list-with-id-filter
+    operation returns the same row in the same shape. The fallback keeps
+    the 19 `read("PayrollRun", ...)` call sites in `routers/payroll.py`
+    functional regardless of which DataFlow node path is healthy.
+    """
+    from hr_advisory.services import dataflow_crud
+
+    class FakeExpressSync:
+        def __init__(self):
+            self.read_calls = []
+            self.list_calls = []
+
+        def read(self, model, record_id):
+            self.read_calls.append((model, record_id))
+            return None  # simulate the prod failure
+
+        def list(self, model, filter=None):
+            self.list_calls.append((model, filter))
+            if filter == {"id": 4}:
+                return [{"id": 4, "company_id": 1, "status": "paid"}]
+            return []
+
+    class FakeDb:
+        def __init__(self):
+            self.express_sync = FakeExpressSync()
+
+    fake_db = FakeDb()
+
+    # Patch the lazy db loader to return our fake.
+    original = dataflow_crud._get_db
+    dataflow_crud._get_db = lambda: fake_db
+    try:
+        result = dataflow_crud.read("PayrollRun", 4)
+    finally:
+        dataflow_crud._get_db = original
+
+    assert result is not None, "fallback must yield the row when read returns None"
+    assert result["id"] == 4
+    assert result["status"] == "paid"
+    # Both paths exercised — read tried first, then the list fallback.
+    assert len(fake_db.express_sync.read_calls) == 1
+    assert fake_db.express_sync.list_calls == [("PayrollRun", {"id": 4})]
+
+
+@pytest.mark.regression
+def test_p0_4_read_returns_none_when_list_also_empty():
+    """If both express_sync.read and the list fallback return nothing, read returns None."""
+    from hr_advisory.services import dataflow_crud
+
+    class FakeExpressSync:
+        def read(self, model, record_id):
+            return None
+
+        def list(self, model, filter=None):
+            return []
+
+    class FakeDb:
+        def __init__(self):
+            self.express_sync = FakeExpressSync()
+
+    original = dataflow_crud._get_db
+    dataflow_crud._get_db = lambda: FakeDb()
+    try:
+        result = dataflow_crud.read("PayrollRun", 999)
+    finally:
+        dataflow_crud._get_db = original
+
+    assert result is None

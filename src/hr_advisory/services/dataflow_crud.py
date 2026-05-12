@@ -43,12 +43,21 @@ def read(model_name: str, record_id: int | str) -> dict[str, Any] | None:
     """Read a single record by ID via db.express_sync.
 
     Returns None if the record is not found or has an error.
+
+    Fallback: some DataFlow models (observed: PayrollRun) intermittently
+    return None from express_sync.read while express_sync.list with the same
+    id filter succeeds. When read fails we retry once via list — same row,
+    same shape, just routed through the list node.
     """
     db = _get_db()
-    result = db.express_sync.read(model_name, _coerce_id(record_id))
-    if not result or result.get("error") or result.get("failed"):
-        return None
-    return result
+    coerced_id = _coerce_id(record_id)
+    result = db.express_sync.read(model_name, coerced_id)
+    if result and not result.get("error") and not result.get("failed"):
+        return result
+    rows = db.express_sync.list(model_name, filter={"id": coerced_id})
+    if rows and isinstance(rows, list) and len(rows) > 0:
+        return rows[0]
+    return None
 
 
 def list_records(
