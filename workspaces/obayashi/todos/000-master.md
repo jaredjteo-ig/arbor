@@ -177,7 +177,7 @@ File: `todos/completed/P4-QW-quick-wins.md`.
 | ------- | ------------------------------------------------ | -------------------------------------------------------------------- |
 | P4-MG-1 | Derive manager scope helper                      | completed — `services/manager_scope.py` + 17 unit tests              |
 | P4-MG-2 | Team approval endpoints (leave/claims/timesheet) | completed — verified live (Rajesh sees team, cross-team approve 403) |
-| P4-MG-3 | /team dashboard + sidebar entry                  | active                                                               |
+| P4-MG-3 | /team dashboard + sidebar entry                  | completed — `/team` live; Rajesh sees 7 reports + 4 cards + roster   |
 | P4-MG-4 | Team appraisal surface                           | active                                                               |
 | P4-MG-5 | Team engagement view (manager scope)             | active                                                               |
 
