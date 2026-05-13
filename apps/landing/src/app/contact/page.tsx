@@ -1,4 +1,8 @@
+"use client";
+
+import { Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Mail, Send } from "lucide-react";
 
 function ArborLogo() {
@@ -12,7 +16,62 @@ function ArborLogo() {
   );
 }
 
-export default function ContactPage() {
+/* Intent-aware copy. /contact?intent=demo from the hero/book-a-demo
+   CTA. /contact?tier=growth from the pricing page. Both are opt-in —
+   direct /contact still shows the neutral "Get in touch" variant.
+
+   This is a client component because the landing app is statically
+   exported (output: 'export') — server-side `searchParams` would
+   force dynamic rendering, which Netlify static hosting doesn't
+   support. `useSearchParams` reads the URL on the client at hydration. */
+
+interface IntentCopy {
+  heading: string;
+  subhead: string;
+  messageDefault: string;
+  formIntent: string;
+}
+
+function copyForIntent(intent: string | null, tier: string | null): IntentCopy {
+  if (intent === "demo") {
+    return {
+      heading: "Book a demo",
+      subhead:
+        "Tell us about your team and we’ll walk you through a real Singapore payroll cycle — CPF, IR8A, leave, and the AI advisory. Typically scheduled within one business day.",
+      messageDefault:
+        "We’re a Singapore-based team with about <X> employees. We’d love to see how Central handles payroll + compliance.",
+      formIntent: "demo",
+    };
+  }
+  if (tier) {
+    const tierTitle =
+      tier.charAt(0).toUpperCase() + tier.slice(1).toLowerCase();
+    return {
+      heading: `Talk to sales — ${tierTitle} plan`,
+      subhead:
+        "Tell us a bit about your team and we’ll prepare a quote tailored to your size and integrations.",
+      messageDefault: `Interested in the ${tierTitle} plan. Our team size is approximately ___.`,
+      formIntent: `pricing:${tier.toLowerCase()}`,
+    };
+  }
+  return {
+    heading: "Get in touch",
+    subhead:
+      "Tell us a bit about your team and we’ll show you how Central can simplify HR. We typically respond within one business day.",
+    messageDefault: "",
+    formIntent: "general",
+  };
+}
+
+function ContactPageInner() {
+  const searchParams = useSearchParams();
+  const intent = searchParams.get("intent");
+  const tier = searchParams.get("tier");
+  const { heading, subhead, messageDefault, formIntent } = copyForIntent(
+    intent,
+    tier,
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
@@ -36,11 +95,10 @@ export default function ContactPage() {
             <Mail className="w-6 h-6 text-blue-600" />
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
-            Get in touch
+            {heading}
           </h1>
           <p className="text-gray-600 leading-relaxed max-w-xl mx-auto">
-            Tell us a bit about your team and we&apos;ll show you how Central
-            can simplify HR. We typically respond within one business day.
+            {subhead}
           </p>
         </div>
 
@@ -54,6 +112,9 @@ export default function ContactPage() {
         >
           {/* Required hidden field — tells Netlify which form this is */}
           <input type="hidden" name="form-name" value="contact" />
+          {/* Captures the inbound intent (demo / pricing tier / general)
+              so sales can route faster. P4-LP-1. */}
+          <input type="hidden" name="intent" value={formIntent} />
           {/* Honeypot field — bots fill this in, humans never see it */}
           <p className="hidden">
             <label>
@@ -152,6 +213,7 @@ export default function ContactPage() {
               name="message"
               required
               rows={5}
+              defaultValue={messageDefault}
               className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-colors text-sm resize-none"
               placeholder="Tell us about your HR needs — payroll, leave, compliance, anything."
             />
@@ -187,5 +249,22 @@ export default function ContactPage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+/* Suspense boundary is required by Next.js for client components
+   that call useSearchParams() under static export. The fallback
+   renders the neutral copy so the page never flickers blank. */
+export default function ContactPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <p className="text-sm text-gray-500">Loading…</p>
+        </div>
+      }
+    >
+      <ContactPageInner />
+    </Suspense>
   );
 }

@@ -13,6 +13,10 @@ import {
   BookOpen,
   Scale,
   ShieldCheck,
+  Lock,
+  MapPin,
+  FileCheck2,
+  Quote,
 } from "lucide-react";
 import { ManagementShowcase } from "@/components/management/ManagementShowcase";
 
@@ -60,14 +64,27 @@ function LandingNav() {
           >
             AI Advisory
           </a>
+          <Link
+            href="/pricing"
+            className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            Pricing
+          </Link>
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
           <Link
             href="/contact"
-            className="text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2.5 rounded-xl transition-colors"
+            className="text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors"
           >
-            Contact Us
+            Contact
+          </Link>
+          <Link
+            href="/contact?intent=demo"
+            className="text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2.5 rounded-xl transition-colors inline-flex items-center gap-1.5"
+          >
+            Book a demo
+            <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 
@@ -108,17 +125,138 @@ function LandingNav() {
           >
             AI Advisory
           </a>
+          <Link
+            href="/pricing"
+            className="block text-sm font-medium text-gray-700 py-2"
+            onClick={() => setMobileOpen(false)}
+          >
+            Pricing
+          </Link>
           <div className="pt-2 border-t border-gray-100 flex flex-col gap-2">
             <Link
-              href="/contact"
+              href="/contact?intent=demo"
               className="text-center text-sm font-semibold text-white bg-blue-600 px-4 py-2.5 rounded-xl"
+              onClick={() => setMobileOpen(false)}
             >
-              Contact Us
+              Book a demo
+            </Link>
+            <Link
+              href="/contact"
+              className="text-center text-sm font-medium text-gray-600 py-2"
+              onClick={() => setMobileOpen(false)}
+            >
+              Contact us
             </Link>
           </div>
         </div>
       )}
     </header>
+  );
+}
+
+/* ── Hero ────────────────────────────────────────────────── */
+/* Above-the-fold landing. Primary CTA is Book a Demo; secondary
+   is the existing /contact form. Copy emphasises Singapore HR +
+   deterministic-payroll + cited-advisory — the three differentiators. */
+
+function Hero() {
+  return (
+    <section className="relative overflow-hidden bg-gradient-to-b from-blue-50/50 via-white to-white pt-12 pb-10 md:pt-20 md:pb-16">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center">
+        <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold mb-6">
+          <Sparkles className="w-3.5 h-3.5" />
+          Built for Singapore SMEs
+        </div>
+        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight tracking-tight mb-5">
+          HR, payroll & compliance —
+          <br />
+          <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
+            done the Singapore way.
+          </span>
+        </h1>
+        <p className="max-w-2xl mx-auto text-base md:text-lg text-gray-600 leading-relaxed mb-8">
+          One platform for CPF, IR8A, leave, claims, and 6-domain compliance
+          checks. Deterministic payroll. AI advisory grounded in the Employment
+          Act. No expensive consultants.
+        </p>
+
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-3">
+          <Link
+            href="/contact?intent=demo"
+            className="inline-flex items-center gap-2 px-7 py-3.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 text-base"
+          >
+            Book a demo
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+          <Link
+            href="/pricing"
+            className="inline-flex items-center gap-2 px-7 py-3.5 bg-white text-gray-900 font-semibold rounded-xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all text-base"
+          >
+            See pricing
+          </Link>
+        </div>
+        <p className="text-xs text-gray-500">
+          We typically respond within one business day. No credit card needed.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* ── Trust Strip ─────────────────────────────────────────── */
+/* Five trust signals. Every claim must be true today — no
+   unaudited certifications. Mirrors the in-product PDPA +
+   'no AI in payroll math' + cited-advisory taglines. */
+
+function TrustStrip() {
+  const signals = [
+    {
+      icon: Lock,
+      title: "PDPA-compliant",
+      body: "PII encrypted at rest. Accessed only for HR and payroll purposes.",
+    },
+    {
+      icon: MapPin,
+      title: "Singapore-hosted",
+      body: "Data centre in Singapore. No data leaves the region.",
+    },
+    {
+      icon: FileCheck2,
+      title: "Statutory files",
+      body: "CPF e-Submit, Bank GIRO, IR8A and IR21 generated to Board formats.",
+    },
+    {
+      icon: Calculator,
+      title: "No AI in payroll math",
+      body: "Deterministic calculations. AI only for advisory + compliance Q&A.",
+    },
+    {
+      icon: Quote,
+      title: "Cited advisory",
+      body: "Every answer cites the underlying EA, CPF, EFMA or IRAS provision.",
+    },
+  ];
+
+  return (
+    <section className="py-12 bg-white border-y border-gray-100">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 md:gap-4">
+          {signals.map(({ icon: Icon, title, body }) => (
+            <div key={title} className="flex flex-col items-start gap-2 px-2">
+              <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                <Icon className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{title}</p>
+                <p className="text-xs text-gray-500 leading-relaxed mt-0.5">
+                  {body}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -298,15 +436,23 @@ function BottomCta() {
           Ready to simplify your HR?
         </h2>
         <p className="text-lg text-white/80 mb-8 max-w-xl mx-auto">
-          Get in touch — we&apos;ll show you how Central works in a quick call.
+          See Central running on a real Singapore payroll cycle in a 30-minute
+          call. We&apos;ll show CPF, IR8A, leave, and the AI advisory in your
+          own browser.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link
-            href="/contact"
+            href="/contact?intent=demo"
             className="inline-flex items-center gap-2 px-6 py-3 bg-white text-blue-700 font-semibold rounded-xl hover:bg-white/90 transition-all shadow-lg"
           >
-            Contact Us
+            Book a demo
             <ArrowRight className="w-4 h-4" />
+          </Link>
+          <Link
+            href="/pricing"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-white/10 text-white font-semibold rounded-xl border border-white/20 hover:bg-white/15 transition-all"
+          >
+            See pricing
           </Link>
         </div>
       </div>
@@ -346,6 +492,9 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white">
       <LandingNav />
+
+      <Hero />
+      <TrustStrip />
 
       <main id="features" className="py-8 px-4 sm:px-6">
         <ManagementShowcase />

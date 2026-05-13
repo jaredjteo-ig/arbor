@@ -183,15 +183,19 @@ File: `todos/completed/P4-QW-quick-wins.md`.
 
 File: `todos/active/P4-MG-manager-role.md`.
 
-### P4-LP — Landing page & procurement surface (1 day)
+### P4-LP — Landing page & procurement surface (1 day) ✅ COMPLETED 2026-05-13
 
-| ID      | Title                              | Status |
-| ------- | ---------------------------------- | ------ |
-| P4-LP-1 | Book-a-demo CTA + form             | active |
-| P4-LP-2 | Trust strip above the fold         | active |
-| P4-LP-3 | Pricing transparency (tiers + CTA) | active |
+All 3 items shipped. 6 new regression tests in
+`tests/regression/test_p4_lp_landing.py`. Landing app builds clean
+(`next build` → 5 static pages including /pricing).
 
-File: `todos/active/P4-LP-landing-page.md`.
+| ID      | Title                              | Status                                              |
+| ------- | ---------------------------------- | --------------------------------------------------- |
+| P4-LP-1 | Book-a-demo CTA + form             | completed — hero + /contact?intent=demo wired       |
+| P4-LP-2 | Trust strip above the fold         | completed — 5 truthful signals, no unaudited claims |
+| P4-LP-3 | Pricing transparency (tiers + CTA) | completed — /pricing with 3 tiers + FAQ + sales CTA |
+
+File: `todos/completed/P4-LP-landing-page.md`.
 
 ### P4-XX — Explicitly deferred (owner-locked)
 
