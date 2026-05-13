@@ -1,39 +1,63 @@
-commit: pending — P4-MG-2 bookkeeping commit
-head_at_capture: 7b065fe
-timestamp: 2026-05-13T06:00:00Z
-scope: targeted re-run of new tests added since 2026-05-12
+commit: pending — P4-MG redteam doc commit
+head_at_capture: aa98894
+timestamp: 2026-05-13T07:55:00Z
+scope: targeted re-run of new tests added across the P4-MG sprint
 
-# Files in scope of this run (test-once protocol — pre-existing
-# suite not re-executed, see "Full-suite baseline" note below):
-#   tests/regression/test_p0_statutory_pii_decrypt.py    — 6 tests
-#   tests/regression/test_p4_qw_audit_followups.py        — 15 tests
-#   tests/regression/test_p4_lp_landing.py                — 6 tests
-#   tests/regression/test_p4_mg_2_team_scope.py           — 10 tests (new)
-#   tests/unit/test_manager_scope.py                      — 17 tests
-#   tests/unit/test_payroll_calculator.py                 — 88 tests
+# Files in scope of this red-team round:
+#   tests/regression/test_p4_mg_2_team_scope.py        — 10 tests
+#   tests/regression/test_p4_mg_3_team_dashboard.py    — 12 tests
+#   tests/regression/test_p4_mg_4_team_appraisals.py   — 12 tests
+#   tests/regression/test_p4_mg_5_team_engagement.py   — 10 tests
+#   tests/unit/test_manager_scope.py                   — 17 tests
+# Plus standing P4-QW + P4-LP + P0 suites (verified during prior
+# red-team rounds, not re-run here per test-once protocol).
 
-baseline_pass: 132
+baseline_pass: 61
 baseline_fail: 0
-final_pass: 142  # +10 P4-MG-2 tests
+final_pass: 61
 final_fail: 0
-new_tests_this_cycle: 10 (test_p4_mg_2_team_scope.py)
+new_tests_this_redteam: 0  # runtime probes confirmed source pins;
+                          # no new regression tests added this round
 regressions: 0
 
 # Full-suite baseline from 2026-05-12: 3865 passed, 159 pre-existing
-# failures in modules untouched (recruitment, hire_role, attendance
-# perms tests). The most recent broader re-run (regression + manager
-# + payroll calc) showed: 565 passed, 1 pre-existing fail
-# (test_b11_rate_limit_coverage[integrations] — unrelated).
+# failures in modules untouched by P4 (recruitment, hire_role,
+# attendance perms tests). Not re-run this cycle.
 
-command: .venv/bin/pytest tests/regression/ tests/unit/test_manager_scope.py tests/unit/test_payroll_calculator.py -q
+command: .venv/bin/pytest tests/regression/test_p4_mg_2_team_scope.py tests/regression/test_p4_mg_3_team_dashboard.py tests/regression/test_p4_mg_4_team_appraisals.py tests/regression/test_p4_mg_5_team_engagement.py tests/unit/test_manager_scope.py -q
 
-live_smoke_p4_mg_2:
-  prod commit: 7b065fe (backend rebuilt, frontend unchanged)
-  Rajesh (line-mgr, 7 reports) /leave/applications: 2 apps (Nguyen Thanh + Chen Wei) ✅
-  Marcus (no reports)         /leave/applications: 0 apps (own only) ✅
-  Marcus cross-team approve:  HTTP 403 "You are not the manager of this employee." ✅
+live_runtime_probes_p4_mg:
+  18 probes against prod (aa98894), all hold:
+    IC (Marcus, 0 reports):
+      /team/size              → {team_size: 0}             ✅
+      /team/dashboard         → empty shape, no leak       ✅
+      /team/members           → count: 0                   ✅
+      /appraisals/to-review   → count: 0                   ✅
+      /engagement-surveys/team/aggregate → 403             ✅
+      PATCH /leave/applications/1/approve → 403            ✅
+      POST  /appraisals/1/manager-review  → 403            ✅
+      GET   /appraisals/1     → 403                        ✅
+    Cross-team (Rajesh attacks Lily's leave):
+      PATCH approve off-team  → 403 "not the manager…"     ✅
+      PATCH reject off-team   → 403 "not the manager…"     ✅
+    Owner Demo Admin:
+      /team/size              → 0                          ✅
+      /team/engagement        → 403 "no direct reports"    ✅
+      /appraisals/to-review   → 1 (company-wide for owner) ✅
+    HR Grace:
+      /team/size              → 0                          ✅
+      /appraisals/to-review   → 1 (company-wide for HR)    ✅
+    P50 privacy (Rajesh's engagement view):
+      has_respondent_ids      → false                      ✅
+      n / scope_size          → 7 / 7 (Z26 self-excluded)  ✅
+
+p4_mg_status_at_capture:
+  MG-1 manager_scope helper          ✅ shipped
+  MG-2 team approval endpoints       ✅ shipped + live
+  MG-3 /team dashboard               ✅ shipped + live
+  MG-4 team appraisal surface        ✅ shipped + live
+  MG-5 team engagement view          ✅ shipped + live
 
 deferred_on_prod:
-  - Xero migrations (owner-locked P4-XX-2). Consequence: approve /
-    mark-paid / cancel on payroll runs still 500 on prod.
-  - P4-MG-3..5 (team dashboard, appraisal, engagement views).
+  - P4-XX (HTTPS, Xero deploy, multi-currency, additional adapters)
+    Owner-locked per workspaces/obayashi/todos/active/P4-XX-deferred.md
