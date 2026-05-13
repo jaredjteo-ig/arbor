@@ -58,6 +58,7 @@ from hr_advisory.api.routers import (
     recognition_router,
     shifts_router,
     strategy_router,
+    team_router,
     training_router,
 )
 from hr_advisory.api.session import create_session_store
@@ -199,6 +200,7 @@ def _register_routers(app: Nexus) -> None:
     api.include_router(shadow_router, prefix="/shadow", tags=["Shadow Agent"])
     api.include_router(shifts_router, prefix="/shifts", tags=["Shifts"])
     api.include_router(strategy_router, prefix="/strategy", tags=["Strategy"])
+    api.include_router(team_router, prefix="/team", tags=["Team"])
     api.include_router(training_router, prefix="/training", tags=["Training"])
     api.include_router(
         recognition_router, prefix="/recognition", tags=["Recognition"]

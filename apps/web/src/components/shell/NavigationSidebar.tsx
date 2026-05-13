@@ -39,8 +39,10 @@ import {
   Sparkles,
   TrendingUp,
   MessageSquareHeart,
+  UsersRound,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTeamSize } from "@/hooks/api";
 
 interface NavItem {
   labelKey: string;
@@ -470,7 +472,39 @@ export function NavigationSidebar({
 
   const isEmployee = user?.role === "employee";
 
-  const coreNavItems = isEmployee ? employeeCoreNavItems : adminCoreNavItems;
+  /* P4-MG-3: surface a "Team" entry for any authenticated user with
+     ≥1 direct report. The /api/team/size endpoint is the canonical
+     source; we cache for 5 min via TanStack Query. Visibility is
+     derived, not role-gated — owners and HR managers also see Team
+     when they have direct reports (rare but legal). */
+  const { data: teamSizeData } = useTeamSize();
+  const hasTeam = (teamSizeData?.team_size ?? 0) > 0;
+
+  const teamNavItem: NavItem = {
+    labelKey: "nav.team",
+    label: "Team",
+    href: "/team",
+    icon: UsersRound,
+  };
+
+  const baseCore = isEmployee ? employeeCoreNavItems : adminCoreNavItems;
+  /* For employees, Team slots after My Dashboard — managers want it
+     to be the first thing they see when they open the app. For
+     owner/HR, Team slots near Employees — keeps the management
+     cluster together. */
+  const coreNavItems: NavItem[] = hasTeam
+    ? isEmployee
+      ? [baseCore[0], teamNavItem, ...baseCore.slice(1)]
+      : [
+          ...baseCore.slice(
+            0,
+            baseCore.findIndex((i) => i.href === "/employees"),
+          ),
+          teamNavItem,
+          ...baseCore.slice(baseCore.findIndex((i) => i.href === "/employees")),
+        ]
+    : baseCore;
+
   const bottomNavItems = isEmployee
     ? employeeBottomNavItems
     : adminBottomNavItems;
