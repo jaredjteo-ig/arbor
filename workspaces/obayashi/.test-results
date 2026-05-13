@@ -1,40 +1,39 @@
-commit: pending — to be set when P4-MG-1 red-team commit lands
-head_at_capture: b7c959b
-timestamp: 2026-05-13T05:30:00Z
-scope: targeted re-run of new tests added since 2026-05-12 (P0 + P4-QW + P4-LP + P4-MG-1)
+commit: pending — P4-MG-2 bookkeeping commit
+head_at_capture: 7b065fe
+timestamp: 2026-05-13T06:00:00Z
+scope: targeted re-run of new tests added since 2026-05-12
 
-# Per the test-once protocol, this red-team re-ran ONLY the tests
-# written in the latest cycle. Pre-existing suite was not re-executed.
-
-# Files in scope of this run:
+# Files in scope of this run (test-once protocol — pre-existing
+# suite not re-executed, see "Full-suite baseline" note below):
 #   tests/regression/test_p0_statutory_pii_decrypt.py    — 6 tests
 #   tests/regression/test_p4_qw_audit_followups.py        — 15 tests
 #   tests/regression/test_p4_lp_landing.py                — 6 tests
-#   tests/unit/test_manager_scope.py                      — 17 tests (+3 vs MG-1 baseline)
+#   tests/regression/test_p4_mg_2_team_scope.py           — 10 tests (new)
+#   tests/unit/test_manager_scope.py                      — 17 tests
+#   tests/unit/test_payroll_calculator.py                 — 88 tests
 
-baseline_pass: 38 (pre-redteam: 6 + 15 + 6 + 14 — the 14 P4-MG-1 tests shipped at b7c959b)
+baseline_pass: 132
 baseline_fail: 0
-final_pass: 44 (6 + 15 + 6 + 17 — +3 red-team tests for active_only, self-reference x2)
+final_pass: 142  # +10 P4-MG-2 tests
 final_fail: 0
-new_tests_this_redteam: 3 (active_only filter, self-ref guard, self-approval refusal)
+new_tests_this_cycle: 10 (test_p4_mg_2_team_scope.py)
 regressions: 0
 
-# Full-suite baseline from 2026-05-12: 3865 passed, 159 pre-existing failures
-# in modules untouched by P4-QW/LP/MG-1 (recruitment, hire_role, attendance).
-# Not re-run this cycle — no changes in those modules.
+# Full-suite baseline from 2026-05-12: 3865 passed, 159 pre-existing
+# failures in modules untouched (recruitment, hire_role, attendance
+# perms tests). The most recent broader re-run (regression + manager
+# + payroll calc) showed: 565 passed, 1 pre-existing fail
+# (test_b11_rate_limit_coverage[integrations] — unrelated).
 
-command: .venv/bin/pytest tests/regression/test_p0_statutory_pii_decrypt.py tests/regression/test_p4_qw_audit_followups.py tests/regression/test_p4_lp_landing.py tests/unit/test_manager_scope.py -q
+command: .venv/bin/pytest tests/regression/ tests/unit/test_manager_scope.py tests/unit/test_payroll_calculator.py -q
 
-live_smoke:
-  hrcentral.netlify.app: P4-LP all 3 items rendering ✅
-  136.110.51.61 (a34ccfe):
-    P4-QW-3 Rajesh annual=10 ✅
-    P4-QW-7 work-pass filter (Ahmad + Nguyen) ✅
-    P4-QW-9 payslip detail 4 items ✅
-    P0-1 CPF NRIC plaintext, no Fernet blobs ✅
+live_smoke_p4_mg_2:
+  prod commit: 7b065fe (backend rebuilt, frontend unchanged)
+  Rajesh (line-mgr, 7 reports) /leave/applications: 2 apps (Nguyen Thanh + Chen Wei) ✅
+  Marcus (no reports)         /leave/applications: 0 apps (own only) ✅
+  Marcus cross-team approve:  HTTP 403 "You are not the manager of this employee." ✅
 
 deferred_on_prod:
-  - P4-MG-1 helper (dead code until P4-MG-2 wires it). Ride along
-    with the next P4-MG-2 deploy.
-  - Xero migrations (owner-locked per P4-XX-2). Consequence: payroll
-    approve / mark-paid / cancel still 500 on prod.
+  - Xero migrations (owner-locked P4-XX-2). Consequence: approve /
+    mark-paid / cancel on payroll runs still 500 on prod.
+  - P4-MG-3..5 (team dashboard, appraisal, engagement views).

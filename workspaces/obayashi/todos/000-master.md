@@ -171,15 +171,15 @@ in `tests/regression/test_p4_qw_audit_followups.py` pin every change.
 
 File: `todos/completed/P4-QW-quick-wins.md`.
 
-### P4-MG — Line-manager role + team scope (2-week sprint)
+### P4-MG — Line-manager role + team scope (2-week sprint, in progress)
 
-| ID      | Title                                            | Status |
-| ------- | ------------------------------------------------ | ------ |
-| P4-MG-1 | Derive manager scope helper                      | active |
-| P4-MG-2 | Team approval endpoints (leave/claims/timesheet) | active |
-| P4-MG-3 | /team dashboard + sidebar entry                  | active |
-| P4-MG-4 | Team appraisal surface                           | active |
-| P4-MG-5 | Team engagement view (manager scope)             | active |
+| ID      | Title                                            | Status                                                               |
+| ------- | ------------------------------------------------ | -------------------------------------------------------------------- |
+| P4-MG-1 | Derive manager scope helper                      | completed — `services/manager_scope.py` + 17 unit tests              |
+| P4-MG-2 | Team approval endpoints (leave/claims/timesheet) | completed — verified live (Rajesh sees team, cross-team approve 403) |
+| P4-MG-3 | /team dashboard + sidebar entry                  | active                                                               |
+| P4-MG-4 | Team appraisal surface                           | active                                                               |
+| P4-MG-5 | Team engagement view (manager scope)             | active                                                               |
 
 File: `todos/active/P4-MG-manager-role.md`.
 
