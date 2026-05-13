@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
-from hr_advisory.services import dataflow_crud
+from hr_advisory.services import dataflow_crud, manager_scope
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,52 @@ def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
         limit=1,
     )
     return records[0] if records else None
+
+
+def _authorize_review(current_user: dict, application: dict) -> None:
+    """Guard for approve/reject leave actions.
+
+    Allowed:
+    - role in (owner, hr_manager)
+    - caller is the direct line-manager of `application.employee_id`
+
+    Always denied (even for owners/HR who *technically* have the
+    role): the caller approving their own application. Self-approval
+    is a separation-of-duties violation under SG audit expectations
+    — owners route their own leave through a co-owner / HR person.
+
+    Raises HTTPException 403 with a clear message; the caller's
+    handler proceeds otherwise.
+    """
+    role = current_user.get("role", "employee")
+    target_emp_id = application.get("employee_id")
+
+    # Self-approval guard — applies to every role.
+    try:
+        user_id = int(current_user.get("sub", 0))
+    except (ValueError, TypeError):
+        user_id = 0
+    company_id = application.get("company_id")
+    caller_emp = (
+        _get_employee_for_user(user_id, company_id) if company_id else None
+    )
+    if caller_emp and caller_emp.get("id") == target_emp_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You cannot review your own leave application.",
+        )
+
+    if role in ("owner", "hr_manager"):
+        return  # full scope
+
+    # Line-manager path: must be the direct manager of the target.
+    if not target_emp_id:
+        raise HTTPException(status_code=403, detail="Not authorized.")
+    if not manager_scope.is_manager_of(current_user, int(target_emp_id)):
+        raise HTTPException(
+            status_code=403,
+            detail="You are not the manager of this employee.",
+        )
 
 
 def _enrich_leave_applications(apps: list, company_id: int) -> list:
@@ -810,8 +856,14 @@ async def list_applications(
 ) -> dict:
     """List leave applications.
 
-    Employees see their own applications only.
-    Owners and HR managers see all applications for the company.
+    Scope per role / org-chart position:
+    - Owners and HR managers see the whole company.
+    - Line managers (any employee with ≥1 direct report) see their
+      own applications PLUS their team's. Derived from
+      `Employee.reporting_manager_id` via `manager_scope` — no
+      separate role needed (P4-MG-2).
+    - Regular employees see their own only.
+
     Supports pagination via page and page_size query parameters.
     """
     company_id = get_current_company_id(current_user)
@@ -823,16 +875,42 @@ async def list_applications(
 
     if role in ("owner", "hr_manager"):
         filter_dict: dict = {"company_id": company_id}
+        if status:
+            filter_dict["status"] = status
+        apps = dataflow_crud.list_records("LeaveApplication", filter_dict)
     else:
         employee = _get_employee_for_user(user_id, company_id)
         if employee is None:
-            return {"applications": [], "count": 0, "page": page, "page_size": page_size, "total": 0, "pages": 0}
-        filter_dict = {"employee_id": employee.get("id")}
+            return {
+                "applications": [],
+                "count": 0,
+                "page": page,
+                "page_size": page_size,
+                "total": 0,
+                "pages": 0,
+            }
+        own_emp_id = employee.get("id")
+        team_ids = manager_scope.get_managed_employee_ids(current_user)
+        scope_ids = set(team_ids) | {own_emp_id}
 
-    if status:
-        filter_dict["status"] = status
-
-    apps = dataflow_crud.list_records("LeaveApplication", filter_dict)
+        # DataFlow `list_records` is an equality filter — no IN clause.
+        # For a manager view we widen to company scope and post-filter
+        # by the scope set in Python. Manager view is bounded by
+        # company size (~30 apps/month in a small SG SME), well within
+        # latency budget. Regular employees still take the fast
+        # employee_id-equality path.
+        if not team_ids:
+            filter_dict = {"employee_id": own_emp_id}
+            if status:
+                filter_dict["status"] = status
+            apps = dataflow_crud.list_records("LeaveApplication", filter_dict)
+        else:
+            apps = dataflow_crud.list_records(
+                "LeaveApplication", {"company_id": company_id}
+            )
+            apps = [a for a in apps if a.get("employee_id") in scope_ids]
+            if status:
+                apps = [a for a in apps if a.get("status") == status]
 
     # Enrich with human-readable names
     _enrich_leave_applications(apps, company_id)
@@ -863,9 +941,18 @@ async def list_applications(
 async def approve_application(
     application_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Approve a pending leave application.
+
+    Authorization scope (P4-MG-2):
+    - Owners and HR managers may approve any application in the company.
+    - Line managers (employees with `reporting_manager_id` pointing
+      at them) may approve their direct reports' applications.
+    - Regular employees: 403.
+
+    Self-approval is blocked even for managers — an employee may not
+    approve their own leave application regardless of role.
 
     Moves pending_days to used_days on the leave balance.
     """
@@ -873,6 +960,8 @@ async def approve_application(
     app = dataflow_crud.read("LeaveApplication", application_id)
     if app is None or app.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave application not found.")
+
+    _authorize_review(current_user, app)
 
     if app.get("status") != "pending":
         raise HTTPException(status_code=400, detail="Only pending applications can be approved.")
@@ -926,13 +1015,19 @@ async def approve_application(
 async def reject_application(
     application_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Reject a pending leave application. Remarks are required."""
+    """Reject a pending leave application. Remarks are required.
+
+    Same scope as `approve_application` (P4-MG-2): owner / HR
+    manager / direct line-manager. Self-rejection is blocked.
+    """
     company_id = get_current_company_id(current_user)
     app = dataflow_crud.read("LeaveApplication", application_id)
     if app is None or app.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave application not found.")
+
+    _authorize_review(current_user, app)
 
     if app.get("status") != "pending":
         raise HTTPException(status_code=400, detail="Only pending applications can be rejected.")

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
+from hr_advisory.services import manager_scope
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
 from hr_advisory.services import dataflow_crud
@@ -34,6 +35,41 @@ ALLOWED_RECEIPT_TYPES = {
 
 
 from hr_advisory.api.routers._helpers import _find_employee_for_user  # noqa: E402
+
+
+def _authorize_review_claim(current_user: dict, claim: dict) -> None:
+    """Guard for approve/reject claim actions (P4-MG-2).
+
+    Allowed:
+    - role in (owner, hr_manager)
+    - caller is the direct line-manager of `claim.employee_id`
+
+    Self-approval always denied (separation-of-duties).
+    """
+    role = current_user.get("role", "employee")
+    target_emp_id = claim.get("employee_id")
+    company_id = claim.get("company_id")
+    try:
+        user_id = int(current_user.get("sub", 0))
+    except (ValueError, TypeError):
+        user_id = 0
+    caller_emp = (
+        _find_employee_for_user(user_id, company_id) if company_id else None
+    )
+    if caller_emp and caller_emp.get("id") == target_emp_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You cannot review your own claim.",
+        )
+    if role in ("owner", "hr_manager"):
+        return
+    if not target_emp_id:
+        raise HTTPException(status_code=403, detail="Not authorized.")
+    if not manager_scope.is_manager_of(current_user, int(target_emp_id)):
+        raise HTTPException(
+            status_code=403,
+            detail="You are not the manager of this employee.",
+        )
 
 
 def _audit_claim(
@@ -241,9 +277,15 @@ async def list_claims(
     page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """List claims. Employees see their own; admins see all.
+    """List claims with role-and-org-chart-aware scope (P4-MG-2).
 
-    Supports ?status= filter and pagination via page and page_size query parameters.
+    - Owners + HR managers see the whole company.
+    - Line managers (any employee with ≥1 direct report) see their
+      own claims PLUS their team's. Derived from
+      `Employee.reporting_manager_id` via `manager_scope`.
+    - Regular employees see their own only.
+
+    Supports ?status= filter and pagination.
     """
     company_id = get_current_company_id(current_user)
     if company_id is None:
@@ -252,19 +294,40 @@ async def list_claims(
     role = current_user.get("role", "employee")
     status_filter = request.query_params.get("status")
 
-    filter_dict: dict = {"company_id": company_id}
-
-    if role not in ("owner", "hr_manager"):
+    if role in ("owner", "hr_manager"):
+        filter_dict: dict = {"company_id": company_id}
+        if status_filter:
+            filter_dict["status"] = status_filter
+        claims = dataflow_crud.list_records("Claim", filter_dict)
+    else:
         user_id = int(current_user.get("sub", 0))
         emp = _find_employee_for_user(user_id, company_id)
         if emp is None:
-            return {"claims": [], "count": 0, "page": page, "page_size": page_size, "total": 0, "pages": 0}
-        filter_dict["employee_id"] = emp["id"]
-
-    if status_filter:
-        filter_dict["status"] = status_filter
-
-    claims = dataflow_crud.list_records("Claim", filter_dict)
+            return {
+                "claims": [],
+                "count": 0,
+                "page": page,
+                "page_size": page_size,
+                "total": 0,
+                "pages": 0,
+            }
+        own_emp_id = emp["id"]
+        team_ids = manager_scope.get_managed_employee_ids(current_user)
+        scope_ids = set(team_ids) | {own_emp_id}
+        if not team_ids:
+            filter_dict = {"employee_id": own_emp_id, "company_id": company_id}
+            if status_filter:
+                filter_dict["status"] = status_filter
+            claims = dataflow_crud.list_records("Claim", filter_dict)
+        else:
+            # Manager view — widen and post-filter (same approach
+            # as leave.list_applications; DataFlow lacks IN clause).
+            claims = dataflow_crud.list_records(
+                "Claim", {"company_id": company_id}
+            )
+            claims = [c for c in claims if c.get("employee_id") in scope_ids]
+            if status_filter:
+                claims = [c for c in claims if c.get("status") == status_filter]
     claims.sort(key=lambda c: c.get("created_at", ""), reverse=True)
 
     # Pagination
@@ -395,9 +458,13 @@ async def submit_claim(
 @router.patch("/{claim_id}/approve")
 async def approve_claim(
     claim_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Approve a pending claim."""
+    """Approve a pending claim.
+
+    Scope (P4-MG-2): owner / HR manager / direct line-manager of
+    `claim.employee_id`. Self-approval is blocked.
+    """
     company_id = get_current_company_id(current_user)
     actor_id = int(current_user.get("sub", 0))
     check_rate_limit(
@@ -409,6 +476,8 @@ async def approve_claim(
     claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
+
+    _authorize_review_claim(current_user, claim)
 
     if claim.get("status") != "pending_approval":
         raise HTTPException(status_code=400, detail="Only pending claims can be approved.")
@@ -432,9 +501,12 @@ async def approve_claim(
 async def reject_claim(
     claim_id: int,
     request: Request,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Reject a pending claim. Reviewer remarks are required."""
+    """Reject a pending claim. Reviewer remarks are required.
+
+    Same scope as approve_claim (P4-MG-2).
+    """
     company_id = get_current_company_id(current_user)
     actor_id = int(current_user.get("sub", 0))
     check_rate_limit(
@@ -446,6 +518,8 @@ async def reject_claim(
     claim = dataflow_crud.read("Claim", claim_id)
     if claim is None or claim.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Claim not found.")
+
+    _authorize_review_claim(current_user, claim)
 
     if claim.get("status") != "pending_approval":
         raise HTTPException(status_code=400, detail="Only pending claims can be rejected.")

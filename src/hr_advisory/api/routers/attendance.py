@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from hr_advisory.api.middleware.auth_middleware import get_current_user, require_role
 from hr_advisory.api.middleware.rate_limit import check_rate_limit
 from hr_advisory.api.middleware.tenant_isolation import get_current_company_id
-from hr_advisory.services import dataflow_crud
+from hr_advisory.services import dataflow_crud, manager_scope
 
 logger = logging.getLogger(__name__)
 
@@ -608,16 +608,54 @@ async def submit_timesheet(
     return {"timesheet": timesheet}
 
 
+def _authorize_review_timesheet(current_user: dict, ts: dict) -> None:
+    """Guard for approve/reject timesheet actions (P4-MG-2).
+
+    Allowed: owner, hr_manager, or direct line-manager of
+    `ts.employee_id`. Self-approval denied.
+    """
+    role = current_user.get("role", "employee")
+    target_emp_id = ts.get("employee_id")
+    company_id = ts.get("company_id")
+    try:
+        user_id = int(current_user.get("sub", 0))
+    except (ValueError, TypeError):
+        user_id = 0
+    caller_emp = (
+        _find_employee_for_user(user_id, company_id) if company_id else None
+    )
+    if caller_emp and caller_emp.get("id") == target_emp_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You cannot review your own timesheet.",
+        )
+    if role in ("owner", "hr_manager"):
+        return
+    if not target_emp_id:
+        raise HTTPException(status_code=403, detail="Not authorized.")
+    if not manager_scope.is_manager_of(current_user, int(target_emp_id)):
+        raise HTTPException(
+            status_code=403,
+            detail="You are not the manager of this employee.",
+        )
+
+
 @router.patch("/timesheet/{timesheet_id}/approve")
 async def approve_timesheet(
     timesheet_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Approve a pending timesheet."""
+    """Approve a pending timesheet.
+
+    Scope (P4-MG-2): owner / HR / line-manager of the timesheet's
+    employee. Self-approval denied.
+    """
     company_id = get_current_company_id(current_user)
     ts = dataflow_crud.read("TimesheetApproval", timesheet_id)
     if ts is None or ts.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Timesheet not found.")
+
+    _authorize_review_timesheet(current_user, ts)
 
     if ts.get("status") != "pending":
         raise HTTPException(status_code=400, detail="Only pending timesheets can be approved.")
@@ -640,13 +678,15 @@ async def approve_timesheet(
 @router.patch("/timesheet/{timesheet_id}/reject")
 async def reject_timesheet(
     timesheet_id: int,
-    current_user: dict = Depends(require_role("owner", "hr_manager")),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Reject a pending timesheet."""
+    """Reject a pending timesheet. Same scope as approve (P4-MG-2)."""
     company_id = get_current_company_id(current_user)
     ts = dataflow_crud.read("TimesheetApproval", timesheet_id)
     if ts is None or ts.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Timesheet not found.")
+
+    _authorize_review_timesheet(current_user, ts)
 
     if ts.get("status") != "pending":
         raise HTTPException(status_code=400, detail="Only pending timesheets can be rejected.")
@@ -660,7 +700,11 @@ async def list_timesheets(
     request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """List timesheets. Admins see all; employees see their own.
+    """List timesheets with role-and-org-chart-aware scope (P4-MG-2).
+
+    - Owners + HR managers see the whole company.
+    - Line managers see their own + their team's timesheets.
+    - Regular employees see their own only.
 
     Supports ?status= filter.
     """
@@ -669,20 +713,38 @@ async def list_timesheets(
         raise HTTPException(status_code=400, detail="No company associated.")
 
     role = current_user.get("role", "employee")
-    filter_dict: dict = {"company_id": company_id}
+    status_filter = request.query_params.get("status")
 
-    if role not in ("owner", "hr_manager"):
+    if role in ("owner", "hr_manager"):
+        filter_dict: dict = {"company_id": company_id}
+        if status_filter:
+            filter_dict["status"] = status_filter
+        timesheets = dataflow_crud.list_records("TimesheetApproval", filter_dict)
+    else:
         user_id = int(current_user.get("sub", 0))
         emp = _find_employee_for_user(user_id, company_id)
         if emp is None:
             return {"timesheets": [], "count": 0}
-        filter_dict["employee_id"] = emp["id"]
+        own_emp_id = emp["id"]
+        team_ids = manager_scope.get_managed_employee_ids(current_user)
+        scope_ids = set(team_ids) | {own_emp_id}
+        if not team_ids:
+            filter_dict = {"employee_id": own_emp_id, "company_id": company_id}
+            if status_filter:
+                filter_dict["status"] = status_filter
+            timesheets = dataflow_crud.list_records(
+                "TimesheetApproval", filter_dict
+            )
+        else:
+            timesheets = dataflow_crud.list_records(
+                "TimesheetApproval", {"company_id": company_id}
+            )
+            timesheets = [
+                t for t in timesheets if t.get("employee_id") in scope_ids
+            ]
+            if status_filter:
+                timesheets = [t for t in timesheets if t.get("status") == status_filter]
 
-    status_filter = request.query_params.get("status")
-    if status_filter:
-        filter_dict["status"] = status_filter
-
-    timesheets = dataflow_crud.list_records("TimesheetApproval", filter_dict)
     timesheets.sort(key=lambda t: t.get("month", ""), reverse=True)
     return {"timesheets": timesheets, "count": len(timesheets)}
 
