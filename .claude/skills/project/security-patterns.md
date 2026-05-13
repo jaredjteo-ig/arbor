@@ -2346,3 +2346,430 @@ behaviour.
   `apps/web/src/services/api/engagement.ts`. Worth a unit test that
   asserts the caveat appears for templates with free-text and is
   absent for Q12-only templates.
+
+---
+
+## P54 — Decrypt-at-export boundary for field-encrypted PII (P0 statutory bugs, May 2026)
+
+**Problem:** the CPF e-Submit and Bank GIRO file exports shipped
+the NRIC and bank-account-number fields as **Fernet ciphertext
+blobs** to the CPF Board and the bank. 27 of 29 DETAIL rows looked
+like:
+
+```
+DETAIL,gAAAAABp8PG0TF200_a1gv61RHwEuW8X...==,Tanaka Hiroshi,8000.00,...
+```
+
+The PII fields were correctly encrypted at rest (`SALARY_ENCRYPTION_KEY`
+Fernet), but the export code path read `emp.get("nric_fin")`
+directly and never called `decrypt_field()`. The file structure
+was perfect — totals reconciled, format passed Board syntax checks
+— but the content was unusable. Only the legacy unencrypted
+record (Lily Phang) came through plaintext, which made the bug
+look intermittent and easy to miss in a smoke test.
+
+**Pattern:** every export path that reads encrypted-at-rest fields
+**must** decrypt at the boundary, not rely on ORM column reads.
+The boundary helper normalizes the row once at export-time entry:
+
+```python
+# src/hr_advisory/services/statutory_files.py
+from hr_advisory.security.encryption import decrypt_field
+
+def _decrypt_emp_pii(emp: dict) -> dict:
+    """Return a shallow copy of `emp` with NRIC + bank account decrypted.
+
+    CPF Board and banks reject encrypted blobs — files must carry
+    plaintext. `decrypt_field` is a no-op on values that aren't
+    ciphertext (legacy rows)."""
+    return {
+        **emp,
+        "nric_fin": decrypt_field(emp.get("nric_fin", "")),
+        "bank_account_number": decrypt_field(emp.get("bank_account_number", "")),
+    }
+
+def generate_cpf_esubmit(payroll_run, payslips, employees):
+    emp_by_id = {e.get("id"): _decrypt_emp_pii(e) for e in employees}
+    # ... rest of generator reads plaintext
+```
+
+**Generalises to:** any external file generator (IR8A, IR21, AIS,
+bank files), API responses to external consumers (Xero, QBO, MyInfo),
+and PDF generators where the encrypted text would visibly leak. The
+test that catches it: read the generated file bytes and assert
+`"gAAAAA"` (Fernet prefix) does NOT appear.
+
+**Anti-pattern:** assuming the storage layer's encryption is
+transparent end-to-end. The DataFlow column reads do NOT auto-decrypt
+in this codebase — encryption-at-rest is a security control, not a
+serialization mode.
+
+**Pinned by:**
+
+- `tests/regression/test_p0_statutory_pii_decrypt.py` — generates a
+  CPF e-Submit and asserts NRIC plaintext appears + Fernet prefix
+  doesn't.
+- Same for Bank GIRO (generic + DBS fixed-width) and the same test
+  pattern should be applied to IR8A / IR21 / AIS when those exports
+  ship (P55 cross-reference for the audit-trail twin pattern).
+
+---
+
+## P55 — Manager-of-team scope derived from org chart, NOT a 4th role (P4-MG-1)
+
+**Problem:** the audit found "line managers can't approve their
+team's leave — every approval funnels through HR Manager."
+Standard instinct: add a 4th role `line_manager`. That would mean:
+
+- JWT claim migration (`role: "line_manager"` introduced)
+- ~100 `require_role(...)` call sites to update
+- Every test fixture's role enumeration touched
+- Manager-of relationship still maintained separately in the org
+  chart
+
+**Pattern:** derive manager-ness from `Employee.reporting_manager_id`
+at request time, with no auth-system change. Anyone with ≥1 direct
+report implicitly becomes a manager for approval queues and team
+views. The three roles (`owner`, `hr_manager`, `employee`) stay
+intact.
+
+```python
+# src/hr_advisory/services/manager_scope.py
+def get_managed_employee_ids(
+    current_user: dict,
+    *,
+    active_only: bool = False,
+) -> set[int]:
+    my_emp_id = get_my_employee_id(current_user)
+    if my_emp_id is None:
+        return set()
+    company_id = _company_id_from(current_user)
+    reports = dataflow_crud.list_records(
+        "Employee",
+        {"reporting_manager_id": my_emp_id, "company_id": company_id},
+    )
+    out = set()
+    for row in reports:
+        emp_id = int(row["id"])
+        # Defensive: data-integrity bug where someone reports to
+        # themselves would allow self-approval via is_manager_of.
+        if emp_id == my_emp_id:
+            logger.warning(
+                "self-referencing reporting_manager_id for emp %s", emp_id
+            )
+            continue
+        if active_only and (
+            not row.get("is_active")
+            or row.get("confirmation_status") == "terminated"
+        ):
+            continue
+        out.add(emp_id)
+    return out
+
+
+def is_manager_of(current_user, target_emp_id):
+    return target_emp_id in get_managed_employee_ids(current_user)
+```
+
+Endpoints branch on role first, then derived scope:
+
+```python
+if role in ("owner", "hr_manager"):
+    pass  # full company scope
+elif not manager_scope.is_manager_of(current_user, target_emp_id):
+    raise HTTPException(403, "You are not the manager of this employee.")
+```
+
+**Generalises to:** any "manager of X" or "approver of Y" scope
+that already has a relationship column in the data model. Same
+approach: derive at request time, document the upstream invariant
+(JWT revocation on termination is the auth layer's job).
+
+**Anti-pattern:** adding a role for a relationship. Roles describe
+**what you can do** (owner, hr_manager, employee). Relationships
+describe **whom you act on**. Conflating them creates the
+N-roles-per-team explosion every enterprise HR product eventually
+hits.
+
+**Active_only flag default**: `False` — preserves off-boarding
+workflows (final claim approval, exit interview) for ~30 days
+post-termination. Team-dashboard callers pass `True` for current-
+roster view.
+
+**Pinned by:**
+
+- `tests/unit/test_manager_scope.py` — 17 tests including cross-
+  tenant isolation, self-reference guard, active_only filter.
+- `src/hr_advisory/services/manager_scope.py` security-model
+  docstring documents JWT revocation as upstream invariant.
+
+---
+
+## P56 — Action-vs-analytics scope asymmetry (P4-MG-5 + manager-scope design)
+
+**Problem:** when designing manager surfaces, scope is not one
+question — it's two. The team **engagement view** should arguably
+show direct + indirect (skip-level) reports for analytical health
+visibility. The team **approval queue** must NOT include skip-level
+reports — that would let a director approve their lieutenant's
+direct reports' leave, bypassing the direct manager.
+
+**Pattern:** split manager scope by intent at the helper level.
+
+| Surface                   | Scope                                      | Rationale                                              |
+| ------------------------- | ------------------------------------------ | ------------------------------------------------------ |
+| Approve / reject / review | **Direct only**                            | Separation of duties; direct manager owns the decision |
+| Analytical aggregate      | **Direct + indirect (2-level)**            | Skip-level health visibility; no harm enabled          |
+| Team roster               | Direct only by default; opt-in to indirect | Match the manager's mental model                       |
+
+`is_manager_of(user, target)` and `get_managed_employee_ids()` ship
+direct-only by default. The engagement aggregate computes
+`scope = direct | indirect` inside its own handler.
+
+**Generalises to:** any product surface where "manager view" is
+ambiguous. The right discriminator is _what action does this view
+enable?_ If it's read-only / aggregated / privacy-protected,
+broader scope is fine. If it's an action that mutates someone's
+record, direct relationship only.
+
+**Anti-pattern:** sharing a single `get_managed_employee_ids()`
+across action verbs and analytical surfaces, then realising the
+analytical view was too narrow OR the action verb was too broad.
+Once the scope helper is shared, evolution is expensive.
+
+**Pinned by:**
+
+- `src/hr_advisory/api/routers/engagement_surveys.py` `get_team_aggregate`
+  (uses direct + indirect)
+- `src/hr_advisory/api/routers/leave.py` `_authorize_review`
+  (uses `is_manager_of` — direct only)
+- `workspaces/obayashi/04-validate/11-redteam-p4-mg-sprint-*.md`
+  "By-design asymmetry worth noting" section.
+
+---
+
+## P57 — Self-approval block on every role (separation of duties)
+
+**Problem:** even an owner with `require_role("owner")` shouldn't
+be able to approve their own leave / claim / appraisal. SG audit
+expectation. The standard role check (`role == 'owner'` → allow)
+misses this.
+
+**Pattern:** every approve/reject/review endpoint runs the
+self-check **before** the role/scope check:
+
+```python
+def _authorize_review(current_user, application):
+    target_emp_id = application.get("employee_id")
+    user_id = int(current_user.get("sub", 0))
+    company_id = application.get("company_id")
+    caller_emp = _get_employee_for_user(user_id, company_id)
+
+    # Self-approval guard — applies to EVERY role.
+    if caller_emp and caller_emp["id"] == target_emp_id:
+        raise HTTPException(403, "You cannot review your own leave application.")
+
+    # ... then role / manager_of checks
+```
+
+**Generalises to:** any action that mutates someone's record where
+the actor's identity is recorded as the approver (`reviewed_by`,
+`approved_by`, `signed_off_by`). The actor MUST NOT also be the
+subject. Owners with self-leave route through a co-owner / HR
+manager instead.
+
+**Anti-pattern:** trusting that the role hierarchy (owner > HR >
+employee) implies self-approval is fine for higher roles. It
+doesn't — audit standards are about _who decides whose_, not
+_who is highest_.
+
+**Pinned by:**
+
+- `_authorize_review` in leave.py (P4-MG-2)
+- `_authorize_review_claim` in claims.py (P4-MG-2)
+- `_authorize_review_timesheet` in attendance.py (P4-MG-2)
+- `manager_review_appraisal` in appraisals.py (P4-MG-4)
+- Behavioural tests in `test_p4_mg_2_team_scope.py` cover
+  owner + line-manager self-approval blocks.
+
+---
+
+## P58 — Hash-chained audit log alongside the mutable record (red-team round 2 P1)
+
+**Problem:** `leave/approve` stamps `reviewed_by` + `reviewed_at`
+directly on the LeaveApplication record. Those fields are
+**mutable** — a later `UPDATE` can rewrite them. A compromised
+manager (or HR) could approve, then later UPDATE the record to
+look like someone else approved. For SG enterprise buyers
+(Obayashi, banks, listed cos), immutable HR-decision audit is
+table stakes.
+
+**Pattern:** every HR-decision endpoint writes to **both** the
+mutable record AND the append-only `AuditLogEntry` via
+`audit_log.record_event()`. The audit chain hashes each entry's
+`prev_hash + payload`, making row-level rewrites independently
+detectable.
+
+```python
+# Router-local helper (one per entity type — leave / timesheet /
+# appraisal / claim each have their own).
+def _audit_leave(application_id, company_id, action, actor_id, details=None):
+    try:
+        from hr_advisory.services import audit_log as _audit_log
+        _audit_log.record_event(
+            company_id=int(company_id),
+            actor_id=int(actor_id) if actor_id else 0,
+            event_type=f"leave.{action}",   # e.g. "leave.approved"
+            payload={"leave_application_id": application_id, "details": details or {}},
+        )
+    except Exception as exc:
+        # CRITICAL: failure logs but does NOT raise — HR decisions
+        # must complete even if audit subsystem is momentarily down.
+        # SRE alerts on the warning pattern.
+        logger.warning(
+            "AuditLogEntry append failed for leave %s action=%s: %s",
+            application_id, action, exc,
+        )
+
+# In the approve handler:
+dataflow_crud.update("LeaveApplication", application_id, {...})
+_audit_leave(application_id, company_id, "approved", actor_id,
+             {"employee_id": emp_id, "remarks": remarks})
+```
+
+Event-type convention: `<entity>.<action>` (e.g. `leave.approved`,
+`timesheet.rejected`, `appraisal.manager_reviewed`). Indexed
+by `idx_audit_event_type` so auditors can query by entity prefix.
+
+**Verification:** read the prod table directly to confirm the chain:
+
+```sql
+SELECT id, event_type, actor_id,
+       substr(payload_json, 1, 80) AS payload,
+       substr(entry_hash, 1, 16) AS hash,
+       substr(prev_hash, 1, 16) AS prev
+FROM audit_log_entries
+WHERE event_type LIKE 'leave.%'
+ORDER BY id DESC LIMIT 5;
+```
+
+**Generalises to:** every API action that mutates a record AND
+records who-did-what on that record. Pattern is the same for
+recruitment-decision endpoints, performance-bonus calculations,
+payroll-run approvals, integration-disconnect (PDPA right-to-erase)
+actions, etc.
+
+**Anti-pattern:** trusting that `reviewed_by` on the record is
+audit-grade. It's not — it's a denormalisation for fast queries,
+and any UPDATE can change it. The hash chain is the authoritative
+record.
+
+**Audit-failure must NOT block the action**: HR decisions complete
+even if the audit subsystem is momentarily unavailable. The
+warning gives SRE the signal to alert on; the user gets their
+action. This is the right trade — the alternative (block on audit
+failure) creates a HR-vs-SRE coupling that turns every audit-log
+outage into a HR outage.
+
+**Pinned by:**
+
+- `_audit_leave` in leave.py, `_audit_timesheet` in attendance.py,
+  `_audit_appraisal` in appraisals.py, `_audit_claim` in claims.py
+- `tests/regression/test_redteam_round2_audit_log.py` covers
+  helpers exist, callers reference them, audit-failure path
+  doesn't raise, event_type format follows `<entity>.<action>`.
+
+---
+
+## P59 — FastAPI route ordering: literals must register before /{id} (P4-MG-4)
+
+**Problem:** added `@router.get("/to-review")` to
+`appraisals.py` after the existing `@router.get("/{appraisal_id}")`.
+Every request to `/api/appraisals/to-review` returned
+**422 Unprocessable Entity** because FastAPI matched the path-param
+route first and tried `int("to-review")`. The literal route never
+fired.
+
+**Pattern:** literal-string routes (`/to-review`, `/my`,
+`/pending-for-payroll`) **must** be registered before
+`/{path_param}` routes with the same prefix.
+
+```python
+# CORRECT — literals first
+@router.get("/to-review")
+async def list_to_review(...):  # matches /api/appraisals/to-review
+    ...
+
+@router.get("/{appraisal_id}")  # then path-param fallback
+async def get_appraisal(appraisal_id: int, ...):
+    ...
+```
+
+A regression test pins the ordering by source-level inspection:
+
+```python
+def test_to_review_registered_before_id_path():
+    src = APPRAISALS_ROUTER.read_text()
+    to_review_pos = src.index('@router.get("/to-review")')
+    id_get_pos = src.index('@router.get("/{appraisal_id}")')
+    assert to_review_pos < id_get_pos
+```
+
+**Generalises to:** every router with mixed static + parameterised
+paths. Common offenders: `/me`, `/pending`, `/to-review`,
+`/active`, `/recent`. If FastAPI 422s a route that "should match",
+check ordering first.
+
+**Anti-pattern:** alphabetical file organisation that puts
+`{id}` before `to-review` because `{` sorts low. Routing semantics
+trump organisational tidiness.
+
+**Pinned by:** `test_mg4_to_review_registered_before_id_path` in
+`tests/regression/test_p4_mg_4_team_appraisals.py`.
+
+---
+
+## P60 — DataFlow read fallback to filtered list (P0-4)
+
+**Problem:** `db.express_sync.read("PayrollRun", id)` returned
+`None` for every PayrollRun row in prod, while
+`db.express_sync.list("PayrollRun", filter={"id": id})` returned
+the row correctly. This blocked 19 payroll endpoints (every
+caller of `dataflow_crud.read("PayrollRun", ...)`) — including
+the just-fixed CPF e-Submit + Bank GIRO POST endpoints.
+
+The root cause was inside DataFlow's express_sync — not in the
+caller's code. Couldn't be reproduced locally; prod-only.
+
+**Pattern:** make `dataflow_crud.read()` defensive — when
+`express_sync.read` returns None, retry once via
+`express_sync.list({"id": id})`. Same shape, different code path.
+
+```python
+def read(model_name: str, record_id: int | str) -> dict | None:
+    db = _get_db()
+    coerced_id = _coerce_id(record_id)
+    result = db.express_sync.read(model_name, coerced_id)
+    if result and not result.get("error") and not result.get("failed"):
+        return result
+    # Fallback — happens when express_sync.read is intermittently
+    # broken for some models (observed: PayrollRun in prod after a
+    # container rebuild). The list path is independently routed.
+    rows = db.express_sync.list(model_name, filter={"id": coerced_id})
+    if rows and isinstance(rows, list) and len(rows) > 0:
+        return rows[0]
+    return None
+```
+
+**Generalises to:** any "primary read by id" path that depends on
+a single SDK call. If the SDK has a list-with-filter equivalent,
+the fallback is cheap (point lookup via PK index) and orthogonal
+to the failing path.
+
+**Anti-pattern:** debugging "why is read returning None" for hours
+when the list-equivalent works. Add the fallback, file an upstream
+issue, move on.
+
+**Pinned by:** `tests/regression/test_p0_statutory_pii_decrypt.py`
+`test_p0_4_read_falls_back_to_list_when_express_read_returns_none`
+exercises both paths via fake express_sync.
