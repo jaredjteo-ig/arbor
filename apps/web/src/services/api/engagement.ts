@@ -472,7 +472,72 @@ export const engagementApi = {
       themes: string[];
       idempotent_replay?: boolean;
     }>(`/engagement-surveys/my-responses/${responseId}/submit`, payload),
+
+  /**
+   * Manager view — aggregate engagement for the caller's direct
+   * reports (P4-MG-5). Returns one of two shapes:
+   *
+   * - Hidden (n < 5, anonymous tier, no closed surveys): `{is_visible: false, reason, message}`
+   * - Full: `{is_visible: true, n, scope_size, avg_likert, enps_score,
+   *          themes, by_question, trend, survey_name, ...}`
+   *
+   * Always returns 200 unless the caller has no employee record;
+   * the FE decides whether to render the card or the empty state.
+   */
+  teamAggregate: (surveyId?: number) =>
+    apiClient.get<TeamEngagementAggregate>(
+      "/engagement-surveys/team/aggregate",
+      surveyId ? { survey_id: String(surveyId) } : undefined,
+    ),
 };
+
+/* ── Team-aggregate shape ────────────────────────────────── */
+
+export interface TeamEngagementTrendPoint {
+  survey_id: number;
+  closed_at: string;
+  name?: string;
+  avg_likert: number | null;
+  n: number;
+  is_anonymity_safe: boolean;
+}
+
+export interface TeamEngagementByQuestion {
+  question_id: string;
+  question_text: string;
+  n: number;
+  avg: number;
+}
+
+export interface TeamEngagementTheme {
+  theme: string;
+  count: number;
+}
+
+export interface TeamEngagementHidden {
+  is_visible: false;
+  scope_size?: number;
+  reason: string;
+  message?: string;
+}
+
+export interface TeamEngagementVisible {
+  is_visible: true;
+  is_limited: boolean;
+  scope_size: number;
+  n: number;
+  survey_id: number;
+  survey_name: string;
+  avg_likert: number | null;
+  enps_score: number | null;
+  themes: TeamEngagementTheme[];
+  by_question: TeamEngagementByQuestion[];
+  trend: TeamEngagementTrendPoint[];
+}
+
+export type TeamEngagementAggregate =
+  | TeamEngagementHidden
+  | TeamEngagementVisible;
 
 /* ── Helpers ──────────────────────────────────────────────── */
 

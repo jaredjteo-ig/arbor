@@ -31,8 +31,10 @@ import {
   Timer,
   CalendarDays,
   Award,
+  Heart,
+  Lock,
 } from "lucide-react";
-import { useTeamDashboard } from "@/hooks/api";
+import { useTeamDashboard, useTeamEngagement } from "@/hooks/api";
 import { AppCard } from "@/components/design-system";
 
 function formatDate(iso: string): string {
@@ -94,6 +96,7 @@ function NoTeamPanel() {
 
 export default function TeamPage() {
   const { data, isLoading, error } = useTeamDashboard();
+  const { data: engagement } = useTeamEngagement();
 
   if (isLoading) return <TeamSkeleton />;
   if (error) {
@@ -264,6 +267,91 @@ export default function TeamPage() {
           </div>
         </AppCard>
       </div>
+
+      {/* Engagement snapshot — only shows when n ≥ 5 (Z26 + privacy).
+           Anonymity-protected aggregate from the latest closed pulse. */}
+      {engagement?.is_visible ? (
+        <AppCard variant="standard">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
+              <Heart className="h-5 w-5 text-rose-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+                  Team engagement
+                </p>
+                <span
+                  title="Aggregated only when 5 or more reports respond. Per-respondent answers are never shown to you."
+                  className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5"
+                >
+                  <Lock className="h-3 w-3" />n = {engagement.n}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-4 mt-2 flex-wrap">
+                <div>
+                  <p className="text-3xl font-bold text-[var(--color-gray-900)] leading-none">
+                    {engagement.avg_likert?.toFixed(1) ?? "—"}
+                  </p>
+                  <p className="text-xs text-[var(--color-gray-500)] mt-1">
+                    avg Likert (1–5)
+                  </p>
+                </div>
+                {engagement.enps_score !== null && (
+                  <div>
+                    <p className="text-3xl font-bold text-[var(--color-gray-900)] leading-none">
+                      {engagement.enps_score > 0 ? "+" : ""}
+                      {engagement.enps_score}
+                    </p>
+                    <p className="text-xs text-[var(--color-gray-500)] mt-1">
+                      eNPS
+                    </p>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0 max-w-xs">
+                  <p className="text-xs text-[var(--color-gray-500)] mb-1">
+                    Latest pulse: {engagement.survey_name}
+                  </p>
+                  {engagement.by_question[0] && (
+                    <p className="text-xs text-[var(--color-gray-700)] truncate">
+                      Lowest: &ldquo;{engagement.by_question[0].question_text}
+                      &rdquo; ({engagement.by_question[0].avg.toFixed(1)})
+                    </p>
+                  )}
+                </div>
+              </div>
+              <Link
+                href="/team/engagement"
+                className="inline-flex items-center gap-1 mt-4 text-xs font-medium text-[var(--color-primary)] hover:underline"
+              >
+                View full breakdown
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+          </div>
+        </AppCard>
+      ) : engagement && !engagement.is_visible ? (
+        <AppCard variant="standard">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg bg-[var(--color-gray-100)] flex items-center justify-center shrink-0">
+              <Lock className="h-5 w-5 text-[var(--color-gray-500)]" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-[var(--color-gray-500)] uppercase tracking-wider">
+                Team engagement
+              </p>
+              <p className="text-sm text-[var(--color-gray-700)] mt-2">
+                {engagement.message ??
+                  "Engagement aggregate not available for your team."}
+              </p>
+              <p className="text-xs text-[var(--color-gray-500)] mt-2">
+                Aggregates require at least 5 responses to protect individual
+                privacy.
+              </p>
+            </div>
+          </div>
+        </AppCard>
+      ) : null}
 
       {/* Team roster */}
       <AppCard variant="standard">

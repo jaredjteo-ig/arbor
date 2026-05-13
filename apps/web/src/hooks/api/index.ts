@@ -117,4 +117,9 @@ export {
   usePayNowQR,
 } from "./useIntegrations";
 
-export { useTeamSize, useTeamDashboard, teamKeys } from "./useTeam";
+export {
+  useTeamSize,
+  useTeamDashboard,
+  useTeamEngagement,
+  teamKeys,
+} from "./useTeam";
