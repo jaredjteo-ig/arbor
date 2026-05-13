@@ -1,63 +1,45 @@
-commit: pending — P4-MG redteam doc commit
-head_at_capture: aa98894
-timestamp: 2026-05-13T07:55:00Z
-scope: targeted re-run of new tests added across the P4-MG sprint
+commit: 13c0569
+timestamp: 2026-05-13T09:35:00Z
+scope: targeted re-run after round-2 redteam fixes
 
-# Files in scope of this red-team round:
-#   tests/regression/test_p4_mg_2_team_scope.py        — 10 tests
-#   tests/regression/test_p4_mg_3_team_dashboard.py    — 12 tests
-#   tests/regression/test_p4_mg_4_team_appraisals.py   — 12 tests
-#   tests/regression/test_p4_mg_5_team_engagement.py   — 10 tests
-#   tests/unit/test_manager_scope.py                   — 17 tests
-# Plus standing P4-QW + P4-LP + P0 suites (verified during prior
-# red-team rounds, not re-run here per test-once protocol).
+# New regression file added this round:
+#   tests/regression/test_redteam_round2_audit_log.py — 11 tests
+# Existing P4-MG + P0 + P4-QW + P4-LP suites pinned in prior cycles.
 
-baseline_pass: 61
-baseline_fail: 0
-final_pass: 61
-final_fail: 0
-new_tests_this_redteam: 0  # runtime probes confirmed source pins;
-                          # no new regression tests added this round
+baseline_pass: 512
+baseline_fail: 1 (pre-existing test_b11_rate_limit_coverage[integrations])
+final_pass: 523
+final_fail: 1 (same pre-existing, untouched — integrations.py router)
+new_tests_this_cycle: 11
 regressions: 0
 
-# Full-suite baseline from 2026-05-12: 3865 passed, 159 pre-existing
-# failures in modules untouched by P4 (recruitment, hire_role,
-# attendance perms tests). Not re-run this cycle.
+command: .venv/bin/pytest tests/regression/ tests/unit/test_manager_scope.py -q
 
-command: .venv/bin/pytest tests/regression/test_p4_mg_2_team_scope.py tests/regression/test_p4_mg_3_team_dashboard.py tests/regression/test_p4_mg_4_team_appraisals.py tests/regression/test_p4_mg_5_team_engagement.py tests/unit/test_manager_scope.py -q
+what_shipped_13c0569:
+  fix(audit): immutable audit log + rate limits on HR-decision endpoints
+  P1 — 5 endpoints now write to hash-chained AuditLogEntry:
+    leave.approve_application      → leave.approved
+    leave.reject_application       → leave.rejected
+    attendance.approve_timesheet   → timesheet.approved
+    attendance.reject_timesheet    → timesheet.rejected
+    appraisals.manager_review      → appraisal.manager_reviewed
+  P2 — Rate limits (60/60s per actor) on leave + timesheet
+       approve/reject (claims + appraisals.manager_review were
+       already rate-limited).
 
-live_runtime_probes_p4_mg:
-  18 probes against prod (aa98894), all hold:
-    IC (Marcus, 0 reports):
-      /team/size              → {team_size: 0}             ✅
-      /team/dashboard         → empty shape, no leak       ✅
-      /team/members           → count: 0                   ✅
-      /appraisals/to-review   → count: 0                   ✅
-      /engagement-surveys/team/aggregate → 403             ✅
-      PATCH /leave/applications/1/approve → 403            ✅
-      POST  /appraisals/1/manager-review  → 403            ✅
-      GET   /appraisals/1     → 403                        ✅
-    Cross-team (Rajesh attacks Lily's leave):
-      PATCH approve off-team  → 403 "not the manager…"     ✅
-      PATCH reject off-team   → 403 "not the manager…"     ✅
-    Owner Demo Admin:
-      /team/size              → 0                          ✅
-      /team/engagement        → 403 "no direct reports"    ✅
-      /appraisals/to-review   → 1 (company-wide for owner) ✅
-    HR Grace:
-      /team/size              → 0                          ✅
-      /appraisals/to-review   → 1 (company-wide for HR)    ✅
-    P50 privacy (Rajesh's engagement view):
-      has_respondent_ids      → false                      ✅
-      n / scope_size          → 7 / 7 (Z26 self-excluded)  ✅
+live_verification_13c0569:
+  Grace approved Demo Admin's leave (id=12).
+  Postgres audit_log_entries shows:
+    id=3, event_type='leave.approved', actor_id=25,
+    payload_json={"details":{"employee_id":29,"remarks":"…"},"leave_application_id":12},
+    entry_hash=f57b2d1b… (linked to prev_hash=d812405a…)
+  Hash chain intact, payload includes employee_id + remarks,
+  reviewed_by on the record can now be independently audited.
 
-p4_mg_status_at_capture:
-  MG-1 manager_scope helper          ✅ shipped
-  MG-2 team approval endpoints       ✅ shipped + live
-  MG-3 /team dashboard               ✅ shipped + live
-  MG-4 team appraisal surface        ✅ shipped + live
-  MG-5 team engagement view          ✅ shipped + live
+p4_status_at_capture:
+  P4-QW  Quick wins                ✅ shipped + live
+  P4-LP  Landing page              ✅ shipped (Netlify)
+  P4-MG  Manager role + scope      ✅ shipped + live (5/5)
+  P4-XX  Deferred items            owner-locked
 
-deferred_on_prod:
-  - P4-XX (HTTPS, Xero deploy, multi-currency, additional adapters)
-    Owner-locked per workspaces/obayashi/todos/active/P4-XX-deferred.md
+active_todos: only workspaces/obayashi/todos/active/P4-XX-deferred.md
