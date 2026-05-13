@@ -30,7 +30,7 @@ from hr_advisory.api.routers._helpers import (  # noqa: E402
 # DataFlow helpers
 # --------------------------------------------------------------------------
 
-from hr_advisory.services import dataflow_crud
+from hr_advisory.services import dataflow_crud, manager_scope
 
 
 def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
@@ -436,6 +436,86 @@ async def list_my_appraisals(
 
 
 # --------------------------------------------------------------------------
+# Manager review queue (P4-MG-4)
+#
+# IMPORTANT: this route must be declared BEFORE `/{appraisal_id}` so
+# FastAPI's path matcher doesn't try to coerce the literal string
+# `to-review` into an int and 422 the request.
+# --------------------------------------------------------------------------
+
+
+@router.get("/to-review")
+async def list_appraisals_to_review(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """List submitted appraisals awaiting the caller's manager review.
+
+    Scope (P4-MG-4):
+    - Line managers see appraisals from their direct reports in
+      `status == 'submitted'`.
+    - Owners + HR managers see every submitted appraisal company-wide
+      (they act as the de-facto reviewer for skip-level ICs or
+      owner-direct reports).
+    - Regular employees with no reports get an empty list — not a
+      403, so a `/team` page surfacing the count renders cleanly
+      for ICs too.
+
+    Returns Appraisal shape enriched with `employee_name` and
+    `period_name` so the FE can render the queue without N+1 fetches.
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    role = current_user.get("role", "employee")
+    submitted = dataflow_crud.list_records(
+        "Appraisal",
+        {"company_id": company_id, "status": "submitted"},
+    )
+
+    if role in ("owner", "hr_manager"):
+        in_scope = submitted
+    else:
+        team_ids = manager_scope.get_managed_employee_ids(
+            current_user, active_only=True
+        )
+        if not team_ids:
+            return {"appraisals": [], "count": 0}
+        in_scope = [a for a in submitted if a.get("employee_id") in team_ids]
+
+    out: list[dict] = []
+    for app in in_scope:
+        emp_id = app.get("employee_id")
+        period_id = app.get("appraisal_period_id")
+        emp_name = ""
+        if emp_id:
+            emps = dataflow_crud.list_records(
+                "Employee", {"id": emp_id, "company_id": company_id}, limit=1
+            )
+            if emps and emps[0].get("user_id"):
+                users = dataflow_crud.list_records(
+                    "User", {"id": emps[0]["user_id"]}, limit=1
+                )
+                if users:
+                    emp_name = users[0].get("name", "")
+        period_name = ""
+        if period_id:
+            periods = dataflow_crud.list_records(
+                "AppraisalPeriod",
+                {"id": period_id, "company_id": company_id},
+                limit=1,
+            )
+            if periods:
+                period_name = periods[0].get("name", "")
+        out.append(
+            {**app, "employee_name": emp_name, "period_name": period_name}
+        )
+
+    out.sort(key=lambda a: a.get("submitted_at", ""), reverse=True)
+    return {"appraisals": out, "count": len(out)}
+
+
+# --------------------------------------------------------------------------
 # Individual appraisals
 # --------------------------------------------------------------------------
 
@@ -447,7 +527,12 @@ async def get_appraisal(
 ) -> dict:
     """Get an individual appraisal.
 
-    Employees can view their own appraisals; HR/owners can view any.
+    Read scope (P4-MG-4):
+    - Owners + HR managers see any appraisal in the company.
+    - The appraised employee sees their own.
+    - The direct line-manager of the appraised employee sees it too,
+      so managers can read submissions before clicking through to
+      the manager-review form.
     """
     company_id = get_current_company_id(current_user)
     if company_id is None:
@@ -461,7 +546,13 @@ async def get_appraisal(
     if role not in ("owner", "hr_manager"):
         user_id = int(current_user.get("sub", 0))
         emp = _get_employee_for_user(user_id, company_id)
-        if not emp or emp.get("id") != appraisal.get("employee_id"):
+        target_emp_id = appraisal.get("employee_id")
+        is_own = bool(emp and emp.get("id") == target_emp_id)
+        is_manager = (
+            target_emp_id is not None
+            and manager_scope.is_manager_of(current_user, int(target_emp_id))
+        )
+        if not (is_own or is_manager):
             raise HTTPException(status_code=403, detail="Access denied.")
 
     return {"appraisal": appraisal}
@@ -557,6 +648,94 @@ async def submit_appraisal(
         },
     )
     return {"appraisal": result, "detail": "Appraisal submitted."}
+
+
+@router.post("/{appraisal_id}/manager-review")
+async def manager_review_appraisal(
+    appraisal_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Manager submits their review of a direct report's appraisal.
+
+    Transitions `status: submitted → reviewed`. Records the reviewer
+    (manager) and timestamp. Reviewer comments + overall_score may
+    be passed in the body.
+
+    Scope (P4-MG-4):
+    - Owners + HR managers may review any submitted appraisal.
+    - Line managers may review their direct reports' appraisals.
+    - Anyone else: 403.
+    - Self-review is denied — an employee cannot review their own
+      appraisal even if they manage themselves through a data bug
+      (the manager_scope helper already screens self-references,
+      but the explicit guard belt-and-braces it here).
+    """
+    company_id = get_current_company_id(current_user)
+    if company_id is None:
+        raise HTTPException(status_code=400, detail="No company associated.")
+
+    user_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"manager_review_appraisal:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="manager review appraisal",
+    )
+
+    appraisal = dataflow_crud.read("Appraisal", appraisal_id)
+    if not appraisal or appraisal.get("company_id") != company_id:
+        raise HTTPException(status_code=404, detail="Appraisal not found.")
+
+    target_emp_id = appraisal.get("employee_id")
+
+    # Self-review guard
+    emp = _get_employee_for_user(user_id, company_id)
+    if emp and emp.get("id") == target_emp_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You cannot review your own appraisal.",
+        )
+
+    role = current_user.get("role", "employee")
+    if role not in ("owner", "hr_manager"):
+        if not target_emp_id or not manager_scope.is_manager_of(
+            current_user, int(target_emp_id)
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="You are not the manager of this employee.",
+            )
+
+    if appraisal.get("status") != "submitted":
+        raise HTTPException(
+            status_code=400,
+            detail="Appraisal must be in 'submitted' status to be reviewed.",
+        )
+
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    updates: dict = {
+        "status": "reviewed",
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        "reviewed_by": user_id,
+    }
+    if "reviewer_comments" in body:
+        updates["reviewer_comments"] = body["reviewer_comments"]
+    if "overall_score" in body:
+        # Score validation is light here — appraisal-period config
+        # owns the score scale; the FE typically enforces 1-5.
+        try:
+            updates["overall_score"] = float(body["overall_score"])
+        except (ValueError, TypeError):
+            pass
+
+    result = dataflow_crud.update("Appraisal", appraisal_id, updates)
+    return {"appraisal": result, "detail": "Manager review recorded."}
 
 
 @router.post("/{appraisal_id}/sign-off")

@@ -94,4 +94,18 @@ export const appraisalsApi = {
     apiClient.post<{ message: string }>(`/appraisals/${id}/submit`),
   signOffAppraisal: (id: number) =>
     apiClient.post<{ message: string }>(`/appraisals/${id}/sign-off`),
+
+  /* P4-MG-4: manager review queue + action */
+  listToReview: () =>
+    apiClient.get<{ appraisals: Appraisal[]; count: number }>(
+      "/appraisals/to-review",
+    ),
+  managerReview: (
+    id: number,
+    data: { reviewer_comments?: string; overall_score?: number },
+  ) =>
+    apiClient.post<{ appraisal: Appraisal; detail: string }>(
+      `/appraisals/${id}/manager-review`,
+      data,
+    ),
 };

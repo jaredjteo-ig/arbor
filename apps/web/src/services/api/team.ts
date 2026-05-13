@@ -12,6 +12,8 @@ export interface PendingApprovalsTile {
   leave: number;
   claims: number;
   timesheets: number;
+  /** Submitted appraisals awaiting the manager's review (P4-MG-4). */
+  appraisals: number;
   total: number;
 }
 

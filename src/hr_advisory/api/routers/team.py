@@ -183,6 +183,7 @@ async def team_dashboard(
                 "leave": 0,
                 "claims": 0,
                 "timesheets": 0,
+                "appraisals": 0,
                 "total": 0,
             },
             "on_leave_today": [],
@@ -218,7 +219,24 @@ async def team_dashboard(
         1 for t in all_ts if t.get("employee_id") in team_ids
     )
 
-    pending_total = pending_leave_count + pending_claims_count + pending_ts_count
+    # P4-MG-4: appraisals submitted by team members awaiting the
+    # manager's review. Same scope logic — own + team for line
+    # managers; the helper already screens cross-team.
+    all_submitted_appraisals = dataflow_crud.list_records(
+        "Appraisal", {"company_id": company_id, "status": "submitted"}
+    )
+    appraisals_to_review_count = sum(
+        1
+        for a in all_submitted_appraisals
+        if a.get("employee_id") in team_ids
+    )
+
+    pending_total = (
+        pending_leave_count
+        + pending_claims_count
+        + pending_ts_count
+        + appraisals_to_review_count
+    )
 
     # ── On leave today + upcoming-14-days ─────────────────────────
     approved_leave = dataflow_crud.list_records(
@@ -258,6 +276,7 @@ async def team_dashboard(
             "leave": pending_leave_count,
             "claims": pending_claims_count,
             "timesheets": pending_ts_count,
+            "appraisals": appraisals_to_review_count,
             "total": pending_total,
         },
         "on_leave_today": on_leave_today,

@@ -30,6 +30,7 @@ import {
   Receipt,
   Timer,
   CalendarDays,
+  Award,
 } from "lucide-react";
 import { useTeamDashboard } from "@/hooks/api";
 import { AppCard } from "@/components/design-system";
@@ -151,6 +152,10 @@ export default function TeamPage() {
                   <Timer className="h-3 w-3" />
                   {pending_approvals.timesheets} timesheets
                 </span>
+                <span className="inline-flex items-center gap-1">
+                  <Award className="h-3 w-3" />
+                  {pending_approvals.appraisals} appraisals
+                </span>
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 <Link
@@ -164,6 +169,12 @@ export default function TeamPage() {
                   className="text-[var(--color-primary)] font-medium hover:underline"
                 >
                   Review claims →
+                </Link>
+                <Link
+                  href="/appraisals"
+                  className="text-[var(--color-primary)] font-medium hover:underline"
+                >
+                  Review appraisals →
                 </Link>
               </div>
             </div>

@@ -143,10 +143,12 @@ async def test_mg3_team_dashboard_returns_empty_shape_for_non_manager():
         result = await team_dashboard(current_user=marcus)
 
     assert result["team_size"] == 0
+    # NB: P4-MG-4 added an `appraisals` count to the pending tile.
     assert result["pending_approvals"] == {
         "leave": 0,
         "claims": 0,
         "timesheets": 0,
+        "appraisals": 0,
         "total": 0,
     }
     assert result["on_leave_today"] == []
@@ -241,10 +243,15 @@ async def test_mg3_team_dashboard_aggregates_for_manager():
         result = await team_dashboard(current_user=rajesh)
 
     assert result["team_size"] == 2
+    # NB: P4-MG-4 added `appraisals` count. The fake_list helper in
+    # this test doesn't return Appraisal rows, so the count is 0 —
+    # which is the realistic case for a small SG SME mid-quarter
+    # (appraisal cycles are infrequent).
     assert result["pending_approvals"] == {
         "leave": 1,
         "claims": 1,
         "timesheets": 1,
+        "appraisals": 0,
         "total": 3,
     }, "off-team pending records must be excluded from the count"
 
