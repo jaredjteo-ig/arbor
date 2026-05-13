@@ -19,6 +19,26 @@ Used by:
 - Cross-team-approve guard — refuse manager actions on employees
   outside the caller's report tree.
 
+## Security model
+
+This helper is downstream of authentication, not a replacement for it.
+It assumes:
+
+1. **JWT revocation on termination.** A terminated employee's JWT
+   must be invalidated by the auth layer (e.g. version-bumped `tv`
+   claim, refresh-token blacklist). If a terminated manager's JWT
+   still resolves, this helper will still return their team —
+   that's an auth-layer breach, not a scope-layer bug.
+2. **Caller-side filtering.** The helper returns ALL direct reports
+   by default (active or not) — this is deliberate so off-boarding
+   workflows (final approve of a recent claim, exit interview
+   trigger) keep working for ~30 days post-termination. Consumers
+   that want a current-roster view pass `active_only=True`.
+3. **Cross-tenant isolation** is enforced via `company_id` filter
+   on the underlying `list_records` call. The helper trusts the
+   JWT's `company_id` claim — relies on the auth middleware
+   matching JWT company_id to the resource company_id.
+
 Origin: workspaces/obayashi/04-validate/09-redteam-roles-2026-05-12.md
 finding P1-A (line-manager role didn't exist as a workflow).
 """
@@ -96,8 +116,21 @@ def get_my_employee_id(current_user: dict[str, Any]) -> int | None:
         return None
 
 
-def get_managed_employee_ids(current_user: dict[str, Any]) -> set[int]:
+def get_managed_employee_ids(
+    current_user: dict[str, Any],
+    *,
+    active_only: bool = False,
+) -> set[int]:
     """Return the `Employee.id`s reporting *directly* to the caller.
+
+    Args:
+        current_user: JWT-derived user dict.
+        active_only: When True, filter out terminated / inactive
+            employees. Defaults to False so off-boarding workflows
+            (final-approve a recent claim, trigger exit interview)
+            keep working for the period between termination and
+            JWT/role revocation. Team-dashboard callers should pass
+            `active_only=True` for a current-roster view.
 
     Implementation note: direct reports only for v1. Transitive
     (skip-level + below) is deferred — most enterprise needs are
@@ -126,9 +159,31 @@ def get_managed_employee_ids(current_user: dict[str, Any]) -> set[int]:
         if raw is None:
             continue
         try:
-            out.add(int(raw))
+            emp_id = int(raw)
         except (ValueError, TypeError):
             continue
+        # Defensive: an employee whose `reporting_manager_id` points
+        # at their own employee id is a data-integrity bug (HR set
+        # someone to manage themselves). Never include self in the
+        # team set — otherwise `is_manager_of(self, self_id)` would
+        # be True and a manager could approve their own actions.
+        if emp_id == my_emp_id:
+            logger.warning(
+                "manager_scope: self-referencing reporting_manager_id "
+                "for employee %s (company %s) — skipping",
+                emp_id,
+                company_id,
+            )
+            continue
+        if active_only:
+            # Only include rows that are active AND not terminated.
+            # An employee can be is_active=False but confirmation_status
+            # still 'confirmed' (e.g. paused), or terminated explicitly.
+            if not row.get("is_active", True):
+                continue
+            if row.get("confirmation_status") == "terminated":
+                continue
+        out.add(emp_id)
     return out
 
 

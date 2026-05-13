@@ -179,3 +179,103 @@ def test_is_manager_of_rejects_non_report(org_chart):
 def test_is_manager_of_rejects_cross_tenant(org_chart):
     rajesh_jwt = {"sub": "4", "company_id": 1, "role": "employee"}
     assert manager_scope.is_manager_of(rajesh_jwt, 99) is False
+
+
+# ---------------------------------------------------------------------------
+# Red-team additions — active_only filter, self-reference guard.
+# ---------------------------------------------------------------------------
+
+
+def test_active_only_excludes_terminated_reports(monkeypatch):
+    """active_only=True must skip terminated team members so the team
+    dashboard shows current roster, not ex-employees forever."""
+    employees = [
+        {"id": 3, "user_id": 4, "company_id": 1, "reporting_manager_id": None,
+         "is_active": True, "confirmation_status": "confirmed"},
+        {"id": 10, "user_id": 11, "company_id": 1, "reporting_manager_id": 3,
+         "is_active": True, "confirmation_status": "confirmed"},
+        {"id": 6, "user_id": 7, "company_id": 1, "reporting_manager_id": 3,
+         "is_active": False, "confirmation_status": "confirmed"},  # paused
+        {"id": 5, "user_id": 6, "company_id": 1, "reporting_manager_id": 3,
+         "is_active": True, "confirmation_status": "terminated"},  # ex
+    ]
+    fake = FakeEmployeesDb(employees)
+    monkeypatch.setattr(
+        "hr_advisory.services.dataflow_crud.list_records",
+        fake.list_records,
+    )
+    rajesh_jwt = {"sub": "4", "company_id": 1, "role": "employee"}
+
+    # Default: includes everyone (preserves off-boarding workflows)
+    all_reports = manager_scope.get_managed_employee_ids(rajesh_jwt)
+    assert all_reports == {5, 6, 10}
+
+    # active_only: excludes paused (is_active=False) AND terminated
+    current = manager_scope.get_managed_employee_ids(
+        rajesh_jwt, active_only=True
+    )
+    assert current == {10}, (
+        "active_only=True must drop is_active=False AND "
+        "confirmation_status='terminated' rows."
+    )
+
+
+def test_self_referencing_manager_id_does_not_include_self(
+    monkeypatch, caplog
+):
+    """Defensive guard: if HR sets an employee's
+    reporting_manager_id to their own employee id (data-integrity
+    bug), the helper must NOT include the caller in their own
+    managed-set — otherwise is_manager_of(self, self_id) would be
+    True and they could approve their own actions.
+    """
+    import logging
+
+    employees = [
+        # Rajesh manages himself — data-integrity bug.
+        {"id": 3, "user_id": 4, "company_id": 1, "reporting_manager_id": 3,
+         "is_active": True, "confirmation_status": "confirmed"},
+        {"id": 10, "user_id": 11, "company_id": 1, "reporting_manager_id": 3,
+         "is_active": True, "confirmation_status": "confirmed"},
+    ]
+    fake = FakeEmployeesDb(employees)
+    monkeypatch.setattr(
+        "hr_advisory.services.dataflow_crud.list_records",
+        fake.list_records,
+    )
+    rajesh_jwt = {"sub": "4", "company_id": 1, "role": "employee"}
+
+    with caplog.at_level(logging.WARNING, logger="hr_advisory.services.manager_scope"):
+        reports = manager_scope.get_managed_employee_ids(rajesh_jwt)
+
+    assert 3 not in reports, (
+        "Self-reference guard failed: Rajesh must never be in his own "
+        "managed-set even if HR data is broken."
+    )
+    assert reports == {10}, "Other direct reports should still be returned."
+    # Warning surfaced for the data-integrity issue
+    assert any(
+        "self-referencing reporting_manager_id" in record.message
+        for record in caplog.records
+    ), "Self-reference must emit a warning so HR sees the data bug."
+
+
+def test_is_manager_of_rejects_self_via_self_referencing_bug(monkeypatch):
+    """is_manager_of(self, self_id) must be False even when HR set
+    reporting_manager_id to self. Prevents self-approval attacks
+    riding on data-integrity bugs."""
+    employees = [
+        {"id": 3, "user_id": 4, "company_id": 1, "reporting_manager_id": 3,
+         "is_active": True, "confirmation_status": "confirmed"},
+    ]
+    fake = FakeEmployeesDb(employees)
+    monkeypatch.setattr(
+        "hr_advisory.services.dataflow_crud.list_records",
+        fake.list_records,
+    )
+    rajesh_jwt = {"sub": "4", "company_id": 1, "role": "employee"}
+
+    assert manager_scope.is_manager_of(rajesh_jwt, 3) is False, (
+        "is_manager_of must refuse self-approval even when the org "
+        "chart has the self-reference data bug."
+    )
