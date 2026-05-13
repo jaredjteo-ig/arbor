@@ -608,6 +608,42 @@ async def submit_timesheet(
     return {"timesheet": timesheet}
 
 
+def _audit_timesheet(
+    timesheet_id: int,
+    company_id: int,
+    action: str,
+    actor_id: int,
+    details: dict | None = None,
+) -> None:
+    """Append a hash-chained audit entry for a timesheet action.
+
+    Modelled on `_audit_claim` in routers/claims.py. Writes to the
+    immutable AuditLogEntry so `approved_by`/`approved_at` on the
+    record (mutable via `dataflow_crud.update`) can be independently
+    verified against the append-only chain. Failures are logged but
+    do not block the user action. Origin: red-team round-2 P1.
+    """
+    try:
+        from hr_advisory.services import audit_log as _audit_log
+
+        _audit_log.record_event(
+            company_id=int(company_id),
+            actor_id=int(actor_id) if actor_id else 0,
+            event_type=f"timesheet.{action}",
+            payload={
+                "timesheet_approval_id": timesheet_id,
+                "details": details or {},
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "AuditLogEntry append failed for timesheet %s action=%s: %s",
+            timesheet_id,
+            action,
+            exc,
+        )
+
+
 def _authorize_review_timesheet(current_user: dict, ts: dict) -> None:
     """Guard for approve/reject timesheet actions (P4-MG-2).
 
@@ -651,6 +687,13 @@ async def approve_timesheet(
     employee. Self-approval denied.
     """
     company_id = get_current_company_id(current_user)
+    actor_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"timesheet_approve:{actor_id}",
+        max_requests=60,
+        window_seconds=60,
+        action_name="approve timesheet",
+    )
     ts = dataflow_crud.read("TimesheetApproval", timesheet_id)
     if ts is None or ts.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Timesheet not found.")
@@ -660,7 +703,6 @@ async def approve_timesheet(
     if ts.get("status") != "pending":
         raise HTTPException(status_code=400, detail="Only pending timesheets can be approved.")
 
-    actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
     dataflow_crud.update(
@@ -672,6 +714,13 @@ async def approve_timesheet(
             "approved_at": now,
         },
     )
+    _audit_timesheet(
+        timesheet_id,
+        company_id,
+        "approved",
+        actor_id,
+        {"employee_id": ts.get("employee_id")},
+    )
     return {"message": "Timesheet approved.", "status": "approved"}
 
 
@@ -682,6 +731,13 @@ async def reject_timesheet(
 ) -> dict:
     """Reject a pending timesheet. Same scope as approve (P4-MG-2)."""
     company_id = get_current_company_id(current_user)
+    actor_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"timesheet_reject:{actor_id}",
+        max_requests=60,
+        window_seconds=60,
+        action_name="reject timesheet",
+    )
     ts = dataflow_crud.read("TimesheetApproval", timesheet_id)
     if ts is None or ts.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Timesheet not found.")
@@ -692,6 +748,13 @@ async def reject_timesheet(
         raise HTTPException(status_code=400, detail="Only pending timesheets can be rejected.")
 
     dataflow_crud.update("TimesheetApproval", timesheet_id, {"status": "rejected"})
+    _audit_timesheet(
+        timesheet_id,
+        company_id,
+        "rejected",
+        actor_id,
+        {"employee_id": ts.get("employee_id")},
+    )
     return {"message": "Timesheet rejected.", "status": "rejected"}
 
 

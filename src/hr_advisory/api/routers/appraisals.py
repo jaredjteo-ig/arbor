@@ -43,6 +43,39 @@ def _get_employee_for_user(user_id: int, company_id: int) -> dict | None:
     return records[0] if records else None
 
 
+def _audit_appraisal(
+    appraisal_id: int,
+    company_id: int,
+    action: str,
+    actor_id: int,
+    details: dict | None = None,
+) -> None:
+    """Append a hash-chained audit entry for an appraisal action.
+
+    Modelled on `_audit_claim`. Writes to the immutable AuditLogEntry
+    so `reviewed_by`/`reviewed_at` on the record (mutable via
+    `dataflow_crud.update`) can be independently verified against
+    the append-only chain. Failures are logged but do NOT block
+    the user action. Origin: red-team round-2 P1 finding.
+    """
+    try:
+        from hr_advisory.services import audit_log as _audit_log
+
+        _audit_log.record_event(
+            company_id=int(company_id),
+            actor_id=int(actor_id) if actor_id else 0,
+            event_type=f"appraisal.{action}",
+            payload={"appraisal_id": appraisal_id, "details": details or {}},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "AuditLogEntry append failed for appraisal %s action=%s: %s",
+            appraisal_id,
+            action,
+            exc,
+        )
+
+
 def _enrich_appraisals(appraisals: list, company_id: int) -> list:
     """Enrich appraisal records with employee_name (resolved via Employee.user_id → User.name).
 
@@ -735,6 +768,19 @@ async def manager_review_appraisal(
             pass
 
     result = dataflow_crud.update("Appraisal", appraisal_id, updates)
+
+    _audit_appraisal(
+        appraisal_id,
+        company_id,
+        "manager_reviewed",
+        user_id,
+        {
+            "employee_id": target_emp_id,
+            "has_reviewer_comments": "reviewer_comments" in body,
+            "overall_score": updates.get("overall_score"),
+        },
+    )
+
     return {"appraisal": result, "detail": "Manager review recorded."}
 
 

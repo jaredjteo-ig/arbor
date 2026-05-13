@@ -99,6 +99,46 @@ def _authorize_review(current_user: dict, application: dict) -> None:
         )
 
 
+def _audit_leave(
+    application_id: int,
+    company_id: int,
+    action: str,
+    actor_id: int,
+    details: dict | None = None,
+) -> None:
+    """Append a hash-chained audit entry for a leave-application action.
+
+    Modelled on `_audit_claim` in routers/claims.py — writes to the
+    immutable `AuditLogEntry` so the `reviewed_by`/`reviewed_at`
+    fields on the record (which are mutable via `dataflow_crud.update`)
+    can be independently verified against the append-only chain.
+
+    Audit failures are logged but do NOT block the user action —
+    HR decisions must complete even if the audit subsystem is
+    momentarily unavailable. Origin: red-team round-2 P1 finding
+    (workspaces/obayashi/04-validate/12-redteam-round2-wider-*.md).
+    """
+    try:
+        from hr_advisory.services import audit_log as _audit_log
+
+        _audit_log.record_event(
+            company_id=int(company_id),
+            actor_id=int(actor_id) if actor_id else 0,
+            event_type=f"leave.{action}",
+            payload={
+                "leave_application_id": application_id,
+                "details": details or {},
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "AuditLogEntry append failed for leave %s action=%s: %s",
+            application_id,
+            action,
+            exc,
+        )
+
+
 def _enrich_leave_applications(apps: list, company_id: int) -> list:
     """Enrich leave application records with employee_name and leave_type_name.
 
@@ -957,6 +997,14 @@ async def approve_application(
     Moves pending_days to used_days on the leave balance.
     """
     company_id = get_current_company_id(current_user)
+    actor_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"leave_approve:{actor_id}",
+        max_requests=60,
+        window_seconds=60,
+        action_name="approve leave",
+    )
+
     app = dataflow_crud.read("LeaveApplication", application_id)
     if app is None or app.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave application not found.")
@@ -966,7 +1014,6 @@ async def approve_application(
     if app.get("status") != "pending":
         raise HTTPException(status_code=400, detail="Only pending applications can be approved.")
 
-    actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
     body = {}
@@ -1003,6 +1050,14 @@ async def approve_application(
         },
     )
 
+    _audit_leave(
+        application_id,
+        company_id,
+        "approved",
+        actor_id,
+        {"employee_id": employee_id, "remarks": remarks},
+    )
+
     return {"message": "Leave approved.", "id": application_id, "status": "approved"}
 
 
@@ -1023,6 +1078,14 @@ async def reject_application(
     manager / direct line-manager. Self-rejection is blocked.
     """
     company_id = get_current_company_id(current_user)
+    actor_id = int(current_user.get("sub", 0))
+    check_rate_limit(
+        f"leave_reject:{actor_id}",
+        max_requests=60,
+        window_seconds=60,
+        action_name="reject leave",
+    )
+
     app = dataflow_crud.read("LeaveApplication", application_id)
     if app is None or app.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Leave application not found.")
@@ -1037,7 +1100,6 @@ async def reject_application(
     if not remarks:
         raise HTTPException(status_code=400, detail="Remarks are required when rejecting leave.")
 
-    actor_id = int(current_user.get("sub", 0))
     now = datetime.now(timezone.utc).isoformat()
 
     dataflow_crud.update(
@@ -1049,6 +1111,14 @@ async def reject_application(
             "reviewed_at": now,
             "reviewer_remarks": remarks,
         },
+    )
+
+    _audit_leave(
+        application_id,
+        company_id,
+        "rejected",
+        actor_id,
+        {"employee_id": app.get("employee_id"), "remarks": remarks},
     )
 
     # Restore pending days
