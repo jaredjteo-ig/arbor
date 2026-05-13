@@ -171,15 +171,15 @@ in `tests/regression/test_p4_qw_audit_followups.py` pin every change.
 
 File: `todos/completed/P4-QW-quick-wins.md`.
 
-### P4-MG — Line-manager role + team scope (2-week sprint, in progress)
+### P4-MG — Line-manager role + team scope (2-week sprint) ✅ COMPLETED 2026-05-13
 
-| ID      | Title                                            | Status                                                               |
-| ------- | ------------------------------------------------ | -------------------------------------------------------------------- |
-| P4-MG-1 | Derive manager scope helper                      | completed — `services/manager_scope.py` + 17 unit tests              |
-| P4-MG-2 | Team approval endpoints (leave/claims/timesheet) | completed — verified live (Rajesh sees team, cross-team approve 403) |
-| P4-MG-3 | /team dashboard + sidebar entry                  | completed — `/team` live; Rajesh sees 7 reports + 4 cards + roster   |
-| P4-MG-4 | Team appraisal surface                           | completed — `/to-review` + `/manager-review` live; /team shows count |
-| P4-MG-5 | Team engagement view (manager scope)             | active                                                               |
+| ID      | Title                                            | Status                                                                             |
+| ------- | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| P4-MG-1 | Derive manager scope helper                      | completed — `services/manager_scope.py` + 17 unit tests                            |
+| P4-MG-2 | Team approval endpoints (leave/claims/timesheet) | completed — verified live (Rajesh sees team, cross-team approve 403)               |
+| P4-MG-3 | /team dashboard + sidebar entry                  | completed — `/team` live; Rajesh sees 7 reports + 4 cards + roster                 |
+| P4-MG-4 | Team appraisal surface                           | completed — `/to-review` + `/manager-review` live; /team shows count               |
+| P4-MG-5 | Team engagement view (manager scope)             | completed — /team card + /team/engagement detail; Q12 weakest-first with n≥5 floor |
 
 File: `todos/active/P4-MG-manager-role.md`.
 
