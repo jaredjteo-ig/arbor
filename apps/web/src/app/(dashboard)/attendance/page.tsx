@@ -525,6 +525,24 @@ function MonthlySummary({ records }: { records: AttendanceRecord[] }) {
         recordsWithHours.length
       : 0;
 
+  // Red-team P5-PL-5 / O13: when the only record is a stale clock-in
+  // with no clock-out, "0h 0m Avg Hours" reads as "this employee never
+  // works" — a misleading empty state. Detect the degenerate case and
+  // render an explainer instead of the four-tile grid.
+  const noCompletedDays = recordsWithHours.length === 0;
+  const lastRecordDate = records[0]?.date; // records are date-sorted desc
+  const daysSinceLastClockIn = lastRecordDate
+    ? Math.floor(
+        (Date.now() - new Date(lastRecordDate).getTime()) /
+          (1000 * 60 * 60 * 24),
+      )
+    : null;
+  const isStaleSingleClockIn =
+    totalDays <= 1 &&
+    noCompletedDays &&
+    daysSinceLastClockIn !== null &&
+    daysSinceLastClockIn >= 1;
+
   return (
     <AppCard
       variant="standard"
@@ -534,36 +552,47 @@ function MonthlySummary({ records }: { records: AttendanceRecord[] }) {
         </h2>
       }
     >
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="text-center">
-          <p className="text-xl font-bold text-[var(--color-gray-900)]">
-            {presentDays}/{totalDays}
-          </p>
-          <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-            Days Present
-          </p>
-        </div>
-        <div className="text-center">
-          <p className="text-xl font-bold text-amber-600">{lateDays}</p>
-          <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-            Late Days
+      {isStaleSingleClockIn ? (
+        <div className="text-sm text-[var(--color-gray-700)]">
+          <p>
+            Last clock-in was {daysSinceLastClockIn} day
+            {daysSinceLastClockIn === 1 ? "" : "s"} ago without a corresponding
+            clock-out. Averages and totals will appear here once at least one
+            full day is recorded.
           </p>
         </div>
-        <div className="text-center">
-          <p className="text-xl font-bold text-red-600">{absentDays}</p>
-          <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-            Absent Days
-          </p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="text-center">
+            <p className="text-xl font-bold text-[var(--color-gray-900)]">
+              {presentDays}/{totalDays}
+            </p>
+            <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+              Days Present
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-xl font-bold text-amber-600">{lateDays}</p>
+            <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+              Late Days
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-xl font-bold text-red-600">{absentDays}</p>
+            <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+              Absent Days
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-xl font-bold text-[var(--color-primary)]">
+              {noCompletedDays ? "—" : formatHours(avgHours)}
+            </p>
+            <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
+              Avg Hours/Day
+            </p>
+          </div>
         </div>
-        <div className="text-center">
-          <p className="text-xl font-bold text-[var(--color-primary)]">
-            {formatHours(avgHours)}
-          </p>
-          <p className="text-xs text-[var(--color-gray-500)] mt-0.5">
-            Avg Hours/Day
-          </p>
-        </div>
-      </div>
+      )}
     </AppCard>
   );
 }

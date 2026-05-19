@@ -35,24 +35,16 @@ function AdvisoryContent() {
     refreshConversations,
   } = useAdvisoryHistory(activeConversationId);
 
-  // M6 redteam (round-12): the conversation list preview otherwise
-  // surfaces the legacy "I'm having trouble processing your question
-  // right now" fallback line, advertising a transient failure that has
-  // long since resolved. Substitute a neutral marker so the list reads
-  // cleanly while preserving the conversation history itself.
-  const FALLBACK_PHRASE = "I'm having trouble processing your question";
-  const cleanPreview = (s: string | null | undefined): string => {
-    if (!s) return "";
-    if (s.includes(FALLBACK_PHRASE)) return "(earlier reply unavailable)";
-    return s;
-  };
-
-  // Map API conversations to sidebar format
+  // Red-team P5-AD-1: the hook itself now filters legacy-fallback
+  // conversations OUT (rather than substituting "(earlier reply
+  // unavailable)" — which still left a buyer-visible orphan).
+  // Combined with the backend persistence-boundary filter and the
+  // prod DB purge script, these rows are gone end-to-end.
   const sidebarConversations: ConversationSummary[] = conversations.map(
     (c) => ({
       id: c.id,
       title: c.title,
-      lastMessage: cleanPreview(c.last_message),
+      lastMessage: c.last_message ?? "",
       timestamp: c.timestamp,
       riskTier: c.risk_tier,
     }),
@@ -98,6 +90,14 @@ function AdvisoryContent() {
     refetchMessages();
   }, [refetchMessages]);
 
+  // Red-team P5-AD-2: when an SSE stream fails (network drop, budget
+  // exceeded, rate limit), the conversations sidebar may have rendered
+  // a row optimistically — invalidate so the next paint reflects the
+  // canonical server state.
+  const handleStreamError = useCallback(() => {
+    refreshConversations();
+  }, [refreshConversations]);
+
   return (
     <div className="flex h-[calc(100dvh-56px)]">
       {/* Conversation history sidebar */}
@@ -124,6 +124,7 @@ function AdvisoryContent() {
           messagesLoading={messagesLoading}
           messagesError={messagesError}
           onRetryLoad={handleRetryLoad}
+          onStreamError={handleStreamError}
         />
       </div>
     </div>

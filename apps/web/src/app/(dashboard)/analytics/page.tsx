@@ -302,12 +302,15 @@ function SummaryCard({
   value,
   icon: Icon,
   subtext,
+  subtextTooltip,
   trend,
 }: {
   label: string;
   value: string;
   icon: typeof Users;
   subtext?: string;
+  /** Hover-explainer for compound metrics (e.g. "Local + PR breakdown"). */
+  subtextTooltip?: string;
   trend?: "up" | "down";
 }) {
   return (
@@ -328,7 +331,12 @@ function SummaryCard({
               {trend === "down" && (
                 <TrendingDown className="h-3 w-3 text-[var(--color-risk-red)]" />
               )}
-              <p className="text-xs text-[var(--color-gray-400)]">{subtext}</p>
+              <p
+                className="text-xs text-[var(--color-gray-400)]"
+                title={subtextTooltip}
+              >
+                {subtext}
+              </p>
             </div>
           )}
         </div>
@@ -562,8 +570,18 @@ export default function AnalyticsPage() {
               icon={Users}
               subtext={
                 workforce
-                  ? `${Math.round(workforce.local_ratio * 100)}% local`
+                  ? `${Math.round(workforce.local_ratio * 100)}% local + PR`
                   : "No workforce data"
+              }
+              // Red-team O15: the API field `local_ratio` actually
+              // counts Local + PR — the buyer-trust hit on the live
+              // walk was "75% local" while the breakdown showed
+              // Local = 19 (68%). Surface the math in a hover so the
+              // compound is unambiguous.
+              subtextTooltip={
+                workforce
+                  ? `Local (${workforce.workforce.local}) + PR (${workforce.workforce.pr}) of ${workforce.total}`
+                  : undefined
               }
             />
             <SummaryCard

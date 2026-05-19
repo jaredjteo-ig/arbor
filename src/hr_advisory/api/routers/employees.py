@@ -696,6 +696,13 @@ def _create_employee(data: dict) -> dict:
     from kailash.workflow.builder import WorkflowBuilder
 
     import hr_advisory.models  # noqa: F401
+    from hr_advisory.services.probation import ensure_probation_end_date_in_payload
+
+    # Red-team M5 fix: every new Employee gets a deterministic
+    # probation_end_date computed from start_date + probation_months.
+    # No more empty strings — the scheduler relies on this field
+    # being present to flip on_probation → confirmed.
+    ensure_probation_end_date_in_payload(data)
 
     wf = WorkflowBuilder()
     wf.add_node("EmployeeCreateNode", "create", data)
@@ -2398,6 +2405,83 @@ async def get_employee(
 # --------------------------------------------------------------------------
 
 
+# Fields a caller MUST NOT mutate on their own employee row, even with
+# the `owner`/`hr_manager` role. Prevents an HR Manager from quietly
+# self-confirming, self-raising salary, self-reassigning to another
+# manager, or flipping themselves inactive. Owner can still mutate these
+# on OTHER employees; the self-mutation block applies to everyone.
+#
+# Red-team C10 (P0): without this guard + the immutable audit-log below,
+# a compromised HR JWT can quietly elevate.
+_SELF_MUTATION_BLOCKED_FIELDS: set[str] = {
+    "salary_monthly",
+    "confirmation_status",
+    "probation_end_date",
+    "is_active",
+    "reporting_manager_id",
+    "employment_type",
+    "designation",
+}
+
+# Fields whose mutation MUST be appended to the immutable hash-chained
+# AuditLogEntry. EmploymentEvent rows already cover salary / designation /
+# department / promotion, but they're MUTABLE — a row-level rewrite there
+# is not detectable. The dual-write to AuditLogEntry is what makes the
+# chain tamper-evident (P58).
+_AUDIT_LOG_SENSITIVE_FIELDS: set[str] = {
+    "salary_monthly",
+    "confirmation_status",
+    "probation_end_date",
+    "is_active",
+    "reporting_manager_id",
+    "employment_type",
+    "designation",
+    "department",
+    "end_date",
+    "pass_type",
+    "immigration_status",
+}
+
+
+def _audit_employee(
+    employee_id: int,
+    company_id: int,
+    action: str,
+    actor_id: int,
+    fields_changed: dict | None = None,
+) -> None:
+    """Append an immutable hash-chained AuditLogEntry for an employee mutation.
+
+    `update_employee` writes 38+ fields including salary, confirmation_status,
+    reporting_manager_id via `dataflow_crud.update("Employee", ...)`. The
+    underlying row IS mutable; the chain is what makes a later rewrite
+    detectable. Per pattern P58 every sensitive field change MUST be
+    dual-written here.
+
+    Failures are logged but never raised — audit failure must never block
+    the underlying HR decision.
+    """
+    try:
+        from hr_advisory.services import audit_log as _audit_log
+
+        _audit_log.record_event(
+            company_id=int(company_id),
+            actor_id=int(actor_id) if actor_id else 0,
+            event_type=f"employee.{action}",
+            payload={
+                "employee_id": int(employee_id),
+                "fields_changed": fields_changed or {},
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "AuditLogEntry append failed for employee %s action=%s: %s",
+            employee_id,
+            action,
+            exc,
+        )
+
+
 @router.patch("/{employee_id}")
 async def update_employee(
     employee_id: int,
@@ -2408,13 +2492,38 @@ async def update_employee(
 
     Accepts partial updates — only fields provided will be changed.
     Auto-generates employment events for significant changes (salary, designation).
+
+    Red-team C10 (P0): refuses self-mutation of sensitive fields
+    (salary, confirmation_status, probation_end_date, is_active,
+    reporting_manager_id) regardless of role — even owner / hr_manager
+    cannot elevate themselves via PATCH /employees/<their_own_id>.
+    Every sensitive field change is dual-written to the hash-chained
+    AuditLogEntry via _audit_employee (P58).
     """
     company_id = get_current_company_id(current_user)
     emp = _find_employee_by_id(employee_id)
     if emp is None or emp.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Employee not found.")
 
+    # Self-mutation guard: a caller can never mutate sensitive fields on
+    # their own employee row. The target.user_id must differ from the
+    # JWT subject for any field in _SELF_MUTATION_BLOCKED_FIELDS to pass.
+    actor_user_id = int(current_user.get("sub", 0))
+    is_self = int(emp.get("user_id", 0)) == actor_user_id
+
     body = await request.json()
+
+    if is_self:
+        attempted_blocked = _SELF_MUTATION_BLOCKED_FIELDS.intersection(body.keys())
+        if attempted_blocked:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "You cannot modify these fields on your own employee record: "
+                    + ", ".join(sorted(attempted_blocked))
+                    + ". Ask another admin to make the change."
+                ),
+            )
 
     # Whitelist of updatable fields
     allowed_fields = {
@@ -2486,6 +2595,21 @@ async def update_employee(
     if "salary_monthly" in updates:
         pdpa_modified_categories.append("salary")
 
+    # Red-team M5: when start_date or probation_months change, recompute
+    # probation_end_date unless the caller explicitly supplied one.
+    if ("start_date" in updates or "probation_months" in updates) and (
+        "probation_end_date" not in updates
+    ):
+        from hr_advisory.services.probation import compute_probation_end_date
+
+        new_start = updates.get("start_date", emp.get("start_date"))
+        new_months = updates.get(
+            "probation_months", emp.get("probation_months", 3)
+        )
+        recomputed = compute_probation_end_date(new_start, new_months)
+        if recomputed:
+            updates["probation_end_date"] = recomputed
+
     # Track significant changes for employment events
     actor_id = int(current_user.get("sub", 0))
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -2553,7 +2677,35 @@ async def update_employee(
             action="modify",
         )
 
+    # Capture sensitive-field diff BEFORE writing, so the immutable
+    # chain entry records (old → new) for every protected field that
+    # actually changed. Salary/NRIC/bank values aren't included here —
+    # encrypt-at-rest applies, and the audit chain stays redacted.
+    sensitive_diff: dict[str, dict] = {}
+    for field in _AUDIT_LOG_SENSITIVE_FIELDS:
+        if field in updates:
+            old_value = emp.get(field)
+            new_value = updates[field]
+            if old_value != new_value:
+                # Redact dollar amounts: record that salary changed,
+                # not the new salary. Same for bank/NRIC fields (already
+                # encrypted into `updates`).
+                if field == "salary_monthly":
+                    sensitive_diff[field] = {"changed": True}
+                else:
+                    sensitive_diff[field] = {"from": old_value, "to": new_value}
+
     _update_employee(employee_id, updates)
+
+    if sensitive_diff:
+        _audit_employee(
+            employee_id=employee_id,
+            company_id=company_id,
+            action="updated",
+            actor_id=actor_id,
+            fields_changed=sensitive_diff,
+        )
+
     updated_emp = _find_employee_by_id(employee_id)
     user = _find_user_by_id(updated_emp.get("user_id"))
     return _serialize_employee(updated_emp, user, include_sensitive=True)
@@ -3235,6 +3387,7 @@ async def confirm_employee(
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     actor_id = int(current_user.get("sub", 0))
 
+    prior_status = emp.get("confirmation_status")
     _update_employee(employee_id, {"confirmation_status": "confirmed"})
     _create_employment_event(
         {
@@ -3247,6 +3400,15 @@ async def confirm_employee(
             "approved_by": actor_id,
             "notes": body.get("remarks", ""),
         }
+    )
+    _audit_employee(
+        employee_id=employee_id,
+        company_id=company_id,
+        action="confirmed",
+        actor_id=actor_id,
+        fields_changed={
+            "confirmation_status": {"from": prior_status, "to": "confirmed"}
+        },
     )
 
     return {"message": "Employee confirmed."}
@@ -3277,6 +3439,8 @@ async def extend_probation(
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     actor_id = int(current_user.get("sub", 0))
 
+    prior_status = emp.get("confirmation_status")
+    prior_end_date = emp.get("probation_end_date", "")
     _update_employee(
         employee_id,
         {
@@ -3291,12 +3455,22 @@ async def extend_probation(
             "event_type": "confirmed",
             "event_date": today,
             "description": f"Probation extended to {new_end_date}",
-            "old_value": {"probation_end_date": emp.get("probation_end_date", "")},
+            "old_value": {"probation_end_date": prior_end_date},
             "new_value": {"probation_end_date": new_end_date},
             "effective_date": today,
             "approved_by": actor_id,
             "notes": body.get("remarks", ""),
         }
+    )
+    _audit_employee(
+        employee_id=employee_id,
+        company_id=company_id,
+        action="probation_extended",
+        actor_id=actor_id,
+        fields_changed={
+            "confirmation_status": {"from": prior_status, "to": "extended"},
+            "probation_end_date": {"from": prior_end_date, "to": new_end_date},
+        },
     )
 
     return {"message": f"Probation extended to {new_end_date}."}
@@ -3477,12 +3651,25 @@ async def process_employee_exit(
     )
 
     # --- 6. Update employee record ---
+    prior_status = emp.get("confirmation_status")
+    prior_is_active = emp.get("is_active")
     _update_employee(
         employee_id,
         {
             "is_active": False,
             "end_date": last_working_day,
             "confirmation_status": "terminated",
+        },
+    )
+    _audit_employee(
+        employee_id=employee_id,
+        company_id=company_id,
+        action="terminated",
+        actor_id=int(current_user.get("sub", 0)),
+        fields_changed={
+            "is_active": {"from": prior_is_active, "to": False},
+            "confirmation_status": {"from": prior_status, "to": "terminated"},
+            "end_date": {"from": emp.get("end_date", ""), "to": last_working_day},
         },
     )
 

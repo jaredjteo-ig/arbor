@@ -874,3 +874,42 @@ TEMPLATES: list[TemplateDefinition] = [
 def get_template_by_type(template_type: str) -> list[TemplateDefinition]:
     """Return all templates of a given type (contract, policy, letter, form, ket)."""
     return [t for t in TEMPLATES if t.template_type == template_type]
+
+
+# Red-team P5-VL-2: stable string slugs so the compliance Action Items
+# can deep-link to a specific template via /policies?template=<slug> or
+# /documents?template=<slug>. Slugs are stable across template ordering
+# changes; ID-based deep links break the moment a new template is
+# inserted in the middle of TEMPLATES. Mapping a slug to None means
+# "this is a known compliance category but the platform doesn't ship a
+# pre-written template yet — open the modal pre-categorised and let
+# the user write the body."
+TEMPLATE_SLUG_MAP: dict[str, TemplateDefinition | None] = {
+    "ket": KEY_EMPLOYMENT_TERMS,
+    "employment_contract_fulltime": EMPLOYMENT_CONTRACT_FT,
+    "employment_contract_parttime": EMPLOYMENT_CONTRACT_PT,
+    "annual_leave_policy": ANNUAL_LEAVE_POLICY,
+    "sick_leave_policy": SICK_LEAVE_POLICY,
+    "termination_letter": TERMINATION_LETTER,
+    "resignation_acceptance": RESIGNATION_ACCEPTANCE,
+    "warning_letter": WARNING_LETTER,
+    "fwa_request_form": FWA_REQUEST_FORM,
+    "fwa": FWA_POLICY,
+    "expense_claims_form": EXPENSE_CLAIMS_FORM,
+    "timesheet": TIMESHEET_TEMPLATE,
+    # Known compliance categories without bundled template content yet.
+    # `None` triggers a category-only prefill in the modal (red-team P5-VL-2).
+    "wsh": None,
+    "grievance": None,
+}
+
+
+def get_template_by_slug(slug: str) -> TemplateDefinition | None:
+    """Look up a template by its stable string slug.
+
+    Returns None when the slug is unknown OR when it's a known
+    compliance category we haven't shipped pre-written content for
+    (e.g. "wsh" / "grievance"). The caller distinguishes via
+    `slug in TEMPLATE_SLUG_MAP` if needed.
+    """
+    return TEMPLATE_SLUG_MAP.get(slug)

@@ -1728,6 +1728,17 @@ async def xero_disconnect(
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
 
+    # B11 rate-limit coverage: disconnect is a destructive write
+    # (revokes upstream tokens + local delete). Cap to 30/min per
+    # user to match the rest of the integrations router.
+    user_id = current_user.get("sub", "anon")
+    check_rate_limit(
+        f"xero_disconnect:{user_id}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="disconnect Xero",
+    )
+
     adapter = get_xero_adapter()
     revoked = False
     try:
@@ -1779,6 +1790,25 @@ async def xero_pick_org(request: Request) -> dict:
         )
 
     nonce, entry = _validate_pick_token(token, key)
+
+    # B11 rate-limit coverage. This endpoint completes an OAuth flow
+    # by writing the chosen Xero tenant to the token store. Token IS
+    # the auth here (no JWT/session), so we cap by the validated
+    # pick-token nonce — that's a per-OAuth-flow identifier, unique
+    # per authorisation attempt.
+    #
+    # NOTE: earlier draft used `request.client.host` as the bucket key
+    # but behind the prod reverse proxy that collapses to a single LB
+    # IP — every tenant's OAuth callback would compete for one bucket,
+    # creating a DoS-by-other-tenants surface. Bucketing on the nonce
+    # avoids that and is post-validation (so an attacker can't burn
+    # buckets without a valid token).
+    check_rate_limit(
+        f"xero_pick_org:{nonce}",
+        max_requests=30,
+        window_seconds=60,
+        action_name="select Xero organisation",
+    )
     valid_ids = {c.get("tenantId", "") for c in entry["connections"]}
     if chosen_id not in valid_ids:
         raise HTTPException(

@@ -44,6 +44,10 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useTeamSize } from "@/hooks/api";
 
+// Roles relevant to nav visibility. Line-manager scope is derived from
+// reporting_manager_id (P55), not a role — so it doesn't appear here.
+type SidebarRole = "owner" | "hr_manager" | "employee";
+
 interface NavItem {
   labelKey: string;
   label: string;
@@ -51,6 +55,18 @@ interface NavItem {
   icon: typeof LayoutDashboard;
   iconClassName?: string;
   children?: NavItem[];
+  // Optional role allow-list. Undefined → visible to every role that
+  // already qualifies for this nav group (the existing employee vs
+  // admin split still applies). When set, ONLY listed roles see the
+  // item. Red-team C7: this gates /admin + /settings/integrations to
+  // owner only, so HR Manager doesn't see platform-admin surfaces.
+  requiredRoles?: SidebarRole[];
+}
+
+function canSeeNavItem(item: NavItem, role: SidebarRole | undefined): boolean {
+  if (!item.requiredRoles) return true;
+  if (!role) return false;
+  return item.requiredRoles.includes(role);
 }
 
 /* ── Admin nav groups ─────────────────────────────────────── */
@@ -300,16 +316,24 @@ const adminBottomNavItems: NavItem[] = [
     icon: GraduationCap,
   },
   {
+    // Red-team C7 (P0 — RBAC sidebar): /admin is the regulatory updates,
+    // KB management, audit and QA review surface. Owner only. HR Manager
+    // gets routes 404 from the backend; the sidebar should not even
+    // surface the entry. P49: predicate, not role proxy.
     labelKey: "nav.admin",
     label: "Admin",
     href: "/admin",
     icon: Shield,
+    requiredRoles: ["owner"],
   },
   {
+    // Red-team C7: integrations connect Xero / banks / CorpPass — these
+    // are tenant-wide credentials that only the owner should configure.
     labelKey: "nav.integrations",
     label: "Integrations",
     href: "/settings/integrations",
     icon: Plug,
+    requiredRoles: ["owner"],
   },
   {
     labelKey: "nav.settings",
@@ -471,6 +495,7 @@ export function NavigationSidebar({
   const { t } = useTranslation();
 
   const isEmployee = user?.role === "employee";
+  const role = (user?.role ?? "employee") as SidebarRole;
 
   /* P4-MG-3: surface a "Team" entry for any authenticated user with
      ≥1 direct report. The /api/team/size endpoint is the canonical
@@ -492,7 +517,7 @@ export function NavigationSidebar({
      to be the first thing they see when they open the app. For
      owner/HR, Team slots near Employees — keeps the management
      cluster together. */
-  const coreNavItems: NavItem[] = hasTeam
+  const coreNavItemsRaw: NavItem[] = hasTeam
     ? isEmployee
       ? [baseCore[0], teamNavItem, ...baseCore.slice(1)]
       : [
@@ -505,9 +530,20 @@ export function NavigationSidebar({
         ]
     : baseCore;
 
-  const bottomNavItems = isEmployee
-    ? employeeBottomNavItems
-    : adminBottomNavItems;
+  /* Red-team C7: every nav group respects per-item requiredRoles before
+     rendering. /admin and /settings/integrations are owner-only — HR
+     Manager / line-manager / IC will not see those entries. The
+     existing employee vs admin split still applies above this. */
+  const coreNavItems = coreNavItemsRaw.filter((i) => canSeeNavItem(i, role));
+  const toolsNavItems = adminToolsNavItems.filter((i) =>
+    canSeeNavItem(i, role),
+  );
+  const managementNavItems = adminManagementNavItems.filter((i) =>
+    canSeeNavItem(i, role),
+  );
+  const bottomNavItems = (
+    isEmployee ? employeeBottomNavItems : adminBottomNavItems
+  ).filter((i) => canSeeNavItem(i, role));
 
   return (
     <nav
@@ -568,7 +604,7 @@ export function NavigationSidebar({
             {/* Tools */}
             <NavGroupLabel label={t("nav.group_tools")} collapsed={collapsed} />
             <ul className="flex flex-col gap-0.5 px-2" role="list">
-              {adminToolsNavItems.map((item) => (
+              {toolsNavItems.map((item) => (
                 <NavLink
                   key={item.href}
                   item={item}
@@ -584,7 +620,7 @@ export function NavigationSidebar({
               collapsed={collapsed}
             />
             <ul className="flex flex-col gap-0.5 px-2" role="list">
-              {adminManagementNavItems.map((item) =>
+              {managementNavItems.map((item) =>
                 item.children && !collapsed ? (
                   <ExpandableNavLink
                     key={item.href}

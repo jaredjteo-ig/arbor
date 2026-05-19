@@ -254,9 +254,16 @@ export default function MyLeavePage() {
 
   const fetchData = useCallback(async () => {
     try {
+      // Resolve own employee_id first so we can ask the leave-types
+      // endpoint to filter by gender (red-team M6 / P5-PL-3). Falling
+      // back to the unfiltered list when /me fails keeps the page
+      // usable for users without an employee row.
+      const me = await employeesApi.me().catch(() => null);
+      const myEmpId = me?.id || undefined;
+
       const [balancesData, typesData, appsData] = await Promise.all([
         employeesApi.leaveBalances(),
-        leaveApi.listTypes().catch(() => ({ leave_types: [] })),
+        leaveApi.listTypes(myEmpId).catch(() => ({ leave_types: [] })),
         leaveApi.listApplications().catch(() => ({ applications: [] })),
       ]);
 

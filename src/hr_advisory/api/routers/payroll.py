@@ -36,6 +36,44 @@ def _find_user_by_id(user_id: int) -> dict | None:
     return dataflow_crud.read("User", user_id)
 
 
+def _audit_payroll(
+    run_id: int,
+    company_id: int,
+    action: str,
+    actor_id: int,
+    details: dict | None = None,
+) -> None:
+    """Append an immutable hash-chained AuditLogEntry for a payroll action.
+
+    Payroll approve/mark-paid/cancel are the highest-financial-impact
+    operations in the system: a single approval cascades to every payslip
+    and every approved claim for the period. Per pattern P58 they MUST be
+    written to the immutable chain alongside the mutable PayrollRun.status
+    update — a row-level rewrite of PayrollRun is independently detectable
+    via the chain.
+
+    Failures are logged but never raised: per the platform contract, audit
+    failure never blocks the underlying HR decision (see security-patterns
+    P58 last paragraph).
+    """
+    try:
+        from hr_advisory.services import audit_log as _audit_log
+
+        _audit_log.record_event(
+            company_id=int(company_id),
+            actor_id=int(actor_id) if actor_id else 0,
+            event_type=f"payroll.{action}",
+            payload={"run_id": int(run_id), "details": details or {}},
+        )
+    except Exception as exc:
+        logger.warning(
+            "AuditLogEntry append failed for payroll run %s action=%s: %s",
+            run_id,
+            action,
+            exc,
+        )
+
+
 def _sanitize_filename(title: str, extension: str = ".csv") -> str:
     """Sanitize a title for use in Content-Disposition headers.
 
@@ -479,6 +517,12 @@ async def approve_payroll_run(
 ) -> dict:
     """Approve a payroll run. Owner only."""
     company_id = get_current_company_id(current_user)
+    check_rate_limit(
+        f"payroll_approve:{company_id}",
+        max_requests=30,
+        window_seconds=3600,
+        action_name="payroll approval",
+    )
     run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
@@ -499,6 +543,20 @@ async def approve_payroll_run(
         },
     )
 
+    _audit_payroll(
+        run_id,
+        company_id,
+        "approved",
+        actor_id,
+        {
+            "period_start": run.get("period_start"),
+            "period_end": run.get("period_end"),
+            "total_gross": run.get("total_gross"),
+            "total_net": run.get("total_net"),
+            "employee_count": run.get("employee_count"),
+        },
+    )
+
     return {"message": "Payroll run approved.", "status": "approved"}
 
 
@@ -514,6 +572,12 @@ async def mark_payroll_paid(
 ) -> dict:
     """Mark a payroll run as paid."""
     company_id = get_current_company_id(current_user)
+    check_rate_limit(
+        f"payroll_mark_paid:{company_id}",
+        max_requests=30,
+        window_seconds=3600,
+        action_name="payroll mark-paid",
+    )
     run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
@@ -594,6 +658,20 @@ async def mark_payroll_paid(
                 run_id,
             )
 
+    _audit_payroll(
+        run_id,
+        company_id,
+        "marked_paid",
+        int(current_user.get("sub", 0)),
+        {
+            "period_start": run.get("period_start"),
+            "period_end": run.get("period_end"),
+            "total_gross": run.get("total_gross"),
+            "total_net": run.get("total_net"),
+            "payslip_count": len(payslips),
+        },
+    )
+
     return {"message": "Payroll run marked as paid.", "status": "paid"}
 
 
@@ -609,6 +687,12 @@ async def cancel_payroll_run(
 ) -> dict:
     """Cancel a payroll run (only if not yet paid)."""
     company_id = get_current_company_id(current_user)
+    check_rate_limit(
+        f"payroll_cancel:{company_id}",
+        max_requests=30,
+        window_seconds=3600,
+        action_name="payroll cancel",
+    )
     run = dataflow_crud.read("PayrollRun", run_id)
     if run is None or run.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll run not found.")
@@ -619,7 +703,19 @@ async def cancel_payroll_run(
     if run.get("status") == "approved" and current_user.get("role") != "owner":
         raise HTTPException(status_code=403, detail="Only owners can cancel approved payroll runs.")
 
+    prior_status = run.get("status")
     dataflow_crud.update("PayrollRun", run_id, {"status": "cancelled"})
+    _audit_payroll(
+        run_id,
+        company_id,
+        "cancelled",
+        int(current_user.get("sub", 0)),
+        {
+            "prior_status": prior_status,
+            "period_start": run.get("period_start"),
+            "period_end": run.get("period_end"),
+        },
+    )
     return {"message": "Payroll run cancelled.", "status": "cancelled"}
 
 
@@ -630,14 +726,26 @@ async def cancel_payroll_run(
 
 @router.get("/my-payslips")
 async def get_my_payslips(
+    include_approved: bool = False,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Get the current employee's payslips across all runs."""
+    """Get the current employee's payslips across all runs.
+
+    By default only paid / confirmed payslips are returned — the
+    Approved-but-not-yet-Paid window is between HR approval and the
+    pay date, when the figures are stable but the money hasn't moved.
+    Red-team M7 / P5-PL-4: when ``include_approved=true``, the
+    response also carries a separate ``pending_approved`` list of
+    minimal stubs (period_start, period_end, run_pay_date,
+    run_status) so the /my-payslips page can show "Your Feb 2026
+    payslip is Approved, expected pay date 7 Mar 2026" without
+    leaking the actual payslip detail before the run is paid.
+    """
     user_id = int(current_user.get("sub", 0))
     company_id = current_user.get("company_id")
 
     if company_id is None:
-        return {"payslips": []}
+        return {"payslips": [], "pending_approved": []}
 
     # Find employee record
     emp_records = dataflow_crud.list_records(
@@ -649,12 +757,12 @@ async def get_my_payslips(
         limit=1,
     )
     if not emp_records:
-        return {"payslips": []}
+        return {"payslips": [], "pending_approved": []}
 
     emp_id = emp_records[0].get("id")
     payslips = dataflow_crud.list_records("Payslip", {"employee_id": emp_id})
 
-    # Only show paid/confirmed payslips to employees
+    # Only show paid/confirmed payslips to employees by default
     visible = [ps for ps in payslips if ps.get("status") in ("confirmed", "paid")]
     visible.sort(key=lambda ps: ps.get("period_start", ""), reverse=True)
 
@@ -665,7 +773,28 @@ async def get_my_payslips(
     for ps in visible:
         ps.setdefault("payslip_id", ps.get("id"))
 
-    return {"payslips": visible}
+    pending_approved: list[dict] = []
+    if include_approved:
+        # Surface approved-but-not-yet-paid payslips as minimal stubs
+        # (period + expected pay date only). The full payslip body
+        # stays gated until status flips to paid.
+        approved = [ps for ps in payslips if ps.get("status") == "approved"]
+        for ps in approved:
+            run_id = ps.get("payroll_run_id")
+            run = dataflow_crud.read("PayrollRun", run_id) if run_id else None
+            pending_approved.append(
+                {
+                    "period_start": ps.get("period_start"),
+                    "period_end": ps.get("period_end"),
+                    "expected_pay_date": (run or {}).get("pay_date") or "",
+                    "run_status": (run or {}).get("status") or "approved",
+                }
+            )
+        pending_approved.sort(
+            key=lambda x: x.get("period_start") or "", reverse=True
+        )
+
+    return {"payslips": visible, "pending_approved": pending_approved}
 
 
 # --------------------------------------------------------------------------

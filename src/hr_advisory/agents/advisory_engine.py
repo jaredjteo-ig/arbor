@@ -833,6 +833,56 @@ class AdvisoryEngine:
         kb_results_seen: list[dict] = []
         company_policy_results_seen: list[dict] = []
 
+        # Red-team C3 / O2: pre-retrieval domain classifier. Without
+        # this, the engine waits for the LLM to call search_kb — and
+        # when the model answers from parametric memory (as gemini /
+        # gpt did for CPF), no search_kb runs, domains falls back to
+        # "general", and stale training-data answers leak through.
+        # Pre-fetching grounded provisions per detected domain and
+        # injecting them as a system message ensures the model
+        # always has KB content in context from turn 1.
+        try:
+            from hr_advisory.services.advisory_domain_classifier import (
+                classify_domains,
+            )
+
+            detected_domains = classify_domains(query)
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.debug("domain classifier failed: %s", exc)
+            detected_domains = []
+
+        if detected_domains:
+            preseed_lines: list[str] = []
+            for dom in detected_domains:
+                try:
+                    hits = _search_kb_with_fallback(query, domain=dom, limit=3)
+                except Exception as exc:
+                    logger.debug("pre-fetch failed for domain %s: %s", dom, exc)
+                    hits = []
+                if hits:
+                    # Track so citation extraction picks these up even
+                    # if the LLM never explicitly calls search_kb.
+                    kb_results_seen.extend(hits)
+                    for h in hits:
+                        title = h.get("title") or h.get("provision_id") or ""
+                        pid = h.get("provision_id") or ""
+                        text = (h.get("content") or h.get("text") or "")[:600]
+                        if title or text:
+                            preseed_lines.append(f"[{dom.upper()} · {pid}] {title}\n{text}")
+            if preseed_lines:
+                preseed = (
+                    "Relevant Singapore-statute provisions for this question "
+                    "(detected domains: " + ", ".join(detected_domains) + "):\n\n"
+                    + "\n\n".join(preseed_lines)
+                    + "\n\nUse these as your primary grounding. Cite them in "
+                    "your answer. If they are insufficient, call search_kb "
+                    "for more, but do not answer from parametric memory."
+                )
+                # Inject just before the user turn so the model treats it
+                # as authoritative context, not prior conversation.
+                messages.insert(-1, {"role": "system", "content": preseed})
+                tools_called.append("preseed_kb")
+
         try:
             for round_num in range(MAX_TOOL_ROUNDS):
                 response = client.chat.completions.create(
@@ -935,8 +985,16 @@ class AdvisoryEngine:
                 response_text = choice.message.content or ""
                 cleaned_text, confidence, risk_tier = _parse_confidence_and_risk(response_text)
 
-                # Extract domains from which search_kb calls were made
-                domains = self._extract_domains_from_tools(messages)
+                # Extract domains: union of (a) which search_kb calls
+                # the LLM made and (b) which domains the pre-retrieval
+                # classifier seeded. Red-team C3 / O2: without (b), a
+                # CPF question that the LLM answered from memory falls
+                # back to "general"; we now preserve the classifier's
+                # signal so the response carries the correct domain.
+                domains_from_llm = set(self._extract_domains_from_tools(messages))
+                domains_from_llm.discard("general")
+                combined = sorted(domains_from_llm | set(detected_domains))
+                domains = combined or ["general"]
 
                 # Build citations from KB results and company policy results
                 citations = self._extract_citations(

@@ -151,6 +151,11 @@ interface ChatContainerProps {
   messagesError?: Error | null;
   /** Retry callback for failed message loading. */
   onRetryLoad?: () => void;
+  /** Notify parent when an SSE stream fails so the conversations
+   *  sidebar can invalidate its React Query cache. Red-team P5-AD-2:
+   *  without this, deletes / fails leave the sidebar showing stale
+   *  pre-error rows until the next 30s refetch tick. */
+  onStreamError?: (error: Error) => void;
 }
 
 /** Convert API history messages to internal ChatMessage format. */
@@ -182,6 +187,7 @@ export function ChatContainer({
   messagesLoading = false,
   messagesError = null,
   onRetryLoad,
+  onStreamError,
 }: ChatContainerProps) {
   const { user } = useAuth();
   const searchParams = useSearchParams();
@@ -353,13 +359,24 @@ export function ChatContainer({
             });
             setIsStreaming(false);
             abortRef.current = null;
+            // Red-team P5-AD-2: tell the parent so the conversations
+            // sidebar invalidates its React Query cache. Otherwise the
+            // sidebar can show a stale row for a turn that the backend
+            // never persisted.
+            onStreamError?.(error);
           },
         },
       );
 
       abortRef.current = controller;
     },
-    [isStreaming, user?.company_id, activeConvId, onConversationStart],
+    [
+      isStreaming,
+      user?.company_id,
+      activeConvId,
+      onConversationStart,
+      onStreamError,
+    ],
   );
 
   // Cleanup on unmount

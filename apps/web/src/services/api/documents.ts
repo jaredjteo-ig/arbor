@@ -25,6 +25,34 @@ export const documentsApi = {
     return apiClient.get<DocumentTemplate>(`/document/templates/${templateId}`);
   },
 
+  /** Resolve a template slug to a policy-modal prefill payload.
+   *
+   * Red-team P5-VL-2: compliance Action Items deep-link via
+   * /policies?template=<slug>. This endpoint returns
+   *   { title, category, content, found_template, known_slug, linked_provisions }
+   * tailored for the Add Policy modal. Always 200 — unknown slugs
+   * yield an empty payload so the modal opens cleanly.
+   */
+  getTemplatePrefillBySlug(slug: string): Promise<{
+    slug: string;
+    found_template: boolean;
+    known_slug: boolean;
+    title: string;
+    category: string;
+    content: string;
+    linked_provisions: string[];
+  }> {
+    return apiClient.get<{
+      slug: string;
+      found_template: boolean;
+      known_slug: boolean;
+      title: string;
+      category: string;
+      content: string;
+      linked_provisions: string[];
+    }>(`/document/templates/by-slug/${encodeURIComponent(slug)}`);
+  },
+
   /** Generate a document from a template with field values. */
   generate(data: DocumentGenerateRequest): Promise<DocumentGenerateResponse> {
     return apiClient.post<DocumentGenerateResponse>("/document/generate", data);

@@ -192,7 +192,7 @@ export default function XeroSettingsPage() {
   async function handleDisconnect() {
     if (
       !window.confirm(
-        "Disconnect Xero? Arbor will stop posting journals and the OAuth token will be deleted. You can reconnect at any time.",
+        "Disconnect Xero? Central will stop posting journals and the OAuth token will be deleted. You can reconnect at any time.",
       )
     ) {
       return;

@@ -136,11 +136,18 @@ def _events_for_company(company_id: int) -> list[dict]:
 
 
 def _employees_for_company(company_id: int) -> list[dict]:
-    return dataflow_crud.list_records(
-        "Employee",
-        {"company_id": company_id, "is_active": True},
-        cache_ttl=0,
-    )
+    """Active employees for `company_id` per the canonical predicate.
+
+    Routes through `services.headcount.list_active_employees` so the
+    lifecycle dashboard, reports, employees list, analytics, and
+    compliance check all agree on what 'active' means (red-team C2 /
+    X1). The canonical predicate excludes `confirmation_status =
+    "terminated"` and rows whose `end_date` is on/before today, even
+    if `is_active=True` was never flipped.
+    """
+    from hr_advisory.services.headcount import list_active_employees
+
+    return list_active_employees(company_id)
 
 
 def _safe_list(model: str, filter_dict: dict) -> list[dict]:

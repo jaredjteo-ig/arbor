@@ -546,11 +546,11 @@ export default function PayrollPage() {
                   )}
                 </div>
 
-                {/* Step 2: Select Arbor run and compare */}
+                {/* Step 2: Select Central run and compare */}
                 {uploadResult && (
                   <div className="space-y-2">
                     <h3 className="text-sm font-medium text-[var(--color-gray-700)]">
-                      Step 2: Select an Arbor payroll run to compare against
+                      Step 2: Select a Central payroll run to compare against
                     </h3>
                     <div className="flex flex-wrap items-center gap-3">
                       <select
@@ -695,7 +695,7 @@ export default function PayrollPage() {
                                           <span>${f.external.toFixed(2)}</span>
                                         ) : (
                                           <span
-                                            title={`External: $${f.external.toFixed(2)} | Arbor: $${f.arbor.toFixed(2)}`}
+                                            title={`External: $${f.external.toFixed(2)} | Central: $${f.arbor.toFixed(2)}`}
                                           >
                                             {f.difference > 0 ? "+" : ""}$
                                             {f.difference.toFixed(2)}
@@ -729,7 +729,7 @@ export default function PayrollPage() {
                           <div className="text-sm">
                             <div className="flex items-center gap-1 text-amber-600 font-medium mb-1">
                               <AlertTriangle className="h-3.5 w-3.5" />
-                              Employees in external CSV but not in Arbor:
+                              Employees in external CSV but not in Central:
                             </div>
                             <ul className="list-disc list-inside text-[var(--color-gray-600)] text-xs ml-1">
                               {compareResult.unmatched_external.map((u, i) => (
@@ -742,7 +742,7 @@ export default function PayrollPage() {
                           <div className="text-sm">
                             <div className="flex items-center gap-1 text-[var(--color-gray-500)] font-medium mb-1">
                               <AlertTriangle className="h-3.5 w-3.5" />
-                              Employees in Arbor but not in external CSV:
+                              Employees in Central but not in external CSV:
                             </div>
                             <ul className="list-disc list-inside text-[var(--color-gray-600)] text-xs ml-1">
                               {compareResult.unmatched_arbor.map((u, i) => (

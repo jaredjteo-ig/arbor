@@ -427,6 +427,83 @@ async def get_template(
     return _template_detail(idx, TEMPLATES[idx])
 
 
+@router.get("/templates/by-slug/{slug}")
+async def get_template_prefill_by_slug(
+    slug: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Resolve a template slug to a policy-modal prefill payload.
+
+    Red-team P5-VL-2 (origin: workspaces/obayashi/04-validate/
+    13-redteam-comprehensive-2026-05-19.md). Compliance Action Items
+    deep-link via /policies?template=<slug> — this endpoint lets the
+    frontend pre-populate the Add Policy modal in one round-trip
+    instead of listing every template and hunting for a match by name.
+
+    Returns a thin payload tailored for the modal:
+        - title (str): suggested policy title
+        - category (str): default category to pre-select
+        - content (str): pre-written template body, or ""
+        - found_template (bool): whether the slug had bundled content
+        - linked_provisions (list[str]): KB provisions the template
+          satisfies (empty when no bundled content)
+
+    Always returns 200 — an unknown slug yields an empty prefill so
+    the modal still opens cleanly with the user typing from scratch.
+    """
+    from hr_advisory.templates.content import (
+        TEMPLATE_SLUG_MAP,
+        get_template_by_slug,
+    )
+
+    # Modal categories use lowercase snake_case (apps/web/.../policies/page.tsx).
+    # We map common compliance categories explicitly; other templates fall
+    # back to their TemplateDefinition.category lowercased + spaces → _.
+    _CATEGORY_MAP = {
+        "ket": "employment_terms",
+        "employment_contract_fulltime": "employment_terms",
+        "employment_contract_parttime": "employment_terms",
+        "annual_leave_policy": "leave_absence",
+        "sick_leave_policy": "leave_absence",
+        "termination_letter": "employment_terms",
+        "resignation_acceptance": "employment_terms",
+        "warning_letter": "employment_terms",
+        "fwa_request_form": "fair_employment",
+        "fwa": "fair_employment",
+        "expense_claims_form": "compensation_benefits",
+        "timesheet": "compensation_benefits",
+        "wsh": "workplace_safety",
+        "grievance": "fair_employment",
+    }
+
+    template = get_template_by_slug(slug)
+    is_known_slug = slug in TEMPLATE_SLUG_MAP
+    category = _CATEGORY_MAP.get(slug, "")
+
+    if template is None:
+        # Either unknown slug or known-but-no-content (e.g. "wsh",
+        # "grievance"). Either way the modal opens cleanly.
+        return {
+            "slug": slug,
+            "found_template": False,
+            "known_slug": is_known_slug,
+            "title": "",
+            "category": category,
+            "content": "",
+            "linked_provisions": [],
+        }
+
+    return {
+        "slug": slug,
+        "found_template": True,
+        "known_slug": True,
+        "title": template.name,
+        "category": category,
+        "content": template.content,
+        "linked_provisions": list(template.linked_provisions),
+    }
+
+
 @router.post("/preview")
 async def preview_document(
     request: Request,

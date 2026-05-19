@@ -116,6 +116,22 @@ export function useRenameConversation() {
 /* ── Combined Hook ───────────────────────────────────────── */
 /* Provides all conversation management functions together.   */
 
+// Legacy-fallback phrases anchored at the start of a turn. Must stay
+// in sync with the backend persistence filter
+// (src/hr_advisory/agents/memory/short_term.py::_LEGACY_FALLBACK_PATTERNS)
+// and the purge script (scripts/maintenance/purge_legacy_advisory.py).
+// Round-3 + P5-AD-1 ensure new rows don't land here; this filter is
+// defence-in-depth for any rows that escaped the backend gate.
+const LEGACY_FALLBACK_PHRASES = [
+  "I'm having trouble processing your question",
+  "I was unable to fully process your query",
+] as const;
+
+function isLegacyFallback(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return LEGACY_FALLBACK_PHRASES.some((phrase) => text.includes(phrase));
+}
+
 export function useAdvisoryHistory(activeConversationId: number | null) {
   const listQuery = useConversationList();
   const messagesQuery = useConversationMessages(activeConversationId);
@@ -129,26 +145,32 @@ export function useAdvisoryHistory(activeConversationId: number | null) {
     });
   }, [queryClient]);
 
-  // M6 redteam (round-12): the fallback "I'm having trouble processing
-  // your question right now" message advertises a transient LLM/rate-limit
-  // failure that has long since resolved. Surfacing it in past
-  // conversations makes the platform look broken even when it isn't.
-  // Filter assistant turns whose body contains the fallback phrase, plus
-  // any stranded user turn left immediately before such a fallback.
-  const FALLBACK_PHRASE = "I'm having trouble processing your question";
+  // Red-team P5-AD-1: drop conversations whose preview is a legacy
+  // guardrail-fallback string. Earlier rounds replaced the text with
+  // "(earlier reply unavailable)" but the buyer still saw N orphan
+  // entries in the sidebar. Hiding them is correct — the prod DB
+  // purge (scripts/maintenance/purge_legacy_advisory.py) deletes the
+  // underlying rows, and the backend persistence filter blocks new
+  // ones from landing in the first place.
+  const allConversations = listQuery.data?.conversations ?? [];
+  const visibleConversations = allConversations.filter(
+    (c) => !isLegacyFallback(c.last_message),
+  );
+
+  // Filter assistant turns whose body contains the fallback phrase,
+  // plus any stranded user turn left immediately before such a
+  // fallback. Defence-in-depth for any single-message slice still
+  // lurking in a conversation we kept.
   const rawMessages = messagesQuery.data?.messages ?? [];
   const cleanedMessages = (() => {
     const filtered: typeof rawMessages = [];
-    for (let i = 0; i < rawMessages.length; i++) {
-      const msg = rawMessages[i];
+    for (const msg of rawMessages) {
       const isFallback =
-        msg.role === "assistant" &&
-        typeof msg.content === "string" &&
-        msg.content.includes(FALLBACK_PHRASE);
+        msg.role === "assistant" && isLegacyFallback(msg.content);
       if (isFallback) {
-        // Drop the user turn that triggered the failed response, if it
-        // is the most recent thing we've kept. Otherwise leave history
-        // structurally intact.
+        // Drop the user turn that triggered the failed response, if
+        // it is the most recent thing we've kept. Otherwise leave
+        // history structurally intact.
         if (
           filtered.length > 0 &&
           filtered[filtered.length - 1].role === "user"
@@ -163,8 +185,8 @@ export function useAdvisoryHistory(activeConversationId: number | null) {
   })();
 
   return {
-    /** Conversation list data and status */
-    conversations: listQuery.data?.conversations ?? [],
+    /** Conversation list data and status (legacy-fallback rows hidden) */
+    conversations: visibleConversations,
     conversationsLoading: listQuery.isLoading,
     conversationsError: listQuery.error,
 
@@ -181,7 +203,10 @@ export function useAdvisoryHistory(activeConversationId: number | null) {
     renameConversation: renameMutation.mutateAsync,
     renameLoading: renameMutation.isPending,
 
-    /** Manual refresh */
+    /** Manual refresh — invalidates the conversations cache so the
+     * sidebar reflects new server state immediately. Call this on
+     * any mutation path where the cache could go stale (e.g. SSE
+     * error during streaming, manual import). */
     refreshConversations,
   };
 }

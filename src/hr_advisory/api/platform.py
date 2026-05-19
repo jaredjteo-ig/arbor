@@ -132,6 +132,9 @@ def create_platform(settings: Settings | None = None) -> Nexus:
     # --- Health check endpoint ---
     _register_health_check(app)
 
+    # --- Daily lifecycle ticks (probation auto-confirm, future jobs) ---
+    _register_daily_lifecycle_ticks(app)
+
     logger.info("HR Advisory platform configured successfully")
     return app
 
@@ -148,6 +151,67 @@ def _register_health_check(app: Nexus) -> None:
         return {"status": "ok"}
 
     logger.info("Health check endpoint registered at /health")
+
+
+def _register_daily_lifecycle_ticks(app: Nexus) -> None:
+    """Register a daily background tick for employee lifecycle reconciliation.
+
+    Currently runs:
+      - `services.probation.auto_confirm_due_probations` — flips
+        on_probation → confirmed for any employee whose
+        probation_end_date has elapsed.
+
+    Implementation note: we use an asyncio background task rather than
+    APScheduler to keep the dependency surface narrow (no new package
+    in pyproject.toml, no separate scheduler process to monitor). The
+    24-hour interval is generous — a single missed tick still
+    reconciles on the next pass because the underlying ops are
+    idempotent.
+
+    The tick is bounded by an env flag so test/CI runs don't fire
+    background work. The flag defaults ON in production.
+    """
+    import asyncio
+    import os
+
+    fast_api = app._gateway.app
+
+    if os.environ.get("ARBOR_DISABLE_BACKGROUND_TICKS", "").lower() in ("1", "true", "yes"):
+        logger.info(
+            "Daily lifecycle ticks disabled via ARBOR_DISABLE_BACKGROUND_TICKS"
+        )
+        return
+
+    interval_seconds = int(os.environ.get("ARBOR_PROBATION_TICK_SECONDS", str(24 * 3600)))
+
+    async def _probation_tick_loop() -> None:
+        from hr_advisory.services.probation import auto_confirm_due_probations
+
+        # Run once at startup so the system self-heals on boot, then
+        # loop on the daily interval. Errors are caught per-iteration
+        # so a transient DB blip doesn't kill the loop.
+        while True:
+            try:
+                summary = auto_confirm_due_probations()
+                if summary.get("confirmed"):
+                    logger.info(
+                        "Probation tick auto-confirmed %s employee(s)",
+                        summary["confirmed"],
+                    )
+            except Exception as exc:
+                logger.warning("Probation tick failed: %s", exc)
+            await asyncio.sleep(interval_seconds)
+
+    @fast_api.on_event("startup")
+    async def _start_lifecycle_ticks() -> None:
+        # Detach: fire-and-forget background task. We keep the handle on
+        # the FastAPI app state so a future shutdown handler could
+        # cancel it cleanly.
+        task = asyncio.create_task(_probation_tick_loop())
+        fast_api.state.probation_tick_task = task
+        logger.info(
+            "Probation tick scheduled (interval=%ss)", interval_seconds
+        )
 
 
 def _add_security_headers_middleware(app: Nexus) -> None:

@@ -192,6 +192,31 @@ export const payrollApi = {
     return resp.payslips;
   },
 
+  /** Employee: list own payslips + pending (Approved-but-not-yet-Paid)
+   * runs. Red-team M7 / P5-PL-4: surface the "your Feb 2026 payslip is
+   * Approved, expected pay 7 Mar 2026" caption so employees don't
+   * wonder "where's my payslip?" between approval and pay date.
+   */
+  async myPayslipsWithPending(): Promise<{
+    payslips: Payslip[];
+    pending_approved: Array<{
+      period_start: string;
+      period_end: string;
+      expected_pay_date: string;
+      run_status: string;
+    }>;
+  }> {
+    return apiClient.get<{
+      payslips: Payslip[];
+      pending_approved: Array<{
+        period_start: string;
+        period_end: string;
+        expected_pay_date: string;
+        run_status: string;
+      }>;
+    }>("/payroll/my-payslips?include_approved=true");
+  },
+
   /** Employee: get own payslip detail with items. */
   async myPayslipDetail(id: number): Promise<PayslipDetail> {
     const resp = await apiClient.get<{

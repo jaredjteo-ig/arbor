@@ -55,12 +55,21 @@ async def turnover_report(
     if not end_date:
         end_date = today.isoformat()
 
-    # Fetch all employees (active and inactive) for the company
+    # Fetch all employees (active and inactive) for the company.
+    # Red-team C2: route the "active" branch through the canonical
+    # headcount predicate so reports, lifecycle, employees list,
+    # analytics, and compliance check all agree. The +1 discrepancy
+    # in the round-3 live walk was caused by `is_active=True` rows
+    # whose `confirmation_status` was already "terminated" — this
+    # filter drops them.
     filters: dict = {"company_id": company_id}
     if department:
         filters["department"] = department
 
-    all_active = dataflow_crud.list_records("Employee", {**filters, "is_active": True})
+    from hr_advisory.services.headcount import list_active_employees
+
+    extra = {"department": department} if department else None
+    all_active = list_active_employees(company_id, extra_filters=extra)
     all_inactive = dataflow_crud.list_records("Employee", {**filters, "is_active": False})
     all_employees = all_active + all_inactive
 

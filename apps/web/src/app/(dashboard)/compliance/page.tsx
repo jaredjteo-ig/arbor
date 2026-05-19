@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Shield,
   CheckCircle2,
@@ -9,6 +10,7 @@ import {
   HelpCircle,
   ClipboardCheck,
   AlertCircle,
+  ArrowRight,
   Loader2,
 } from "lucide-react";
 import {
@@ -44,6 +46,86 @@ interface Finding {
   deadline: string;
 }
 
+/** Red-team P5-VL-1: where a compliance Action Item should take the
+ *  user. Each finding's provision_id maps to one of these targets so
+ *  the gap-detect → fix-now value chain closes in a single click. */
+interface ActionItemCta {
+  /** Human-readable action label (e.g. "Set up itemised payslip system"). */
+  label: string;
+  /** Internal route to navigate to. Always present when `kind` is set. */
+  href: string;
+  /** What the user will see at the destination:
+   *  - policy_template — `/policies?template=...` (P5-VL-2 pre-fills modal)
+   *  - document_template — `/documents?template=...`
+   *  - settings — `/settings/<area>`
+   *  - external — opens a guidance article (not used yet)
+   */
+  kind: "policy_template" | "document_template" | "settings" | "external";
+}
+
+/** Map a ComplianceFinding's stable provision_id to the right CTA.
+ *  Lives client-side here so the existing `runLocalComplianceCheck`
+ *  can emit `cta` per finding without a backend round-trip. The
+ *  backend `ComplianceFinding` carries the same mapping (see
+ *  `src/hr_advisory/workflows/compliance_checker.py::_FINDING_CTAS`)
+ *  so external API consumers see an identical contract. */
+const FINDING_CTA_MAP: Record<string, ActionItemCta> = {
+  "EA-S95-KETs": {
+    label: "Issue KET documents",
+    href: "/documents?template=ket",
+    kind: "document_template",
+  },
+  "EA-KET": {
+    label: "Draft employment contract",
+    href: "/documents?template=employment_contract_fulltime",
+    kind: "document_template",
+  },
+  "EA-S88A-payslip": {
+    label: "Configure payroll & payslips",
+    href: "/payroll",
+    kind: "settings",
+  },
+  "EA-PART-X-annual-leave": {
+    label: "Set up leave tracking",
+    href: "/leave?tab=policies",
+    kind: "settings",
+  },
+  "EA-PART-IV-hours": {
+    label: "Set up overtime tracking",
+    href: "/attendance",
+    kind: "settings",
+  },
+  "WSHA-S12": {
+    label: "Publish WSH policy",
+    href: "/policies?category=workplace_safety&template=wsh",
+    kind: "policy_template",
+  },
+  "TGFEP-GRIEVANCE": {
+    label: "Publish grievance policy",
+    href: "/policies?category=fair_employment&template=grievance",
+    kind: "policy_template",
+  },
+  "TGFWAR-request-process": {
+    label: "Publish FWA policy",
+    href: "/policies?category=fair_employment&template=fwa",
+    kind: "policy_template",
+  },
+  "CPFA-S52": {
+    label: "Register with CPF Board",
+    href: "https://www.cpf.gov.sg/employer/employer-registration",
+    kind: "external",
+  },
+  "EFMA-conditions": {
+    label: "Review foreign worker passes",
+    href: "/employees?tab=directory",
+    kind: "settings",
+  },
+};
+
+function getCtaForProvision(provisionId: string): ActionItemCta | null {
+  return FINDING_CTA_MAP[provisionId] ?? null;
+}
+
 interface InspectionItem {
   category: string;
   item: string;
@@ -51,11 +133,22 @@ interface InspectionItem {
   provision: string;
 }
 
+/** A renderable Action Item — derived from a Finding. When `cta` is
+ *  present the UI renders a link; otherwise it falls back to plain
+ *  checkbox text (preserves the prior behaviour for unmapped
+ *  provisions). Red-team P5-VL-1.
+ */
+interface ActionItem {
+  label: string;
+  provision_id: string;
+  cta: ActionItemCta | null;
+}
+
 interface CombinedResult {
   score: number;
   risk_tier: string;
   findings: Finding[];
-  action_items: string[];
+  action_items: ActionItem[];
   domains_checked: string[];
   inspection_readiness: InspectionItem[];
   backendStatus: ComplianceCheckResponse | null;
@@ -86,11 +179,22 @@ function runLocalComplianceCheck(
   hasForeign: boolean,
 ): {
   findings: Finding[];
-  action_items: string[];
+  action_items: ActionItem[];
   inspection_readiness: InspectionItem[];
 } {
   const findings: Finding[] = [];
-  const action_items: string[] = [];
+  const action_items: ActionItem[] = [];
+
+  // Helper: emit an Action Item paired with the deterministic CTA for
+  // the finding's provision_id. The CTA closes the gap-detect →
+  // fix-now loop (red-team O12 / P5-VL-1).
+  const pushAction = (label: string, provision_id: string) => {
+    action_items.push({
+      label,
+      provision_id,
+      cta: getCtaForProvision(provision_id),
+    });
+  };
 
   if (!inputs.ket) {
     findings.push({
@@ -102,7 +206,7 @@ function runLocalComplianceCheck(
       provision_id: "EA-S95-KETs",
       deadline: "Immediate",
     });
-    action_items.push("Issue KET documents to all current employees");
+    pushAction("Issue KET documents to all current employees", "EA-S95-KETs");
   }
   if (!inputs.contracts) {
     findings.push({
@@ -113,7 +217,7 @@ function runLocalComplianceCheck(
       provision_id: "EA-KET",
       deadline: "Within 30 days",
     });
-    action_items.push("Prepare and issue written employment contracts");
+    pushAction("Prepare and issue written employment contracts", "EA-KET");
   }
   if (!inputs.payslips) {
     findings.push({
@@ -125,7 +229,7 @@ function runLocalComplianceCheck(
       provision_id: "EA-S88A-payslip",
       deadline: "Immediate",
     });
-    action_items.push("Set up itemised payslip system");
+    pushAction("Set up itemised payslip system", "EA-S88A-payslip");
   }
   if (!inputs.leave) {
     findings.push({
@@ -136,7 +240,7 @@ function runLocalComplianceCheck(
       provision_id: "EA-PART-X-annual-leave",
       deadline: "Within 14 days",
     });
-    action_items.push("Set up leave tracking system");
+    pushAction("Set up leave tracking system", "EA-PART-X-annual-leave");
   }
   if (!inputs.ot) {
     findings.push({
@@ -147,7 +251,7 @@ function runLocalComplianceCheck(
       provision_id: "EA-PART-IV-hours",
       deadline: "Within 14 days",
     });
-    action_items.push("Set up overtime tracking");
+    pushAction("Set up overtime tracking", "EA-PART-IV-hours");
   }
   if (!inputs.safety && (hasForeign || companySize >= 10)) {
     findings.push({
@@ -158,7 +262,7 @@ function runLocalComplianceCheck(
       provision_id: "WSHA-S12",
       deadline: "Within 30 days",
     });
-    action_items.push("Develop workplace safety policy");
+    pushAction("Develop workplace safety policy", "WSHA-S12");
   }
   if (!inputs.grievance) {
     findings.push({
@@ -169,7 +273,7 @@ function runLocalComplianceCheck(
       provision_id: "TGFEP-GRIEVANCE",
       deadline: "Within 60 days",
     });
-    action_items.push("Establish grievance handling process");
+    pushAction("Establish grievance handling process", "TGFEP-GRIEVANCE");
   }
   if (!inputs.fwa) {
     findings.push({
@@ -181,7 +285,7 @@ function runLocalComplianceCheck(
       provision_id: "TGFWAR-request-process",
       deadline: "Within 60 days",
     });
-    action_items.push("Draft FWA policy");
+    pushAction("Draft FWA policy", "TGFWAR-request-process");
   }
 
   const inspection_readiness: InspectionItem[] = [
@@ -1095,22 +1199,68 @@ function ResultsView({
             );
           })}
 
-          {/* Action items */}
+          {/* Action items — red-team P5-VL-1: each finding that has a
+              CTA renders as a navigable link so the buyer can close
+              the compliance gap with one click. */}
           {result.action_items.length > 0 && (
             <AppCard variant="standard">
               <h3 className="text-sm font-semibold text-[var(--color-gray-900)] mb-2">
                 Action Items
               </h3>
-              <div className="space-y-2">
-                {result.action_items.map((item, i) => (
-                  <label key={i} className="flex items-start gap-2">
-                    <input type="checkbox" className="h-4 w-4 rounded mt-0.5" />
-                    <span className="text-sm text-[var(--color-gray-700)]">
-                      {item}
-                    </span>
-                  </label>
-                ))}
-              </div>
+              <ul className="space-y-2">
+                {result.action_items.map((item, i) => {
+                  const cta = item.cta;
+                  if (!cta) {
+                    // No mapped target — fall back to the prior
+                    // checkbox-style row.
+                    return (
+                      <li key={i}>
+                        <label className="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded mt-0.5"
+                          />
+                          <span className="text-sm text-[var(--color-gray-700)]">
+                            {item.label}
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  }
+                  const isExternal = cta.kind === "external";
+                  return (
+                    <li key={i}>
+                      <Link
+                        href={cta.href}
+                        target={isExternal ? "_blank" : undefined}
+                        rel={isExternal ? "noopener noreferrer" : undefined}
+                        className={[
+                          "group flex items-start justify-between gap-3",
+                          "rounded-md border border-[var(--color-gray-200)]",
+                          "px-3 py-2 text-sm text-[var(--color-gray-700)]",
+                          "hover:border-[var(--color-primary)]",
+                          "hover:bg-[var(--color-primary-bg)]",
+                          "transition-colors",
+                        ].join(" ")}
+                      >
+                        <span className="min-w-0">
+                          <span className="block font-medium text-[var(--color-gray-900)]">
+                            {item.label}
+                          </span>
+                          <span className="block text-xs text-[var(--color-gray-500)] mt-0.5">
+                            {cta.label}
+                            {isExternal ? " (opens new tab)" : ""}
+                          </span>
+                        </span>
+                        <ArrowRight
+                          className="h-4 w-4 mt-0.5 shrink-0 text-[var(--color-gray-400)] group-hover:text-[var(--color-primary)]"
+                          aria-hidden="true"
+                        />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
             </AppCard>
           )}
         </div>

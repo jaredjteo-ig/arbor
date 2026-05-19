@@ -10,6 +10,7 @@ via ConversationThread/ConversationMessage DataFlow models.
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +19,33 @@ from kaizen.memory import BufferMemory
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_TURNS = 20
+
+# Red-team P5-AD-1: do NOT persist conversation turns whose agent reply
+# is a legacy guardrail-fallback / degraded-state string. These rows
+# show up in the History sidebar as "(earlier reply unavailable)"
+# (the frontend rewrites them via cleanPreview) and read to a buyer
+# as "things this platform lost". The pre-classifier fix from round-3
+# should prevent new ones at the engine layer, but this is
+# defence-in-depth at the persistence boundary.
+_LEGACY_FALLBACK_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^I'?m having trouble processing your question", re.IGNORECASE),
+    re.compile(r"^I was unable to fully process your query", re.IGNORECASE),
+)
+
+
+def _is_legacy_fallback_reply(response: str | None) -> bool:
+    """True when the assistant response matches a known degraded-state phrase.
+
+    Used by `_persist_turn` to skip writing the turn to the database.
+    The check is anchored at the start of the response because the
+    legacy fallback strings always lead the reply text.
+    """
+    if not response:
+        return True  # never persist an empty agent turn either
+    text = response.strip()
+    if not text:
+        return True
+    return any(pat.match(text) for pat in _LEGACY_FALLBACK_PATTERNS)
 
 
 class ShortTermMemory:
@@ -99,7 +127,25 @@ class ShortTermMemory:
         user_id: Optional[int],
         company_id: Optional[int],
     ) -> None:
-        """Persist conversation turn to database (best-effort)."""
+        """Persist conversation turn to database (best-effort).
+
+        Red-team P5-AD-1: refuses to persist a turn whose assistant
+        response matches a known legacy guardrail-fallback. These
+        rows manifest in the History sidebar as
+        "(earlier reply unavailable)" — a buyer-trust hit. The skip
+        is logged so operators can confirm at deploy time, and the
+        in-memory buffer turn still persists (so the current session
+        sees the failure context).
+        """
+        if _is_legacy_fallback_reply(response):
+            logger.info(
+                "Skipping advisory persistence of legacy-fallback turn "
+                "(session=%s, response_prefix=%r)",
+                session_id,
+                (response or "")[:60],
+            )
+            return
+
         try:
             from kailash import LocalRuntime, WorkflowBuilder
 

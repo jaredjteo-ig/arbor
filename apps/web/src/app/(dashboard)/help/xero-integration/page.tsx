@@ -33,7 +33,7 @@ export default function XeroIntegrationHelpPage() {
           Xero integration — help guide
         </h1>
         <p className="text-sm text-[var(--color-gray-500)] mt-1">
-          Connect your Xero organisation to Arbor and post payroll journals
+          Connect your Xero organisation to Central and post payroll journals
           straight to your books. Works with any Xero plan.
         </p>
       </div>
@@ -62,8 +62,8 @@ export default function XeroIntegrationHelpPage() {
           </li>
           <li>
             If your login has access to multiple Xero organisations (common for
-            bookkeepers), you&apos;ll see a picker — choose the one Arbor should
-            post journals to.
+            bookkeepers), you&apos;ll see a picker — choose the one Central
+            should post journals to.
           </li>
           <li>
             You&apos;ll land back at Settings with a green &ldquo;Xero
@@ -71,10 +71,10 @@ export default function XeroIntegrationHelpPage() {
           </li>
         </ol>
         <p className="text-xs text-[var(--color-gray-500)] mt-3">
-          Note: while Arbor is in early access, Xero shows an &ldquo;unverified
-          app&rdquo; warning during connection — that will go away once
-          we&apos;re certified through Xero&apos;s partner program. You can
-          safely click through it.
+          Note: while Central is in early access, Xero shows an
+          &ldquo;unverified app&rdquo; warning during connection — that will go
+          away once we&apos;re certified through Xero&apos;s partner program.
+          You can safely click through it.
         </p>
       </Section>
 
@@ -83,7 +83,7 @@ export default function XeroIntegrationHelpPage() {
         title="Account mapping explained"
       >
         <p className="text-sm text-[var(--color-gray-700)]">
-          Before your first export, Arbor needs to know which Xero accounts to
+          Before your first export, Central needs to know which Xero accounts to
           post to. There are <strong>six buckets</strong>:
         </p>
         <ul className="text-sm text-[var(--color-gray-700)] list-disc list-inside space-y-1.5 mt-3">
@@ -111,7 +111,7 @@ export default function XeroIntegrationHelpPage() {
           </li>
         </ul>
         <p className="text-sm text-[var(--color-gray-700)] mt-3">
-          Arbor auto-suggests a mapping the first time by reading your Xero
+          Central auto-suggests a mapping the first time by reading your Xero
           chart of accounts. You confirm or edit, and the mapping is saved
           across exports. You can revisit it any time at{" "}
           <Link
@@ -164,8 +164,8 @@ export default function XeroIntegrationHelpPage() {
               &ldquo;Another export in progress&rdquo; (409)
             </dt>
             <dd className="text-[var(--color-gray-600)] mt-0.5">
-              Two clicks landed within the same second — Arbor blocks the second
-              one to prevent posting twice. Wait three seconds and retry.
+              Two clicks landed within the same second — Central blocks the
+              second one to prevent posting twice. Wait three seconds and retry.
             </dd>
           </div>
         </dl>
@@ -187,7 +187,7 @@ export default function XeroIntegrationHelpPage() {
             audit trail.
           </li>
           <li>
-            The run reverts to &ldquo;not exported&rdquo; in Arbor so you can
+            The run reverts to &ldquo;not exported&rdquo; in Central so you can
             re-export with corrected data.
           </li>
           <li>
@@ -207,7 +207,7 @@ export default function XeroIntegrationHelpPage() {
           the original journal — never two.
         </p>
         <p className="text-sm text-[var(--color-gray-700)] mt-2">
-          On Arbor&apos;s side, a database lock per payroll run prevents two
+          On Central&apos;s side, a database lock per payroll run prevents two
           browser tabs from racing. The combination means you can double-click
           without consequence.
         </p>
@@ -219,8 +219,9 @@ export default function XeroIntegrationHelpPage() {
       >
         <p className="text-sm text-[var(--color-gray-700)]">
           Xero allows 60 calls per minute and 5,000 per day per organisation.
-          Each Arbor export is one call. If you have multiple Arbor companies
-          posting to one Xero organisation, they share the same daily quota.
+          Each Central export is one call. If you have multiple Central
+          companies posting to one Xero organisation, they share the same daily
+          quota.
         </p>
         <p className="text-sm text-[var(--color-gray-700)] mt-2">
           Bulk-exporting 24 historical runs at once stays well within the
@@ -231,7 +232,7 @@ export default function XeroIntegrationHelpPage() {
       <Section title="FAQs">
         <dl className="text-sm text-[var(--color-gray-700)] space-y-3">
           <div>
-            <dt className="font-semibold">Does Arbor pull data from Xero?</dt>
+            <dt className="font-semibold">Does Central pull data from Xero?</dt>
             <dd className="text-[var(--color-gray-600)] mt-0.5">
               Only the chart of accounts (so we know what to map to). We
               don&apos;t read invoices, contacts, or banking. We only post
@@ -253,14 +254,14 @@ export default function XeroIntegrationHelpPage() {
             <dd className="text-[var(--color-gray-600)] mt-0.5">
               Yes. All payroll lines post as <strong>BAS Excluded</strong>
               (out-of-scope for GST), so your IRAS GST F5 return isn&apos;t
-              affected by Arbor&apos;s journals.
+              affected by Central&apos;s journals.
             </dd>
           </div>
           <div>
             <dt className="font-semibold">How do I disconnect?</dt>
             <dd className="text-[var(--color-gray-600)] mt-0.5">
               Settings → Integrations → Xero → Disconnect. Your access token is
-              hard-deleted from Arbor and revoked at Xero&apos;s side. You can
+              hard-deleted from Central and revoked at Xero&apos;s side. You can
               reconnect at any time.
             </dd>
           </div>

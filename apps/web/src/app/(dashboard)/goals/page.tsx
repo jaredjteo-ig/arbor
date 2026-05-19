@@ -70,7 +70,15 @@ export default function GoalsPage() {
     setError(null);
     try {
       const [g, e] = await Promise.all([goalsApi.list(), employeesApi.list()]);
-      setGoals(g.goals);
+      // Red-team C6 / O4: live walk turned up a duplicate Q2 Engineering
+      // L&D card. Defence-in-depth dedupe by goal id so a backend join
+      // that returns the same row twice can't render the same goal
+      // twice. The backend join is also being audited separately.
+      const seen = new Map<number, Goal>();
+      for (const goal of g.goals) {
+        if (!seen.has(goal.id)) seen.set(goal.id, goal);
+      }
+      setGoals(Array.from(seen.values()));
       setEmployees(e.employees ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load goals.");

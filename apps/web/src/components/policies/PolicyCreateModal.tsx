@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   AppButton,
   AppInput,
@@ -44,10 +44,29 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 type ModalTab = "write" | "upload";
 
+/** Initial prefill for the modal — red-team P5-VL-2. When the
+ *  compliance Action Item deep-links via /policies?template=<slug>,
+ *  the policies page fetches the prefill via
+ *  documentsApi.getTemplatePrefillBySlug and passes it here so the
+ *  modal opens already populated.
+ */
+export interface PolicyDraftPrefill {
+  title?: string;
+  category?: string;
+  content?: string;
+  /** Optional human label for the prefill source (e.g. "FWA Policy"). */
+  source?: string;
+}
+
 interface PolicyCreateModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /** Prefill applied when the modal opens. Cleared on close so the
+   *  next open starts blank — same lifecycle as the existing form
+   *  fields.
+   */
+  initialDraft?: PolicyDraftPrefill | null;
 }
 
 /* -- Extraction status badge ------------------------------------- */
@@ -98,6 +117,7 @@ export function PolicyCreateModal({
   isOpen,
   onClose,
   onSuccess,
+  initialDraft,
 }: PolicyCreateModalProps) {
   const [activeTab, setActiveTab] = useState<ModalTab>("write");
 
@@ -109,6 +129,21 @@ export function PolicyCreateModal({
   const [effectiveDate, setEffectiveDate] = useState("");
   const [requiresAck, setRequiresAck] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  /* Red-team P5-VL-2: apply prefill when the modal opens. The
+   * `isOpen + initialDraft` dependency means a fresh deep-link
+   * (compliance → policies?template=fwa) re-applies the prefill
+   * each time. Closing the modal lets `resetState` blank the
+   * fields so the next manual "Add Policy" click starts empty. */
+  useEffect(() => {
+    if (!isOpen || !initialDraft) return;
+    if (initialDraft.title) setTitle(initialDraft.title);
+    if (initialDraft.category) setCategory(initialDraft.category);
+    if (initialDraft.content) setContent(initialDraft.content);
+    // Always switch to the Write tab on prefill — uploaded
+    // document prefill is not yet supported.
+    setActiveTab("write");
+  }, [isOpen, initialDraft]);
 
   /* Upload tab state */
   const [file, setFile] = useState<File | null>(null);
@@ -329,7 +364,12 @@ export function PolicyCreateModal({
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-[var(--color-primary)]" />
               <h2 className="text-lg font-semibold text-[var(--color-gray-900)]">
-                Add Policy
+                {/* Red-team P5-VL-2: surface the prefill source in the
+                    modal title so the buyer knows the form was wired
+                    by the compliance Action Item, not a blank slate. */}
+                {initialDraft?.source
+                  ? `Publish ${initialDraft.source}`
+                  : "Add Policy"}
               </h2>
             </div>
             <button

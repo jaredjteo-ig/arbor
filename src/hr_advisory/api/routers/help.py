@@ -256,9 +256,12 @@ _FAQ_ARTICLES: list[HelpArticle] = [
 ]
 
 _GETTING_STARTED: GettingStartedResponse = GettingStartedResponse(
-    title="Get started with Arbor",
+    # Red-team C/O14: user-facing copy uses the product brand "Central",
+    # not the internal codename "Arbor". Replacing inline string content
+    # avoids a brand mix when the buyer reaches /help.
+    title="Get started with Central",
     introduction=(
-        "Arbor is your AI-powered HR compliance assistant for Singapore employment law. "
+        "Central is your AI-powered HR compliance assistant for Singapore employment law. "
         "It helps you understand your legal obligations, calculate statutory contributions, "
         "check your compliance status, generate compliant documents, and respond to "
         "emergencies. Here is how to get the most out of it."
@@ -268,8 +271,8 @@ _GETTING_STARTED: GettingStartedResponse = GettingStartedResponse(
             step_number=1,
             title="Set up your company profile",
             description=(
-                "Tell Arbor about your company -- industry, headcount, and workforce composition. "
-                "This helps Arbor highlight the specific regulations that apply to your business, "
+                "Tell Central about your company -- industry, headcount, and workforce composition. "
+                "This helps Central highlight the specific regulations that apply to your business, "
                 "such as PWM requirements for certain sectors or foreign worker levy obligations."
             ),
             action_label="Go to Company Profile",
@@ -281,7 +284,7 @@ _GETTING_STARTED: GettingStartedResponse = GettingStartedResponse(
             description=(
                 "Open the Advisory chat and ask any HR question in plain English. For example: "
                 "'What are my obligations when terminating an employee?' or 'How much CPF do I "
-                "need to contribute for a 60-year-old employee earning $4,000?' Arbor will give "
+                "need to contribute for a 60-year-old employee earning $4,000?' Central will give "
                 "you a grounded answer with specific provision references."
             ),
             action_label="Open Advisory",
@@ -365,9 +368,9 @@ async def list_help_articles(
 
 
 _GETTING_STARTED_EMPLOYEE: GettingStartedResponse = GettingStartedResponse(
-    title="Get started with Arbor",
+    title="Get started with Central",
     introduction=(
-        "Arbor is your everyday HR portal. Apply for leave, submit expense "
+        "Central is your everyday HR portal. Apply for leave, submit expense "
         "claims, view your payslips, and ask any HR question in plain English. "
         "Here is how to get the most out of it."
     ),

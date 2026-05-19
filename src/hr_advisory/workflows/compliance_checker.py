@@ -7,7 +7,77 @@ and an overall compliance score.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from typing import Optional
+
+
+# Red-team P5-VL-1: each known provision_id maps to a CTA so the
+# compliance check Action Items can close the gap-detect → fix-now
+# loop in a single click. The map is the SINGLE source of truth — the
+# frontend mirrors it (apps/web/.../compliance/page.tsx::FINDING_CTA_MAP)
+# so direct API consumers get the same routing contract. Adding a new
+# finding requires adding its entry here AND on the frontend.
+_FINDING_CTAS: dict[str, dict[str, str]] = {
+    "EA-S95-KETs": {
+        "label": "Issue KET documents",
+        "href": "/documents?template=ket",
+        "kind": "document_template",
+    },
+    "EA-KET": {
+        "label": "Draft employment contract",
+        "href": "/documents?template=employment_contract_fulltime",
+        "kind": "document_template",
+    },
+    "EA-S88A-payslip": {
+        "label": "Configure payroll & payslips",
+        "href": "/payroll",
+        "kind": "settings",
+    },
+    "EA-PART-X-annual-leave": {
+        "label": "Set up leave tracking",
+        "href": "/leave?tab=policies",
+        "kind": "settings",
+    },
+    "EA-PART-IV-hours": {
+        "label": "Set up overtime tracking",
+        "href": "/attendance",
+        "kind": "settings",
+    },
+    "WSHA-S12": {
+        "label": "Publish WSH policy",
+        "href": "/policies?category=workplace_safety&template=wsh",
+        "kind": "policy_template",
+    },
+    "TGFEP-GRIEVANCE": {
+        "label": "Publish grievance policy",
+        "href": "/policies?category=fair_employment&template=grievance",
+        "kind": "policy_template",
+    },
+    "TGFWAR-request-process": {
+        "label": "Publish FWA policy",
+        "href": "/policies?category=fair_employment&template=fwa",
+        "kind": "policy_template",
+    },
+    "CPFA-S52": {
+        "label": "Register with CPF Board",
+        "href": "https://www.cpf.gov.sg/employer/employer-registration",
+        "kind": "external",
+    },
+    "EFMA-conditions": {
+        "label": "Review foreign worker passes",
+        "href": "/employees?tab=directory",
+        "kind": "settings",
+    },
+}
+
+
+def get_cta_for_provision(provision_id: str) -> Optional[dict[str, str]]:
+    """Return the navigation target for a finding's provision_id.
+
+    Returns None when the provision isn't in the map — callers should
+    fall back to a plain action label (no link). See P5-VL-1.
+    """
+    return _FINDING_CTAS.get(provision_id)
 
 
 @dataclass(frozen=True)
@@ -18,6 +88,17 @@ class ComplianceFinding:
     recommendation: str
     provision_id: str
     deadline: str
+
+    def to_dict(self) -> dict:
+        """Serialise for API consumers. Includes the CTA target so
+        external clients (shadow agent, mobile) get the same gap →
+        fix-now contract as the web UI (P5-VL-1).
+        """
+        data = asdict(self)
+        cta = get_cta_for_provision(self.provision_id)
+        if cta is not None:
+            data["cta"] = cta
+        return data
 
 
 @dataclass(frozen=True)

@@ -361,6 +361,36 @@ def _enrich_assignment(assignment: dict) -> dict:
     assignment["completed_steps"] = completed
     assignment["total_steps"] = total
 
+    # Red-team C5 / O6 invariant: status="completed" requires
+    # percentage >= 100 AND total > 0. The live walk found Lily Phang
+    # with status="completed" + 0% progress because the seed wrote
+    # status directly while her checklist had 0 done. Self-heal: if
+    # the stored status disagrees with the derived percentage, demote
+    # back to in_progress so the UI doesn't show
+    # "Completed (0%)" — a contradiction that erodes buyer trust.
+    if assignment.get("status") == "completed" and (percentage < 100 or total == 0):
+        assignment["status"] = "in_progress" if total > 0 else "draft"
+        try:
+            dataflow_crud.update(
+                "OnboardingAssignment",
+                assignment_id,
+                {"status": assignment["status"], "completed_at": None},
+            )
+            logger.info(
+                "Onboarding assignment %s status auto-demoted from 'completed' "
+                "to '%s' (percentage=%s, total=%s) — seed / migration inconsistency.",
+                assignment_id,
+                assignment["status"],
+                percentage,
+                total,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to write back demoted status for assignment %s: %s",
+                assignment_id,
+                exc,
+            )
+
     # Check overdue status on read
     if assignment.get("status") == "in_progress" and assignment.get("due_date"):
         try:

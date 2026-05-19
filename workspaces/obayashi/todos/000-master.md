@@ -211,6 +211,89 @@ File: `todos/active/P4-XX-deferred.md`. Each item has unblock criteria.
 
 ---
 
+## Gate 5 — Red-team round 3 (P0 security + P1 demo-credibility)
+
+Source: `04-validate/13-redteam-comprehensive-2026-05-19.md` —
+Playwright walk across 4 roles (owner / HR / line-mgr / IC) plus
+codebase audit. 3 P0 + 4 P1 + 2 P2 already shipped LOCAL as
+`P5-RT3`; 9 further items split into 4 active bundles below.
+
+### P5-RT3 — Round-3 fixes ✅ COMPLETED 2026-05-19 (LOCAL)
+
+3 P0 + 4 P1 + 2 P2 items shipped LOCAL + 1 pre-existing B11
+failure resolved. 558 / 0 tests, 51 new regression tests across
+6 files. TS clean. Prod deploy pending session-end.
+
+| ID        | Title                                           | Status                                                                      |
+| --------- | ----------------------------------------------- | --------------------------------------------------------------------------- |
+| P5-RT3-PR | Payroll audit-log + rate-limit                  | completed — \_audit_payroll + check_rate_limit on approve/mark-paid/cancel  |
+| P5-RT3-EM | Employee update audit-log + self-mutation guard | completed — \_audit_employee + \_SELF_MUTATION_BLOCKED_FIELDS + 4 endpoints |
+| P5-RT3-IN | Integrations rate-limit (pre-existing B11)      | completed — xero_disconnect + xero_pick_org now call check_rate_limit       |
+| P5-RT3-PB | Probation auto-transition (date + scheduler)    | completed — services/probation.py + daily tick in platform.py               |
+| P5-RT3-AD | Advisory KB pre-classifier + force grounding    | completed — services/advisory_domain_classifier.py + engine pre-seed        |
+| P5-RT3-RB | HR sidebar RBAC gate                            | completed — SidebarRole + canSeeNavItem; /admin + /integrations owner-only  |
+| P5-RT3-HC | Headcount source-of-truth helper                | completed — services/headcount.py + 4 call sites wired                      |
+| P5-RT3-GD | Goals duplicate render dedupe                   | completed — frontend dedupe by goal.id                                      |
+| P5-RT3-ON | Onboarding "Completed at 0%" invariant          | completed — self-healing in \_enrich_assignment                             |
+
+File: `todos/completed/P5-RT3-redteam-round3-fixes.md`.
+
+### P5-PL — Polish bundle ✅ COMPLETED 2026-05-19 (LOCAL)
+
+5 small items shipped together. 9 new regression tests in
+`tests/regression/test_p5_pl_polish_bundle.py`. 567 / 0 tests, TS clean.
+
+| ID      | Title                                      | Status                                                           |
+| ------- | ------------------------------------------ | ---------------------------------------------------------------- |
+| P5-PL-1 | Brand consistency Central vs Arbor         | completed — help.py + 5 dashboard pages updated                  |
+| P5-PL-2 | Analytics "75% local + PR" label + tooltip | completed — analytics page card now shows compound label         |
+| P5-PL-3 | Leave-type gender filter (BE + FE)         | completed — /leave/types accepts for_employee_id, filters gender |
+| P5-PL-4 | My Payslips Approved-state caption         | completed — /my-payslips?include_approved=true + Clock banner    |
+| P5-PL-5 | Attendance empty-state explainer           | completed — Monthly Summary self-heals stale single clock-in     |
+
+File: `todos/completed/P5-PL-polish-bundle.md`.
+
+### P5-AD — Advisory legacy-fallback cleanup ✅ COMPLETED 2026-05-19 (LOCAL)
+
+Backend persistence filter + idempotent prod purge script + frontend
+hide-orphans. 11 new regression tests in
+`tests/regression/test_p5_ad_advisory_legacy_filter.py`. 578 / 0 tests,
+TS clean. Prod DB purge must run at deploy time via
+`scripts/maintenance/purge_legacy_advisory.py` (ADMIN_PASSWORD required).
+
+| ID      | Title                                      | Status                                                                                   |
+| ------- | ------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| P5-AD-1 | Backend filter (short_term) + purge script | completed — `_is_legacy_fallback_reply` blocks persistence + idempotent purge script     |
+| P5-AD-2 | Conversations-list cache invalidation      | completed — hook filters legacy rows; ChatContainer.onStreamError → refreshConversations |
+
+File: `todos/completed/P5-AD-advisory-history-cleanup.md`.
+
+### P5-VL — Value-flow handoffs ✅ COMPLETED 2026-05-19 (LOCAL)
+
+Compliance Action Items now navigate. `/policies?template=<slug>`
+auto-opens the Add Policy modal pre-populated. 10 new regression
+tests in `tests/regression/test_p5_vl_value_flow_handoffs.py`. 588 / 0
+tests, TS clean. Closes the gap-detect → fix-now value chain.
+
+| ID      | Title                                               | Status                                                                                 |
+| ------- | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| P5-VL-1 | Compliance Action Items render as navigable CTAs    | completed — `_FINDING_CTAS` + frontend `FINDING_CTA_MAP` + render-as-link block        |
+| P5-VL-2 | /policies?template=<slug> opens modal pre-populated | completed — `/document/templates/by-slug/{slug}` + PolicyCreateModal initialDraft prop |
+
+File: `todos/completed/P5-VL-value-flow-handoffs.md`.
+
+### P5 — Remaining red-team round-3 follow-ups
+
+One bundle still waiting for `/implement`.
+
+| ID    | Title                                | Effort | Source-finding ids |
+| ----- | ------------------------------------ | ------ | ------------------ |
+| P5-DM | Demo seed realism (payroll + shifts) | 2-3h   | O9, O11            |
+
+File: `todos/active/P5-DM-demo-seed-realism.md`.
+
+---
+
 ## Status legend
 
 - **active** — sitting in `todos/active/<id>-<slug>.md` waiting for `/implement`

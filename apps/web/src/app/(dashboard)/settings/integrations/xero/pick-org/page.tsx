@@ -124,9 +124,9 @@ export default function XeroPickOrgPage() {
               Choose your Xero organisation
             </h1>
             <p className="text-sm text-[var(--color-gray-500)] mt-1">
-              You authorised Arbor for more than one Xero organisation. Pick the
-              one to use for this company. You can switch later from Settings →
-              Integrations.
+              You authorised Central for more than one Xero organisation. Pick
+              the one to use for this company. You can switch later from
+              Settings → Integrations.
             </p>
           </div>
         </div>

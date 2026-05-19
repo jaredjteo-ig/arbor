@@ -194,15 +194,14 @@ def _company_to_response(company: dict) -> dict:
     from hr_advisory.services import dataflow_crud
 
     company_id = company.get("id")
-    # Compute live headcount from active employees
+    # Compute live headcount via the canonical predicate (red-team C2 /
+    # X1): is_active=True AND end_date in future AND not terminated.
     employees = []
     if company_id:
         try:
-            employees = dataflow_crud.list_records(
-                "Employee",
-                {"company_id": company_id, "is_active": True},
-                cache_ttl=0,
-            )
+            from hr_advisory.services.headcount import list_active_employees
+
+            employees = list_active_employees(company_id)
         except Exception:
             employees = []
 
@@ -514,11 +513,12 @@ async def get_workforce_composition(
     # the breakdown live from active Employees so this page matches the
     # dashboard headcount tile. Empty pass_type defaults to "citizen" — same
     # rule as the dashboard frontend (round-12 M1 fix).
-    employees = dataflow_crud.list_records(
-        "Employee",
-        {"company_id": company_id, "is_active": True},
-        cache_ttl=0,
-    )
+    # Red-team C2: route through canonical headcount predicate so the
+    # pass-type bucket counts add up to the same total as the dashboard
+    # / lifecycle / reports surfaces.
+    from hr_advisory.services.headcount import list_active_employees
+
+    employees = list_active_employees(company_id)
     bucket_counts: dict[str, int] = {"citizen": 0, "pr": 0, "ep": 0, "sp": 0, "wp": 0}
     for emp in employees:
         raw = (emp.get("pass_type") or "").strip().lower()

@@ -79,10 +79,21 @@ export interface ApplyLeaveData {
 /* ── API Methods ─────────────────────────────────────────── */
 
 export const leaveApi = {
-  /** List all leave types configured for the company. */
-  listTypes(): Promise<{ leave_types: LeaveType[]; count: number }> {
+  /** List leave types configured for the company.
+   *
+   * Pass ``forEmployeeId`` to filter the list to types the named
+   * employee can apply for — currently this means the backend
+   * filters out gender-restricted types whose ``applicable_gender``
+   * doesn't match. Used by `/my-leave` so a male IC doesn't see
+   * "Maternity Leave" in their Apply-for-Leave dropdown.
+   */
+  listTypes(
+    forEmployeeId?: number,
+  ): Promise<{ leave_types: LeaveType[]; count: number }> {
+    const qs =
+      forEmployeeId !== undefined ? `?for_employee_id=${forEmployeeId}` : "";
     return apiClient.get<{ leave_types: LeaveType[]; count: number }>(
-      "/leave/types",
+      `/leave/types${qs}`,
     );
   },
 

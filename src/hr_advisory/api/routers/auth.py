@@ -563,6 +563,10 @@ async def register_employee(
         emp_fields["phone"] = inv_phone
     if inv_salary is not None:
         emp_fields["salary_monthly"] = inv_salary
+    # Red-team M5: deterministic probation_end_date on invitation accept.
+    from hr_advisory.services.probation import ensure_probation_end_date_in_payload
+
+    ensure_probation_end_date_in_payload(emp_fields)
     wf.add_node("EmployeeCreateNode", "create_emp", emp_fields)
     runtime = LocalRuntime()
     # S2-T2 saga: if Employee create fails the User row would be orphaned

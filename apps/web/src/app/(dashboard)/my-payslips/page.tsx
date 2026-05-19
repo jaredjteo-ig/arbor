@@ -14,6 +14,7 @@ import {
   ChevronUp,
   Download,
   RefreshCw,
+  Clock,
 } from "lucide-react";
 import {
   payrollApi,
@@ -358,9 +359,17 @@ function PayslipCard({ payslip }: { payslip: Payslip }) {
 
 /* ── Page ──────────────────────────────────────────────────── */
 
+type PendingApproved = {
+  period_start: string;
+  period_end: string;
+  expected_pay_date: string;
+  run_status: string;
+};
+
 export default function MyPayslipsPage() {
   const { t } = useTranslation();
   const [payslips, setPayslips] = useState<Payslip[]>([]);
+  const [pendingApproved, setPendingApproved] = useState<PendingApproved[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -368,13 +377,19 @@ export default function MyPayslipsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const list = await payrollApi.myPayslips();
-      setPayslips(list);
+      // Red-team M7 / P5-PL-4: fetch both Paid payslips AND the
+      // Approved-but-not-yet-Paid stubs so the page can show an
+      // "Approved (expected pay date 7 Mar)" caption rather than
+      // looking empty between approval and pay date.
+      const resp = await payrollApi.myPayslipsWithPending();
+      setPayslips(resp.payslips);
+      setPendingApproved(resp.pending_approved || []);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : t("payslips.load_error");
       setError(message);
       setPayslips([]);
+      setPendingApproved([]);
     } finally {
       setIsLoading(false);
     }
@@ -435,6 +450,50 @@ export default function MyPayslipsPage() {
         />
       ) : (
         <div className="space-y-3">
+          {/* Red-team M7 / P5-PL-4: Approved-but-not-yet-Paid banner.
+              Sits ABOVE the Paid list because the employee's most
+              recent run is usually the one they're asking about. */}
+          {pendingApproved.length > 0 && (
+            <AppCard variant="flat">
+              <div className="flex items-start gap-3">
+                <Clock
+                  className="h-5 w-5 text-[var(--color-primary)] mt-0.5 shrink-0"
+                  aria-hidden="true"
+                />
+                <div className="text-sm text-[var(--color-gray-700)]">
+                  <p className="font-medium text-[var(--color-gray-900)]">
+                    Awaiting payment
+                  </p>
+                  <p className="mt-0.5 text-[var(--color-gray-500)]">
+                    Approved payslips become visible here once your employer
+                    marks the run as paid.
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {pendingApproved.map((p) => (
+                      <li
+                        key={`${p.period_start}-${p.period_end}`}
+                        className="text-xs text-[var(--color-gray-600)]"
+                      >
+                        <span className="font-medium text-[var(--color-gray-900)]">
+                          {formatPeriod(p.period_start, p.period_end)}
+                        </span>{" "}
+                        — Approved
+                        {p.expected_pay_date
+                          ? `, expected pay date ${new Date(
+                              p.expected_pay_date,
+                            ).toLocaleDateString("en-SG", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })}`
+                          : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </AppCard>
+          )}
           {payslips.map((payslip) => (
             <PayslipCard key={payslip.payslip_id} payslip={payslip} />
           ))}

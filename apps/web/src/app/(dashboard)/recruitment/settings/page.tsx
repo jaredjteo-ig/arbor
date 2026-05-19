@@ -154,10 +154,10 @@ function GoogleCalendarConnect() {
             </span>
           </div>
           <p className="mt-1 text-sm text-[var(--color-gray-500)]">
-            When connected, every interview you schedule in Arbor is added to
+            When connected, every interview you schedule in Central is added to
             the connected Google Calendar with the candidate and interviewers as
             attendees. Reschedules and cancellations sync automatically. You'll
-            need a Google Cloud OAuth client configured in Arbor's environment
+            need a Google Cloud OAuth client configured in Central's environment
             first.
           </p>
           {connected && status?.expires_at ? (

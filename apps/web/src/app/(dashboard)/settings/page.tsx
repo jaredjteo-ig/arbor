@@ -911,7 +911,7 @@ export default function SettingsPage() {
             checked={chatOnboardingEnabled}
             onChange={setChatOnboarding}
             label="Chat onboarding"
-            description="Use a conversational flow with the Arbor agent to set up your company instead of the standard form."
+            description="Use a conversational flow with the Central agent to set up your company instead of the standard form."
           />
         </div>
       </AppCard>

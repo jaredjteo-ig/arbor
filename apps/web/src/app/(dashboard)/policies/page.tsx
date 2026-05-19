@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AppCard,
   AppButton,
@@ -22,7 +22,11 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { policiesApi, type PolicyRecord } from "@/services/api/policies";
-import { PolicyCreateModal } from "@/components/policies/PolicyCreateModal";
+import { documentsApi } from "@/services/api/documents";
+import {
+  PolicyCreateModal,
+  type PolicyDraftPrefill,
+} from "@/components/policies/PolicyCreateModal";
 
 /* -- Constants --------------------------------------------------- */
 
@@ -257,6 +261,48 @@ export default function PoliciesPage() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [initialDraft, setInitialDraft] = useState<PolicyDraftPrefill | null>(
+    null,
+  );
+
+  /* Red-team P5-VL-2: deep-link from /compliance Action Items.
+   * If the URL carries ?template=<slug>, fetch the prefill payload,
+   * open the Add Policy modal, then clear the query param so a
+   * refresh doesn't re-trigger the modal. */
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const slug = searchParams?.get("template");
+    if (!slug) return;
+    // Optimistic open — modal will swap in the prefill when fetch resolves.
+    setShowCreateModal(true);
+    documentsApi
+      .getTemplatePrefillBySlug(slug)
+      .then((prefill) => {
+        setInitialDraft({
+          title: prefill.title,
+          category: prefill.category,
+          content: prefill.content,
+          source: prefill.found_template ? prefill.title : undefined,
+        });
+      })
+      .catch(() => {
+        // Unknown slug or transient failure — keep the modal open
+        // with whatever category hint came from ?category=.
+        const categoryHint = searchParams?.get("category") || "";
+        setInitialDraft({ category: categoryHint });
+      })
+      .finally(() => {
+        // Strip ?template= from the URL so a manual refresh starts
+        // clean; preserve ?category= so the filter chip stays right.
+        const url = new URL(window.location.href);
+        url.searchParams.delete("template");
+        router.replace(`${url.pathname}${url.search}`, { scroll: false });
+      });
+    // We intentionally depend on the slug, not the full searchParams
+    // object, so query-string mutations from other code paths don't
+    // re-open the modal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams?.get("template")]);
 
   /* Debounced search */
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -360,8 +406,16 @@ export default function PoliciesPage() {
 
   function handlePolicyCreated() {
     setShowCreateModal(false);
+    setInitialDraft(null);
     fetchPolicies();
     toast.success("Policy created successfully");
+  }
+
+  function handleModalClose() {
+    setShowCreateModal(false);
+    // Clear the prefill so the next manual "Add Policy" click starts
+    // blank — P5-VL-2.
+    setInitialDraft(null);
   }
 
   function scrollToPending() {
@@ -590,8 +644,9 @@ export default function PoliciesPage() {
       {/* Create policy modal */}
       <PolicyCreateModal
         isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+        onClose={handleModalClose}
         onSuccess={handlePolicyCreated}
+        initialDraft={initialDraft}
       />
     </div>
   );

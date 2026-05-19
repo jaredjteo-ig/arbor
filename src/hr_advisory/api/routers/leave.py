@@ -619,9 +619,24 @@ def _seed_statutory_leave_types(company_id: int) -> list[dict]:
 
 @router.get("/types")
 async def list_leave_types(
+    for_employee_id: int | None = None,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """List all configured leave types for the current company."""
+    """List configured leave types for the current company.
+
+    Pass ``for_employee_id`` to filter out leave types the named
+    employee can't apply for (red-team M6 / P5-PL-3): a male IC
+    shouldn't see Maternity Leave in the dropdown even if the backend
+    would reject the submission. Filtering by ``applicable_gender``
+    matches the seeded LeaveTypeConfig.applicable_gender field
+    ("male" / "female" / "") against ``Employee.gender``.
+
+    Eligibility is permissive — a type with ``applicable_gender=""``
+    is always shown. Only gender-restricted types are filtered out.
+    The dependent-based eligibility for childcare / infant care / adoption
+    is NOT enforced here (we lack a structured dependents model);
+    those remain visible.
+    """
     company_id = get_current_company_id(current_user)
     if company_id is None:
         raise HTTPException(status_code=400, detail="No company associated.")
@@ -630,6 +645,23 @@ async def list_leave_types(
         "LeaveTypeConfig",
         {"company_id": company_id, "is_active": True},
     )
+
+    if for_employee_id is not None:
+        emp = dataflow_crud.read("Employee", for_employee_id)
+        # Tenant isolation: the target employee must belong to the
+        # caller's company. Don't reveal leave-type detail (or the
+        # employee's existence) across tenants.
+        if emp is None or emp.get("company_id") != company_id:
+            raise HTTPException(status_code=404, detail="Employee not found.")
+        emp_gender = (emp.get("gender") or "").lower()
+        if emp_gender:
+            types = [
+                t
+                for t in types
+                if not (t.get("applicable_gender") or "")
+                or (t.get("applicable_gender") or "").lower() == emp_gender
+            ]
+
     return {"leave_types": types, "count": len(types)}
 
 
