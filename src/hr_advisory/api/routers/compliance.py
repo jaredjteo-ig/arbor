@@ -86,23 +86,16 @@ _DOMAIN_LABELS = {
 }
 
 
-# Map compliance domain keys to KB Act short_names for provision lookup.
-# Some domains span multiple acts (e.g. WSH and Tax are under CDCSA bundle).
-_DOMAIN_TO_ACT_SHORT_NAMES: dict[str, list[str]] = {
-    "employment_act": ["EA"],
-    "cpf": ["CPFA"],
-    "foreign_manpower": ["EFMA"],
-    "tax": ["CDCSA"],  # Tax provisions are in the CDCSA bundle
-    "wsh": ["CDCSA"],  # WSH provisions are in the CDCSA bundle
-    "fair_employment": ["TGFEP"],
-}
-
-# For domains that share an act (tax + wsh both under CDCSA),
-# filter by KB domain name to get the right subset.
-_DOMAIN_TO_KB_DOMAIN_NAMES: dict[str, list[str]] = {
-    "tax": ["Tax Obligations"],
-    "wsh": ["Workplace Safety & Health"],
-}
+# Domain → Act.short_name + sub-domain filter mapping was lifted into
+# `hr_advisory.kb.domain_lookup` (red-team P5-AD-followup) so the
+# advisory engine + compliance check + shadow agent all agree.
+# Import the maps from there for any reader who relies on the old
+# `_DOMAIN_TO_ACT_SHORT_NAMES` / `_DOMAIN_TO_KB_DOMAIN_NAMES` names.
+from hr_advisory.kb.domain_lookup import (
+    _DOMAIN_TO_ACT_SHORT_NAMES,
+    _DOMAIN_TO_KB_DOMAIN_NAMES,
+    provisions_for_domain as _shared_provisions_for_domain,
+)
 
 
 def search_provisions(domain: str, limit: int = 100) -> list[dict]:
@@ -112,39 +105,16 @@ def search_provisions(domain: str, limit: int = 100) -> list[dict]:
     corresponding Act short_name(s) in the KB and returns all provisions
     belonging to those acts. For domains that share an act, further
     filters by KB domain name.
+
+    Thin wrapper around `kb.domain_lookup.provisions_for_domain` so
+    callers that imported `compliance.search_provisions` keep working.
     """
-    from hr_advisory.services import dataflow_crud
-
-    act_short_names = _DOMAIN_TO_ACT_SHORT_NAMES.get(domain, [])
-    if not act_short_names:
-        # Fallback to domain name search
-        return _kb_search_provisions(query="", domain=domain, limit=limit)
-
-    all_provisions = []
-    for short_name in act_short_names:
-        acts = dataflow_crud.list_records("Act", {"short_name": short_name})
-        if acts:
-            act_id = acts[0]["id"]
-            provisions = dataflow_crud.list_records(
-                "Provision", {"source_act_id": act_id, "is_active": True}
-            )
-            all_provisions.extend(provisions)
-
-    # If this domain needs sub-filtering by KB domain name, apply it
-    kb_domain_names = _DOMAIN_TO_KB_DOMAIN_NAMES.get(domain)
-    if kb_domain_names and all_provisions:
-        # Resolve domain IDs
-        domain_ids = set()
-        for dn in kb_domain_names:
-            domains = dataflow_crud.list_records("Domain", {"name": dn})
-            for d in domains:
-                domain_ids.add(d["id"])
-        if domain_ids:
-            all_provisions = [
-                p for p in all_provisions if p.get("domain_id") in domain_ids
-            ]
-
-    return all_provisions[:limit]
+    provisions = _shared_provisions_for_domain(domain, limit=limit)
+    if provisions:
+        return provisions
+    # Domain unknown to the shared map — fall back to name-based
+    # search (preserves the prior behaviour for non-mapped domains).
+    return _kb_search_provisions(query="", domain=domain, limit=limit)
 
 
 def _domain_label(domain: str) -> str:

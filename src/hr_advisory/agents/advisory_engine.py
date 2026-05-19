@@ -852,27 +852,60 @@ class AdvisoryEngine:
             detected_domains = []
 
         if detected_domains:
+            # Route per-domain KB lookup through the shared
+            # domain_lookup module (red-team P5-AD-followup, 2026-05-19).
+            # The previous path called `_search_kb_with_fallback(domain=dom)`
+            # which filters by `Domain.name == "cpf"` and got zero rows
+            # because the prod KB stores sub-domain rows ("CPF
+            # Contribution Rates", "CPF Wage Ceilings", ...) instead.
+            # The shared module resolves domain → Act.short_name → all
+            # provisions for that Act, mirroring how the compliance
+            # health check counts provisions per domain.
+            from hr_advisory.kb.domain_lookup import provisions_for_domain
+
             preseed_lines: list[str] = []
             for dom in detected_domains:
                 try:
-                    hits = _search_kb_with_fallback(query, domain=dom, limit=3)
+                    hits = provisions_for_domain(dom, limit=3, query=query)
                 except Exception as exc:
-                    logger.debug("pre-fetch failed for domain %s: %s", dom, exc)
+                    logger.debug(
+                        "pre-fetch failed for domain %s: %s", dom, exc
+                    )
                     hits = []
                 if hits:
                     # Track so citation extraction picks these up even
                     # if the LLM never explicitly calls search_kb.
                     kb_results_seen.extend(hits)
                     for h in hits:
-                        title = h.get("title") or h.get("provision_id") or ""
-                        pid = h.get("provision_id") or ""
-                        text = (h.get("content") or h.get("text") or "")[:600]
-                        if title or text:
-                            preseed_lines.append(f"[{dom.upper()} · {pid}] {title}\n{text}")
+                        # Provision rows from DataFlow have different
+                        # field names than the search_kb wrapper output.
+                        # Use the provision-row fields: title + section
+                        # + plain_summary.
+                        title = (
+                            h.get("title")
+                            or h.get("section")
+                            or h.get("provision_id")
+                            or ""
+                        )
+                        section = h.get("section") or ""
+                        pid = h.get("provision_id") or h.get("id") or ""
+                        body = (
+                            h.get("plain_summary")
+                            or h.get("content")
+                            or h.get("formal_text")
+                            or h.get("text")
+                            or ""
+                        )[:600]
+                        if title or body:
+                            preseed_lines.append(
+                                f"[{dom.upper()} · {section or pid}] {title}\n{body}"
+                            )
             if preseed_lines:
                 preseed = (
                     "Relevant Singapore-statute provisions for this question "
-                    "(detected domains: " + ", ".join(detected_domains) + "):\n\n"
+                    "(detected domains: "
+                    + ", ".join(detected_domains)
+                    + "):\n\n"
                     + "\n\n".join(preseed_lines)
                     + "\n\nUse these as your primary grounding. Cite them in "
                     "your answer. If they are insufficient, call search_kb "

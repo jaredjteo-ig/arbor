@@ -282,13 +282,33 @@ tests, TS clean. Closes the gap-detect → fix-now value chain.
 
 File: `todos/completed/P5-VL-value-flow-handoffs.md`.
 
+### P5-DU — Demo seed via UI walkthrough ✅ COMPLETED 2026-05-19 (LOCAL)
+
+Playwright-MCP driven pilot of seed flows + post-deploy verification.
+Validates that UI-driven seeding (vs. SQL-direct) doubles as an
+end-to-end smoke test, and surfaces bugs the SQL approach can't.
+Seven sections piloted; six pass, one blocked by upstream Xero
+deferral.
+
+| Section         | Result     | Evidence                                                                                                                                    |
+| --------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| auth-smoke      | ✅ passes  | Grace nav dropped 60 → 56 items post-deploy (Admin/Integrations gone) — P5-RT3 sidebar fix verified live                                    |
+| payroll         | 🔴 blocked | P4-XX-2 Xero schema gap. **New finding**: `calculate` is also affected, not just `approve/mark-paid/cancel`                                 |
+| shifts          | ✅ passes  | "Morning Shift 08:00-16:00 (8h)" template created via UI                                                                                    |
+| leave-apply     | ✅ passes  | Marcus modal shows 9 leave types (no Maternity/Adoption) — P5-PL-3 verified. End-to-end: apply → owner approve → AuditLogEntry id=6 written |
+| claim-submit    | ✅ passes  | Marcus creates claim id=11 → submit → owner approve. 3 hash-chained audit entries (created/submitted/approved)                              |
+| attendance      | ✅ passes  | Lim Ah Kow clock-in (status=late) + clock-out, tracks_attendance gate working                                                               |
+| onboarding-walk | ✅ passes  | **P5-RT3-ON self-heal verified live**: Lily Phang's "Completed at 0%" entry demoted to draft on read                                        |
+
+File: `todos/completed/P5-DU-ui-seed-walkthrough.md`.
+
 ### P5 — Remaining red-team round-3 follow-ups
 
 One bundle still waiting for `/implement`.
 
-| ID    | Title                                | Effort | Source-finding ids |
-| ----- | ------------------------------------ | ------ | ------------------ |
-| P5-DM | Demo seed realism (payroll + shifts) | 2-3h   | O9, O11            |
+| ID    | Title                                | Effort | Source-finding ids                            |
+| ----- | ------------------------------------ | ------ | --------------------------------------------- |
+| P5-DM | Demo seed realism (payroll + shifts) | 2-3h   | O9, O11 (kept as fallback to P5-DU's UI path) |
 
 File: `todos/active/P5-DM-demo-seed-realism.md`.
 

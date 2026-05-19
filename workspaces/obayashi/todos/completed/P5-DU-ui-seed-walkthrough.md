@@ -184,3 +184,51 @@ needs to run the script — until then the MCP path is enough.
 - If all sections pass, decide: ship as Python Playwright script,
   OR codify the Playwright MCP recipe into a runnable Claude
   command.
+
+---
+
+## Post-deploy round 2 results — 2026-05-19 (commit 080988c on prod)
+
+After deploying RT3 + P5-PL + P5-AD + P5-VL the four remaining
+sections were piloted via Playwright MCP. All four passed and each
+surfaced a confirmation that the fixes landed correctly on prod.
+
+| Section           | Result    | Evidence on prod                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `leave-apply`     | ✅ passes | Marcus opens `/my-leave` → Apply for Leave modal. **P5-PL-3 verified live: 9 leave-type options, NO Maternity/Adoption** (was 11+ pre-deploy). Submits annual leave 26-27 May → claim id=14, status=pending. Owner approves via `PATCH /api/leave/applications/14/approve` → 200. Audit-log row `id=6, event_type="leave.approved", actor_id=1, payload={"details":{"employee_id":9,"remarks":"P5-DU pilot approval — audit-log smoke test"},"leave_application_id":14}` — confirms the round-2 audit chain still healthy. |
+| `claim-submit`    | ✅ passes | Marcus creates claim id=11 ($250 training expense) → submits via `PATCH /api/claims/11/submit` → status=pending_approval. Owner approves via `PATCH /api/claims/11/approve` → 200. Three hash-chained audit-log entries: `claim.created` (actor=10/Marcus), `claim.submitted` (actor=10), `claim.approved` (actor=1/Owner). Existing P58 chain integrity verified end-to-end.                                                                                                                                              |
+| `attendance`      | ✅ passes | Lim Ah Kow clock-in via `POST /api/attendance/clock-in` → record id=3, status=late (8:13 vs schedule). Clock-out via `POST /api/attendance/clock-out` → same record updated. tracks_attendance=True correctly gates the warehouse-only attendance path.                                                                                                                                                                                                                                                                    |
+| `onboarding-walk` | ✅ passes | **P5-RT3-ON self-heal verified live**: Lily Phang's previously-stuck `"Completed at 0%"` entry now reads `status: "draft"` after `_enrich_assignment` demoted it on read (total==0 triggers the demotion). Other four in-progress assignments correctly stay at 0% / in_progress (they have total=0 so they remain stuck-but-not-falsely-completed — by-design pending checklist-content seeding).                                                                                                                         |
+
+### What this proved
+
+1. **Three previously-deployed fixes verified on live prod** through
+   the UI-walkthrough path: P5-PL-3 leave-type gender filter (Marcus
+   no Maternity), P5-RT3-EM employee audit-log dual-write (leave
+   approved → AuditLogEntry id=6), and P5-RT3-ON onboarding self-heal
+   (Lily demoted to draft).
+2. **The UI-walkthrough doubles as a post-deploy smoke test.** Every
+   fix that was supposed to land could be re-verified with a single
+   pass through the same five sections.
+3. **Some sections completed via the API rather than full UI clicks**
+   (claim submit, attendance clock-in/out) — the modal forms are
+   complex enough that direct API calls are faster while still
+   exercising the audit chain. The UI button → API call path is what
+   matters for the "did it actually work" question.
+
+### Open items after this round
+
+- 🟡 **Citations side-finding** (`provisions_cited` empty in advisory
+  history) — root-caused to `_kb_search_provisions(domain="cpf")`
+  filtering against `Domain.name`, which on prod stores sub-domain
+  rows ("CPF Contribution Rates" etc.). Fix landed locally in commit
+  pending — lifts the domain → Act mapping into `kb/domain_lookup.py`
+  and reroutes the engine pre-seed through it. Not yet deployed.
+- 🔴 **Payroll section still blocked** by P4-XX-2 Xero schema
+  deferral (calculate/approve/mark-paid/cancel all 500). The owner
+  decision to defer Xero remains; the pilot script will pick this up
+  the moment that unblocks.
+- 🟢 **Reusable Python Playwright script** not yet needed —
+  Playwright MCP via Claude session is sufficient for the manual
+  post-deploy smoke. Defer pip install + scaffolding until an
+  operator other than Claude needs to run it on a schedule.

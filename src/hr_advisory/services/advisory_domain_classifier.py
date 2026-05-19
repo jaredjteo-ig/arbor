@@ -34,22 +34,25 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 
-# Canonical domain enum used downstream by `_search_kb_with_fallback`.
-# Mirrors the 6 regulatory domains the platform claims to cover.
+# Canonical domain enum. Aligned with kb/domain_lookup.py and the
+# engine's _extract_domains_from_tools mapping so the union math in
+# AdvisoryEngine.run() merges cleanly. Legacy aliases (efma, tafep,
+# tax_iras) are accepted via kb.domain_lookup.normalize_domain_key for
+# backward compatibility.
 DOMAIN_CPF = "cpf"
 DOMAIN_EMPLOYMENT_ACT = "employment_act"
-DOMAIN_EFMA = "efma"  # Foreign Manpower (passes, levies, quotas)
+DOMAIN_FOREIGN_MANPOWER = "foreign_manpower"  # was "efma"
 DOMAIN_WSH = "wsh"  # Workplace Safety & Health
-DOMAIN_TAFEP = "tafep"  # Fair Employment / TAFEP / WFA
-DOMAIN_TAX_IRAS = "tax_iras"  # IR8A, IR21, tax filing
+DOMAIN_FAIR_EMPLOYMENT = "fair_employment"  # was "tafep"
+DOMAIN_TAX = "tax"  # was "tax_iras"
 
 ALL_DOMAINS = {
     DOMAIN_CPF,
     DOMAIN_EMPLOYMENT_ACT,
-    DOMAIN_EFMA,
+    DOMAIN_FOREIGN_MANPOWER,
     DOMAIN_WSH,
-    DOMAIN_TAFEP,
-    DOMAIN_TAX_IRAS,
+    DOMAIN_FAIR_EMPLOYMENT,
+    DOMAIN_TAX,
 }
 
 
@@ -127,7 +130,7 @@ _PATTERNS: list[_DomainPattern] = [
         ],
     ),
     _compile(
-        DOMAIN_EFMA,
+        DOMAIN_FOREIGN_MANPOWER,
         [
             "efma",
             "foreign manpower",
@@ -171,7 +174,7 @@ _PATTERNS: list[_DomainPattern] = [
         ],
     ),
     _compile(
-        DOMAIN_TAFEP,
+        DOMAIN_FAIR_EMPLOYMENT,
         [
             "tafep",
             "wfa",
@@ -192,7 +195,7 @@ _PATTERNS: list[_DomainPattern] = [
         ],
     ),
     _compile(
-        DOMAIN_TAX_IRAS,
+        DOMAIN_TAX,
         [
             "iras",
             "ir8a",

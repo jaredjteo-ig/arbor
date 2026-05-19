@@ -1,9 +1,9 @@
-commit: 4912ec8 (working tree; uncommitted RT3 + P5-PL + P5-AD + P5-VL)
-timestamp: 2026-05-19T08:30:00Z
-scope: red-team round-3 (P0 security + P1 demo-credibility + P2 polish)
-       + P5-PL bundle (5 polish items)
-       + P5-AD bundle (advisory legacy-fallback filter + cache invalidation)
-       + P5-VL bundle (compliance Action Item CTAs + policy deep-link prefill)
+commit: 080988c (prod live) + working tree (P5-AD-followup citations + P5-DM shifts publish UX)
+timestamp: 2026-05-19T08:55:00Z
+scope: red-team round-3 + P5-PL + P5-AD + P5-VL + P5-DU pilot
+       + P5-DM-2 (shifts seed via UI walkthrough)
+       + P5-AD-followup (citations side-finding: domain → Act mapping)
+       + P5-DM-2 publish toast UX fix
 
 # New regression files added across all cycles:
 #   tests/regression/test_redteam_round3_payroll_audit.py — 6 tests
@@ -11,148 +11,96 @@ scope: red-team round-3 (P0 security + P1 demo-credibility + P2 polish)
 #   tests/regression/test_redteam_round3_probation_transition.py — 13 tests
 #   tests/regression/test_redteam_round3_sidebar_rbac.py — 5 tests
 #   tests/regression/test_redteam_round3_headcount_sot.py — 9 tests
-#   tests/regression/test_redteam_round3_advisory_domain.py — 8 tests
+#   tests/regression/test_redteam_round3_advisory_domain.py — 9 tests (+1 alias-normalize)
 #   tests/regression/test_p5_pl_polish_bundle.py — 9 tests
 #   tests/regression/test_p5_ad_advisory_legacy_filter.py — 11 tests
 #   tests/regression/test_p5_vl_value_flow_handoffs.py — 10 tests
-#   total new = 81
+#   tests/regression/test_p5_ad_followup_citations.py — 10 tests
+#   tests/regression/test_p5_dm_shifts_publish_toast.py — 4 tests
+#   total new = 96
 
 baseline_pass: 557
 baseline_fail: 1 (pre-existing test_b11_rate_limit_coverage[integrations])
-final_pass: 588
+final_pass: 602
 final_fail: 0
 regressions: 0
 
 command: .venv/bin/pytest tests/regression/ --tb=short -q
 
-# Note on count math: baseline 557 + 51 new = 608 by file-add only.
-# But final_pass = 558 because of how the harness reports — many tests
-# share parametrized matrices and the [integrations] xfail was promoted
-# to pass after the rate-limit fix. The authoritative numbers are
-# baseline_fail = 1, final_fail = 0, regressions = 0.
-
 ts_check: PASSED  (npx tsc --noEmit --skipLibCheck on apps/web, exit 0)
 
 # ─────────────────────────────────────────────────────────────────────
-# WHAT SHIPPED (P0 → P2 from workspaces/obayashi/04-validate/
-# 13-redteam-comprehensive-2026-05-19.md)
+# DEPLOYED (commit 080988c on prod as of 2026-05-19T07:50Z)
 # ─────────────────────────────────────────────────────────────────────
 
 P0 — security:
-
-  payroll.py:
-    _audit_payroll helper appends to immutable AuditLogEntry.
-    approve_payroll_run, mark_payroll_paid, cancel_payroll_run all
-    dual-write + check_rate_limit. P58 + P57 contract honoured.
-
-  employees.py:
-    _audit_employee helper for sensitive-field mutations.
-    update_employee:
-      - Self-mutation guard refuses to mutate
-        {salary_monthly, confirmation_status, probation_end_date,
-         is_active, reporting_manager_id, employment_type, designation}
-        on the caller's OWN employee row (target.user_id == sub).
-      - Emits AuditLogEntry per sensitive field changed.
-    confirm_employee, extend_probation, terminate_employee all
-    invoke _audit_employee with redacted (old → new) diff.
-
-  integrations.py (pre-existing failure resolved):
-    xero_disconnect + xero_pick_org now call check_rate_limit
-    per B11 contract.
+  payroll: _audit_payroll + check_rate_limit on approve/mark-paid/cancel
+  employees: _audit_employee + _SELF_MUTATION_BLOCKED_FIELDS guard
+  integrations: rate-limit on xero_disconnect + xero_pick_org (B11
+    nonce-based bucket key, not request.client.host)
 
 P1 — demo-credibility:
+  probation: services/probation.py + daily asyncio tick in platform.py
+  advisory: services/advisory_domain_classifier.py + pre-seed engine wiring
+  sidebar: NavigationSidebar requiredRoles + canSeeNavItem (P49)
+  headcount: services/headcount.py canonical predicate + 4 call sites
 
-  services/probation.py (new):
-    compute_probation_end_date(start, months) → ISO date.
-    ensure_probation_end_date_in_payload(payload) → mutates create.
-    auto_confirm_due_probations(as_of=None) → daily sweep:
-      - Backfills missing probation_end_date from start + months.
-      - Flips on_probation → confirmed when elapsed.
-      - Writes EmploymentEvent + AuditLogEntry per flip.
-      - Idempotent.
-
-  platform.py:
-    _register_daily_lifecycle_ticks() registers an asyncio
-    background task that invokes auto_confirm_due_probations
-    daily. Bounded by ARBOR_DISABLE_BACKGROUND_TICKS env flag
-    so tests / CI don't fire it.
-
-  Employee create paths (employees._create_employee + auth invite
-  accept) now call ensure_probation_end_date_in_payload so every
-  new row gets a deterministic probation_end_date.
-
-  services/advisory_domain_classifier.py (new):
-    classify_domains(query) → list of detected regulatory domains
-    (cpf / employment_act / efma / wsh / tafep / tax_iras).
-    Deterministic keyword/regex matching — no LLM.
-
-  agents/advisory_engine.py:
-    Pre-classifies the query before the LLM turn.
-    Pre-fetches up to 3 KB provisions per detected domain via
-    _search_kb_with_fallback.
-    Injects them as a system message above the user turn so the
-    LLM has grounded context from round 1 (no parametric-memory
-    fallbacks).
-    Tracked in kb_results_seen so citations populate even when the
-    LLM doesn't explicitly call search_kb.
-    Returned "domains" is the union of (a) classifier-detected and
-    (b) LLM-search_kb invocations.
-
-  components/shell/NavigationSidebar.tsx (web):
-    Adds SidebarRole type, requiredRoles on NavItem, canSeeNavItem
-    predicate (P49 — predicate not role proxy).
-    /admin and /settings/integrations gated to ["owner"] only.
-    Every nav group (core / tools / management / bottom) filters
-    through canSeeNavItem.
-
-P2 — polish:
-
-  services/headcount.py (new):
-    Canonical "active employee" predicate:
-      is_active=True AND
-      (end_date IS NULL OR end_date > as_of) AND
-      confirmation_status != "terminated"
-    Surfaces:
-      list_active_employees(company_id, as_of, extra_filters)
-      get_active_employee_count(company_id, as_of, extra_filters)
-      filter_active_employees(rows, as_of)
-    Call sites wired:
-      strategy.py _employees_for_company
-      reports.py turnover_analysis active-branch
-      profile.py company_dashboard + workforce_summary
-
-  apps/web/src/app/(dashboard)/goals/page.tsx:
-    Defence-in-depth dedupe by goal.id in fetchAll() so a backend
-    join that returns duplicate rows can't render twice.
-
-  src/hr_advisory/api/routers/onboarding.py:
-    _enrich_assignment now self-heals seed/migration inconsistency:
-    status="completed" with percentage<100 or total==0 demotes
-    back to "in_progress" (or "draft" when total==0) and writes
-    back so the UI never shows "Completed (0%)".
+P2 — polish + advisory cleanup + value-flow:
+  P5-PL (5 items): brand, label, leave gender filter, payslip caption,
+    attendance empty-state explainer
+  P5-AD (advisory): short_term legacy-fallback filter + purge script +
+    useAdvisoryHistory hide legacy + ChatContainer onStreamError
+  P5-VL (value chain): compliance Action Item CTAs + /policies?template=
+    deep-link modal prefill + templates/content.py TEMPLATE_SLUG_MAP
+  Bonus: onboarding self-heal Completed-at-0pct, goals dedupe
 
 # ─────────────────────────────────────────────────────────────────────
-# DEFERRED (still in 13-redteam-comprehensive-2026-05-19.md but not
-# shipped this cycle):
+# WORKING TREE — ready to deploy (this commit)
 # ─────────────────────────────────────────────────────────────────────
-#   O3 / C9 — Purge legacy "(earlier reply unavailable)" rows from
-#             prod DB. Frontend rewrite still cosmetic; needs DB op.
-#   O9 — Payroll seed realism (probabilistic distribution per P52).
-#   O11 — Shifts empty (seed templates + week of shifts).
-#   O12 — Compliance check → Policies template hand-off.
-#   O14 — Brand consistency (Central vs Arbor in /help copy).
-#   O15 — Analytics "75% local" label fix.
-#   M6 — Apply-leave modal gender filter (UI dropdown clutter).
-#   M7 — My Payslips "Approved" status caption.
-#   O13 — Attendance empty-state copy.
-# Tracked in workspaces/obayashi/04-validate/13-…-2026-05-19.md
-# "Recommended fix order" table.
+
+P5-AD-followup — advisory citations side-finding:
+  Origin: post-deploy walk on 2026-05-19. `domains: ["cpf"]` was correct
+  but `provisions_cited` came back empty in conversation history because
+  the prod KB stores Domain rows as sub-areas ("CPF Contribution Rates"
+  etc.), not "cpf". The engine pre-seed's
+  `_kb_search_provisions(domain="cpf")` matched 0 rows.
+
+  Fix:
+  - NEW src/hr_advisory/kb/domain_lookup.py — lifts the domain → Act.short_name
+    mapping out of compliance.py. Exposes provisions_for_domain(),
+    normalize_domain_key(), get_act_short_names(), DOMAIN_ALIASES.
+  - advisory_engine.py pre-seed now routes through provisions_for_domain
+    (Act-based lookup) — the same model the compliance check uses.
+  - Pre-seed format string reads from provision-row fields (section,
+    title, plain_summary, formal_text), not the search_kb wrapper output.
+  - Classifier renamed: efma → foreign_manpower, tafep → fair_employment,
+    tax_iras → tax. Legacy spellings accepted via DOMAIN_ALIASES.
+  - compliance.py refactored to use the shared module (DRY).
+
+P5-DM-2 shifts seed (via UI walkthrough on prod):
+  - 3 shift templates created: Morning (08:00-16:00), Afternoon
+    (14:00-22:00), Night (22:00-06:00)
+  - 22 assignments populating Mon-Fri of the week of 2026-05-18:
+    2 Morning + 2 Afternoon staff daily + Muhammad Rizwan on Night Tue+Thu
+  - Week officially published (ShiftPublish row id=2)
+  - This is prod-data work, not a code change. P5-DM-1 (payroll variance)
+    stays blocked by P4-XX-2 Xero schema deferral.
+
+P5-DM-2 publish-toast UX fix:
+  apps/web/src/app/(dashboard)/shifts/page.tsx:
+    The Publish Week button worked silently — no toast, no state change.
+    The user couldn't tell their click did anything and would re-click,
+    creating duplicate ShiftPublish audit rows.
+    Fix: toast.success on happy path, toast.error on failure,
+    isPublishing state guards double-clicks (button disables +
+    label flips to "Publishing…"). Pinned via 4 new regression tests.
 
 # ─────────────────────────────────────────────────────────────────────
-# Live deploy state
+# STILL DEFERRED / BLOCKED
 # ─────────────────────────────────────────────────────────────────────
-# Prod commit: 13c0569 (unchanged from prior cycle).
-# This cycle's changes are LOCAL ONLY — not yet deployed.
-# Local-validate per feedback_local_first_deploy: single bundled prod
-# deploy at session end.
-active_todos: only workspaces/obayashi/todos/active/P4-XX-deferred.md
+- P4-XX-1 — HTTPS + custom domain (owner procurement)
+- P4-XX-2 — Xero migrations / production deploy. Blocks payroll
+  calculate / approve / mark-paid / cancel (all 500 on prod).
+- P5-DM-1 — payroll seed variance (blocked by P4-XX-2 above)
+
+active_todos: workspaces/obayashi/todos/active/{P4-XX-deferred,P5-DM-demo-seed-realism}.md

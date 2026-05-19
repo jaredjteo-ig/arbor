@@ -46,27 +46,49 @@ def test_redteam3_classifier_detects_ow_ceiling_question():
 
 @pytest.mark.regression
 def test_redteam3_classifier_detects_cross_domain():
-    """A CPF/EFMA-spanning question must return both domains so the
-    engine pre-fetches from both KBs."""
+    """A CPF/foreign-manpower-spanning question must return both domains so
+    the engine pre-fetches from both KBs.
+
+    Domain keys aligned with kb/domain_lookup.py canonical names
+    (post-2026-05-19 followup). Legacy callers using "efma" / "tafep" /
+    "tax_iras" continue to work via DOMAIN_ALIASES normalisation.
+    """
     from hr_advisory.services.advisory_domain_classifier import classify_domains
 
     detected = classify_domains(
         "What's the CPF treatment for a foreign worker on an S Pass?"
     )
     assert "cpf" in detected
-    assert "efma" in detected
+    assert "foreign_manpower" in detected
 
 
 @pytest.mark.regression
 def test_redteam3_classifier_detects_each_domain():
-    """Spot-check the 6 regulatory domains the platform claims to cover."""
+    """Spot-check the 6 regulatory domains the platform claims to cover.
+    Canonical keys per kb/domain_lookup.DOMAIN_KEYS."""
     from hr_advisory.services.advisory_domain_classifier import classify_domains
 
     assert "employment_act" in classify_domains("notice period under the Employment Act")
-    assert "efma" in classify_domains("foreign worker quota for services sector")
+    assert "foreign_manpower" in classify_domains("foreign worker quota for services sector")
     assert "wsh" in classify_domains("workplace safety policy")
-    assert "tafep" in classify_domains("Workplace Fairness Act discrimination claim")
-    assert "tax_iras" in classify_domains("IR8A filing deadline")
+    assert "fair_employment" in classify_domains("Workplace Fairness Act discrimination claim")
+    assert "tax" in classify_domains("IR8A filing deadline")
+
+
+@pytest.mark.regression
+def test_redteam3_legacy_aliases_normalize_to_canonical():
+    """Backward-compat: callers that pass `efma` / `tafep` / `tax_iras`
+    must still land on the canonical KB lookup. Pinned because the
+    P5-AD-followup rename broke `_kb_search_provisions(domain=...)` flow
+    on prod — `provisions_for_domain` MUST accept both spellings."""
+    from hr_advisory.kb.domain_lookup import normalize_domain_key, get_act_short_names
+
+    assert normalize_domain_key("efma") == "foreign_manpower"
+    assert normalize_domain_key("tafep") == "fair_employment"
+    assert normalize_domain_key("tax_iras") == "tax"
+    # And the Act lookup works either way:
+    assert get_act_short_names("efma") == ["EFMA"]
+    assert get_act_short_names("foreign_manpower") == ["EFMA"]
 
 
 @pytest.mark.regression

@@ -5,6 +5,7 @@ import { AppCard } from "@/components/design-system/AppCard";
 import { AppButton } from "@/components/design-system/AppButton";
 import { AppInput } from "@/components/design-system/AppInput";
 import { EmployeePicker } from "@/components/design-system/EmployeePicker";
+import { toast } from "@/components/design-system";
 import { useAuth } from "@/contexts/AuthContext";
 import { AdminGuard } from "@/components/auth/AdminGuard";
 import {
@@ -134,16 +135,27 @@ export default function ShiftsPage() {
     }
   }, [newAssignment, fetchData]);
 
+  const [isPublishing, setIsPublishing] = useState(false);
   const handlePublish = useCallback(async () => {
+    // Red-team P5-DM-2 followup (2026-05-19 live walk): the click
+    // succeeded silently — a publish row WAS written but no toast or
+    // state change appeared on screen, so the user couldn't tell.
+    // Surface success/error explicitly and dedupe rapid double-clicks.
+    if (isPublishing) return;
+    setIsPublishing(true);
     try {
       await shiftsApi.publishSchedule(weekStart);
+      toast.success(`Week of ${weekStart} published.`);
       fetchData();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to publish schedule.",
-      );
+      const msg =
+        err instanceof Error ? err.message : "Failed to publish schedule.";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setIsPublishing(false);
     }
-  }, [weekStart, fetchData]);
+  }, [weekStart, fetchData, isPublishing]);
 
   const handleDeleteAssignment = useCallback(
     async (id: number) => {
@@ -213,8 +225,13 @@ export default function ShiftsPage() {
                 >
                   Assign Shift
                 </AppButton>
-                <AppButton variant="primary" size="sm" onClick={handlePublish}>
-                  Publish Week
+                <AppButton
+                  variant="primary"
+                  size="sm"
+                  onClick={handlePublish}
+                  disabled={isPublishing}
+                >
+                  {isPublishing ? "Publishing…" : "Publish Week"}
                 </AppButton>
               </>
             )}

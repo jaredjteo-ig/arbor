@@ -7,9 +7,35 @@ findings O9 (payroll) + O11 (shifts).
 demo surfaces. A buyer in their first 5 minutes notices the gaps and
 loses trust before the value chain finishes loading.
 
-**Recommended bundling:** ship as one commit. Both touch
-`scripts/seed_demo_data.py` and need a wipe-before-reseed on prod
-(per `.claude/rules/seeding.md` rule 10).
+**Superseded path:** `P5-DU-ui-seed-walkthrough.md` (completed). The
+UI-driven approach proved viable and was used to seed the shifts
+section on 2026-05-19. This file remains as the SQL-based fallback
+plan for any future operator who needs a reusable CI script.
+
+**Current status (2026-05-19, post-deploy of commit `080988c`):**
+
+- **P5-DM-1 payroll variance** — 🔴 **blocked upstream** by
+  `P4-XX-deferred.md` (Xero schema migration deferred per owner).
+  `POST /payroll/calculate` returns 500 because
+  `dataflow_crud.create("PayrollRun", ...)` references columns not
+  on the prod schema (`xero_journal_id`, `xero_exported_at`,
+  `xero_force_counter`). Unblocks the moment the Xero migrations
+  run on prod.
+- **P5-DM-2 shifts week** — ✅ **DONE via UI walkthrough.** Three
+  shift templates exist on prod (Morning 08:00-16:00, Afternoon
+  14:00-22:00, Night 22:00-06:00). 22 assignments populate
+  Mon-Fri of the week of 2026-05-18: Lim Ah Kow + Ravi Shankar
+  Morning daily, Siti Aminah + Kevin Teo Afternoon daily,
+  Muhammad Rizwan Night on Tue + Thu. Weekly Hours panel auto-
+  computes 40h each for the 4 day-shift staff + 16h for Rizwan.
+  Week officially published via `POST /api/shifts/publish` —
+  publish record id=2, published_by=1 (owner).
+
+**Recommended bundling:** P5-DM-1 stays open as the SQL-fallback plan
+for when payroll variance becomes possible again post-Xero unblock.
+The pure-SQL approach below should be re-evaluated against P5-DU
+when it's actionable — the UI path may be the better choice for
+P5-DM-1 too once `payroll/calculate` works.
 
 ---
 
@@ -53,7 +79,7 @@ loses trust before the value chain finishes loading.
   templates, no scheduled shifts. Landing page promises "Visual shift
   allocation with availability checking, leave integration, and labour
   law compliance" but the buyer sees `"No templates yet. Create one to
-  start scheduling."`
+start scheduling."`
 - **Where:** `scripts/seed_demo_data.py` — add a new `shifts` section
   to the section registry. New section, modeled on `recognition` /
   `onboarding` sections.
